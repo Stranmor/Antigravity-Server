@@ -13,6 +13,8 @@ export default defineConfig(async () => ({
     target: "esnext",
     minify: "esbuild",
     sourcemap: false,
+    cssCodeSplit: true,
+    cssMinify: true,
     rollupOptions: {
       output: {
         manualChunks: {
@@ -20,10 +22,25 @@ export default defineConfig(async () => ({
           "ui-vendor": ["framer-motion", "lucide-react", "recharts"],
           "i18n": ["i18next", "react-i18next", "i18next-browser-languagedetector"],
           "dnd": ["@dnd-kit/core", "@dnd-kit/sortable", "@dnd-kit/utilities"],
+          "utils": ["clsx", "tailwind-merge", "date-fns", "zustand"],
         },
       },
     },
     chunkSizeWarningLimit: 1000,
+    reportCompressedSize: false,
+  },
+
+  // Optimization settings
+  optimizeDeps: {
+    include: [
+      "react",
+      "react-dom",
+      "react-router-dom",
+      "framer-motion",
+      "zustand",
+      "i18next",
+      "react-i18next",
+    ],
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

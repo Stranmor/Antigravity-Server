@@ -28,7 +28,7 @@ function Dashboard() {
     useEffect(() => {
         fetchAccounts();
         fetchCurrentAccount();
-    }, []);
+    }, [fetchAccounts, fetchCurrentAccount]);
 
     // 计算统计数据
     const stats = useMemo(() => {
@@ -151,7 +151,6 @@ function Dashboard() {
         <div className="h-full w-full overflow-y-auto">
             <div
                 className="p-5 space-y-4 max-w-7xl mx-auto"
-                onMouseMove={() => console.log('Mouse moving over Dashboard')}
                 style={{ position: 'relative', zIndex: 1 }}
             >
                 {/* 问候语和操作按钮 */}
