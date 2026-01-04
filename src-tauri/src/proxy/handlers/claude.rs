@@ -23,6 +23,13 @@ use std::sync::atomic::Ordering;
 const MAX_RETRY_ATTEMPTS: usize = 3;
 const MIN_SIGNATURE_LENGTH: usize = 10;  // 最小有效签名长度
 
+// ===== 529 Overloaded Retry Configuration =====
+// 529 errors indicate server overload - NOT account-specific limits
+// We should retry aggressively with the SAME account until success
+const MAX_OVERLOAD_RETRIES: usize = 30;      // Max retries for 529 errors (independent of account pool)
+const OVERLOAD_BASE_DELAY_MS: u64 = 2000;    // Base delay: 2 seconds
+const OVERLOAD_MAX_DELAY_MS: u64 = 60000;    // Max delay cap: 60 seconds
+
 // ===== Model Constants for Background Tasks =====
 // These can be adjusted for performance/cost optimization
 const BACKGROUND_MODEL_LITE: &str = "gemini-2.5-flash-lite";  // For simple/lightweight tasks
@@ -493,14 +500,26 @@ pub async fn handle_messages(
     // 3. 准备闭包
     let mut request_for_body = request.clone();
     let token_manager = state.token_manager;
-    
+
     let pool_size = token_manager.len();
     let max_attempts = MAX_RETRY_ATTEMPTS.min(pool_size).max(1);
 
     let mut last_error = String::new();
     let mut retried_without_thinking = false;
-    
-    for attempt in 0..max_attempts {
+
+    // [529 RESILIENCE] Separate counter for 529 overload retries
+    // This allows unlimited retries for server overload (same account)
+    // while still respecting account rotation limits for other errors
+    let mut overload_retry_count: usize = 0;
+    #[allow(unused_assignments)]  // Used for potential future logging/metrics
+    let mut current_overload_account: Option<String> = None;
+
+    // Use manual loop instead of `for` to allow 529 retries without consuming attempt quota
+    let mut attempt: usize = 0;
+    loop {
+        if attempt >= max_attempts {
+            break;
+        }
         // 2. 模型路由与配置解析 (提前解析以确定请求类型)
         // 先不应用家族映射，获取初步的 mapped_model
         let initial_mapped_model = crate::proxy::common::model_mapping::resolve_model_route(
@@ -812,20 +831,59 @@ pub async fn handle_messages(
             }
         }
 
-        // 5. 统一处理所有可重试错误
+        // 5. [529 RESILIENCE] Special handling for 529 Overloaded errors
+        // 529 means the upstream server is overloaded - this is NOT account-specific
+        // We retry aggressively with exponential backoff until success or max retries
+        if status_code == 529 || (status_code == 503 && error_text.contains("overloaded")) {
+            overload_retry_count += 1;
+            current_overload_account = Some(email.clone());
+
+            if overload_retry_count <= MAX_OVERLOAD_RETRIES {
+                // Exponential backoff with jitter: 2s, 4s, 8s, 16s, ... capped at 60s
+                let base_delay = OVERLOAD_BASE_DELAY_MS * 2_u64.pow((overload_retry_count - 1).min(5) as u32);
+                let capped_delay = base_delay.min(OVERLOAD_MAX_DELAY_MS);
+                let jittered_delay = apply_jitter(capped_delay);
+
+                tracing::warn!(
+                    "[{}] 🔄 529 Overloaded - retry {}/{} in {}ms (account: {}, NOT rotating)",
+                    trace_id,
+                    overload_retry_count,
+                    MAX_OVERLOAD_RETRIES,
+                    jittered_delay,
+                    email
+                );
+
+                sleep(Duration::from_millis(jittered_delay)).await;
+
+                // CRITICAL: Do NOT increment `attempt` - 529 retries are "free"
+                // This allows us to keep retrying without exhausting the account pool
+                continue;
+            } else {
+                tracing::error!(
+                    "[{}] ❌ 529 Overloaded - exhausted {} retries, giving up",
+                    trace_id,
+                    MAX_OVERLOAD_RETRIES
+                );
+                // Fall through to normal error handling after max retries
+            }
+        }
+
+        // 6. 统一处理所有可重试错误
         // [REMOVED] 不再特殊处理 QUOTA_EXHAUSTED,允许账号轮换
         // 原逻辑会在第一个账号配额耗尽时直接返回,导致"平衡"模式无法切换账号
         
         
         // 确定重试策略
         let strategy = determine_retry_strategy(status_code, &error_text, retried_without_thinking);
-        
+
         // 执行退避
         if apply_retry_strategy(strategy, attempt, status_code, &trace_id).await {
             // 判断是否需要轮换账号
             if !should_rotate_account(status_code) {
                 debug!("[{}] Keeping same account for status {} (server-side issue)", trace_id, status_code);
             }
+            // Increment attempt counter for non-529 errors (account rotation)
+            attempt += 1;
             continue;
         } else {
             // 不可重试的错误，直接返回
@@ -833,12 +891,19 @@ pub async fn handle_messages(
             return (status, error_text).into_response();
         }
     }
-    
+
+    // Include 529 retry info in final error message if applicable
+    let retry_info = if overload_retry_count > 0 {
+        format!(" (including {} overload retries)", overload_retry_count)
+    } else {
+        String::new()
+    };
+
     (StatusCode::TOO_MANY_REQUESTS, Json(json!({
         "type": "error",
         "error": {
             "type": "overloaded_error",
-            "message": format!("All {} attempts failed. Last error: {}", max_attempts, last_error)
+            "message": format!("All {} attempts failed{}. Last error: {}", max_attempts, retry_info, last_error)
         }
     }))).into_response()
 }
