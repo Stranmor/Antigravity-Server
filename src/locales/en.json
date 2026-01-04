@@ -25,7 +25,10 @@
         "pagination_info": "Showing {{start}} to {{end}} of {{total}} entries",
         "per_page": "Per page",
         "items": "items",
-        "accounts": "accounts"
+        "accounts": "accounts",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "required": "Required"
     },
     "nav": {
         "dashboard": "Dashboard",
@@ -493,6 +496,11 @@
             "reset_confirm": "Reset all mappings to system defaults?",
             "reset_mapping": "Reset Mapping",
             "add_mapping": "Add Mapping",
+            "haiku_tip": {
+                "title": "💰 Cost Saving Tip:",
+                "text": "Claude CLI uses {{model}} for background tasks by default. Map it to a cheaper Flash model to save ~95% cost.",
+                "btn": "One-click Optimize"
+            },
             "current_list": "Custom List",
             "no_custom_mapping": "No custom mappings yet",
             "gemini3_only_warning": "⚠️ Gemini 3 series only",

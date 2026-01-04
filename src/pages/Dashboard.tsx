@@ -161,7 +161,7 @@ function Dashboard() {
                     <div>
                         <h1 className="text-2xl font-bold text-gray-900 dark:text-base-content">
                             {currentAccount
-                                ? t('dashboard.hello').replace('用户', currentAccount.name || currentAccount.email.split('@')[0])
+                                ? t('dashboard.hello').replace('用户', currentAccount.name ?? currentAccount.email.split('@')[0] ?? 'User')
                                 : t('dashboard.hello')
                             }
                         </h1>
