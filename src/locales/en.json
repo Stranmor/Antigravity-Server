@@ -25,18 +25,23 @@
         "pagination_info": "Showing {{start}} to {{end}} of {{total}} entries",
         "per_page": "Per page",
         "items": "items",
-        "back": "Back",
-        "switch": "Switch",
+        "accounts": "accounts",
         "enabled": "Enabled",
         "disabled": "Disabled",
-        "required": "Required",
-        "accounts": "accounts"
+        "tauri_api_not_loaded": "Tauri API not loaded, please restart the app",
+        "environment_error": "Environment error: {{error}}"
     },
     "nav": {
         "dashboard": "Dashboard",
         "accounts": "Accounts",
         "proxy": "API Proxy",
-        "settings": "Settings"
+        "settings": "Settings",
+        "theme_to_dark": "Switch to Dark Mode",
+        "theme_to_light": "Switch to Light Mode",
+        "switch_to_english": "Switch to English",
+        "switch_to_chinese": "Switch to Chinese",
+        "switch_to_english_short": "EN",
+        "switch_to_chinese_short": "ZH"
     },
     "dashboard": {
         "hello": "Hello, User 👋",
@@ -88,6 +93,14 @@
         "current_badge": "Current",
         "disabled": "Disabled",
         "disabled_tooltip": "Account is disabled (e.g. refresh_token revoked/expired). Reauthorize or update token to re-enable.",
+        "proxy_disabled": "Proxy Disabled",
+        "proxy_disabled_tooltip": "This account has proxy disabled manually, it will not handle API requests but remains usable in the app.",
+        "enable_proxy": "Enable Proxy",
+        "disable_proxy": "Disable Proxy",
+        "enable_proxy_selected": "Enable ({{count}})",
+        "disable_proxy_selected": "Disable ({{count}})",
+        "proxy_disabled_reason_manual": "Disabled manually by user",
+        "proxy_disabled_reason_batch": "Disabled in batch",
         "forbidden": "403",
         "forbidden_badge": "403",
         "forbidden_tooltip": "API returned 403 Forbidden, account has no permission for Gemini Code Assist",
@@ -99,6 +112,10 @@
         "actions": "Actions",
         "details": {
             "title": "Quota Details"
+        },
+        "toast": {
+            "proxy_enabled": "Enabled proxy for {{count}} accounts",
+            "proxy_disabled": "Disabled proxy for {{count}} accounts"
         },
         "add": {
             "title": "Add Account",
@@ -140,6 +157,7 @@
             },
             "btn_cancel": "Cancel",
             "btn_confirm": "Confirm",
+            "oauth_error": "OAuth failed: {{error}}",
             "status": {
                 "error_token": "Please enter Refresh Token"
             }
@@ -168,7 +186,11 @@
             "refresh_title": "Refresh Quota",
             "batch_refresh_title": "Batch Refresh",
             "refresh_msg": "Are you sure you want to refresh the quota for the current account?",
-            "batch_refresh_msg": "Are you sure you want to refresh quotas for the selected {{count}} accounts? This may take some time."
+            "batch_refresh_msg": "Are you sure you want to refresh quotas for the selected {{count}} accounts? This may take some time.",
+            "disable_proxy_title": "Disable Proxy",
+            "disable_proxy_msg": "Are you sure you want to disable proxy for this account? The account will remain usable in the app.",
+            "enable_proxy_title": "Enable Proxy",
+            "enable_proxy_msg": "Are you sure you want to re-enable proxy for this account?"
         }
     },
     "settings": {
@@ -405,7 +427,14 @@
         "example": {
             "title": "Usage Examples",
             "curl": "cURL",
-            "python": "Python"
+            "python": "Python",
+            "python_anthropic": "from anthropic import Anthropic\n\nclient = Anthropic(\n    # Recommended: 127.0.0.1\n    base_url=\"{{baseUrl}}\",\n    api_key=\"{{apiKey}}\"\n)\n\n# Note: Antigravity supports calling any model via the Anthropic SDK\nresponse = client.messages.create(\n    model=\"{{modelId}}\",\n    max_tokens=1024,\n    messages=[{\"role\": \"user\", \"content\": \"Hello\"}]\n)\n\nprint(response.content[0].text)",
+            "python_gemini": "# Install: pip install google-generativeai\nimport google.generativeai as genai\n\n# Use Antigravity proxy address (recommended 127.0.0.1)\ngenai.configure(\n    api_key=\"{{apiKey}}\",\n    transport='rest',\n    client_options={'api_endpoint': '{{rawBaseUrl}}'}\n)\n\nmodel = genai.GenerativeModel('{{modelId}}')\nresponse = model.generate_content(\"Hello\")\nprint(response.text)",
+            "python_openai_image": "from openai import OpenAI\n\nclient = OpenAI(\n    base_url=\"{{baseUrl}}\",\n    api_key=\"{{apiKey}}\"\n)\n\nresponse = client.chat.completions.create(\n    model=\"{{modelId}}\",\n    # Option 1: use size (recommended)\n    # Supported: \"1024x1024\" (1:1), \"1280x720\" (16:9), \"720x1280\" (9:16), \"1216x896\" (4:3)\n    extra_body={ \"size\": \"1024x1024\" },\n\n    # Option 2: use model suffix\n    # e.g. gemini-3-pro-image-16-9, gemini-3-pro-image-4-3\n    # model=\"gemini-3-pro-image-16-9\",\n    messages=[{\n        \"role\": \"user\",\n        \"content\": \"Draw a futuristic city\"\n    }]\n)\n\nprint(response.choices[0].message.content)",
+            "python_openai": "from openai import OpenAI\n\nclient = OpenAI(\n    base_url=\"{{baseUrl}}\",\n    api_key=\"{{apiKey}}\"\n)\n\nresponse = client.chat.completions.create(\n    model=\"{{modelId}}\",\n    messages=[{\"role\": \"user\", \"content\": \"Hello\"}]\n)\n\nprint(response.choices[0].message.content)"
+        },
+        "examples": {
+            "title": "Usage Examples"
         },
         "dialog": {
             "confirm_regenerate": "Are you sure to regenerate API Key? The old key will be invalid immediately.",
@@ -460,6 +489,10 @@
             "title": "Model Router",
             "subtitle": "Route models by series or add custom exact mappings.",
             "group_title": "Series Groups",
+            "gemini3_group_label": "Gemini 3 (Recommended)",
+            "gemini3_option_high": "gemini-3-pro-high (High Quality)",
+            "gemini3_option_low": "gemini-3-pro-low (Balanced)",
+            "gemini3_option_flash": "gemini-3-flash (Fast)",
             "groups": {
                 "claude_45": {
                     "name": "Claude 4.5 Series",
@@ -484,6 +517,10 @@
             },
             "expert_title": "Expert Custom Routing",
             "expert_subtitle": "Precise matching for any original model ID.",
+            "haiku_tip_title": "💰 Cost-saving tip:",
+            "haiku_tip_body_before": "Claude CLI defaults to",
+            "haiku_tip_body_after": "for background tasks; mapping it to a cheaper Flash model can save about 95% of the cost.",
+            "haiku_tip_action": "Optimize",
             "reset_confirm": "Reset all mappings to system defaults?",
             "reset_mapping": "Reset Mapping",
             "add_mapping": "Add Mapping",
@@ -492,11 +529,7 @@
             "gemini3_only_warning": "⚠️ Gemini 3 series only",
             "default_suffix": " (Default)",
             "original_id": "Original ID",
-            "route_to": "Route To",
-            "haiku_optimization_tip": "Claude CLI uses {{model}} for background tasks by default. Mapping to a cheap Flash model can save ~95% cost.",
-            "haiku_optimization_btn": "Quick Optimize",
-            "select_target_model": "Select target model",
-            "money_saving_tip": "Savings Tip:"
+            "route_to": "Route To"
         },
         "multi_protocol": {
             "title": "Multi-Protocol Support",
@@ -547,7 +580,6 @@
             "status": "Status",
             "method": "Method",
             "model": "Model",
-            "account": "Account",
             "path": "Path",
             "usage": "Tokens",
             "duration": "Duration",
@@ -562,9 +594,6 @@
             "tokens": "Tokens (I/O)",
             "time": "Time",
             "model": "Model",
-            "mapped_model": "Mapped Model",
-            "account_used": "Account Used",
-            "payload_empty": "Empty",
             "id": "Request ID"
         },
         "dialog": {

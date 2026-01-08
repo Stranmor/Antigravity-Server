@@ -297,7 +297,7 @@ function Accounts() {
             await toggleProxyStatus(
                 toggleProxyConfirm.accountId,
                 toggleProxyConfirm.enable,
-                toggleProxyConfirm.enable ? undefined : '用户手动禁用'
+                toggleProxyConfirm.enable ? undefined : t('accounts.proxy_disabled_reason_manual')
             );
             showToast(t('common.success'), 'success');
         } catch (error) {
@@ -313,13 +313,13 @@ function Accounts() {
 
         try {
             const promises = Array.from(selectedIds).map(id =>
-                toggleProxyStatus(id, enable, enable ? undefined : '批量禁用')
+                toggleProxyStatus(id, enable, enable ? undefined : t('accounts.proxy_disabled_reason_batch'))
             );
             await Promise.all(promises);
             showToast(
                 enable
-                    ? `成功启用 ${selectedIds.size} 个账号的反代功能`
-                    : `成功禁用 ${selectedIds.size} 个账号的反代功能`,
+                    ? t('accounts.toast.proxy_enabled', { count: selectedIds.size })
+                    : t('accounts.toast.proxy_disabled', { count: selectedIds.size }),
                 'success'
             );
             setSelectedIds(new Set());
@@ -607,18 +607,18 @@ function Accounts() {
                             <button
                                 className="px-2.5 py-2 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition-colors flex items-center gap-1.5 shadow-sm"
                                 onClick={() => handleBatchToggleProxy(false)}
-                                title={`批量禁用 (${selectedIds.size})`}
+                                title={t('accounts.disable_proxy_selected', { count: selectedIds.size })}
                             >
                                 <ToggleLeft className="w-3.5 h-3.5" />
-                                <span className="hidden xl:inline">禁用 ({selectedIds.size})</span>
+                                <span className="hidden xl:inline">{t('accounts.disable_proxy_selected', { count: selectedIds.size })}</span>
                             </button>
                             <button
                                 className="px-2.5 py-2 bg-green-500 text-white text-xs font-medium rounded-lg hover:bg-green-600 transition-colors flex items-center gap-1.5 shadow-sm"
                                 onClick={() => handleBatchToggleProxy(true)}
-                                title={`批量启用 (${selectedIds.size})`}
+                                title={t('accounts.enable_proxy_selected', { count: selectedIds.size })}
                             >
                                 <ToggleRight className="w-3.5 h-3.5" />
-                                <span className="hidden xl:inline">启用 ({selectedIds.size})</span>
+                                <span className="hidden xl:inline">{t('accounts.enable_proxy_selected', { count: selectedIds.size })}</span>
                             </button>
                         </>
                     )}
