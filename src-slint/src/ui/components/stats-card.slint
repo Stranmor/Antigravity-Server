@@ -4,7 +4,8 @@ import { Theme } from "theme.slint";
 
 export component StatsCard inherits Rectangle {
     in property <string> label: "Label";
-    in property <string> value: "0";
+    in property <int> value: 0;
+    in property <string> suffix: "";
     in property <string> icon: "📊";
     in property <color> accent-color: Theme.accent-blue;
     
@@ -38,7 +39,7 @@ export component StatsCard inherits Rectangle {
         
         // Value
         Text {
-            text: value;
+            text: value + suffix;
             color: Theme.text-primary;
             font-size: Theme.font-2xl;
             font-weight: 700;

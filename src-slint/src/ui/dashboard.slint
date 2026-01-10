@@ -4,7 +4,30 @@ import { VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
 import { Theme } from "components/theme.slint";
 import { StatsCard } from "components/stats-card.slint";
 
+// Re-export from app.slint
+export struct DashboardStats {
+    total_accounts: int,
+    avg_gemini: int,
+    avg_gemini_image: int,
+    avg_claude: int,
+    low_quota_count: int,
+}
+
+export struct CurrentAccountInfo {
+    email: string,
+    name: string,
+    last_used: string,
+    has_account: bool,
+}
+
 export component Dashboard inherits Rectangle {
+    in property <DashboardStats> stats;
+    in property <CurrentAccountInfo> current-account;
+    
+    callback refresh-accounts();
+    callback add-account();
+    callback switch-account();
+    
     background: Theme.background;
     
     ScrollView {
@@ -55,6 +78,7 @@ export component Dashboard inherits Rectangle {
                         
                         TouchArea {
                             mouse-cursor: pointer;
+                            clicked => { root.add-account(); }
                         }
                     }
                     
@@ -76,18 +100,19 @@ export component Dashboard inherits Rectangle {
                         
                         TouchArea {
                             mouse-cursor: pointer;
+                            clicked => { root.refresh-accounts(); }
                         }
                     }
                 }
             }
             
-            // Stats Grid
+            // Stats Grid - now with real data
             HorizontalLayout {
                 spacing: Theme.spacing-md;
                 
                 StatsCard {
                     label: "Total Accounts";
-                    value: "5";
+                    value: stats.total_accounts;
                     icon: "👤";
                     accent-color: Theme.accent-blue;
                     horizontal-stretch: 1;
@@ -95,7 +120,8 @@ export component Dashboard inherits Rectangle {
                 
                 StatsCard {
                     label: "Avg. Gemini Quota";
-                    value: "78%";
+                    value: stats.avg_gemini;
+                    suffix: "%";
                     icon: "✨";
                     accent-color: Theme.accent-green;
                     horizontal-stretch: 1;
@@ -103,7 +129,8 @@ export component Dashboard inherits Rectangle {
                 
                 StatsCard {
                     label: "Avg. Gemini Image";
-                    value: "65%";
+                    value: stats.avg_gemini_image;
+                    suffix: "%";
                     icon: "🖼";
                     accent-color: Theme.accent-purple;
                     horizontal-stretch: 1;
@@ -111,7 +138,8 @@ export component Dashboard inherits Rectangle {
                 
                 StatsCard {
                     label: "Avg. Claude Quota";
-                    value: "82%";
+                    value: stats.avg_claude;
+                    suffix: "%";
                     icon: "🤖";
                     accent-color: Theme.accent-cyan;
                     horizontal-stretch: 1;
@@ -119,7 +147,7 @@ export component Dashboard inherits Rectangle {
                 
                 StatsCard {
                     label: "Low Quota";
-                    value: "1";
+                    value: stats.low_quota_count;
                     icon: "⚠️";
                     accent-color: Theme.accent-orange;
                     horizontal-stretch: 1;
@@ -150,7 +178,7 @@ export component Dashboard inherits Rectangle {
                             font-weight: 600;
                         }
                         
-                        HorizontalLayout {
+                        if current-account.has-account: HorizontalLayout {
                             spacing: Theme.spacing-md;
                             
                             // Avatar placeholder
@@ -161,7 +189,7 @@ export component Dashboard inherits Rectangle {
                                 border-radius: 24px;
                                 
                                 Text {
-                                    text: "U";
+                                    text: current-account.name != "" ? current-account.name : "?";
                                     color: white;
                                     font-size: 20px;
                                     font-weight: 600;
@@ -174,18 +202,24 @@ export component Dashboard inherits Rectangle {
                                 spacing: 4px;
                                 
                                 Text {
-                                    text: "user@example.com";
+                                    text: current-account.email;
                                     color: Theme.text-primary;
                                     font-size: Theme.font-md;
                                     font-weight: 500;
                                 }
                                 
                                 Text {
-                                    text: "Last used: Just now";
+                                    text: "Last used: " + current-account.last-used;
                                     color: Theme.text-secondary;
                                     font-size: Theme.font-sm;
                                 }
                             }
+                        }
+                        
+                        if !current-account.has-account: Text {
+                            text: "No account selected";
+                            color: Theme.text-muted;
+                            font-size: Theme.font-md;
                         }
                         
                         Rectangle { vertical-stretch: 1; background: transparent; }
@@ -205,7 +239,10 @@ export component Dashboard inherits Rectangle {
                                 vertical-alignment: center;
                             }
                             
-                            TouchArea { mouse-cursor: pointer; }
+                            TouchArea { 
+                                mouse-cursor: pointer;
+                                clicked => { root.switch-account(); }
+                            }
                         }
                     }
                 }
@@ -238,9 +275,16 @@ export component Dashboard inherits Rectangle {
                         
                         Rectangle { vertical-stretch: 1; background: transparent; }
                         
-                        Text {
+                        if stats.total_accounts == 0: Text {
                             text: "Connect accounts to see recommendations";
                             color: Theme.text-muted;
+                            font-size: Theme.font-sm;
+                            horizontal-alignment: center;
+                        }
+                        
+                        if stats.total_accounts > 0: Text {
+                            text: stats.total_accounts + " accounts available";
+                            color: Theme.accent-green;
                             font-size: Theme.font-sm;
                             horizontal-alignment: center;
                         }
