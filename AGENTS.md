@@ -11,6 +11,7 @@
 ### ✅ Фаза 3: Dashboard Data Binding - DONE
 ### ✅ Фаза 4: Accounts Page - DONE
 ### ✅ Фаза 4.1: Selection Logic - DONE
+### ✅ Фаза 4.2: Tri-state Header Checkbox - DONE
 
 ---
 

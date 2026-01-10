@@ -552,8 +552,11 @@ export component AccountsPage inherits Rectangle {
                         padding-right: 16px;
                         spacing: 16px;
                         
-                        Rectangle {
+                        header-checkbox := Rectangle {
                             width: 24px;
+                            
+                            property <bool> all-selected: selected-count > 0 && selected-count == accounts.length;
+                            property <bool> some-selected: selected-count > 0 && selected-count < accounts.length;
                             
                             Rectangle {
                                 width: 16px;
@@ -561,7 +564,18 @@ export component AccountsPage inherits Rectangle {
                                 y: (parent.height - self.height) / 2;
                                 border-radius: 3px;
                                 border-width: 2px;
-                                border-color: Theme.text-muted;
+                                border-color: header-checkbox.all-selected || header-checkbox.some-selected ? Theme.accent-blue : Theme.text-muted;
+                                background: header-checkbox.all-selected ? Theme.accent-blue : 
+                                           header-checkbox.some-selected ? Theme.accent-blue.transparentize(0.5) : transparent;
+                                
+                                Text {
+                                    text: header-checkbox.all-selected ? "✓" : header-checkbox.some-selected ? "−" : "";
+                                    color: white;
+                                    font-size: 10px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
                                 
                                 TouchArea {
                                     mouse-cursor: pointer;
