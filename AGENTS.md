@@ -11,12 +11,13 @@
 ### ✅ Фаза 3: Dashboard Data Binding - DONE
 ### ✅ Фаза 4: Accounts Page - DONE
 ### ✅ Фаза 4.1: Selection Logic - DONE
-### ✅ Фаза 4.2: Account Callbacks - DONE (delete, switch, export, toggle_proxy)
+### ✅ Фаза 4.2: Account Callbacks - DONE
 ### ✅ Фаза 5: Settings Page - DONE
-### 🔄 Фаза 6: API Proxy Page - IN PROGRESS
-### ⬜ Фаза 7: Monitor Page
-### ⬜ Фаза 8: OAuth Module Port
-### ⬜ Фаза 9: System Tray Integration
+### ✅ Фаза 6: API Proxy Page - DONE
+### ✅ Фаза 7: Monitor Page - DONE
+### ⬜ Фаза 8: OAuth Module Port (Add Account)
+### ⬜ Фаза 9: Proxy Backend (Axum server)
+### ⬜ Фаза 10: System Tray Integration
 
 ---
 
@@ -46,10 +47,12 @@ Antigravity-Manager/
 │       ├── backend/           # ✅ Backend bridge
 │       │   └── mod.rs         # Account management, quota stats
 │       └── ui/
-│           ├── app.slint      # Main window with all pages
+│           ├── app.slint      # ✅ Main window with all pages
 │           ├── dashboard.slint # ✅ Real data display
 │           ├── accounts.slint # ✅ Full account table
 │           ├── settings.slint # ✅ Full settings UI
+│           ├── proxy.slint    # ✅ API Proxy config
+│           ├── monitor.slint  # ✅ Request monitor
 │           ├── globals.slint  # ✅ AppState global
 │           └── components/
 │               ├── theme.slint
@@ -70,6 +73,8 @@ Antigravity-Manager/
 6. `613d24be` - fix: Auto-repair corrupted account files
 7. `054563d7` - feat: Enhanced header checkbox with tri-state
 8. `e868f423` - feat: Full-featured Settings page and account callbacks
+9. `e5fe6010` - feat: Full API Proxy page with config, auth, quick start
+10. `5c4f5869` - feat: Monitor page with real-time request logging
 
 ---
 
@@ -83,27 +88,32 @@ cd src-slint && cargo run
 
 ## TODO (Оставшееся)
 
-### API Proxy Page (~1573 строк в оригинале):
-- [ ] Proxy start/stop toggle
-- [ ] Status display (running, port, active accounts)
-- [ ] Model mapping configuration
-- [ ] Custom mappings CRUD
-- [ ] ZAI models configuration  
-- [ ] API key generation
-- [ ] Python/JS code examples
+### OAuth Module (Add Account):
+- [ ] Add Account dialog UI
+- [ ] OAuth flow (Google auth redirect)
+- [ ] Token exchange and storage
+- [ ] Quota fetch after auth
+
+### Proxy Backend:
+- [ ] Port Axum proxy server from Tauri
+- [ ] Start/Stop proxy logic
+- [ ] Real-time request event emission
 - [ ] Session bindings
 
-### Monitor Page:
-- [ ] Real-time request logging
-- [ ] Request details panel
-- [ ] Clear logs function
-
-### OAuth Module:
-- [ ] Add Account dialog
-- [ ] OAuth flow (Google auth)
-- [ ] Token refresh logic
-
 ### System Tray:
-- [ ] Tray icon
+- [ ] Tray icon (platform-specific)
 - [ ] Context menu
 - [ ] Minimize to tray
+- [ ] Notification support
+
+---
+
+## Реализованные страницы (UI готов, часть backend'а требует доработки)
+
+| Page | UI | Backend | Notes |
+|------|-----|---------|-------|
+| Dashboard | ✅ | ✅ | Fully functional |
+| Accounts | ✅ | ✅ | Selection, delete, switch, export, toggle_proxy |
+| API Proxy | ✅ | ⬜ | UI ready, needs Axum server |
+| Settings | ✅ | 🔄 | UI ready, needs config binding |
+| Monitor | ✅ | ⬜ | UI ready, needs event stream |
