@@ -1,0 +1,33 @@
+// Global state accessible from all components
+
+import { AccountData } from "accounts.slint";
+
+export global AppState {
+    // Accounts data
+    in-out property <[AccountData]> accounts: [];
+    in-out property <int> selected-count: 0;
+    in-out property <bool> is-refreshing: false;
+    in-out property <int> current-page: 1;
+    in-out property <int> total-pages: 1;
+    in-out property <int> total-items: 0;
+    in-out property <int> all-count: 0;
+    in-out property <int> pro-count: 0;
+    in-out property <int> ultra-count: 0;
+    in-out property <int> free-count: 0;
+    
+    // Callbacks for account operations
+    callback add-account();
+    callback refresh-all();
+    callback export-selected();
+    callback delete-selected();
+    callback toggle-proxy-batch(bool);
+    callback search-changed(string);
+    callback toggle-select(string);
+    callback toggle-all();
+    callback switch-account(string);
+    callback refresh-account(string);
+    callback view-details(string);
+    callback export-account(string);
+    callback delete-account(string);
+    callback toggle-proxy(string);
+}

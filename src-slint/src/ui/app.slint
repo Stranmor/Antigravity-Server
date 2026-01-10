@@ -1,12 +1,12 @@
 // Antigravity Manager - Main Application Window
-// Design: Industrial Minimalism with Dark Theme
 
-import { VerticalBox, HorizontalBox, Button, ScrollView, LineEdit, ComboBox, Switch, Slider, TabWidget } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, ScrollView, LineEdit, ComboBox, Switch } from "std-widgets.slint";
 import { Dashboard } from "dashboard.slint";
+import { AccountsPage, AccountData, FilterType, ViewMode } from "accounts.slint";
 import { Sidebar } from "components/sidebar.slint";
 import { Theme } from "components/theme.slint";
+import { AppState } from "globals.slint";
 
-// Global state structure
 export struct DashboardStats {
     total_accounts: int,
     avg_gemini: int,
@@ -24,11 +24,11 @@ export struct CurrentAccountInfo {
 
 export component AppWindow inherits Window {
     title: "Antigravity Manager";
-    min-width: 900px;
-    min-height: 600px;
+    min-width: 1100px;
+    min-height: 700px;
     background: Theme.background;
     
-    // Dashboard stats properties
+    // Dashboard stats
     in-out property <DashboardStats> stats: {
         total_accounts: 0,
         avg_gemini: 0,
@@ -37,7 +37,6 @@ export component AppWindow inherits Window {
         low_quota_count: 0,
     };
     
-    // Current account info
     in-out property <CurrentAccountInfo> current_account: {
         email: "",
         name: "",
@@ -45,35 +44,31 @@ export component AppWindow inherits Window {
         has_account: false,
     };
     
-    // Current page index: 0=Dashboard, 1=Accounts, 2=API Proxy, 3=Settings, 4=Monitor
+    // Page: 0=Dashboard, 1=Accounts, 2=Proxy, 3=Settings, 4=Monitor
     in-out property <int> current-page: 0;
     
-    // Callbacks for actions
+    // Dashboard callbacks
     callback navigate(int);
     callback refresh-accounts();
     callback add-account();
     callback switch-account();
     
-    navigate(page) => {
-        current-page = page;
-    }
+    navigate(page) => { current-page = page; }
     
     HorizontalBox {
         padding: 0px;
         spacing: 0px;
         
-        // Left Sidebar
         Sidebar {
             width: 220px;
             current-page: root.current-page;
             navigate(page) => { root.navigate(page); }
         }
         
-        // Main Content Area
         Rectangle {
             background: Theme.background;
             
-            // Page content based on current-page
+            // Dashboard
             if current-page == 0: Dashboard {
                 width: 100%;
                 height: 100%;
@@ -84,50 +79,427 @@ export component AppWindow inherits Window {
                 switch-account => { root.switch-account(); }
             }
             
-            // Placeholder for other pages
-            if current-page == 1: Rectangle {
-                background: Theme.background;
-                Text {
-                    text: "Accounts Page (Coming Soon)";
-                    color: Theme.text-primary;
-                    font-size: 24px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
+            // Accounts
+            if current-page == 1: AccountsPage {
+                width: 100%;
+                height: 100%;
+                accounts: AppState.accounts;
+                selected-count: AppState.selected-count;
+                is-refreshing: AppState.is-refreshing;
+                current-page: AppState.current-page;
+                total-pages: AppState.total-pages;
+                total-items: AppState.total-items;
+                all-count: AppState.all-count;
+                pro-count: AppState.pro-count;
+                ultra-count: AppState.ultra-count;
+                free-count: AppState.free-count;
+                
+                add-account => { AppState.add-account(); }
+                refresh-all => { AppState.refresh-all(); }
+                export-selected => { AppState.export-selected(); }
+                delete-selected => { AppState.delete-selected(); }
+                toggle-proxy-batch(e) => { AppState.toggle-proxy-batch(e); }
+                search-changed(q) => { AppState.search-changed(q); }
+                toggle-select(id) => { AppState.toggle-select(id); }
+                toggle-all => { AppState.toggle-all(); }
+                switch-account(id) => { AppState.switch-account(id); }
+                refresh-account(id) => { AppState.refresh-account(id); }
+                view-details(id) => { AppState.view-details(id); }
+                export-account(id) => { AppState.export-account(id); }
+                delete-account(id) => { AppState.delete-account(id); }
+                toggle-proxy(id) => { AppState.toggle-proxy(id); }
             }
             
+            // Proxy
             if current-page == 2: Rectangle {
                 background: Theme.background;
-                Text {
-                    text: "API Proxy Page (Coming Soon)";
-                    color: Theme.text-primary;
-                    font-size: 24px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                
+                VerticalLayout {
+                    padding: 24px;
+                    spacing: 16px;
+                    
+                    Text {
+                        text: "API Proxy";
+                        color: Theme.text-primary;
+                        font-size: 24px;
+                        font-weight: 700;
+                    }
+                    
+                    Text {
+                        text: "Proxy configuration and request routing";
+                        color: Theme.text-secondary;
+                        font-size: 14px;
+                    }
+                    
+                    Rectangle { vertical-stretch: 1; }
+                    
+                    Rectangle {
+                        height: 100px;
+                        background: Theme.surface;
+                        border-radius: 12px;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        
+                        HorizontalLayout {
+                            padding: 24px;
+                            spacing: 16px;
+                            
+                            Rectangle {
+                                width: 48px;
+                                height: 48px;
+                                background: Theme.success.transparentize(0.85);
+                                border-radius: 24px;
+                                
+                                Text {
+                                    text: "🟢";
+                                    font-size: 24px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            
+                            VerticalLayout {
+                                spacing: 4px;
+                                
+                                Text {
+                                    text: "Proxy Status: ACTIVE";
+                                    color: Theme.success;
+                                    font-size: 16px;
+                                    font-weight: 600;
+                                }
+                                
+                                Text {
+                                    text: "Listening on http://127.0.0.1:8045";
+                                    color: Theme.text-secondary;
+                                    font-size: 14px;
+                                }
+                            }
+                        }
+                    }
+                    
+                    Rectangle { vertical-stretch: 1; }
                 }
             }
             
+            // Settings
             if current-page == 3: Rectangle {
                 background: Theme.background;
-                Text {
-                    text: "Settings Page (Coming Soon)";
-                    color: Theme.text-primary;
-                    font-size: 24px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                
+                VerticalLayout {
+                    padding: 24px;
+                    spacing: 16px;
+                    
+                    Text {
+                        text: "Settings";
+                        color: Theme.text-primary;
+                        font-size: 24px;
+                        font-weight: 700;
+                    }
+                    
+                    Text {
+                        text: "Application configuration";
+                        color: Theme.text-secondary;
+                        font-size: 14px;
+                    }
+                    
+                    Rectangle { height: 16px; }
+                    
+                    ScrollView {
+                        VerticalLayout {
+                            spacing: 16px;
+                            
+                            // General
+                            Rectangle {
+                                background: Theme.surface;
+                                border-radius: 12px;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                
+                                VerticalLayout {
+                                    padding: 16px;
+                                    spacing: 16px;
+                                    
+                                    Text {
+                                        text: "General";
+                                        color: Theme.text-primary;
+                                        font-size: 16px;
+                                        font-weight: 600;
+                                    }
+                                    
+                                    HorizontalLayout {
+                                        Text {
+                                            text: "Auto-start with system";
+                                            color: Theme.text-secondary;
+                                            font-size: 14px;
+                                            vertical-alignment: center;
+                                            horizontal-stretch: 1;
+                                        }
+                                        Switch { }
+                                    }
+                                    
+                                    HorizontalLayout {
+                                        Text {
+                                            text: "Start minimized to tray";
+                                            color: Theme.text-secondary;
+                                            font-size: 14px;
+                                            vertical-alignment: center;
+                                            horizontal-stretch: 1;
+                                        }
+                                        Switch { }
+                                    }
+                                    
+                                    HorizontalLayout {
+                                        Text {
+                                            text: "Auto-refresh quotas";
+                                            color: Theme.text-secondary;
+                                            font-size: 14px;
+                                            vertical-alignment: center;
+                                            horizontal-stretch: 1;
+                                        }
+                                        Switch { checked: true; }
+                                    }
+                                }
+                            }
+                            
+                            // Proxy settings
+                            Rectangle {
+                                background: Theme.surface;
+                                border-radius: 12px;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                
+                                VerticalLayout {
+                                    padding: 16px;
+                                    spacing: 16px;
+                                    
+                                    Text {
+                                        text: "Proxy";
+                                        color: Theme.text-primary;
+                                        font-size: 16px;
+                                        font-weight: 600;
+                                    }
+                                    
+                                    HorizontalLayout {
+                                        spacing: 16px;
+                                        
+                                        Text {
+                                            text: "Listen Port";
+                                            color: Theme.text-secondary;
+                                            font-size: 14px;
+                                            vertical-alignment: center;
+                                            min-width: 150px;
+                                        }
+                                        
+                                        LineEdit {
+                                            horizontal-stretch: 1;
+                                            text: "8045";
+                                        }
+                                    }
+                                    
+                                    HorizontalLayout {
+                                        spacing: 16px;
+                                        
+                                        Text {
+                                            text: "Rotation Strategy";
+                                            color: Theme.text-secondary;
+                                            font-size: 14px;
+                                            vertical-alignment: center;
+                                            min-width: 150px;
+                                        }
+                                        
+                                        ComboBox {
+                                            horizontal-stretch: 1;
+                                            model: ["Round Robin", "Least Used", "Random", "Priority"];
+                                            current-index: 1;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Appearance
+                            Rectangle {
+                                background: Theme.surface;
+                                border-radius: 12px;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                
+                                VerticalLayout {
+                                    padding: 16px;
+                                    spacing: 16px;
+                                    
+                                    Text {
+                                        text: "Appearance";
+                                        color: Theme.text-primary;
+                                        font-size: 16px;
+                                        font-weight: 600;
+                                    }
+                                    
+                                    HorizontalLayout {
+                                        spacing: 16px;
+                                        
+                                        Text {
+                                            text: "Theme";
+                                            color: Theme.text-secondary;
+                                            font-size: 14px;
+                                            vertical-alignment: center;
+                                            min-width: 150px;
+                                        }
+                                        
+                                        ComboBox {
+                                            horizontal-stretch: 1;
+                                            model: ["Dark", "Light", "System"];
+                                            current-index: 0;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             
+            // Monitor
             if current-page == 4: Rectangle {
                 background: Theme.background;
-                Text {
-                    text: "Monitor Page (Coming Soon)";
-                    color: Theme.text-primary;
-                    font-size: 24px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                
+                VerticalLayout {
+                    padding: 24px;
+                    spacing: 16px;
+                    
+                    HorizontalLayout {
+                        Text {
+                            text: "Request Monitor";
+                            color: Theme.text-primary;
+                            font-size: 24px;
+                            font-weight: 700;
+                            horizontal-stretch: 1;
+                        }
+                        
+                        Rectangle {
+                            width: 100px;
+                            height: 32px;
+                            background: Theme.error;
+                            border-radius: 8px;
+                            
+                            Text {
+                                text: "Clear All";
+                                color: white;
+                                font-size: 13px;
+                                font-weight: 500;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                            
+                            TouchArea { mouse-cursor: pointer; }
+                        }
+                    }
+                    
+                    Text {
+                        text: "Real-time API request logging";
+                        color: Theme.text-secondary;
+                        font-size: 14px;
+                    }
+                    
+                    Rectangle {
+                        vertical-stretch: 1;
+                        background: Theme.surface;
+                        border-radius: 12px;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        
+                        VerticalLayout {
+                            Rectangle {
+                                height: 40px;
+                                background: Theme.surface-elevated;
+                                border-radius: 12px;
+                                
+                                HorizontalLayout {
+                                    padding-left: 16px;
+                                    padding-right: 16px;
+                                    spacing: 16px;
+                                    
+                                    Text {
+                                        width: 80px;
+                                        text: "Time";
+                                        color: Theme.text-secondary;
+                                        font-size: 12px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+                                    
+                                    Text {
+                                        width: 60px;
+                                        text: "Method";
+                                        color: Theme.text-secondary;
+                                        font-size: 12px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+                                    
+                                    Text {
+                                        horizontal-stretch: 1;
+                                        text: "Endpoint";
+                                        color: Theme.text-secondary;
+                                        font-size: 12px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+                                    
+                                    Text {
+                                        width: 60px;
+                                        text: "Status";
+                                        color: Theme.text-secondary;
+                                        font-size: 12px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+                                    
+                                    Text {
+                                        width: 150px;
+                                        text: "Account";
+                                        color: Theme.text-secondary;
+                                        font-size: 12px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                            
+                            Rectangle {
+                                vertical-stretch: 1;
+                                
+                                VerticalLayout {
+                                    alignment: center;
+                                    spacing: 12px;
+                                    
+                                    Text {
+                                        text: "📡";
+                                        font-size: 48px;
+                                        horizontal-alignment: center;
+                                    }
+                                    
+                                    Text {
+                                        text: "No Requests Yet";
+                                        color: Theme.text-primary;
+                                        font-size: 18px;
+                                        font-weight: 600;
+                                        horizontal-alignment: center;
+                                    }
+                                    
+                                    Text {
+                                        text: "Requests will appear here in real-time";
+                                        color: Theme.text-muted;
+                                        font-size: 14px;
+                                        horizontal-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 }
+
+export { AccountData, FilterType, ViewMode, AppState }

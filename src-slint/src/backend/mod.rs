@@ -32,8 +32,8 @@ impl BackendState {
         Ok(())
     }
 
-    /// Get all accounts.
-    pub fn get_accounts(&self) -> &[Account] {
+    /// Get all accounts as a slice.
+    pub fn accounts(&self) -> &[Account] {
         &self.accounts
     }
 
@@ -42,6 +42,11 @@ impl BackendState {
         self.current_account_id.as_ref().and_then(|id| {
             self.accounts.iter().find(|a| &a.id == id)
         })
+    }
+
+    /// Get current account ID.
+    pub fn current_account_id(&self) -> Option<&str> {
+        self.current_account_id.as_deref()
     }
 
     /// Get account count.
@@ -89,6 +94,66 @@ impl BackendState {
                 }
             })
             .count()
+    }
+
+    /// Count accounts by subscription tier.
+    fn count_by_tier(&self, tier: &str) -> usize {
+        self.accounts.iter()
+            .filter(|a| {
+                if let Some(q) = &a.quota {
+                    if let Some(t) = &q.subscription_tier {
+                        return t.to_lowercase().contains(tier);
+                    }
+                }
+                false
+            })
+            .count()
+    }
+
+    /// Count PRO accounts (PRO but not ULTRA).
+    pub fn pro_count(&self) -> usize {
+        self.count_by_tier("pro").saturating_sub(self.ultra_count())
+    }
+
+    /// Count ULTRA accounts.
+    pub fn ultra_count(&self) -> usize {
+        self.count_by_tier("ultra")
+    }
+
+    /// Count FREE accounts.
+    pub fn free_count(&self) -> usize {
+        self.accounts.iter()
+            .filter(|a| {
+                if let Some(q) = &a.quota {
+                    if let Some(t) = &q.subscription_tier {
+                        let t = t.to_lowercase();
+                        return !t.contains("pro") && !t.contains("ultra");
+                    }
+                }
+                true // No tier = free
+            })
+            .count()
+    }
+
+    /// Get quota for a specific model from an account.
+    pub fn get_model_quota(account: &Account, model_name: &str) -> i32 {
+        account.quota.as_ref()
+            .and_then(|q| q.models.iter().find(|m| m.name.to_lowercase().contains(model_name)))
+            .map(|m| m.percentage)
+            .unwrap_or(0)
+    }
+
+    /// Get subscription tier from account.
+    pub fn get_tier(account: &Account) -> String {
+        account.quota.as_ref()
+            .and_then(|q| q.subscription_tier.as_ref())
+            .map(|t| {
+                let t = t.to_lowercase();
+                if t.contains("ultra") { "ULTRA".to_string() }
+                else if t.contains("pro") { "PRO".to_string() }
+                else { "FREE".to_string() }
+            })
+            .unwrap_or_else(|| "FREE".to_string())
     }
 }
 

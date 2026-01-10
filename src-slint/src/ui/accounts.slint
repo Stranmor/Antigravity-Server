@@ -1,0 +1,712 @@
+// Accounts Page - Full Featured Account Management
+
+import { VerticalBox, HorizontalBox, ScrollView, LineEdit, Button } from "std-widgets.slint";
+import { Theme } from "components/theme.slint";
+
+// Account data structure
+export struct AccountData {
+    id: string,
+    email: string,
+    name: string,
+    disabled: bool,
+    disabled_reason: string,
+    proxy_disabled: bool,
+    subscription_tier: string,
+    last_used: string,
+    gemini_pro_quota: int,
+    gemini_flash_quota: int,
+    gemini_image_quota: int,
+    claude_quota: int,
+    is_current: bool,
+    is_forbidden: bool,
+}
+
+export enum FilterType { All, Pro, Ultra, Free }
+export enum ViewMode { List, Grid }
+
+// Quota bar component
+component QuotaBar inherits Rectangle {
+    in property <string> label;
+    in property <int> percentage;
+    
+    height: 20px;
+    background: Theme.surface-elevated;
+    border-radius: 4px;
+    
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width * (percentage / 100.0);
+        height: 100%;
+        border-radius: 4px;
+        background: percentage >= 50 ? Theme.success.transparentize(0.7) :
+                    percentage >= 20 ? Theme.warning.transparentize(0.7) :
+                    Theme.error.transparentize(0.7);
+    }
+    
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        
+        Text {
+            text: label;
+            color: Theme.text-secondary;
+            font-size: 10px;
+            font-weight: 600;
+        }
+        
+        Rectangle { horizontal-stretch: 1; }
+        
+        Text {
+            text: percentage + "%";
+            color: percentage >= 50 ? Theme.success :
+                   percentage >= 20 ? Theme.warning :
+                   Theme.error;
+            font-size: 10px;
+            font-weight: 700;
+        }
+    }
+}
+
+// Account row component
+component AccountRow inherits Rectangle {
+    in property <AccountData> account;
+    in property <bool> selected;
+    
+    callback toggle-select();
+    callback switch-account();
+    callback refresh-account();
+    callback delete-account();
+    
+    height: 64px;
+    background: account.is-current ? Theme.accent-blue.transparentize(0.92) :
+                touch.has-hover ? Theme.surface-hover : transparent;
+    border-width: 0px;
+    
+    touch := TouchArea {
+        clicked => { root.toggle-select(); }
+    }
+    
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 16px;
+        
+        // Checkbox
+        Rectangle {
+            width: 24px;
+            
+            Rectangle {
+                width: 16px;
+                height: 16px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 3px;
+                border-width: 2px;
+                border-color: selected ? Theme.accent-blue : Theme.text-muted;
+                background: selected ? Theme.accent-blue : transparent;
+                
+                Text {
+                    text: selected ? "✓" : "";
+                    color: white;
+                    font-size: 10px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        
+        // Email and info
+        VerticalLayout {
+            horizontal-stretch: 2;
+            spacing: 4px;
+            
+            HorizontalLayout {
+                spacing: 8px;
+                
+                Text {
+                    text: account.email;
+                    color: account.is-current ? Theme.accent-blue : Theme.text-primary;
+                    font-size: 13px;
+                    font-weight: 500;
+                    overflow: elide;
+                }
+                
+                if account.is-current: Rectangle {
+                    width: 60px;
+                    height: 16px;
+                    background: Theme.accent-blue.transparentize(0.85);
+                    border-radius: 4px;
+                    
+                    Text {
+                        text: "CURRENT";
+                        color: Theme.accent-blue;
+                        font-size: 9px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+                
+                if account.subscription_tier != "": Rectangle {
+                    width: 45px;
+                    height: 16px;
+                    background: account.subscription_tier == "ULTRA" ? #7c3aed :
+                                account.subscription_tier == "PRO" ? #2563eb : #6b7280;
+                    border-radius: 4px;
+                    
+                    Text {
+                        text: account.subscription_tier;
+                        color: white;
+                        font-size: 9px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+            
+            Text {
+                text: "Last used: " + account.last_used;
+                color: Theme.text-muted;
+                font-size: 11px;
+            }
+        }
+        
+        // Quotas
+        if !account.is_forbidden: GridLayout {
+            horizontal-stretch: 2;
+            spacing: 4px;
+            
+            Row {
+                QuotaBar { label: "Gemini Pro"; percentage: account.gemini_pro_quota; }
+                QuotaBar { label: "Gemini Flash"; percentage: account.gemini_flash_quota; }
+            }
+            Row {
+                QuotaBar { label: "Gemini Image"; percentage: account.gemini_image_quota; }
+                QuotaBar { label: "Claude"; percentage: account.claude_quota; }
+            }
+        }
+        
+        if account.is_forbidden: Rectangle {
+            horizontal-stretch: 2;
+            background: Theme.error.transparentize(0.9);
+            border-radius: 8px;
+            
+            Text {
+                text: "🚫 Forbidden";
+                color: Theme.error;
+                font-size: 12px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+        
+        // Actions
+        HorizontalLayout {
+            width: 140px;
+            spacing: 4px;
+            
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                background: switch-touch.has-hover ? Theme.accent-blue.transparentize(0.9) : transparent;
+                border-radius: 6px;
+                
+                Text {
+                    text: "🔄";
+                    font-size: 16px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                
+                switch-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.switch-account(); }
+                }
+            }
+            
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                background: refresh-touch.has-hover ? Theme.success.transparentize(0.9) : transparent;
+                border-radius: 6px;
+                
+                Text {
+                    text: "🔃";
+                    font-size: 16px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                
+                refresh-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.refresh-account(); }
+                }
+            }
+            
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                background: delete-touch.has-hover ? Theme.error.transparentize(0.9) : transparent;
+                border-radius: 6px;
+                
+                Text {
+                    text: "🗑️";
+                    font-size: 16px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                
+                delete-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.delete-account(); }
+                }
+            }
+        }
+    }
+    
+    // Bottom border
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.border;
+    }
+}
+
+// Filter button
+component FilterBtn inherits Rectangle {
+    in property <string> label;
+    in property <int> count;
+    in property <bool> active;
+    callback clicked();
+    
+    width: self.preferred-width;
+    height: 28px;
+    background: active ? Theme.surface : transparent;
+    border-radius: 6px;
+    
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 6px;
+        
+        Text {
+            text: label;
+            color: active ? Theme.accent-blue : Theme.text-secondary;
+            font-size: 11px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+        
+        Rectangle {
+            width: 20px;
+            height: 16px;
+            background: active ? Theme.accent-blue.transparentize(0.85) : Theme.surface-elevated;
+            border-radius: 4px;
+            
+            Text {
+                text: count;
+                color: active ? Theme.accent-blue : Theme.text-muted;
+                font-size: 10px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+    
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Main Accounts page
+export component AccountsPage inherits Rectangle {
+    in property <[AccountData]> accounts;
+    in property <int> selected-count: 0;
+    in property <bool> is-refreshing: false;
+    in property <int> current-page: 1;
+    in property <int> total-pages: 1;
+    in property <int> total-items: 0;
+    in property <int> all-count: 0;
+    in property <int> pro-count: 0;
+    in property <int> ultra-count: 0;
+    in property <int> free-count: 0;
+    
+    in-out property <FilterType> current-filter: FilterType.All;
+    in-out property <string> search-query: "";
+    
+    callback add-account();
+    callback refresh-all();
+    callback export-selected();
+    callback delete-selected();
+    callback toggle-proxy-batch(bool);
+    callback search-changed(string);
+    callback filter-changed(FilterType);
+    callback view-mode-changed(ViewMode);
+    callback page-changed(int);
+    callback toggle-select(string);
+    callback toggle-all();
+    callback switch-account(string);
+    callback refresh-account(string);
+    callback view-details(string);
+    callback export-account(string);
+    callback delete-account(string);
+    callback toggle-proxy(string);
+    
+    background: Theme.background;
+    
+    VerticalLayout {
+        padding: 24px;
+        spacing: 16px;
+        
+        // Toolbar
+        HorizontalLayout {
+            spacing: 12px;
+            height: 40px;
+            
+            // Search
+            Rectangle {
+                width: 200px;
+                background: Theme.surface;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: Theme.border;
+                
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 8px;
+                    
+                    Text {
+                        text: "🔍";
+                        font-size: 14px;
+                        vertical-alignment: center;
+                    }
+                    
+                    LineEdit {
+                        horizontal-stretch: 1;
+                        placeholder-text: "Search email...";
+                        text <=> root.search-query;
+                        edited => { root.search-changed(self.text); }
+                    }
+                }
+            }
+            
+            // Filters
+            Rectangle {
+                background: Theme.surface-elevated;
+                border-radius: 10px;
+                border-width: 1px;
+                border-color: Theme.border;
+                
+                HorizontalLayout {
+                    padding: 4px;
+                    spacing: 2px;
+                    
+                    FilterBtn {
+                        label: "All";
+                        count: all-count;
+                        active: current-filter == FilterType.All;
+                        clicked => { root.filter-changed(FilterType.All); }
+                    }
+                    
+                    FilterBtn {
+                        label: "PRO";
+                        count: pro-count;
+                        active: current-filter == FilterType.Pro;
+                        clicked => { root.filter-changed(FilterType.Pro); }
+                    }
+                    
+                    FilterBtn {
+                        label: "ULTRA";
+                        count: ultra-count;
+                        active: current-filter == FilterType.Ultra;
+                        clicked => { root.filter-changed(FilterType.Ultra); }
+                    }
+                    
+                    FilterBtn {
+                        label: "FREE";
+                        count: free-count;
+                        active: current-filter == FilterType.Free;
+                        clicked => { root.filter-changed(FilterType.Free); }
+                    }
+                }
+            }
+            
+            Rectangle { horizontal-stretch: 1; }
+            
+            // Actions
+            HorizontalLayout {
+                spacing: 8px;
+                
+                Rectangle {
+                    width: 120px;
+                    height: 36px;
+                    background: Theme.accent-blue;
+                    border-radius: 8px;
+                    
+                    Text {
+                        text: "+ Add Account";
+                        color: white;
+                        font-size: 13px;
+                        font-weight: 500;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.add-account(); }
+                    }
+                }
+                
+                if selected-count > 0: Rectangle {
+                    width: 100px;
+                    height: 36px;
+                    background: Theme.error;
+                    border-radius: 8px;
+                    
+                    Text {
+                        text: "Delete (" + selected-count + ")";
+                        color: white;
+                        font-size: 13px;
+                        font-weight: 500;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.delete-selected(); }
+                    }
+                }
+                
+                Rectangle {
+                    width: is-refreshing ? 100px : 110px;
+                    height: 36px;
+                    background: is-refreshing ? Theme.success.transparentize(0.5) : Theme.success;
+                    border-radius: 8px;
+                    
+                    Text {
+                        text: is-refreshing ? "Refreshing..." : (selected-count > 0 ? "Refresh (" + selected-count + ")" : "Refresh All");
+                        color: white;
+                        font-size: 13px;
+                        font-weight: 500;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    
+                    TouchArea {
+                        mouse-cursor: is-refreshing ? default : pointer;
+                        clicked => { 
+                            if !is-refreshing { root.refresh-all(); }
+                        }
+                    }
+                }
+                
+                Rectangle {
+                    width: 80px;
+                    height: 36px;
+                    background: Theme.surface-elevated;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    
+                    Text {
+                        text: "📥 Export";
+                        color: Theme.text-primary;
+                        font-size: 13px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.export-selected(); }
+                    }
+                }
+            }
+        }
+        
+        // Table
+        Rectangle {
+            vertical-stretch: 1;
+            background: Theme.surface;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.border;
+            
+            VerticalLayout {
+                // Header
+                Rectangle {
+                    height: 44px;
+                    background: Theme.surface-elevated;
+                    border-radius: 12px;
+                    
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 16px;
+                        
+                        Rectangle {
+                            width: 24px;
+                            
+                            Rectangle {
+                                width: 16px;
+                                height: 16px;
+                                y: (parent.height - self.height) / 2;
+                                border-radius: 3px;
+                                border-width: 2px;
+                                border-color: Theme.text-muted;
+                                
+                                TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.toggle-all(); }
+                                }
+                            }
+                        }
+                        
+                        Text {
+                            horizontal-stretch: 2;
+                            text: "Email";
+                            color: Theme.text-secondary;
+                            font-size: 12px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                        
+                        Text {
+                            horizontal-stretch: 2;
+                            text: "Model Quota";
+                            color: Theme.text-secondary;
+                            font-size: 12px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                        
+                        Text {
+                            width: 140px;
+                            text: "Actions";
+                            color: Theme.text-secondary;
+                            font-size: 12px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+                
+                // Body
+                ScrollView {
+                    vertical-stretch: 1;
+                    
+                    VerticalLayout {
+                        for account in accounts: AccountRow {
+                            account: account;
+                            selected: false;
+                            toggle-select => { root.toggle-select(account.id); }
+                            switch-account => { root.switch-account(account.id); }
+                            refresh-account => { root.refresh-account(account.id); }
+                            delete-account => { root.delete-account(account.id); }
+                        }
+                        
+                        if accounts.length == 0: Rectangle {
+                            height: 200px;
+                            
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 12px;
+                                
+                                Text {
+                                    text: "📭";
+                                    font-size: 48px;
+                                    horizontal-alignment: center;
+                                }
+                                
+                                Text {
+                                    text: "No Accounts";
+                                    color: Theme.text-primary;
+                                    font-size: 18px;
+                                    font-weight: 600;
+                                    horizontal-alignment: center;
+                                }
+                                
+                                Text {
+                                    text: "Click \"Add Account\" to get started";
+                                    color: Theme.text-muted;
+                                    font-size: 14px;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Pagination
+        if total-pages > 1: HorizontalLayout {
+            height: 40px;
+            alignment: center;
+            spacing: 12px;
+            
+            Rectangle {
+                width: 80px;
+                height: 32px;
+                background: current-page > 1 ? Theme.surface-elevated : Theme.surface;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: Theme.border;
+                
+                Text {
+                    text: "← Prev";
+                    color: current-page > 1 ? Theme.text-primary : Theme.text-muted;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                
+                TouchArea {
+                    mouse-cursor: current-page > 1 ? pointer : default;
+                    clicked => {
+                        if current-page > 1 { root.page-changed(current-page - 1); }
+                    }
+                }
+            }
+            
+            Text {
+                text: "Page " + current-page + " of " + total-pages;
+                color: Theme.text-secondary;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+            
+            Rectangle {
+                width: 80px;
+                height: 32px;
+                background: current-page < total-pages ? Theme.surface-elevated : Theme.surface;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: Theme.border;
+                
+                Text {
+                    text: "Next →";
+                    color: current-page < total-pages ? Theme.text-primary : Theme.text-muted;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                
+                TouchArea {
+                    mouse-cursor: current-page < total-pages ? pointer : default;
+                    clicked => {
+                        if current-page < total-pages { root.page-changed(current-page + 1); }
+                    }
+                }
+            }
+        }
+    }
+}
