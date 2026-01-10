@@ -4,6 +4,7 @@ import { VerticalBox, HorizontalBox, ScrollView, LineEdit, ComboBox, Switch } fr
 import { Dashboard } from "dashboard.slint";
 import { AccountsPage, AccountData, FilterType, ViewMode } from "accounts.slint";
 import { SettingsPage, SettingsData } from "settings.slint";
+import { ApiProxyPage, ProxyStatus, ProxyConfig } from "proxy.slint";
 import { Sidebar } from "components/sidebar.slint";
 import { Theme } from "components/theme.slint";
 import { AppState } from "globals.slint";
@@ -112,74 +113,10 @@ export component AppWindow inherits Window {
             }
             
             // Proxy
-            if current-page == 2: Rectangle {
-                background: Theme.background;
-                
-                VerticalLayout {
-                    padding: 24px;
-                    spacing: 16px;
-                    
-                    Text {
-                        text: "API Proxy";
-                        color: Theme.text-primary;
-                        font-size: 24px;
-                        font-weight: 700;
-                    }
-                    
-                    Text {
-                        text: "Proxy configuration and request routing";
-                        color: Theme.text-secondary;
-                        font-size: 14px;
-                    }
-                    
-                    Rectangle { vertical-stretch: 1; }
-                    
-                    Rectangle {
-                        height: 100px;
-                        background: Theme.surface;
-                        border-radius: 12px;
-                        border-width: 1px;
-                        border-color: Theme.border;
-                        
-                        HorizontalLayout {
-                            padding: 24px;
-                            spacing: 16px;
-                            
-                            Rectangle {
-                                width: 48px;
-                                height: 48px;
-                                background: Theme.success.transparentize(0.85);
-                                border-radius: 24px;
-                                
-                                Text {
-                                    text: "🟢";
-                                    font-size: 24px;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                            }
-                            
-                            VerticalLayout {
-                                spacing: 4px;
-                                
-                                Text {
-                                    text: "Proxy Status: ACTIVE";
-                                    color: Theme.success;
-                                    font-size: 16px;
-                                    font-weight: 600;
-                                }
-                                
-                                Text {
-                                    text: "Listening on http://127.0.0.1:8045";
-                                    color: Theme.text-secondary;
-                                    font-size: 14px;
-                                }
-                            }
-                        }
-                    }
-                    
-                    Rectangle { vertical-stretch: 1; }
-                }
+            if current-page == 2: ApiProxyPage {
+                width: 100%;
+                height: 100%;
+                // TODO: Bind status and config from AppState
             }
             
             // Settings

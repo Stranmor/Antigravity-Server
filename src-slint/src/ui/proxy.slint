@@ -1,0 +1,804 @@
+// API Proxy Page - OpenAI-compatible API Proxy Management
+
+import { VerticalBox, HorizontalBox, ScrollView, LineEdit, ComboBox, Switch, Button } from "std-widgets.slint";
+import { Theme } from "components/theme.slint";
+
+// Proxy status data
+export struct ProxyStatus {
+    running: bool,
+    port: int,
+    base_url: string,
+    active_accounts: int,
+}
+
+// Proxy configuration
+export struct ProxyConfig {
+    enabled: bool,
+    port: int,
+    api_key: string,
+    auto_start: bool,
+    allow_lan: bool,
+    enable_logging: bool,
+    request_timeout: int,
+    auth_mode: string, // "off", "strict", "all_except_health", "auto"
+    scheduling_mode: string, // "CacheFirst", "Balance", "PerformanceFirst"
+}
+
+// Section header with toggle
+component SectionHeader inherits Rectangle {
+    in property <string> title;
+    in property <string> icon;
+    in property <bool> enabled: true;
+    in property <bool> show-toggle: false;
+    
+    callback toggled(bool);
+    
+    height: 48px;
+    background: Theme.surface-elevated;
+    border-radius: 8px;
+    
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 12px;
+        
+        Text {
+            text: icon;
+            font-size: 18px;
+            vertical-alignment: center;
+        }
+        
+        Text {
+            text: title;
+            color: Theme.text-primary;
+            font-size: 15px;
+            font-weight: 600;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        
+        if enabled: Rectangle {
+            width: 60px;
+            height: 24px;
+            background: Theme.success.transparentize(0.85);
+            border-radius: 12px;
+            
+            HorizontalLayout {
+                alignment: center;
+                spacing: 4px;
+                
+                Text {
+                    text: "●";
+                    color: Theme.success;
+                    font-size: 8px;
+                    vertical-alignment: center;
+                }
+                
+                Text {
+                    text: "ON";
+                    color: Theme.success;
+                    font-size: 11px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        
+        if !enabled: Rectangle {
+            width: 60px;
+            height: 24px;
+            background: Theme.text-muted.transparentize(0.85);
+            border-radius: 12px;
+            
+            HorizontalLayout {
+                alignment: center;
+                
+                Text {
+                    text: "OFF";
+                    color: Theme.text-muted;
+                    font-size: 11px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        
+        if show-toggle: Switch {
+            checked: enabled;
+            toggled => { root.toggled(self.checked); }
+        }
+    }
+}
+
+// Config item row
+component ConfigRow inherits Rectangle {
+    in property <string> label;
+    in property <string> hint;
+    
+    height: hint == "" ? 44px : 60px;
+    
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 16px;
+        
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            
+            Text {
+                text: label;
+                color: Theme.text-primary;
+                font-size: 13px;
+            }
+            
+            if hint != "": Text {
+                text: hint;
+                color: Theme.text-muted;
+                font-size: 11px;
+            }
+        }
+        
+        @children
+    }
+}
+
+// Code example component
+component CodeExample inherits Rectangle {
+    in property <string> code;
+    in property <string> language: "python";
+    
+    callback copy();
+    
+    background: #1e1e1e;
+    border-radius: 8px;
+    min-height: 200px;
+    
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+        
+        HorizontalLayout {
+            Text {
+                text: language == "python" ? "Python" : "JavaScript";
+                color: #888;
+                font-size: 12px;
+                font-weight: 600;
+                horizontal-stretch: 1;
+            }
+            
+            Rectangle {
+                width: 60px;
+                height: 24px;
+                background: #333;
+                border-radius: 4px;
+                
+                Text {
+                    text: "Copy";
+                    color: #888;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.copy(); }
+                }
+            }
+        }
+        
+        Text {
+            text: code;
+            color: #d4d4d4;
+            font-size: 12px;
+            font-family: "monospace";
+            wrap: word-wrap;
+        }
+    }
+}
+
+// Main API Proxy page
+export component ApiProxyPage inherits Rectangle {
+    in-out property <ProxyStatus> status: {
+        running: false,
+        port: 8045,
+        base_url: "http://127.0.0.1:8045",
+        active_accounts: 0,
+    };
+    
+    in-out property <ProxyConfig> config: {
+        enabled: false,
+        port: 8045,
+        api_key: "",
+        auto_start: false,
+        allow_lan: false,
+        enable_logging: true,
+        request_timeout: 120,
+        auth_mode: "off",
+        scheduling_mode: "Balance",
+    };
+    
+    callback toggle-proxy();
+    callback save-config();
+    callback generate-api-key();
+    callback copy-to-clipboard(string);
+    callback open-monitor();
+    callback config-changed(string, string);
+    
+    background: Theme.background;
+    
+    ScrollView {
+        VerticalLayout {
+            padding: 24px;
+            spacing: 16px;
+            
+            // Page header with status and toggle
+            Rectangle {
+                height: 80px;
+                background: Theme.surface;
+                border-radius: 16px;
+                border-width: 1px;
+                border-color: Theme.border;
+                
+                HorizontalLayout {
+                    padding: 20px;
+                    spacing: 20px;
+                    
+                    // Status indicator
+                    Rectangle {
+                        width: 56px;
+                        height: 56px;
+                        background: status.running ? Theme.success.transparentize(0.85) : Theme.text-muted.transparentize(0.9);
+                        border-radius: 28px;
+                        
+                        Text {
+                            text: status.running ? "⚡" : "○";
+                            font-size: 24px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                    
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 4px;
+                        
+                        Text {
+                            text: "API Proxy";
+                            color: Theme.text-primary;
+                            font-size: 20px;
+                            font-weight: 700;
+                        }
+                        
+                        Text {
+                            text: status.running ? 
+                                "Running on " + status.base-url + " • " + status.active-accounts + " accounts" :
+                                "Stopped";
+                            color: status.running ? Theme.success : Theme.text-muted;
+                            font-size: 13px;
+                        }
+                    }
+                    
+                    // Toggle button
+                    Rectangle {
+                        width: 100px;
+                        height: 40px;
+                        background: status.running ? Theme.error : Theme.accent-blue;
+                        border-radius: 8px;
+                        
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: 8px;
+                            
+                            Text {
+                                text: status.running ? "⏹" : "▶";
+                                color: white;
+                                font-size: 14px;
+                                vertical-alignment: center;
+                            }
+                            
+                            Text {
+                                text: status.running ? "Stop" : "Start";
+                                color: white;
+                                font-size: 14px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                            }
+                        }
+                        
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.toggle-proxy(); }
+                        }
+                    }
+                    
+                    // Monitor button
+                    if status.running: Rectangle {
+                        width: 100px;
+                        height: 40px;
+                        background: Theme.surface-elevated;
+                        border-radius: 8px;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: 8px;
+                            
+                            Text {
+                                text: "📊";
+                                font-size: 14px;
+                                vertical-alignment: center;
+                            }
+                            
+                            Text {
+                                text: "Monitor";
+                                color: Theme.text-primary;
+                                font-size: 14px;
+                                vertical-alignment: center;
+                            }
+                        }
+                        
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.open-monitor(); }
+                        }
+                    }
+                }
+            }
+            
+            // Configuration Section
+            Rectangle {
+                background: Theme.surface;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Theme.border;
+                
+                VerticalLayout {
+                    spacing: 0px;
+                    
+                    SectionHeader {
+                        title: "Configuration";
+                        icon: "⚙️";
+                        enabled: status.running;
+                    }
+                    
+                    Rectangle { height: 1px; background: Theme.border; }
+                    
+                    VerticalLayout {
+                        padding: 16px;
+                        spacing: 12px;
+                        
+                        // Port and Timeout row
+                        HorizontalLayout {
+                            spacing: 16px;
+                            
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 4px;
+                                
+                                Text {
+                                    text: "Listen Port";
+                                    color: Theme.text-secondary;
+                                    font-size: 12px;
+                                }
+                                
+                                LineEdit {
+                                    text: config.port;
+                                    enabled: !status.running;
+                                }
+                            }
+                            
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 4px;
+                                
+                                Text {
+                                    text: "Request Timeout (sec)";
+                                    color: Theme.text-secondary;
+                                    font-size: 12px;
+                                }
+                                
+                                LineEdit {
+                                    text: config.request-timeout;
+                                }
+                            }
+                            
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 4px;
+                                
+                                Text {
+                                    text: "Scheduling Mode";
+                                    color: Theme.text-secondary;
+                                    font-size: 12px;
+                                }
+                                
+                                ComboBox {
+                                    model: ["Cache First", "Balance", "Performance"];
+                                    current-index: config.scheduling-mode == "CacheFirst" ? 0 :
+                                                  config.scheduling-mode == "Balance" ? 1 : 2;
+                                }
+                            }
+                        }
+                        
+                        Rectangle { height: 8px; }
+                        
+                        // Toggles row
+                        HorizontalLayout {
+                            spacing: 32px;
+                            
+                            HorizontalLayout {
+                                spacing: 8px;
+                                
+                                Text {
+                                    text: "Auto-start";
+                                    color: Theme.text-primary;
+                                    font-size: 13px;
+                                    vertical-alignment: center;
+                                }
+                                
+                                Switch {
+                                    checked: config.auto-start;
+                                }
+                            }
+                            
+                            HorizontalLayout {
+                                spacing: 8px;
+                                
+                                Text {
+                                    text: "LAN Access";
+                                    color: Theme.text-primary;
+                                    font-size: 13px;
+                                    vertical-alignment: center;
+                                }
+                                
+                                Switch {
+                                    checked: config.allow-lan;
+                                }
+                            }
+                            
+                            HorizontalLayout {
+                                spacing: 8px;
+                                
+                                Text {
+                                    text: "Enable Logging";
+                                    color: Theme.text-primary;
+                                    font-size: 13px;
+                                    vertical-alignment: center;
+                                }
+                                
+                                Switch {
+                                    checked: config.enable-logging;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // API Key Section
+            Rectangle {
+                background: Theme.surface;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Theme.border;
+                
+                VerticalLayout {
+                    spacing: 0px;
+                    
+                    SectionHeader {
+                        title: "API Authentication";
+                        icon: "🔑";
+                        enabled: config.auth-mode != "off";
+                    }
+                    
+                    Rectangle { height: 1px; background: Theme.border; }
+                    
+                    VerticalLayout {
+                        padding: 16px;
+                        spacing: 12px;
+                        
+                        HorizontalLayout {
+                            spacing: 16px;
+                            
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 4px;
+                                
+                                Text {
+                                    text: "Auth Mode";
+                                    color: Theme.text-secondary;
+                                    font-size: 12px;
+                                }
+                                
+                                ComboBox {
+                                    model: ["Off", "Strict", "All Except Health", "Auto"];
+                                    current-index: config.auth-mode == "off" ? 0 :
+                                                  config.auth-mode == "strict" ? 1 :
+                                                  config.auth-mode == "all_except_health" ? 2 : 3;
+                                }
+                            }
+                            
+                            VerticalLayout {
+                                horizontal-stretch: 2;
+                                spacing: 4px;
+                                
+                                Text {
+                                    text: "API Key";
+                                    color: Theme.text-secondary;
+                                    font-size: 12px;
+                                }
+                                
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    
+                                    LineEdit {
+                                        horizontal-stretch: 1;
+                                        text: config.api-key;
+                                        input-type: password;
+                                    }
+                                    
+                                    Rectangle {
+                                        width: 36px;
+                                        height: 32px;
+                                        background: Theme.surface-elevated;
+                                        border-radius: 6px;
+                                        border-width: 1px;
+                                        border-color: Theme.border;
+                                        
+                                        Text {
+                                            text: "📋";
+                                            font-size: 14px;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                        
+                                        TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => { root.copy-to-clipboard(config.api-key); }
+                                        }
+                                    }
+                                    
+                                    Rectangle {
+                                        width: 100px;
+                                        height: 32px;
+                                        background: Theme.accent-blue.transparentize(0.85);
+                                        border-radius: 6px;
+                                        
+                                        Text {
+                                            text: "Generate";
+                                            color: Theme.accent-blue;
+                                            font-size: 13px;
+                                            font-weight: 500;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                        
+                                        TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => { root.generate-api-key(); }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Quick Start Section
+            Rectangle {
+                background: Theme.surface;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Theme.border;
+                
+                VerticalLayout {
+                    spacing: 0px;
+                    
+                    SectionHeader {
+                        title: "Quick Start";
+                        icon: "🚀";
+                    }
+                    
+                    Rectangle { height: 1px; background: Theme.border; }
+                    
+                    VerticalLayout {
+                        padding: 16px;
+                        spacing: 16px;
+                        
+                        // Connection info
+                        Rectangle {
+                            height: 60px;
+                            background: Theme.accent-blue.transparentize(0.92);
+                            border-radius: 8px;
+                            
+                            HorizontalLayout {
+                                padding: 16px;
+                                spacing: 16px;
+                                
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    alignment: center;
+                                    
+                                    Text {
+                                        text: "Base URL";
+                                        color: Theme.text-secondary;
+                                        font-size: 11px;
+                                    }
+                                    
+                                    Text {
+                                        text: "http://127.0.0.1:" + config.port + "/v1";
+                                        color: Theme.accent-blue;
+                                        font-size: 14px;
+                                        font-weight: 600;
+                                    }
+                                }
+                                
+                                Rectangle {
+                                    width: 80px;
+                                    height: 32px;
+                                    background: Theme.accent-blue;
+                                    border-radius: 6px;
+                                    
+                                    HorizontalLayout {
+                                        alignment: center;
+                                        spacing: 6px;
+                                        
+                                        Text {
+                                            text: "📋";
+                                            font-size: 12px;
+                                            vertical-alignment: center;
+                                        }
+                                        
+                                        Text {
+                                            text: "Copy";
+                                            color: white;
+                                            font-size: 12px;
+                                            font-weight: 500;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                    
+                                    TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.copy-to-clipboard("http://127.0.0.1:" + config.port + "/v1"); }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Code example tabs placeholder
+                        Text {
+                            text: "Example (Python / OpenAI SDK)";
+                            color: Theme.text-secondary;
+                            font-size: 12px;
+                            font-weight: 600;
+                        }
+                        
+                        CodeExample {
+                            code: "from openai import OpenAI\n\nclient = OpenAI(\n    base_url=\"http://127.0.0.1:" + config.port + "/v1\",\n    api_key=\"" + (config.api-key == "" ? "YOUR_API_KEY" : config.api-key) + "\"\n)\n\nresponse = client.chat.completions.create(\n    model=\"gemini-3-flash\",\n    messages=[{\"role\": \"user\", \"content\": \"Hello!\"}]\n)\n\nprint(response.choices[0].message.content)";
+                            language: "python";
+                            copy => { root.copy-to-clipboard(self.code); }
+                        }
+                    }
+                }
+            }
+            
+            // Model Routing Section (simplified)
+            Rectangle {
+                background: Theme.surface;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Theme.border;
+                
+                VerticalLayout {
+                    spacing: 0px;
+                    
+                    SectionHeader {
+                        title: "Model Routing";
+                        icon: "🔀";
+                    }
+                    
+                    Rectangle { height: 1px; background: Theme.border; }
+                    
+                    VerticalLayout {
+                        padding: 16px;
+                        spacing: 12px;
+                        
+                        Text {
+                            text: "Route incoming model requests to Gemini models. For example, route 'gpt-4' to 'gemini-3-pro'.";
+                            color: Theme.text-secondary;
+                            font-size: 13px;
+                            wrap: word-wrap;
+                        }
+                        
+                        // Preset mappings
+                        HorizontalLayout {
+                            spacing: 8px;
+                            
+                            for mapping in [
+                                { from: "gpt-4*", to: "gemini-3-pro-high" },
+                                { from: "gpt-4o*", to: "gemini-3-flash" },
+                                { from: "claude-3-5-sonnet-*", to: "claude-sonnet-4-5" },
+                            ]: Rectangle {
+                                height: 28px;
+                                background: Theme.surface-elevated;
+                                border-radius: 6px;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 10px;
+                                    spacing: 6px;
+                                    
+                                    Text {
+                                        text: mapping.from;
+                                        color: Theme.text-primary;
+                                        font-size: 11px;
+                                        vertical-alignment: center;
+                                    }
+                                    
+                                    Text {
+                                        text: "→";
+                                        color: Theme.text-muted;
+                                        font-size: 11px;
+                                        vertical-alignment: center;
+                                    }
+                                    
+                                    Text {
+                                        text: mapping.to;
+                                        color: Theme.accent-blue;
+                                        font-size: 11px;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        Rectangle { height: 8px; }
+                        
+                        // Add mapping button
+                        Rectangle {
+                            width: 140px;
+                            height: 32px;
+                            background: Theme.accent-blue.transparentize(0.9);
+                            border-radius: 6px;
+                            
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: 8px;
+                                
+                                Text {
+                                    text: "+";
+                                    color: Theme.accent-blue;
+                                    font-size: 16px;
+                                    font-weight: 600;
+                                    vertical-alignment: center;
+                                }
+                                
+                                Text {
+                                    text: "Add Mapping";
+                                    color: Theme.accent-blue;
+                                    font-size: 13px;
+                                    font-weight: 500;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            
+                            TouchArea { mouse-cursor: pointer; }
+                        }
+                    }
+                }
+            }
+            
+            // Bottom padding
+            Rectangle { height: 24px; }
+        }
+    }
+}

@@ -11,7 +11,12 @@
 ### ✅ Фаза 3: Dashboard Data Binding - DONE
 ### ✅ Фаза 4: Accounts Page - DONE
 ### ✅ Фаза 4.1: Selection Logic - DONE
-### ✅ Фаза 4.2: Tri-state Header Checkbox - DONE
+### ✅ Фаза 4.2: Account Callbacks - DONE (delete, switch, export, toggle_proxy)
+### ✅ Фаза 5: Settings Page - DONE
+### 🔄 Фаза 6: API Proxy Page - IN PROGRESS
+### ⬜ Фаза 7: Monitor Page
+### ⬜ Фаза 8: OAuth Module Port
+### ⬜ Фаза 9: System Tray Integration
 
 ---
 
@@ -29,6 +34,7 @@ Antigravity-Manager/
 │           ├── models/        # Account, Token, Quota, Config
 │           ├── modules/
 │           │   ├── account.rs # ✅ CRUD operations
+│           │   ├── config.rs  # ✅ Config load/save
 │           │   └── logger.rs  # Logging utilities
 │           ├── proxy/         # Config types
 │           └── utils/         # HTTP client
@@ -36,14 +42,15 @@ Antigravity-Manager/
 │   ├── Cargo.toml
 │   ├── build.rs
 │   └── src/
-│       ├── main.rs            # Entry point with full data binding
+│       ├── main.rs            # Entry point with full callbacks
 │       ├── backend/           # ✅ Backend bridge
 │       │   └── mod.rs         # Account management, quota stats
 │       └── ui/
 │           ├── app.slint      # Main window with all pages
 │           ├── dashboard.slint # ✅ Real data display
-│           ├── accounts.slint # ✅ Full account table with quotas
-│           ├── globals.slint  # ✅ AppState global for data sharing
+│           ├── accounts.slint # ✅ Full account table
+│           ├── settings.slint # ✅ Full settings UI
+│           ├── globals.slint  # ✅ AppState global
 │           └── components/
 │               ├── theme.slint
 │               ├── sidebar.slint
@@ -53,59 +60,16 @@ Antigravity-Manager/
 
 ---
 
-## Верифицированные результаты
-
-### Приложение работает с реальными данными:
-```
-Stats: 5 accounts, 89% avg Gemini, 89% avg Claude, 4 low quota
-```
-
-### Dashboard отображает:
-- ✅ Total Accounts: 5
-- ✅ Avg. Gemini Quota: 89%
-- ✅ Avg. Claude Quota: 89%
-- ✅ Low Quota Count: 4
-- ✅ Current Account: email + last used time
-
-### Accounts Page включает:
-- ✅ Search bar with filter
-- ✅ Filter tabs: All, PRO, ULTRA, FREE with counts
-- ✅ Action buttons: Add Account, Delete Selected, Refresh All, Export
-- ✅ Account table with:
-  - Checkbox selection
-  - Email with "CURRENT" badge
-  - Subscription tier badges (PRO/ULTRA/FREE)
-  - Last used timestamp
-  - Quota bars: Gemini Pro, Flash, Image, Claude
-  - Action buttons: Switch, Refresh, Delete
-- ✅ Pagination controls
-- ✅ Empty state
-
-### Дополнительные страницы (placeholder):
-- ✅ API Proxy page (status card)
-- ✅ Settings page (General, Proxy, Appearance sections)
-- ✅ Monitor page (request log table header, empty state)
-
----
-
-## Следующие шаги
-
-- [x] Фаза 4: Accounts page (table/grid view)
-- [ ] Фаза 5: Settings page (полная функциональность)
-- [ ] Фаза 6: API Proxy page (полная функциональность)
-- [ ] Фаза 7: Monitor page (request logs)
-- [ ] Фаза 8: OAuth module port
-- [ ] Фаза 9: System tray integration
-- [ ] Фаза 10: CI/CD для Slint builds
-
----
-
 ## Коммиты
 
 1. `284a7444` - feat: migrate to Slint native UI - Phase 1
 2. `e6cbaa67` - feat: Phase 2 - Port account module and backend bridge
 3. `a25251d2` - feat: Dashboard with real data binding
-4. `pending` - feat: Full Accounts page with table, filters, and actions
+4. `e4ae2cb3` - feat: Full Accounts page with table, filters, quotas
+5. `676425d4` - feat: Implement selection logic for accounts table
+6. `613d24be` - fix: Auto-repair corrupted account files
+7. `054563d7` - feat: Enhanced header checkbox with tri-state
+8. `e868f423` - feat: Full-featured Settings page and account callbacks
 
 ---
 
@@ -117,10 +81,29 @@ cd src-slint && cargo run
 
 ---
 
-## Upstream Sync
+## TODO (Оставшееся)
 
-```bash
-git fetch upstream
-git merge upstream/main
-# Conflicts only in src/ (deprecated) and package.json
-```
+### API Proxy Page (~1573 строк в оригинале):
+- [ ] Proxy start/stop toggle
+- [ ] Status display (running, port, active accounts)
+- [ ] Model mapping configuration
+- [ ] Custom mappings CRUD
+- [ ] ZAI models configuration  
+- [ ] API key generation
+- [ ] Python/JS code examples
+- [ ] Session bindings
+
+### Monitor Page:
+- [ ] Real-time request logging
+- [ ] Request details panel
+- [ ] Clear logs function
+
+### OAuth Module:
+- [ ] Add Account dialog
+- [ ] OAuth flow (Google auth)
+- [ ] Token refresh logic
+
+### System Tray:
+- [ ] Tray icon
+- [ ] Context menu
+- [ ] Minimize to tray
