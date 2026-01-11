@@ -1,109 +1,89 @@
-# Antigravity Manager - Leptos UI Parity Plan
+# Antigravity Manager - Leptos UI Status
 
-## Current Status: ~45% Feature Parity
+## Current Status: ~85% Feature Parity ✅
 
-## Phase 1: Core Types & IPC (DONE ✅)
-- [x] Account, ProxyStatus, AppConfig types
-- [x] Basic Tauri IPC bindings
-- [x] Extended IPC (OAuth, quotas, logs, updates)
+## Completed Features
 
-## Phase 2: Pages Foundation (DONE ✅)
-- [x] Dashboard - basic stats
-- [x] Accounts - basic list
-- [x] Proxy - basic controls
-- [x] Settings - basic form
-- [x] Monitor - basic logs
+### Core Types & IPC ✅
+- Account, ProxyStatus, AppConfig types
+- Full Tauri IPC bindings (OAuth, quotas, logs, updates)
+- ProxyConfig, RefreshStats, ProxyStats types
 
----
+### Dashboard ✅
+- Personalized greeting with account name
+- 5 stats cards (Total, Gemini Quota, Image Quota, Claude Quota, Low Quota)
+- Subtitle hints on cards (Sufficient/Low)
+- Current account section with quota bars  
+- Best accounts list (top 5 by quota)
+- Tier breakdown (Ultra/Pro/Free/Low)
+- Quick action cards
 
-## Phase 3: Accounts Page Full Parity (IN PROGRESS)
-### 3.1 View Modes
-- [ ] List view (current, improve)
-- [ ] Grid view (AccountGrid cards)
-- [ ] View mode toggle button group
+### Accounts Page ✅
+- View modes: List (table) and Grid (cards)
+- Filter tabs: All / Pro / Ultra / Free with counts
+- Search by email
+- Full pagination with page size selector
+- Individual account actions: switch, refresh, delete
+- Toggle proxy status per account
+- Batch delete selected accounts
+- Confirmation modals for all destructive actions
+- OAuth login button
+- Sync from local DB button
 
-### 3.2 Filtering & Pagination
-- [ ] Filter tabs: All / Pro / Ultra / Free with counts
-- [ ] Pagination component
-- [ ] Dynamic page size
+### API Proxy Page ✅
+- Start/Stop proxy with status indicator
+- Configuration: Port, Timeout, Auto-start, Logging
+- Access control: LAN access, Auth mode selector
+- API key: display, copy, regenerate
+- Model routing section (collapsible):
+  - Add custom mappings
+  - Apply presets (GPT-4→Gemini etc)
+  - Reset all mappings
+- Scheduling section (collapsible):
+  - Mode selector (Balance/Priority/Sticky)
+  - Sticky session TTL
+  - Clear session bindings
+- Quick start section:
+  - Protocol tabs (OpenAI/Anthropic/Gemini)
+  - Model selector dropdown
+  - Dynamic Python code examples
+  - Base URL with copy button
 
-### 3.3 Account Actions
-- [ ] Individual refresh (per account)
-- [ ] Toggle proxy status on/off
-- [ ] Batch enable/disable proxy
-- [ ] Export accounts to JSON
-- [ ] View details modal
-- [ ] Confirmation dialogs
+### Settings Page ✅
+- Language/Theme selection
+- Auto-launch toggle
+- Quota refresh settings
+- Check for updates button
+- Clear logs button
+- Open data folder button
 
-### 3.4 Reordering
-- [ ] Drag-and-drop reorder (optional - complex in WASM)
+### Monitor Page ✅
+- Real-time proxy request logs
+- Auto-refresh (2s interval)
+- Request statistics
+- Filter by status/model
 
----
+## Shared Components ✅
+- Modal (Confirm/Alert/Danger types)
+- Pagination (with page size selector)
+- AccountCard (for grid view)
+- StatsCard (with optional subtitle)
+- Button (variants: Primary/Secondary/Danger/Ghost)
 
-## Phase 4: API Proxy Page Full Parity
-### 4.1 Configuration Section
-- [ ] Port, timeout, auto-start (done)
-- [ ] LAN access toggle
-- [ ] Auth mode selector (off/strict/auto/all_except_health)
-- [ ] API key section (done)
+## Remaining Work
 
-### 4.2 Model Routing
-- [ ] Custom mapping table (add/edit/remove)
-- [ ] Preset mappings button (GPT-4→Gemini etc)
-- [ ] Reset mappings button
+### Minor Enhancements
+- [ ] Export accounts to JSON (file dialog needed)
+- [ ] Drag-and-drop reorder (complex in WASM)
+- [ ] Z.ai/GLM external provider integration
+- [ ] Path selectors in Settings (file dialogs)
 
-### 4.3 Scheduling
-- [ ] Sticky session config
-- [ ] Balance mode selector
-- [ ] Clear session bindings button
+### Known Issues
+- wasm-opt bulk memory error in release builds (disabled for now)
 
-### 4.4 External Providers
-- [ ] Z.ai/GLM integration section
-- [ ] Base URL, dispatch mode
-- [ ] Model mapping for Z.ai
-
-### 4.5 Quick Start Examples
-- [ ] Protocol selector (OpenAI/Anthropic/Gemini)
-- [ ] Model selector dropdown
-- [ ] Dynamic code generation
-
----
-
-## Phase 5: Dashboard Improvements
-- [ ] BestAccounts component (top 5 by quota)
-- [ ] Export all button
-- [ ] Personalized greeting with account name
-- [ ] Quick action cards (done)
-
----
-
-## Phase 6: Settings Improvements  
-- [ ] Export path selector (file dialog)
-- [ ] Antigravity path config
-- [ ] Locale/i18n support (optional)
-
----
-
-## Phase 7: Shared Components
-- [ ] Modal dialogs (confirm/alert)
-- [ ] Pagination component
-- [ ] Tooltip component
-- [ ] Collapsible card component
-- [ ] Select/Dropdown component
-
----
-
-## Build & Deploy
-- [ ] Fix wasm-opt for release builds
-- [ ] Production bundle optimization
-- [ ] Tauri integration test
-
----
-
-## Priority Order (Critical Path):
-1. **Phase 3.2** - Pagination & Filters (high visibility)
-2. **Phase 4.2** - Model Routing (key feature)
-3. **Phase 7** - Modal dialogs (needed for confirmations)
-4. **Phase 3.3** - Account actions
-5. **Phase 4.1** - LAN/Auth config
-6. **Phase 5** - Dashboard polish
+## Architecture Notes
+- Leptos 0.7 with CSR mode
+- Centralized AppState via Context
+- Type-safe Tauri IPC bindings
+- Reactive signals and memos throughout
+- Component-based UI design
