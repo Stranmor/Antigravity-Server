@@ -26,7 +26,7 @@ pub fn Sidebar() -> impl IntoView {
 
             <nav class="sidebar-nav">
                 {nav_items.into_iter().map(|(label, path, icon)| {
-                    let current_path = location.pathname.clone();
+                    let current_path = location.pathname;
                     let is_active = move || {
                         let curr = current_path.get();
                         if path == "/" {

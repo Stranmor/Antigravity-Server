@@ -37,9 +37,9 @@ pub fn Modal(
         _ => "btn btn--primary",
     };
 
-    let on_cancel_overlay = on_cancel.clone();
-    let on_cancel_close = on_cancel.clone();
-    let on_cancel_btn = on_cancel.clone();
+    let on_cancel_overlay = on_cancel;
+    let on_cancel_close = on_cancel;
+    let on_cancel_btn = on_cancel;
     let title_clone = title.clone();
     let message_clone = message.clone();
     let confirm_text_clone = confirm_text.clone();

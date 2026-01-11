@@ -275,7 +275,7 @@ pub fn Accounts() -> impl IntoView {
     };
 
     let on_batch_delete = move || {
-        if selected_ids.get().len() > 0 {
+        if !selected_ids.get().is_empty() {
             batch_delete_confirm.set(true);
         }
     };
