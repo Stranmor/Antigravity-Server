@@ -21,6 +21,7 @@ use axum::http::HeaderMap;
 use std::sync::atomic::Ordering;
 
 const MAX_RETRY_ATTEMPTS: usize = 10;
+const MAX_529_RETRY_ATTEMPTS: usize = 3600;  // 529 = 1 hour of retries (1 attempt per second)
 const MIN_SIGNATURE_LENGTH: usize = 10;  // 最小有效签名长度
 
 // ===== Model Constants for Background Tasks =====
@@ -494,15 +495,24 @@ pub async fn handle_messages(
     let token_manager = state.token_manager;
     
     let pool_size = token_manager.len();
-    // max_attempts НЕ ограничен pool_size: при 529/503 мы не ротируем аккаунт,
-    // поэтому даже с 1 аккаунтом можем делать до MAX_RETRY_ATTEMPTS попыток
     let max_attempts = if pool_size == 0 { 1 } else { MAX_RETRY_ATTEMPTS };
 
     let mut last_error = String::new();
     let mut retried_without_thinking = false;
     let mut skip_rotation = false; // 529/503 时跳过账号轮换
+    let mut attempt = 0_usize;
+    let mut retry_529_count = 0_usize;
     
-    for attempt in 0..max_attempts {
+    loop {
+        // 检查是否超过最大尝试次数
+        if attempt >= max_attempts && retry_529_count == 0 {
+            break;
+        }
+        // 如果正在 529 重试中，检查 529 重试限制
+        if retry_529_count > 0 && retry_529_count >= MAX_529_RETRY_ATTEMPTS {
+            break;
+        }
+        
         // 2. 模型路由解析
         let mut mapped_model = crate::proxy::common::model_mapping::resolve_model_route(
             &request_for_body.model,
@@ -839,6 +849,26 @@ pub async fn handle_messages(
         
         // 确定重试策略
         let strategy = determine_retry_strategy(status_code, &error_text, retried_without_thinking);
+        
+        // 529 特殊处理：无限重试（最多 MAX_529_RETRY_ATTEMPTS = 3600 次）
+        if status_code == 529 {
+            retry_529_count += 1;
+            if retry_529_count >= MAX_529_RETRY_ATTEMPTS {
+                error!("[{}] 529 retry limit reached ({} attempts)", trace_id, retry_529_count);
+                return (status, error_text).into_response();
+            }
+            info!(
+                "[{}] ⏱️  529 retry {}/{}, waiting 1s (same account)",
+                trace_id, retry_529_count, MAX_529_RETRY_ATTEMPTS
+            );
+            sleep(Duration::from_secs(1)).await;
+            skip_rotation = true;
+            continue;
+        }
+        
+        // 其他错误：增加 attempt 计数
+        retry_529_count = 0; // 重置 529 计数
+        attempt += 1;
         
         // 执行退避
         if apply_retry_strategy(strategy, attempt, status_code, &trace_id).await {

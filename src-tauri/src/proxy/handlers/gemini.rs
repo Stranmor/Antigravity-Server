@@ -8,6 +8,7 @@ use crate::proxy::server::AppState;
 use crate::proxy::session_manager::SessionManager;
  
 const MAX_RETRY_ATTEMPTS: usize = 10;
+const MAX_529_RETRY_ATTEMPTS: usize = 3600;  // 529 = 1 hour of retries (1 attempt per second)
  
 /// 处理 generateContent 和 streamGenerateContent
 /// 路径参数: model_name, method (e.g. "gemini-pro", "generateContent")
@@ -86,7 +87,7 @@ pub async fn handle_generate(
         let upstream_method = if is_stream { "streamGenerateContent" } else { "generateContent" };
 
         let response = match upstream
-            .call_v1_internal(upstream_method, &access_token, wrapped_body, query_string)
+            .call_v1_internal(upstream_method, &access_token, wrapped_body.clone(), query_string)
             .await {
                 Ok(r) => r,
                 Err(e) => {
@@ -199,14 +200,105 @@ pub async fn handle_generate(
                 return Err((status, error_text));
             }
 
-            // 529 服务器过载 - 固定 1 秒重试
+            // 529 服务器过载 - 内部循环，最多重试 MAX_529_RETRY_ATTEMPTS 次
             if status_code == 529 {
-                tracing::warn!(
-                    "Gemini Upstream 529 (server overload) on {} attempt {}/{}, waiting 1s (no rotation)",
-                    email, attempt + 1, max_attempts
-                );
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                skip_rotation = true;
+                for retry_529 in 0..MAX_529_RETRY_ATTEMPTS {
+                    tracing::warn!(
+                        "Gemini Upstream 529 (server overload) on {} attempt {}/{}, waiting 1s",
+                        email, retry_529 + 1, MAX_529_RETRY_ATTEMPTS
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    
+                    // 重新发送请求
+                    let retry_response = match upstream
+                        .call_v1_internal(upstream_method, &access_token, wrapped_body.clone(), query_string)
+                        .await {
+                            Ok(r) => r,
+                            Err(e) => {
+                                tracing::debug!("529 retry {} failed: {}", retry_529 + 1, e);
+                                continue;
+                            }
+                        };
+                    
+                    let retry_status = retry_response.status();
+                    if retry_status.is_success() {
+                        // 成功！返回结果
+                        if is_stream {
+                            use axum::body::Body;
+                            use axum::response::Response;
+                            use bytes::{Bytes, BytesMut};
+                            use futures::StreamExt;
+                            
+                            let mut response_stream = retry_response.bytes_stream();
+                            let mut buffer = BytesMut::new();
+
+                            let stream = async_stream::stream! {
+                                while let Some(item) = response_stream.next().await {
+                                    match item {
+                                        Ok(bytes) => {
+                                            buffer.extend_from_slice(&bytes);
+                                            while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
+                                                let line_raw = buffer.split_to(pos + 1);
+                                                if let Ok(line_str) = std::str::from_utf8(&line_raw) {
+                                                    let line = line_str.trim();
+                                                    if line.is_empty() { continue; }
+                                                    if line.starts_with("data: ") {
+                                                        let json_part = line.trim_start_matches("data: ").trim();
+                                                        if json_part == "[DONE]" {
+                                                            yield Ok::<Bytes, String>(Bytes::from("data: [DONE]\n\n"));
+                                                            continue;
+                                                        }
+                                                        match serde_json::from_str::<Value>(json_part) {
+                                                            Ok(mut json) => {
+                                                                if let Some(inner) = json.get_mut("response").map(|v| v.take()) {
+                                                                    yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&inner).unwrap_or_default())));
+                                                                } else {
+                                                                    yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&json).unwrap_or_default())));
+                                                                }
+                                                            }
+                                                            Err(_) => {
+                                                                yield Ok::<Bytes, String>(Bytes::from(format!("{}\n\n", line)));
+                                                            }
+                                                        }
+                                                    } else {
+                                                        yield Ok::<Bytes, String>(Bytes::from(format!("{}\n\n", line)));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            yield Err(format!("Stream error: {}", e));
+                                        }
+                                    }
+                                }
+                            };
+                            
+                            let body = Body::from_stream(stream);
+                            return Ok(Response::builder()
+                                .header("Content-Type", "text/event-stream")
+                                .header("Cache-Control", "no-cache")
+                                .header("Connection", "keep-alive")
+                                .header("X-Account-Email", &email)
+                                .header("X-Mapped-Model", &mapped_model)
+                                .body(body)
+                                .unwrap()
+                                .into_response());
+                        }
+
+                        let gemini_resp: Value = retry_response
+                            .json()
+                            .await
+                            .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Parse error: {}", e)))?;
+                        let unwrapped = unwrap_response(&gemini_resp);
+                        return Ok((StatusCode::OK, [("X-Account-Email", email.as_str()), ("X-Mapped-Model", mapped_model.as_str())], Json(unwrapped)).into_response());
+                    }
+                    
+                    // 529 继续重试，其他错误退出内部循环
+                    if retry_response.status().as_u16() != 529 {
+                        break;
+                    }
+                }
+                // 内部循环耗尽，继续外部循环（尝试下一个账号）
                 continue;
             }
 

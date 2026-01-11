@@ -1,8 +1,11 @@
 [build]
 target = "index.html"
 dist = "dist"
-# Skip wasm-opt due to bulk memory compatibility issues
-no_minification = true
+
+[[hooks]]
+stage = "post_build"
+command = "echo"
+command_arguments = ["Skipping wasm-opt"]
 
 [watch]
 ignore = ["dist"]

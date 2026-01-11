@@ -12,6 +12,7 @@ use crate::proxy::mappers::openai::{
 use crate::proxy::server::AppState;
 
 const MAX_RETRY_ATTEMPTS: usize = 10;
+const MAX_529_RETRY_ATTEMPTS: usize = 3600;  // 529 = 1 hour of retries (1 attempt per second)
 use crate::proxy::session_manager::SessionManager;
 
 pub async fn handle_chat_completions(
@@ -44,13 +45,22 @@ pub async fn handle_chat_completions(
     let upstream = state.upstream.clone();
     let token_manager = state.token_manager;
     let pool_size = token_manager.len();
-    // max_attempts НЕ ограничен pool_size: при 529/503 мы не ротируем аккаунт
     let max_attempts = if pool_size == 0 { 1 } else { MAX_RETRY_ATTEMPTS };
 
     let mut last_error = String::new();
-    let mut skip_rotation = false; // 529/503 时跳过账号轮换
+    let mut skip_rotation = false;
+    let mut attempt = 0_usize;
+    let mut retry_529_count = 0_usize;
 
-    for attempt in 0..max_attempts {
+    loop {
+        // 检查是否超过最大尝试次数
+        if attempt >= max_attempts && retry_529_count == 0 {
+            break;
+        }
+        if retry_529_count > 0 && retry_529_count >= MAX_529_RETRY_ATTEMPTS {
+            break;
+        }
+        
         // 2. 模型路由解析
         let mapped_model = crate::proxy::common::model_mapping::resolve_model_route(
             &openai_req.model,
@@ -234,23 +244,32 @@ pub async fn handle_chat_completions(
                 return Err((status, error_text));
             }
 
-            // 529 服务器过载 - 固定 1 秒重试
+            // 529 服务器过载 - 无限重试（最多 MAX_529_RETRY_ATTEMPTS 次）
             if status_code == 529 {
-                tracing::warn!(
-                    "OpenAI Upstream 529 (server overload) on {} attempt {}/{}, waiting 1s (no rotation)",
-                    email, attempt + 1, max_attempts
+                retry_529_count += 1;
+                if retry_529_count >= MAX_529_RETRY_ATTEMPTS {
+                    error!("OpenAI 529 retry limit reached ({} attempts)", retry_529_count);
+                    return Err((status, error_text));
+                }
+                tracing::info!(
+                    "OpenAI 529 retry {}/{}, waiting 1s (same account: {})",
+                    retry_529_count, MAX_529_RETRY_ATTEMPTS, email
                 );
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                 skip_rotation = true;
                 continue;
             }
 
+            // 其他错误：增加 attempt 计数, 重置 529 计数
+            retry_529_count = 0;
+            attempt += 1;
+
             // 503 服务不可用 - exponential backoff
             if status_code == 503 {
                 let backoff_ms = 1000_u64 * 2_u64.pow(attempt as u32).min(8000);
                 tracing::warn!(
                     "OpenAI Upstream 503 (service unavailable) on {} attempt {}/{}, waiting {}ms (no rotation)",
-                    email, attempt + 1, max_attempts, backoff_ms
+                    email, attempt, max_attempts, backoff_ms
                 );
                 tokio::time::sleep(tokio::time::Duration::from_millis(backoff_ms)).await;
                 skip_rotation = true;
@@ -262,7 +281,7 @@ pub async fn handle_chat_completions(
                 "OpenAI Upstream {} on {} attempt {}/{}, rotating account",
                 status_code,
                 email,
-                attempt + 1,
+                attempt,
                 max_attempts
             );
             continue;
