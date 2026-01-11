@@ -50,8 +50,7 @@ fn build_client(
     upstream_proxy: Option<crate::proxy::config::UpstreamProxyConfig>,
     timeout_secs: u64,
 ) -> Result<reqwest::Client, String> {
-    let mut builder = reqwest::Client::builder()
-        .timeout(Duration::from_secs(timeout_secs.max(5)));
+    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(timeout_secs.max(5)));
 
     if let Some(config) = upstream_proxy {
         if config.enabled && !config.url.is_empty() {
@@ -177,10 +176,15 @@ pub async fn forward_anthropic_json(
     // This avoids "Transfer-Encoding: chunked" for small bodies which caused connection errors.
     let body_bytes = serde_json::to_vec(&body).unwrap_or_default();
     let body_len = body_bytes.len();
-    
-    tracing::debug!("Forwarding request to z.ai (len: {} bytes): {}", body_len, url);
 
-    let req = client.request(method, &url)
+    tracing::debug!(
+        "Forwarding request to z.ai (len: {} bytes): {}",
+        body_len,
+        url
+    );
+
+    let req = client
+        .request(method, &url)
         .headers(headers)
         .body(body_bytes); // Use .body(Vec<u8>) instead of .json()
 
@@ -209,6 +213,10 @@ pub async fn forward_anthropic_json(
     });
 
     out.body(Body::from_stream(stream)).unwrap_or_else(|_| {
-        (StatusCode::INTERNAL_SERVER_ERROR, "Failed to build response").into_response()
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to build response",
+        )
+            .into_response()
     })
 }

@@ -1,6 +1,6 @@
 // 模型名称映射
-use std::collections::HashMap;
 use once_cell::sync::Lazy;
+use std::collections::HashMap;
 
 static CLAUDE_TO_GEMINI: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     let mut m = HashMap::new();
@@ -46,11 +46,10 @@ static CLAUDE_TO_GEMINI: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|
     m.insert("gemini-3-pro-low", "gemini-3-pro-low");
     m.insert("gemini-3-pro-high", "gemini-3-pro-high");
     m.insert("gemini-3-pro-preview", "gemini-3-pro-preview");
-    m.insert("gemini-3-pro", "gemini-3-pro");  // [FIX PR #368] 添加基础模型支持
+    m.insert("gemini-3-pro", "gemini-3-pro"); // [FIX PR #368] 添加基础模型支持
     m.insert("gemini-2.5-flash", "gemini-2.5-flash");
     m.insert("gemini-3-flash", "gemini-3-flash");
     m.insert("gemini-3-pro-image", "gemini-3-pro-image");
-
 
     m
 });
@@ -97,12 +96,12 @@ pub async fn get_all_dynamic_models(
 
     // 5. 确保包含常用的 Gemini/画画模型 ID
     model_ids.insert("gemini-3-pro-low".to_string());
-    
+
     // [NEW] Issue #247: Dynamically generate all Image Gen Combinations
     let base = "gemini-3-pro-image";
     let resolutions = vec!["", "-2k", "-4k"];
     let ratios = vec!["", "-1x1", "-4x3", "-3x4", "-16x9", "-9x16", "-21x9"];
-    
+
     for res in resolutions {
         for ratio in ratios.iter() {
             let mut id = base.to_string();
@@ -119,7 +118,6 @@ pub async fn get_all_dynamic_models(
     model_ids.insert("gemini-3-pro-high".to_string());
     model_ids.insert("gemini-3-pro-low".to_string());
 
-
     let mut sorted_ids: Vec<_> = model_ids.into_iter().collect();
     sorted_ids.sort();
     sorted_ids
@@ -127,7 +125,7 @@ pub async fn get_all_dynamic_models(
 
 /// 通配符匹配辅助函数
 /// 支持简单的 * 通配符匹配
-/// 
+///
 /// # 示例
 /// - `gpt-4*` 匹配 `gpt-4`, `gpt-4-turbo`, `gpt-4-0613` 等
 /// - `claude-3-5-sonnet-*` 匹配所有 3.5 sonnet 版本
@@ -144,11 +142,11 @@ fn wildcard_match(pattern: &str, text: &str) -> bool {
 
 /// 核心模型路由解析引擎
 /// 优先级：精确匹配 > 通配符匹配 > 系统默认映射
-/// 
+///
 /// # 参数
 /// - `original_model`: 原始模型名称
 /// - `custom_mapping`: 用户自定义映射表
-/// 
+///
 /// # 返回
 /// 映射后的目标模型名称
 pub fn resolve_model_route(
@@ -157,22 +155,31 @@ pub fn resolve_model_route(
 ) -> String {
     // 1. 精确匹配 (最高优先级)
     if let Some(target) = custom_mapping.get(original_model) {
-        crate::modules::logger::log_info(&format!("[Router] 精确映射: {} -> {}", original_model, target));
+        crate::modules::logger::log_info(&format!(
+            "[Router] 精确映射: {} -> {}",
+            original_model, target
+        ));
         return target.clone();
     }
-    
+
     // 2. 通配符匹配
     for (pattern, target) in custom_mapping.iter() {
         if pattern.contains('*') && wildcard_match(pattern, original_model) {
-            crate::modules::logger::log_info(&format!("[Router] 通配符映射: {} -> {} (规则: {})", original_model, target, pattern));
+            crate::modules::logger::log_info(&format!(
+                "[Router] 通配符映射: {} -> {} (规则: {})",
+                original_model, target, pattern
+            ));
             return target.clone();
         }
     }
-    
+
     // 3. 系统默认映射
     let result = map_claude_model_to_gemini(original_model);
     if result != original_model {
-        crate::modules::logger::log_info(&format!("[Router] 系统默认映射: {} -> {}", original_model, result));
+        crate::modules::logger::log_info(&format!(
+            "[Router] 系统默认映射: {} -> {}",
+            original_model, result
+        ));
     }
     result
 }

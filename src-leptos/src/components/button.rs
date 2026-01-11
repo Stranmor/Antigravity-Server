@@ -25,27 +25,27 @@ impl ButtonVariant {
 #[component]
 pub fn Button(
     /// Button text content
-    #[prop(into)] 
+    #[prop(into)]
     text: String,
     /// Button variant
-    #[prop(optional)] 
+    #[prop(optional)]
     variant: ButtonVariant,
     /// Whether button is disabled
-    #[prop(optional)] 
+    #[prop(optional)]
     disabled: bool,
     /// Whether button is in loading state
-    #[prop(optional)] 
+    #[prop(optional)]
     loading: bool,
     /// Additional CSS class
-    #[prop(optional, into)] 
+    #[prop(optional, into)]
     class: String,
     /// Click handler
     on_click: impl Fn() + 'static + Clone,
 ) -> impl IntoView {
     let variant_class = variant.class();
-    
+
     view! {
-        <button 
+        <button
             class=move || {
                 let loading_class = if loading { "btn--loading" } else { "" };
                 format!("btn {} {} {}", variant_class, loading_class, class)

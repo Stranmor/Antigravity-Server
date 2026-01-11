@@ -1,6 +1,6 @@
 // OpenAI Handler
 use axum::{extract::Json, extract::State, http::StatusCode, response::IntoResponse};
-use base64::Engine as _; 
+use base64::Engine as _;
 use bytes::Bytes;
 use serde_json::{json, Value};
 use tracing::{debug, error, info}; // Import Engine trait for encode method
@@ -12,7 +12,7 @@ use crate::proxy::mappers::openai::{
 use crate::proxy::server::AppState;
 
 const MAX_RETRY_ATTEMPTS: usize = 10;
-const MAX_529_RETRY_ATTEMPTS: usize = 3600;  // 529 = 1 hour of retries (1 attempt per second)
+const MAX_529_RETRY_ATTEMPTS: usize = 3600; // 529 = 1 hour of retries (1 attempt per second)
 use crate::proxy::session_manager::SessionManager;
 
 pub async fn handle_chat_completions(
@@ -45,7 +45,11 @@ pub async fn handle_chat_completions(
     let upstream = state.upstream.clone();
     let token_manager = state.token_manager;
     let pool_size = token_manager.len();
-    let max_attempts = if pool_size == 0 { 1 } else { MAX_RETRY_ATTEMPTS };
+    let max_attempts = if pool_size == 0 {
+        1
+    } else {
+        MAX_RETRY_ATTEMPTS
+    };
 
     let mut last_error = String::new();
     let mut skip_rotation = false;
@@ -60,7 +64,7 @@ pub async fn handle_chat_completions(
         if retry_529_count > 0 && retry_529_count >= MAX_529_RETRY_ATTEMPTS {
             break;
         }
-        
+
         // 2. 模型路由解析
         let mapped_model = crate::proxy::common::model_mapping::resolve_model_route(
             &openai_req.model,
@@ -112,11 +116,11 @@ pub async fn handle_chat_completions(
         // [AUTO-CONVERSION] 非 Stream 请求自动转换为 Stream 以享受更宽松的配额
         let force_stream_internally = !client_wants_stream;
         let actual_stream = client_wants_stream || force_stream_internally;
-        
+
         if force_stream_internally {
             info!("[OpenAI] 🔄 Auto-converting non-stream request to stream for better quota");
         }
-        
+
         let method = if actual_stream {
             "streamGenerateContent"
         } else {
@@ -152,7 +156,7 @@ pub async fn handle_chat_completions(
                 let gemini_stream = response.bytes_stream();
                 let openai_stream =
                     create_openai_sse_stream(Box::pin(gemini_stream), openai_req.model.clone());
-                
+
                 // 判断客户端期望的格式
                 if client_wants_stream {
                     // 客户端本就要 Stream，直接返回 SSE
@@ -170,7 +174,7 @@ pub async fn handle_chat_completions(
                     // 客户端要非 Stream，需要收集完整响应并转换为 JSON
                     use crate::proxy::mappers::openai::collect_openai_stream_to_json;
                     use futures::StreamExt;
-                    
+
                     // 转换为 io::Error stream
                     let sse_stream = openai_stream.map(|result| -> Result<Bytes, std::io::Error> {
                         match result {
@@ -178,14 +182,25 @@ pub async fn handle_chat_completions(
                             Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
                         }
                     });
-                    
+
                     match collect_openai_stream_to_json(sse_stream).await {
                         Ok(full_response) => {
                             info!("[OpenAI] ✓ Stream collected and converted to JSON");
-                            return Ok((StatusCode::OK, [("X-Account-Email", email.as_str()), ("X-Mapped-Model", mapped_model.as_str())], Json(full_response)).into_response());
+                            return Ok((
+                                StatusCode::OK,
+                                [
+                                    ("X-Account-Email", email.as_str()),
+                                    ("X-Mapped-Model", mapped_model.as_str()),
+                                ],
+                                Json(full_response),
+                            )
+                                .into_response());
                         }
                         Err(e) => {
-                            return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Stream collection error: {}", e)));
+                            return Err((
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                format!("Stream collection error: {}", e),
+                            ));
                         }
                     }
                 }
@@ -197,13 +212,28 @@ pub async fn handle_chat_completions(
                 .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Parse error: {}", e)))?;
 
             let openai_response = transform_openai_response(&gemini_resp);
-            return Ok((StatusCode::OK, [("X-Account-Email", email.as_str()), ("X-Mapped-Model", mapped_model.as_str())], Json(openai_response)).into_response());
+            return Ok((
+                StatusCode::OK,
+                [
+                    ("X-Account-Email", email.as_str()),
+                    ("X-Mapped-Model", mapped_model.as_str()),
+                ],
+                Json(openai_response),
+            )
+                .into_response());
         }
 
         // 处理特定错误并重试
         let status_code = status.as_u16();
-        let retry_after = response.headers().get("Retry-After").and_then(|h| h.to_str().ok()).map(|s| s.to_string());
-        let error_text = response.text().await.unwrap_or_else(|_| format!("HTTP {}", status_code));
+        let retry_after = response
+            .headers()
+            .get("Retry-After")
+            .and_then(|h| h.to_str().ok())
+            .map(|s| s.to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| format!("HTTP {}", status_code));
         last_error = format!("HTTP {}: {}", status_code, error_text);
 
         // [New] 打印错误报文日志
@@ -216,7 +246,12 @@ pub async fn handle_chat_completions(
         // 429/529/503/500 智能处理
         if status_code == 429 || status_code == 529 || status_code == 503 || status_code == 500 {
             // 记录限流信息 (全局同步)
-            token_manager.mark_rate_limited(&email, status_code, retry_after.as_deref(), &error_text);
+            token_manager.mark_rate_limited(
+                &email,
+                status_code,
+                retry_after.as_deref(),
+                &error_text,
+            );
 
             // 1. 优先尝试解析 RetryInfo (由 Google Cloud 直接下发)
             if let Some(delay_ms) = crate::proxy::upstream::retry::parse_retry_delay(&error_text) {
@@ -248,12 +283,17 @@ pub async fn handle_chat_completions(
             if status_code == 529 {
                 retry_529_count += 1;
                 if retry_529_count >= MAX_529_RETRY_ATTEMPTS {
-                    error!("OpenAI 529 retry limit reached ({} attempts)", retry_529_count);
+                    error!(
+                        "OpenAI 529 retry limit reached ({} attempts)",
+                        retry_529_count
+                    );
                     return Err((status, error_text));
                 }
                 tracing::info!(
                     "OpenAI 529 retry {}/{}, waiting 1s (same account: {})",
-                    retry_529_count, MAX_529_RETRY_ATTEMPTS, email
+                    retry_529_count,
+                    MAX_529_RETRY_ATTEMPTS,
+                    email
                 );
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                 skip_rotation = true;
@@ -617,16 +657,18 @@ pub async fn handle_completions(
             &tools_val,
         );
 
-        let (access_token, project_id, email) =
-            match token_manager.get_token(&config.request_type, false, None).await {
-                Ok(t) => t,
-                Err(e) => {
-                    return Err((
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        format!("Token error: {}", e),
-                    ))
-                }
-            };
+        let (access_token, project_id, email) = match token_manager
+            .get_token(&config.request_type, false, None)
+            .await
+        {
+            Ok(t) => t,
+            Err(e) => {
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    format!("Token error: {}", e),
+                ))
+            }
+        };
 
         info!("✓ Using account: {} (type: {})", email, config.request_type);
 
@@ -737,18 +779,19 @@ pub async fn handle_completions(
 pub async fn handle_list_models(State(state): State<AppState>) -> impl IntoResponse {
     use crate::proxy::common::model_mapping::get_all_dynamic_models;
 
-    let model_ids = get_all_dynamic_models(
-        &state.custom_mapping,
-    ).await;
+    let model_ids = get_all_dynamic_models(&state.custom_mapping).await;
 
-    let data: Vec<_> = model_ids.into_iter().map(|id| {
-        json!({
-            "id": id,
-            "object": "model",
-            "created": 1706745600,
-            "owned_by": "antigravity"
+    let data: Vec<_> = model_ids
+        .into_iter()
+        .map(|id| {
+            json!({
+                "id": id,
+                "object": "model",
+                "created": 1706745600,
+                "owned_by": "antigravity"
+            })
         })
-    }).collect();
+        .collect();
 
     Json(json!({
         "object": "list",
@@ -829,16 +872,16 @@ pub async fn handle_images_generations(
     let upstream = state.upstream.clone();
     let token_manager = state.token_manager;
 
-    let (access_token, project_id, email) = match token_manager.get_token("image_gen", false, None).await
-    {
-        Ok(t) => t,
-        Err(e) => {
-            return Err((
-                StatusCode::SERVICE_UNAVAILABLE,
-                format!("Token error: {}", e),
-            ))
-        }
-    };
+    let (access_token, project_id, email) =
+        match token_manager.get_token("image_gen", false, None).await {
+            Ok(t) => t,
+            Err(e) => {
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    format!("Token error: {}", e),
+                ))
+            }
+        };
 
     info!("✓ Using account: {} for image generation", email);
 
@@ -1079,16 +1122,16 @@ pub async fn handle_images_edits(
     let upstream = state.upstream.clone();
     let token_manager = state.token_manager;
     // Fix: Proper get_token call with correct signature and unwrap (using image_gen quota)
-    let (access_token, project_id, _email) = match token_manager.get_token("image_gen", false, None).await
-    {
-        Ok(t) => t,
-        Err(e) => {
-            return Err((
-                StatusCode::SERVICE_UNAVAILABLE,
-                format!("Token error: {}", e),
-            ))
-        }
-    };
+    let (access_token, project_id, _email) =
+        match token_manager.get_token("image_gen", false, None).await {
+            Ok(t) => t,
+            Err(e) => {
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    format!("Token error: {}", e),
+                ))
+            }
+        };
 
     // 2. 映射配置
     let mut contents_parts = Vec::new();

@@ -1,23 +1,23 @@
 //! Monitor page - Real-time request logging
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
 use crate::app::AppState;
 use crate::components::{Button, ButtonVariant};
 use crate::tauri::commands;
 use crate::types::{ProxyRequestLog, ProxyStats};
+use leptos::prelude::*;
+use leptos::task::spawn_local;
 
 #[component]
 pub fn Monitor() -> impl IntoView {
     let state = expect_context::<AppState>();
-    
+
     // Local state
     let logs = RwSignal::new(Vec::<ProxyRequestLog>::new());
     let stats = RwSignal::new(ProxyStats::default());
     let filter = RwSignal::new(String::new());
     let logging_enabled = RwSignal::new(true);
     let loading = RwSignal::new(false);
-    
+
     // Load logs and stats
     let load_data = move || {
         loading.set(true);
@@ -33,12 +33,12 @@ pub fn Monitor() -> impl IntoView {
             loading.set(false);
         });
     };
-    
+
     // Initial load
     Effect::new(move |_| {
         load_data();
     });
-    
+
     // Auto-refresh every 2 seconds when enabled
     Effect::new(move |_| {
         if logging_enabled.get() && state.proxy_status.get().running {
@@ -50,32 +50,35 @@ pub fn Monitor() -> impl IntoView {
             });
         }
     });
-    
+
     // Filtered logs
     let filtered_logs = Memo::new(move |_| {
         let query = filter.get().to_lowercase();
         let all_logs = logs.get();
-        
+
         if query.is_empty() {
             all_logs
         } else {
-            all_logs.into_iter()
+            all_logs
+                .into_iter()
                 .filter(|l| {
-                    l.path.to_lowercase().contains(&query) ||
-                    l.method.to_lowercase().contains(&query) ||
-                    l.model.as_ref().is_some_and(|m| m.to_lowercase().contains(&query)) ||
-                    l.status.to_string().contains(&query)
+                    l.path.to_lowercase().contains(&query)
+                        || l.method.to_lowercase().contains(&query)
+                        || l.model
+                            .as_ref()
+                            .is_some_and(|m| m.to_lowercase().contains(&query))
+                        || l.status.to_string().contains(&query)
                 })
                 .collect()
         }
     });
-    
+
     // Computed stats from logs
     let log_stats = Memo::new(move |_| {
         let s = stats.get();
         (s.total_requests, s.success_requests, s.failed_requests)
     });
-    
+
     let on_clear = move || {
         spawn_local(async move {
             if commands::clear_proxy_logs().await.is_ok() {
@@ -83,7 +86,7 @@ pub fn Monitor() -> impl IntoView {
             }
         });
     };
-    
+
     let on_toggle_logging = move || {
         let new_state = !logging_enabled.get();
         spawn_local(async move {
@@ -103,14 +106,14 @@ pub fn Monitor() -> impl IntoView {
                         <p class="subtitle">"Real-time API request logging"</p>
                     </div>
                 </div>
-                
+
                 <div class="header-stats">
                     <span class="stat stat--total">{move || log_stats.get().0}" REQS"</span>
                     <span class="stat stat--success">{move || log_stats.get().1}" OK"</span>
                     <span class="stat stat--error">{move || log_stats.get().2}" ERR"</span>
                 </div>
             </header>
-            
+
             // Proxy status banner
             <Show when=move || !state.proxy_status.get().running>
                 <div class="alert alert--warning">
@@ -119,64 +122,64 @@ pub fn Monitor() -> impl IntoView {
                     <a href="/proxy" class="btn btn--primary btn--sm">"Start Proxy"</a>
                 </div>
             </Show>
-            
+
             // Controls
             <div class="monitor-controls">
-                <button 
+                <button
                     class=move || format!("recording-btn {}", if logging_enabled.get() { "recording" } else { "paused" })
                     on:click=move |_| on_toggle_logging()
                 >
                     <span class="dot"></span>
                     {move || if logging_enabled.get() { "Recording" } else { "Paused" }}
                 </button>
-                
+
                 <div class="search-box">
-                    <input 
+                    <input
                         type="text"
                         placeholder="Filter by URL, model, status..."
                         prop:value=move || filter.get()
                         on:input=move |ev| filter.set(event_target_value(&ev))
                     />
                 </div>
-                
+
                 <div class="quick-filters">
-                    <button 
+                    <button
                         class=move || if filter.get().is_empty() { "active" } else { "" }
                         on:click=move |_| filter.set(String::new())
                     >"All"</button>
-                    <button 
+                    <button
                         class=move || if filter.get() == "4" { "active" } else { "" }
                         on:click=move |_| filter.set("4".to_string())
                     >"Errors"</button>
-                    <button 
+                    <button
                         class=move || if filter.get() == "gemini" { "active" } else { "" }
                         on:click=move |_| filter.set("gemini".to_string())
                     >"Gemini"</button>
-                    <button 
+                    <button
                         class=move || if filter.get() == "claude" { "active" } else { "" }
                         on:click=move |_| filter.set("claude".to_string())
                     >"Claude"</button>
-                    <button 
+                    <button
                         class=move || if filter.get() == "openai" { "active" } else { "" }
                         on:click=move |_| filter.set("openai".to_string())
                     >"OpenAI"</button>
                 </div>
-                
+
                 <div class="controls-right">
-                    <Button 
+                    <Button
                         text="🔄".to_string()
                         variant=ButtonVariant::Ghost
                         loading=loading.get()
                         on_click=load_data
                     />
-                    <Button 
+                    <Button
                         text="🗑".to_string()
                         variant=ButtonVariant::Ghost
                         on_click=on_clear
                     />
                 </div>
             </div>
-            
+
             // Token stats
             <div class="token-stats">
                 <div class="token-stat">
@@ -188,7 +191,7 @@ pub fn Monitor() -> impl IntoView {
                     <span class="token-value">{move || format_tokens(stats.get().total_output_tokens)}</span>
                 </div>
             </div>
-            
+
             // Logs table
             <div class="logs-table-container">
                 <table class="logs-table">
@@ -209,7 +212,7 @@ pub fn Monitor() -> impl IntoView {
                             each=move || filtered_logs.get()
                             key=|log| log.id.clone()
                             children=|log| {
-                                let status_class = if log.status >= 200 && log.status < 400 { "success" } 
+                                let status_class = if log.status >= 200 && log.status < 400 { "success" }
                                     else if log.status >= 400 && log.status < 500 { "warning" }
                                     else { "error" };
                                 let model_display = log.model.clone().unwrap_or_else(|| "-".to_string());
@@ -221,7 +224,7 @@ pub fn Monitor() -> impl IntoView {
                                 let tokens_out = log.output_tokens.unwrap_or(0);
                                 let time = format_timestamp(log.timestamp);
                                 let has_error = log.error_message.is_some();
-                                
+
                                 view! {
                                     <tr class=format!("log-row {}", if has_error { "has-error" } else { "" })>
                                         <td class="col-time">{time}</td>
@@ -249,14 +252,14 @@ pub fn Monitor() -> impl IntoView {
                         />
                     </tbody>
                 </table>
-                
+
                 <Show when=move || filtered_logs.get().is_empty()>
                     <div class="empty-state">
                         <span class="empty-icon">"📡"</span>
-                        <p>{move || if state.proxy_status.get().running { 
-                            "No requests yet" 
-                        } else { 
-                            "Proxy is not running" 
+                        <p>{move || if state.proxy_status.get().running {
+                            "No requests yet"
+                        } else {
+                            "Proxy is not running"
                         }}</p>
                         <p class="hint">{move || if state.proxy_status.get().running {
                             "Requests will appear here as they come in"

@@ -122,11 +122,11 @@ pub struct ExperimentalConfig {
     /// 启用双层签名缓存 (Signature Cache)
     #[serde(default = "default_true")]
     pub enable_signature_cache: bool,
-    
+
     /// 启用工具循环自动恢复 (Tool Loop Recovery)
     #[serde(default = "default_true")]
     pub enable_tool_loop_recovery: bool,
-    
+
     /// 启用跨模型兼容性检查 (Cross-Model Checks)
     #[serde(default = "default_true")]
     pub enable_cross_model_checks: bool,
@@ -142,7 +142,9 @@ impl Default for ExperimentalConfig {
     }
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 /// 反代服务配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,13 +165,12 @@ pub struct ProxyConfig {
     /// - auto: recommended defaults (currently: allow_lan_access => all_except_health, else off)
     #[serde(default)]
     pub auth_mode: ProxyAuthMode,
-    
+
     /// 监听端口
     pub port: u16,
-    
+
     /// API 密钥
     pub api_key: String,
-    
 
     /// 是否自动启动
     pub auto_start: bool,
@@ -193,7 +194,7 @@ pub struct ProxyConfig {
     /// z.ai provider configuration (Anthropic-compatible).
     #[serde(default)]
     pub zai: ZaiConfig,
-    
+
     /// 账号调度配置 (粘性会话/限流重试)
     #[serde(default)]
     pub scheduling: crate::proxy::sticky_config::StickySessionConfig,
@@ -233,7 +234,7 @@ impl Default for ProxyConfig {
 }
 
 fn default_request_timeout() -> u64 {
-    120  // 默认 120 秒,原来 60 秒太短
+    120 // 默认 120 秒,原来 60 秒太短
 }
 
 fn default_zai_base_url() -> String {

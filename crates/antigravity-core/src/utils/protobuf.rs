@@ -96,7 +96,9 @@ pub fn find_field(data: &[u8], target_field: u32) -> Result<Option<Vec<u8>>, Str
 
         if field_num == target_field && wire_type == 2 {
             let (length, content_offset) = read_varint(data, new_offset)?;
-            return Ok(Some(data[content_offset..content_offset + length as usize].to_vec()));
+            return Ok(Some(
+                data[content_offset..content_offset + length as usize].to_vec(),
+            ));
         }
 
         // 跳过字段
@@ -107,7 +109,7 @@ pub fn find_field(data: &[u8], target_field: u32) -> Result<Option<Vec<u8>>, Str
 }
 
 /// 创建 OAuthTokenInfo (Field 6)
-/// 
+///
 /// 结构：
 /// message OAuthTokenInfo {
 ///     optional string access_token = 1;
@@ -146,14 +148,14 @@ pub fn create_oauth_field(access_token: &str, refresh_token: &str, expiry: i64) 
 
     // Field 4: expiry (嵌套的 Timestamp 消息, wire_type = 2)
     // Timestamp 消息包含: Field 1: seconds (int64, wire_type = 0)
-    let timestamp_tag = (1 << 3) | 0;  // Field 1, varint
+    let timestamp_tag = (1 << 3) | 0; // Field 1, varint
     let timestamp_msg = {
         let mut m = encode_varint(timestamp_tag);
         m.extend(encode_varint(expiry as u64));
         m
     };
-    
-    let tag4 = (4 << 3) | 2;  // Field 4, length-delimited
+
+    let tag4 = (4 << 3) | 2; // Field 4, length-delimited
     let field4 = {
         let mut f = encode_varint(tag4);
         f.extend(encode_varint(timestamp_msg.len() as u64));

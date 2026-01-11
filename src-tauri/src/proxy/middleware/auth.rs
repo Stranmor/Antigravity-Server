@@ -1,7 +1,7 @@
 // API Key 认证中间件
 use axum::{
-    extract::State,
     extract::Request,
+    extract::State,
     http::{header, StatusCode},
     middleware::Next,
     response::Response,
@@ -42,7 +42,7 @@ pub async fn auth_middleware(
     if matches!(effective_mode, ProxyAuthMode::AllExceptHealth) && path == "/healthz" {
         return Ok(next.run(request).await);
     }
-    
+
     // 从 header 中提取 API key
     let api_key = request
         .headers()

@@ -100,9 +100,7 @@ pub enum ContentBlock {
     },
 
     #[serde(rename = "redacted_thinking")]
-    RedactedThinking {
-        data: String,
-    },
+    RedactedThinking { data: String },
 
     #[serde(rename = "tool_use")]
     ToolUse {
@@ -149,8 +147,8 @@ pub struct ImageSource {
 pub struct DocumentSource {
     #[serde(rename = "type")]
     pub source_type: String, // "base64"
-    pub media_type: String,  // e.g. "application/pdf"
-    pub data: String,        // base64 data
+    pub media_type: String, // e.g. "application/pdf"
+    pub data: String,       // base64 data
 }
 
 /// Tool - supports both client tools (with input_schema) and server tools (like web_search)

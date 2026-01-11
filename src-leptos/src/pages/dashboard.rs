@@ -1,21 +1,21 @@
 //! Dashboard page with full features
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
 use crate::app::AppState;
-use crate::components::{StatsCard, Button, ButtonVariant};
+use crate::components::{Button, ButtonVariant, StatsCard};
 use crate::tauri::commands;
 use crate::types::DashboardStats;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
 
 #[component]
 pub fn Dashboard() -> impl IntoView {
     let state = expect_context::<AppState>();
-    
+
     // Loading states
     let refresh_pending = RwSignal::new(false);
     let export_pending = RwSignal::new(false);
     let message = RwSignal::new(Option::<(String, bool)>::None);
-    
+
     let show_message = move |msg: String, is_error: bool| {
         message.set(Some((msg, is_error)));
         spawn_local(async move {
@@ -23,52 +23,68 @@ pub fn Dashboard() -> impl IntoView {
             message.set(None);
         });
     };
-    
+
     // Compute stats from accounts
-    let stats = Memo::new(move |_| {
-        DashboardStats::from_accounts(&state.accounts.get())
-    });
-    
+    let stats = Memo::new(move |_| DashboardStats::from_accounts(&state.accounts.get()));
+
     // Current account info
     let current_account = Memo::new(move |_| {
         let current_id = state.current_account_id.get();
-        current_id.and_then(|id| {
-            state.accounts.get().into_iter().find(|a| a.id == id)
-        })
+        current_id.and_then(|id| state.accounts.get().into_iter().find(|a| a.id == id))
     });
-    
+
     // Best accounts by quota (top 5)
     let best_accounts = Memo::new(move |_| {
         let mut accounts = state.accounts.get();
         accounts.sort_by(|a, b| {
-            let quota_a = a.quota.as_ref().map(|q| {
-                q.models.iter()
-                    .map(|m| if m.limit > 0 { (m.limit - m.used) * 100 / m.limit } else { 0 })
-                    .max()
-                    .unwrap_or(0)
-            }).unwrap_or(0);
-            let quota_b = b.quota.as_ref().map(|q| {
-                q.models.iter()
-                    .map(|m| if m.limit > 0 { (m.limit - m.used) * 100 / m.limit } else { 0 })
-                    .max()
-                    .unwrap_or(0)
-            }).unwrap_or(0);
+            let quota_a = a
+                .quota
+                .as_ref()
+                .map(|q| {
+                    q.models
+                        .iter()
+                        .map(|m| {
+                            if m.limit > 0 {
+                                (m.limit - m.used) * 100 / m.limit
+                            } else {
+                                0
+                            }
+                        })
+                        .max()
+                        .unwrap_or(0)
+                })
+                .unwrap_or(0);
+            let quota_b = b
+                .quota
+                .as_ref()
+                .map(|q| {
+                    q.models
+                        .iter()
+                        .map(|m| {
+                            if m.limit > 0 {
+                                (m.limit - m.used) * 100 / m.limit
+                            } else {
+                                0
+                            }
+                        })
+                        .max()
+                        .unwrap_or(0)
+                })
+                .unwrap_or(0);
             quota_b.cmp(&quota_a)
         });
         accounts.into_iter().take(5).collect::<Vec<_>>()
     });
-    
+
     // Greeting
-    let greeting = Memo::new(move |_| {
-        match current_account.get() {
-            Some(account) => {
-                let name = account.email.split('@').next().unwrap_or("User");
-                format!("Hello, {}!", name)
-            }
-            None => "Welcome to Antigravity!".to_string()
+    let greeting = Memo::new(move |_| match current_account.get() {
+        Some(account) => {
+            let name = account.email.split('@').next().unwrap_or("User");
+            format!("Hello, {}!", name)
         }
+        None => "Welcome to Antigravity!".to_string(),
     });
-    
+
     // Actions
     let on_refresh_current = move || {
         if let Some(account) = current_account.get_untracked() {
@@ -88,17 +104,37 @@ pub fn Dashboard() -> impl IntoView {
             });
         }
     };
-    
+
     let on_export_all = move || {
         export_pending.set(true);
-        let accounts = state.accounts.get();
+        let accounts = state.accounts.get_untracked();
         spawn_local(async move {
-            // For now, just show a message - full export would need file dialog
-            show_message(format!("Export: {} accounts (TODO: save dialog)", accounts.len()), false);
+            // Build export data
+            let export_data: Vec<_> = accounts
+                .iter()
+                .filter_map(|acc| {
+                    acc.tokens.as_ref().and_then(|t| t.refresh_token.clone()).map(|rt| {
+                        serde_json::json!({
+                            "email": acc.email,
+                            "refresh_token": rt,
+                        })
+                    })
+                })
+                .collect();
+            let content = serde_json::to_string_pretty(&export_data).unwrap_or_default();
+
+            // Copy to clipboard for now (file dialog requires native integration)
+            if let Some(window) = web_sys::window() {
+                let clipboard = window.navigator().clipboard();
+                let _ = clipboard.write_text(&content);
+                show_message(format!("Exported {} accounts to clipboard", export_data.len()), false);
+            } else {
+                show_message("Export failed: clipboard unavailable".to_string(), true);
+            }
             export_pending.set(false);
         });
     };
-    
+
     let on_switch_account = move |account_id: String| {
         spawn_local(async move {
             if commands::switch_account(&account_id).await.is_ok() {
@@ -117,14 +153,14 @@ pub fn Dashboard() -> impl IntoView {
                     <p class="subtitle">"Overview of your Antigravity accounts"</p>
                 </div>
             <div class="header-actions">
-                    <button 
+                    <button
                         class="btn btn--secondary"
                         disabled=move || refresh_pending.get() || current_account.get().is_none()
                         on:click=move |_| on_refresh_current()
                     >
                         {move || if refresh_pending.get() { "Loading..." } else { "🔄 Refresh" }}
                     </button>
-                    <Button 
+                    <Button
                         text="📥 Export".to_string()
                         variant=ButtonVariant::Secondary
                         on_click=on_export_all
@@ -132,7 +168,7 @@ pub fn Dashboard() -> impl IntoView {
                     />
                 </div>
             </header>
-            
+
             // Message banner
             <Show when=move || message.get().is_some()>
                 {move || {
@@ -144,16 +180,16 @@ pub fn Dashboard() -> impl IntoView {
                     }
                 }}
             </Show>
-            
+
             // Stats grid
             <section class="stats-grid stats-grid--5">
-                <StatsCard 
+                <StatsCard
                     title="Total Accounts".to_string()
                     value=Signal::derive(move || stats.get().total_accounts.to_string())
                     icon="👥".to_string()
                     color="blue".to_string()
                 />
-                <StatsCard 
+                <StatsCard
                     title="Avg Gemini Quota".to_string()
                     value=Signal::derive(move || format!("{}%", stats.get().avg_gemini_quota))
                     icon="✨".to_string()
@@ -162,7 +198,7 @@ pub fn Dashboard() -> impl IntoView {
                         if stats.get().avg_gemini_quota >= 50 { "Sufficient" } else { "Low" }.to_string()
                     })
                 />
-                <StatsCard 
+                <StatsCard
                     title="Avg Image Quota".to_string()
                     value=Signal::derive(move || format!("{}%", stats.get().avg_gemini_image_quota))
                     icon="🎨".to_string()
@@ -171,7 +207,7 @@ pub fn Dashboard() -> impl IntoView {
                         if stats.get().avg_gemini_image_quota >= 50 { "Sufficient" } else { "Low" }.to_string()
                     })
                 />
-                <StatsCard 
+                <StatsCard
                     title="Avg Claude Quota".to_string()
                     value=Signal::derive(move || format!("{}%", stats.get().avg_claude_quota))
                     icon="🤖".to_string()
@@ -180,7 +216,7 @@ pub fn Dashboard() -> impl IntoView {
                         if stats.get().avg_claude_quota >= 50 { "Sufficient" } else { "Low" }.to_string()
                     })
                 />
-                <StatsCard 
+                <StatsCard
                     title="Low Quota".to_string()
                     value=Signal::derive(move || stats.get().low_quota_count.to_string())
                     icon="⚠️".to_string()
@@ -188,7 +224,7 @@ pub fn Dashboard() -> impl IntoView {
                     subtitle=Signal::derive(|| "< 20% remaining".to_string())
                 />
             </section>
-            
+
             // Two column layout
             <div class="dashboard-columns">
                 // Current Account
@@ -202,20 +238,20 @@ pub fn Dashboard() -> impl IntoView {
                                     .map(|m| if m.limit > 0 { (m.limit - m.used) * 100 / m.limit } else { 0 })
                                     .unwrap_or(0)
                             }).unwrap_or(0);
-                            
+
                             let claude_quota = account.quota.as_ref().map(|q| {
                                 q.models.iter()
                                     .find(|m| m.model.contains("claude"))
                                     .map(|m| if m.limit > 0 { (m.limit - m.used) * 100 / m.limit } else { 0 })
                                     .unwrap_or(0)
                             }).unwrap_or(0);
-                            
+
                             let tier = account.quota.as_ref()
                                 .and_then(|q| q.subscription_tier.clone())
                                 .unwrap_or_else(|| "Free".to_string());
                             let tier_class = tier.to_lowercase();
                             let tier_display = tier.clone();
-                            
+
                             view! {
                                 <div class="current-account-detail">
                                     <div class="account-header">
@@ -251,7 +287,7 @@ pub fn Dashboard() -> impl IntoView {
                         }.into_any()
                     }}
                 </section>
-                
+
                 // Best Accounts
                 <section class="dashboard-card">
                     <h2>"Top Accounts"</h2>
@@ -266,20 +302,20 @@ pub fn Dashboard() -> impl IntoView {
                                 let is_current = Memo::new(move |_| {
                                     state.current_account_id.get() == Some(account_id.clone())
                                 });
-                                
+
                                 let max_quota = account.quota.as_ref().map(|q| {
                                     q.models.iter()
                                         .map(|m| if m.limit > 0 { (m.limit - m.used) * 100 / m.limit } else { 0 })
                                         .max()
                                         .unwrap_or(0)
                                 }).unwrap_or(0);
-                                
+
                                 let tier = account.quota.as_ref()
                                     .and_then(|q| q.subscription_tier.clone())
                                     .unwrap_or_else(|| "Free".to_string());
                                 let tier_class = tier.to_lowercase();
                                 let tier_display = tier.clone();
-                                
+
                                 view! {
                                     <div class=move || format!("best-account-item {}", if is_current.get() { "is-current" } else { "" })>
                                         <div class="account-info">
@@ -291,7 +327,7 @@ pub fn Dashboard() -> impl IntoView {
                                         </div>
                                         <div class="quota-info">
                                             <span class="quota-value">{max_quota}"%"</span>
-                                            <button 
+                                            <button
                                                 class="btn btn--icon btn--sm"
                                                 title="Switch"
                                                 on:click={
@@ -310,7 +346,7 @@ pub fn Dashboard() -> impl IntoView {
                     </div>
                 </section>
             </div>
-            
+
             // Tier breakdown
             <section class="tier-section">
                 <h2>"Account Tiers"</h2>
@@ -333,7 +369,7 @@ pub fn Dashboard() -> impl IntoView {
                     </div>
                 </div>
             </section>
-            
+
             // Quick actions
             <section class="quick-actions">
                 <h2>"Quick Actions"</h2>

@@ -1,13 +1,13 @@
 //! Page components
 
-mod dashboard;
 mod accounts;
+mod dashboard;
+mod monitor;
 mod proxy;
 mod settings;
-mod monitor;
 
-pub use dashboard::Dashboard;
 pub use accounts::Accounts;
+pub use dashboard::Dashboard;
+pub use monitor::Monitor;
 pub use proxy::ApiProxy;
 pub use settings::Settings;
-pub use monitor::Monitor;

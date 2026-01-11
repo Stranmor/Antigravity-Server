@@ -21,14 +21,22 @@ pub fn Modal(
     #[prop(into)] on_confirm: Callback<()>,
     #[prop(into)] on_cancel: Callback<()>,
 ) -> impl IntoView {
-    let confirm_text = if confirm_text.is_empty() { "Confirm".to_string() } else { confirm_text };
-    let cancel_text = if cancel_text.is_empty() { "Cancel".to_string() } else { cancel_text };
-    
+    let confirm_text = if confirm_text.is_empty() {
+        "Confirm".to_string()
+    } else {
+        confirm_text
+    };
+    let cancel_text = if cancel_text.is_empty() {
+        "Cancel".to_string()
+    } else {
+        cancel_text
+    };
+
     let confirm_class = match modal_type {
         ModalType::Danger => "btn btn--danger",
         _ => "btn btn--primary",
     };
-    
+
     let on_cancel_overlay = on_cancel.clone();
     let on_cancel_close = on_cancel.clone();
     let on_cancel_btn = on_cancel.clone();
@@ -47,19 +55,19 @@ pub fn Modal(
                             "×"
                         </button>
                     </div>
-                    
+
                     <div class="modal-body">
                         <p>{message_clone.clone()}</p>
                     </div>
-                    
+
                     <div class="modal-footer">
-                        <button 
+                        <button
                             class="btn btn--secondary"
                             on:click=move |_| on_cancel_btn.run(())
                         >
                             {cancel_text_clone.clone()}
                         </button>
-                        <button 
+                        <button
                             class=confirm_class
                             on:click=move |_| on_confirm.run(())
                         >

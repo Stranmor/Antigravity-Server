@@ -10,8 +10,12 @@ pub fn StatsCard(
     #[prop(optional, into)] color: String,
     #[prop(optional)] subtitle: Option<Signal<String>>,
 ) -> impl IntoView {
-    let color_class = if color.is_empty() { "blue".to_string() } else { color };
-    
+    let color_class = if color.is_empty() {
+        "blue".to_string()
+    } else {
+        color
+    };
+
     view! {
         <div class=format!("stats-card stats-card--{}", color_class)>
             <div class="stats-card__icon">{icon}</div>

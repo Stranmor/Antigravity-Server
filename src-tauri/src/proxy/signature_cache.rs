@@ -60,11 +60,14 @@ impl SignatureCache {
         if signature.len() < MIN_SIGNATURE_LENGTH {
             return;
         }
-        
+
         if let Ok(mut cache) = self.tool_signatures.lock() {
-            tracing::debug!("[SignatureCache] Caching tool signature for id: {}", tool_use_id);
+            tracing::debug!(
+                "[SignatureCache] Caching tool signature for id: {}",
+                tool_use_id
+            );
             cache.insert(tool_use_id.to_string(), CacheEntry::new(signature));
-            
+
             // Clean up expired entries occasionally (simple approach: unexpected check)
             // In a production system we might want a dedicated background task
             if cache.len() > 1000 {
@@ -78,7 +81,10 @@ impl SignatureCache {
         if let Ok(cache) = self.tool_signatures.lock() {
             if let Some(entry) = cache.get(tool_use_id) {
                 if !entry.is_expired() {
-                    tracing::debug!("[SignatureCache] Hit tool signature for id: {}", tool_use_id);
+                    tracing::debug!(
+                        "[SignatureCache] Hit tool signature for id: {}",
+                        tool_use_id
+                    );
                     return Some(entry.data.clone());
                 }
             }
@@ -93,9 +99,13 @@ impl SignatureCache {
         }
 
         if let Ok(mut cache) = self.thinking_families.lock() {
-            tracing::debug!("[SignatureCache] Caching thinking family for sig (len={}): {}", signature.len(), family);
+            tracing::debug!(
+                "[SignatureCache] Caching thinking family for sig (len={}): {}",
+                signature.len(),
+                family
+            );
             cache.insert(signature, CacheEntry::new(family));
-            
+
             if cache.len() > 1000 {
                 cache.retain(|_, v| !v.is_expired());
             }
@@ -136,7 +146,7 @@ mod tests {
     fn test_tool_signature_cache() {
         let cache = SignatureCache::new();
         let sig = "x".repeat(60); // Valid length
-        
+
         cache.cache_tool_signature("tool_1", sig.clone());
         assert_eq!(cache.get_tool_signature("tool_1"), Some(sig));
         assert_eq!(cache.get_tool_signature("tool_2"), None);
@@ -153,7 +163,7 @@ mod tests {
     fn test_thinking_family() {
         let cache = SignatureCache::new();
         let sig = "y".repeat(60);
-        
+
         cache.cache_thinking_family(sig.clone(), "claude".to_string());
         assert_eq!(cache.get_signature_family(&sig), Some("claude".to_string()));
     }

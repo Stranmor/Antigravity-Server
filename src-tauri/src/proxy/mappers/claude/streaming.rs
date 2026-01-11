@@ -27,7 +27,7 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
                         tracing::debug!("[Streaming] Remapped Grep: query → pattern");
                     }
                 }
-                
+
                 // [CRITICAL FIX] Claude Code uses "path" (string), NOT "paths" (array)!
                 if !obj.contains_key("path") {
                     // Check if Gemini sent "paths" (array) - convert to string
@@ -45,7 +45,10 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
                             ".".to_string()
                         };
                         obj.insert("path".to_string(), serde_json::json!(path_str));
-                        tracing::debug!("[Streaming] Remapped Grep: paths → path(\"{}\")", path_str);
+                        tracing::debug!(
+                            "[Streaming] Remapped Grep: paths → path(\"{}\")",
+                            path_str
+                        );
                     } else {
                         // No path provided at all - default to current directory
                         obj.insert("path".to_string(), serde_json::json!("."));
@@ -61,7 +64,7 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
                         tracing::debug!("[Streaming] Remapped Glob: query → pattern");
                     }
                 }
-                
+
                 // [CRITICAL FIX] Claude Code uses "path" (string), NOT "paths" (array)!
                 if !obj.contains_key("path") {
                     if let Some(paths) = obj.remove("paths") {
@@ -76,7 +79,10 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
                             ".".to_string()
                         };
                         obj.insert("path".to_string(), serde_json::json!(path_str));
-                        tracing::debug!("[Streaming] Remapped Glob: paths → path(\"{}\")", path_str);
+                        tracing::debug!(
+                            "[Streaming] Remapped Glob: paths → path(\"{}\")",
+                            path_str
+                        );
                     } else {
                         obj.insert("path".to_string(), serde_json::json!("."));
                         tracing::debug!("[Streaming] Remapped Glob: default path → \".\"");
@@ -93,14 +99,18 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
                 }
             }
             "ls" => {
-                 // LS tool: ensure "path" parameter exists
-                 if !obj.contains_key("path") {
-                     obj.insert("path".to_string(), json!("."));
-                     tracing::debug!("[Streaming] Remapped LS: default path → \".\"");
-                 }
+                // LS tool: ensure "path" parameter exists
+                if !obj.contains_key("path") {
+                    obj.insert("path".to_string(), json!("."));
+                    tracing::debug!("[Streaming] Remapped LS: default path → \".\"");
+                }
             }
             other => {
-                 tracing::debug!("[Streaming] Unmapped tool call: {} (args: {:?})", other, obj.keys());
+                tracing::debug!(
+                    "[Streaming] Unmapped tool call: {} (args: {:?})",
+                    other,
+                    obj.keys()
+                );
             }
         }
     }
@@ -341,7 +351,7 @@ impl StreamingState {
         // 处理 grounding(web search) -> 转换为 Markdown 文本块
         if self.web_search_query.is_some() || self.grounding_chunks.is_some() {
             let mut grounding_text = String::new();
-            
+
             // 1. 处理搜索词
             if let Some(query) = &self.web_search_query {
                 if !query.is_empty() {
@@ -355,12 +365,15 @@ impl StreamingState {
                 let mut links = Vec::new();
                 for (i, chunk) in chunks.iter().enumerate() {
                     if let Some(web) = chunk.get("web") {
-                        let title = web.get("title").and_then(|v| v.as_str()).unwrap_or("网页来源");
+                        let title = web
+                            .get("title")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("网页来源");
                         let uri = web.get("uri").and_then(|v| v.as_str()).unwrap_or("#");
                         links.push(format!("[{}] [{}]({})", i + 1, title, uri));
                     }
                 }
-                
+
                 if !links.is_empty() {
                     grounding_text.push_str("\n\n**🌐 来源引文：**\n");
                     grounding_text.push_str(&links.join("\n"));
@@ -369,13 +382,19 @@ impl StreamingState {
 
             if !grounding_text.is_empty() {
                 // 发送一个新的 text 块
-                chunks.push(self.emit("content_block_start", json!({
-                    "type": "content_block_start",
-                    "index": self.block_index,
-                    "content_block": { "type": "text", "text": "" }
-                })));
+                chunks.push(self.emit(
+                    "content_block_start",
+                    json!({
+                        "type": "content_block_start",
+                        "index": self.block_index,
+                        "content_block": { "type": "text", "text": "" }
+                    }),
+                ));
                 chunks.push(self.emit_delta("text_delta", json!({ "text": grounding_text })));
-                chunks.push(self.emit("content_block_stop", json!({ "type": "content_block_stop", "index": self.block_index })));
+                chunks.push(self.emit(
+                    "content_block_stop",
+                    json!({ "type": "content_block_stop", "index": self.block_index }),
+                ));
                 self.block_index += 1;
             }
         }
@@ -389,15 +408,13 @@ impl StreamingState {
             "end_turn"
         };
 
-        let usage = usage_metadata
-            .map(|u| to_claude_usage(u))
-            .unwrap_or(Usage {
-                input_tokens: 0,
-                output_tokens: 0,
-                cache_read_input_tokens: None,
-                cache_creation_input_tokens: None,
-                server_tool_use: None,
-            });
+        let usage = usage_metadata.map(|u| to_claude_usage(u)).unwrap_or(Usage {
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read_input_tokens: None,
+            cache_creation_input_tokens: None,
+            server_tool_use: None,
+        });
 
         chunks.push(self.emit(
             "message_delta",
@@ -488,7 +505,7 @@ impl StreamingState {
                 "[SSE-Parser] High error rate detected ({} errors). Stream may be corrupted.",
                 self.parse_error_count
             );
-            
+
             // [FIX] Explicitly signal error to client to prevent UI freeze
             // Using "overloaded_error" type to suggest retry
             chunks.push(self.emit("error", json!({
@@ -631,9 +648,9 @@ impl<'a> PartProcessor<'a> {
         if let Some(ref sig) = signature {
             // 1. Cache family if we know the model
             if let Some(model) = &self.state.model_name {
-                 SignatureCache::global().cache_thinking_family(sig.clone(), model.clone());
+                SignatureCache::global().cache_thinking_family(sig.clone(), model.clone());
             }
-            
+
             tracing::debug!(
                 "[Claude-SSE] Captured thought_signature from thinking block (length: {})",
                 sig.len()
@@ -755,11 +772,11 @@ impl<'a> PartProcessor<'a> {
 
         if let Some(ref sig) = signature {
             tool_use["signature"] = json!(sig);
-            
+
             // 2. Cache tool signature (Layer 1 recovery)
             SignatureCache::global().cache_tool_signature(&tool_id, sig.clone());
-            
-             tracing::debug!(
+
+            tracing::debug!(
                 "[Claude-SSE] Captured thought_signature for function call (length: {})",
                 sig.len()
             );

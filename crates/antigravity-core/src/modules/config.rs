@@ -13,19 +13,18 @@ const CONFIG_FILE: &str = "config.json";
 pub fn load_config() -> Result<AppConfig, String> {
     let data_dir = get_data_dir()?;
     let config_path = data_dir.join(CONFIG_FILE);
-    
+
     if !config_path.exists() {
         logger::log_info("Config file not found, creating default");
         let default_config = AppConfig::default();
         save_config(&default_config)?;
         return Ok(default_config);
     }
-    
-    let content = fs::read_to_string(&config_path)
-        .map_err(|e| format!("Failed to read config: {}", e))?;
-    
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse config: {}", e))
+
+    let content =
+        fs::read_to_string(&config_path).map_err(|e| format!("Failed to read config: {}", e))?;
+
+    serde_json::from_str(&content).map_err(|e| format!("Failed to parse config: {}", e))
 }
 
 /// Save application configuration to disk.
@@ -33,18 +32,16 @@ pub fn save_config(config: &AppConfig) -> Result<(), String> {
     let data_dir = get_data_dir()?;
     let config_path = data_dir.join(CONFIG_FILE);
     let temp_path = data_dir.join(format!("{}.tmp", CONFIG_FILE));
-    
+
     let content = serde_json::to_string_pretty(config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
-    
+
     // Write to temp file first
-    fs::write(&temp_path, &content)
-        .map_err(|e| format!("Failed to write temp config: {}", e))?;
-    
+    fs::write(&temp_path, &content).map_err(|e| format!("Failed to write temp config: {}", e))?;
+
     // Atomic rename
-    fs::rename(&temp_path, &config_path)
-        .map_err(|e| format!("Failed to save config: {}", e))?;
-    
+    fs::rename(&temp_path, &config_path).map_err(|e| format!("Failed to save config: {}", e))?;
+
     logger::log_info("Config saved successfully");
     Ok(())
 }

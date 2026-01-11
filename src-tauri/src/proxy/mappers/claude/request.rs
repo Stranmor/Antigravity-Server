@@ -64,7 +64,7 @@ fn build_safety_settings() -> Value {
 }
 
 /// 清理消息中的 cache_control 字段
-/// 
+///
 /// 这个函数会深度遍历所有消息内容块,移除 cache_control 字段。
 /// 这是必要的,因为:
 /// 1. VS Code 等客户端会将历史消息(包含 cache_control)原封不动发回
@@ -77,25 +77,33 @@ fn clean_cache_control_from_messages(messages: &mut [Message]) {
                 match block {
                     ContentBlock::Thinking { cache_control, .. } => {
                         if cache_control.is_some() {
-                            tracing::debug!("[Cache-Control-Cleaner] Removed cache_control from Thinking block");
+                            tracing::debug!(
+                                "[Cache-Control-Cleaner] Removed cache_control from Thinking block"
+                            );
                             *cache_control = None;
                         }
                     }
                     ContentBlock::Image { cache_control, .. } => {
                         if cache_control.is_some() {
-                            tracing::debug!("[Cache-Control-Cleaner] Removed cache_control from Image block");
+                            tracing::debug!(
+                                "[Cache-Control-Cleaner] Removed cache_control from Image block"
+                            );
                             *cache_control = None;
                         }
                     }
                     ContentBlock::Document { cache_control, .. } => {
                         if cache_control.is_some() {
-                            tracing::debug!("[Cache-Control-Cleaner] Removed cache_control from Document block");
+                            tracing::debug!(
+                                "[Cache-Control-Cleaner] Removed cache_control from Document block"
+                            );
                             *cache_control = None;
                         }
                     }
                     ContentBlock::ToolUse { cache_control, .. } => {
                         if cache_control.is_some() {
-                            tracing::debug!("[Cache-Control-Cleaner] Removed cache_control from ToolUse block");
+                            tracing::debug!(
+                                "[Cache-Control-Cleaner] Removed cache_control from ToolUse block"
+                            );
                             *cache_control = None;
                         }
                     }
@@ -124,7 +132,7 @@ pub fn transform_claude_request_in(
         .as_ref()
         .map(|tools| {
             tools.iter().any(|t| {
-                t.is_web_search() 
+                t.is_web_search()
                     || t.name.as_deref() == Some("google_search")
                     || t.type_.as_deref() == Some("web_search_20250305")
             })
@@ -150,22 +158,27 @@ pub fn transform_claude_request_in(
     } else {
         crate::proxy::common::model_mapping::map_claude_model_to_gemini(&claude_req.model)
     };
-    
+
     // 将 Claude 工具转为 Value 数组以便探测联网
     let tools_val: Option<Vec<Value>> = claude_req.tools.as_ref().map(|list| {
-        list.iter().map(|t| serde_json::to_value(t).unwrap_or(json!({}))).collect()
+        list.iter()
+            .map(|t| serde_json::to_value(t).unwrap_or(json!({})))
+            .collect()
     });
 
-
     // Resolve grounding config
-    let config = crate::proxy::mappers::common_utils::resolve_request_config(&claude_req.model, &mapped_model, &tools_val);
-    
+    let config = crate::proxy::mappers::common_utils::resolve_request_config(
+        &claude_req.model,
+        &mapped_model,
+        &tools_val,
+    );
+
     // [CRITICAL FIX] Disable dummy thought injection for Vertex AI
     // [CRITICAL FIX] Disable dummy thought injection for Vertex AI
     // Vertex AI rejects thinking blocks without valid signatures
     // Even if thinking is enabled, we should NOT inject dummy blocks for historical messages
     let allow_dummy_thought = false;
-    
+
     // Check if thinking is enabled in the request
     let mut is_thinking_enabled = claude_req
         .thinking
@@ -180,9 +193,9 @@ pub fn transform_claude_request_in(
     // [NEW FIX] Check if target model supports thinking
     // Only models with "-thinking" suffix or Claude models support thinking
     // Regular Gemini models (gemini-2.5-flash, gemini-2.5-pro) do NOT support thinking
-    let target_model_supports_thinking = mapped_model.contains("-thinking") 
-        || mapped_model.starts_with("claude-");
-    
+    let target_model_supports_thinking =
+        mapped_model.contains("-thinking") || mapped_model.starts_with("claude-");
+
     if is_thinking_enabled && !target_model_supports_thinking {
         tracing::warn!(
             "[Thinking-Mode] Target model '{}' does not support thinking. Force disabling thinking mode.",
@@ -196,8 +209,8 @@ pub fn transform_claude_request_in(
     if is_thinking_enabled {
         let should_disable = should_disable_thinking_due_to_history(&claude_req.messages);
         if should_disable {
-             tracing::warn!("[Thinking-Mode] Automatically disabling thinking checks due to incompatible tool-use history (mixed application)");
-             is_thinking_enabled = false;
+            tracing::warn!("[Thinking-Mode] Automatically disabling thinking checks due to incompatible tool-use history (mixed application)");
+            is_thinking_enabled = false;
         }
     }
 
@@ -205,17 +218,19 @@ pub fn transform_claude_request_in(
     // disable thinking to prevent Gemini 3 Pro rejection
     if is_thinking_enabled {
         let global_sig = get_thought_signature();
-        
+
         // Check if there are any thinking blocks in message history
         let has_thinking_history = claude_req.messages.iter().any(|m| {
             if m.role == "assistant" {
                 if let MessageContent::Array(blocks) = &m.content {
-                    return blocks.iter().any(|b| matches!(b, ContentBlock::Thinking { .. }));
+                    return blocks
+                        .iter()
+                        .any(|b| matches!(b, ContentBlock::Thinking { .. }));
                 }
             }
             false
         });
-        
+
         // Check if there are function calls in the request
         let has_function_calls = claude_req.messages.iter().any(|m| {
             if let MessageContent::Array(blocks) = &m.content {
@@ -231,9 +246,9 @@ pub fn transform_claude_request_in(
         // we use permissive mode and let upstream handle validation.
         // We only enforce strict signature checks when function calls are involved.
         let needs_signature_check = has_function_calls;
-        
+
         if !has_thinking_history && is_thinking_enabled {
-             tracing::info!(
+            tracing::info!(
                 "[Thinking-Mode] First thinking request detected. Using permissive mode - \
                  signature validation will be handled by upstream API."
             );
@@ -251,7 +266,8 @@ pub fn transform_claude_request_in(
     }
 
     // 4. Generation Config & Thinking (Pass final is_thinking_enabled)
-    let generation_config = build_generation_config(claude_req, has_web_search_tool, is_thinking_enabled);
+    let generation_config =
+        build_generation_config(claude_req, has_web_search_tool, is_thinking_enabled);
 
     // 2. Contents (Messages)
     let contents = build_contents(
@@ -340,12 +356,11 @@ pub fn transform_claude_request_in(
         }
     }
 
-
     Ok(body)
 }
 
 /// 检查是否因为历史消息原因需要禁用 Thinking
-/// 
+///
 /// 场景: 如果最后一条 Assistant 消息处于 Tool Use 流程中，但没有 Thinking 块，
 /// 说明这是一个由非 Thinking 模型发起的流程。此时强制开启 Thinking 会导致:
 /// "final assistant message must start with a thinking block" 错误。
@@ -355,9 +370,13 @@ fn should_disable_thinking_due_to_history(messages: &[Message]) -> bool {
     for msg in messages.iter().rev() {
         if msg.role == "assistant" {
             if let MessageContent::Array(blocks) = &msg.content {
-                let has_tool_use = blocks.iter().any(|b| matches!(b, ContentBlock::ToolUse { .. }));
-                let has_thinking = blocks.iter().any(|b| matches!(b, ContentBlock::Thinking { .. }));
-                
+                let has_tool_use = blocks
+                    .iter()
+                    .any(|b| matches!(b, ContentBlock::ToolUse { .. }));
+                let has_thinking = blocks
+                    .iter()
+                    .any(|b| matches!(b, ContentBlock::Thinking { .. }));
+
                 // 如果有工具调用，但没有 Thinking 块 -> 不兼容
                 if has_tool_use && !has_thinking {
                     tracing::info!("[Thinking-Mode] Detected ToolUse without Thinking in history. Requesting disable.");
@@ -443,7 +462,7 @@ fn build_system_instruction(system: &Option<SystemPrompt>, _model_name: &str) ->
     You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.\n\
     **Absolute paths only**\n\
     **Proactiveness**";
-    
+
     // [HYBRID] 检查用户是否已提供 Antigravity 身份
     let mut user_has_antigravity = false;
     if let Some(sys) = system {
@@ -533,9 +552,16 @@ fn build_contents(
                                 parts.push(json!({"text": text}));
                             }
                         }
-                        ContentBlock::Thinking { thinking, signature, .. } => {
-                            tracing::debug!("[DEBUG-TRANSFORM] Processing thinking block. Sig: {:?}", signature);
-                            
+                        ContentBlock::Thinking {
+                            thinking,
+                            signature,
+                            ..
+                        } => {
+                            tracing::debug!(
+                                "[DEBUG-TRANSFORM] Processing thinking block. Sig: {:?}",
+                                signature
+                            );
+
                             // [HOTFIX] Gemini Protocol Enforcement: Thinking block MUST be the first block.
                             // If we already have content (like Text), we must downgrade this thinking block to Text.
                             if !parts.is_empty() {
@@ -547,7 +573,7 @@ fn build_contents(
                                 }
                                 continue;
                             }
-                            
+
                             // [FIX] If thinking is disabled (smart downgrade), convert ALL thinking blocks to text
                             // to avoid "thinking is disabled but message contains thinking" error
                             if !is_thinking_enabled {
@@ -559,7 +585,7 @@ fn build_contents(
                                 }
                                 continue;
                             }
-                            
+
                             // [FIX] Empty thinking blocks cause "Field required" errors.
                             // We downgrade them to Text to avoid structural errors and signature mismatch.
                             if thinking.is_empty() {
@@ -586,14 +612,15 @@ fn build_contents(
                             if let Some(sig) = signature {
                                 // [NEW] Cross-Model Compatibility Check
                                 // Verify if the signature belongs to a compatible model family
-                                let cached_family = crate::proxy::SignatureCache::global().get_signature_family(sig);
+                                let cached_family = crate::proxy::SignatureCache::global()
+                                    .get_signature_family(sig);
                                 if let Some(family) = cached_family {
                                     if !is_model_compatible(&family, &mapped_model) {
                                         tracing::warn!(
                                             "[Thinking-Compatibility] Incompatible signature detected (Family: {}, Target: {}). Dropping signature.",
                                             family, mapped_model
                                         );
-                                         parts.push(json!({
+                                        parts.push(json!({
                                             "text": thinking
                                         }));
                                         continue;
@@ -633,7 +660,13 @@ fn build_contents(
                                 }));
                             }
                         }
-                        ContentBlock::ToolUse { id, name, input, signature, .. } => {
+                        ContentBlock::ToolUse {
+                            id,
+                            name,
+                            input,
+                            signature,
+                            ..
+                        } => {
                             let mut part = json!({
                                 "functionCall": {
                                     "name": name,
@@ -641,7 +674,7 @@ fn build_contents(
                                     "id": id
                                 }
                             });
-                            
+
                             // [New] 递归清理参数中可能存在的非法校验字段
                             crate::proxy::common::json_schema::clean_json_schema(&mut part);
 
@@ -735,7 +768,8 @@ fn build_contents(
                             parts.push(part);
                         }
                         // ContentBlock::RedactedThinking handled above at line 583
-                        ContentBlock::ServerToolUse { .. } | ContentBlock::WebSearchToolResult { .. } => {
+                        ContentBlock::ServerToolUse { .. }
+                        | ContentBlock::WebSearchToolResult { .. } => {
                             // 搜索结果 block 不应由客户端发回给上游 (已由 tool_result 替代)
                             continue;
                         }
@@ -748,13 +782,11 @@ fn build_contents(
         // [Optimization] Apply this to ALL assistant messages in history, not just the last one.
         // Vertex AI requires every assistant message to start with a thinking block when thinking is enabled.
         if allow_dummy_thought && role == "model" && is_thinking_enabled {
-            let has_thought_part = parts
-                .iter()
-                .any(|p| {
-                    p.get("thought").and_then(|v| v.as_bool()).unwrap_or(false)
-                        || p.get("thoughtSignature").is_some()
-                        || p.get("thought").and_then(|v| v.as_str()).is_some() // 某些情况下可能是 text + thought: true 的组合
-                });
+            let has_thought_part = parts.iter().any(|p| {
+                p.get("thought").and_then(|v| v.as_bool()).unwrap_or(false)
+                    || p.get("thoughtSignature").is_some()
+                    || p.get("thought").and_then(|v| v.as_str()).is_some() // 某些情况下可能是 text + thought: true 的组合
+            });
 
             if !has_thought_part {
                 // Prepend a dummy thinking block to satisfy Gemini v1internal requirements
@@ -765,13 +797,16 @@ fn build_contents(
                         "thought": true
                     }),
                 );
-                tracing::debug!("Injected dummy thought block for historical assistant message at index {}", contents.len());
+                tracing::debug!(
+                    "Injected dummy thought block for historical assistant message at index {}",
+                    contents.len()
+                );
             } else {
                 // [Crucial Check] 即使有 thought 块，也必须保证它位于 parts 的首位 (Index 0)
                 // 且必须包含 thought: true 标记
                 let first_is_thought = parts.get(0).map_or(false, |p| {
                     (p.get("thought").is_some() || p.get("thoughtSignature").is_some())
-                    && p.get("text").is_some() // 对于 v1internal，通常 text + thought: true 才是合规的思维块
+                        && p.get("text").is_some() // 对于 v1internal，通常 text + thought: true 才是合规的思维块
                 });
 
                 if !first_is_thought {
@@ -788,7 +823,8 @@ fn build_contents(
                     // 确保首项包含了 thought: true (防止只有 signature 的情况)
                     if let Some(p0) = parts.get_mut(0) {
                         if p0.get("thought").is_none() {
-                             p0.as_object_mut().map(|obj| obj.insert("thought".to_string(), json!(true)));
+                            p0.as_object_mut()
+                                .map(|obj| obj.insert("thought".to_string(), json!(true)));
                         }
                     }
                 }
@@ -805,9 +841,7 @@ fn build_contents(
         }));
     }
 
-
-
-    // [Removed] ensure_last_assistant_has_thinking 
+    // [Removed] ensure_last_assistant_has_thinking
     // Corrupted signature issues proved we cannot fake thinking blocks.
     // Instead we rely on should_disable_thinking_due_to_history to prevent this state.
 
@@ -842,7 +876,8 @@ fn merge_adjacent_roles(mut contents: Vec<Value>) -> Vec<Value> {
 
         if current_role == next_role {
             // Merge parts
-            if let Some(current_parts) = current_msg.get_mut("parts").and_then(|p| p.as_array_mut()) {
+            if let Some(current_parts) = current_msg.get_mut("parts").and_then(|p| p.as_array_mut())
+            {
                 if let Some(next_parts) = msg.get("parts").and_then(|p| p.as_array()) {
                     current_parts.extend(next_parts.clone());
                 }
@@ -905,7 +940,10 @@ fn build_tools(tools: &Option<Vec<Tool>>, has_web_search: bool) -> Result<Option
         // 对于 Claude CLI 等携带 MCP 工具的客户端，必须优先保证 Function Declarations 正常工作。
         if !function_declarations.is_empty() {
             // 如果有本地工具，则只使用本地工具，放弃注入的 Google Search
-            tool_obj.insert("functionDeclarations".to_string(), json!(function_declarations));
+            tool_obj.insert(
+                "functionDeclarations".to_string(),
+                json!(function_declarations),
+            );
 
             // [IMPROVED] 记录跳过 googleSearch 注入的原因
             if has_google_search {
@@ -932,7 +970,7 @@ fn build_tools(tools: &Option<Vec<Tool>>, has_web_search: bool) -> Result<Option
 fn build_generation_config(
     claude_req: &ClaudeRequest,
     has_web_search: bool,
-    is_thinking_enabled: bool
+    is_thinking_enabled: bool,
 ) -> Value {
     let mut config = json!({});
 
@@ -976,7 +1014,7 @@ fn build_generation_config(
                 "high" => "HIGH",
                 "medium" => "MEDIUM",
                 "low" => "LOW",
-                _ => "HIGH" // Default to HIGH for unknown values
+                _ => "HIGH", // Default to HIGH for unknown values
             });
             tracing::debug!(
                 "[Generation-Config] Effort level set: {} -> {}",
@@ -1026,25 +1064,34 @@ pub fn clean_thinking_fields_recursive(val: &mut Value) {
     }
 }
 
-
 /// Check if two model strings are compatible (same family)
 fn is_model_compatible(cached: &str, target: &str) -> bool {
     // Simple heuristic: check if they share the same base prefix
     // e.g. "gemini-1.5-pro" vs "gemini-1.5-pro-002" -> Compatible
     // "gemini-1.5-pro" vs "gemini-2.0-flash" -> Incompatible
-    
+
     // Normalize
     let c = cached.to_lowercase();
     let t = target.to_lowercase();
-    
-    if c == t { return true; }
-    
+
+    if c == t {
+        return true;
+    }
+
     // Check specific families
-    if c.contains("gemini-1.5") && t.contains("gemini-1.5") { return true; }
-    if c.contains("gemini-2.0") && t.contains("gemini-2.0") { return true; }
-    if c.contains("claude-3-5") && t.contains("claude-3-5") { return true; }
-    if c.contains("claude-3-7") && t.contains("claude-3-7") { return true; }
-    
+    if c.contains("gemini-1.5") && t.contains("gemini-1.5") {
+        return true;
+    }
+    if c.contains("gemini-2.0") && t.contains("gemini-2.0") {
+        return true;
+    }
+    if c.contains("claude-3-5") && t.contains("claude-3-5") {
+        return true;
+    }
+    if c.contains("claude-3-7") && t.contains("claude-3-7") {
+        return true;
+    }
+
     // Fallback: strict match required
     false
 }
@@ -1137,15 +1184,13 @@ mod tests {
                 },
                 Message {
                     role: "assistant".to_string(),
-                    content: MessageContent::Array(vec![
-                        ContentBlock::ToolUse {
-                            id: "call_1".to_string(),
-                            name: "run_command".to_string(),
-                            input: json!({"command": "ls"}),
-                            signature: None,
-                            cache_control: None,
-                        }
-                    ]),
+                    content: MessageContent::Array(vec![ContentBlock::ToolUse {
+                        id: "call_1".to_string(),
+                        name: "run_command".to_string(),
+                        input: json!({"command": "ls"}),
+                        signature: None,
+                        cache_control: None,
+                    }]),
                 },
                 Message {
                     role: "user".to_string(),
@@ -1217,16 +1262,14 @@ mod tests {
                 },
                 Message {
                     role: "user".to_string(),
-                    content: MessageContent::Array(vec![
-                        ContentBlock::Image {
-                            source: ImageSource {
-                                source_type: "base64".to_string(),
-                                media_type: "image/png".to_string(),
-                                data: "iVBORw0KGgo=".to_string(),
-                            },
-                            cache_control: Some(json!({"type": "ephemeral"})), // 这个也应该被清理
+                    content: MessageContent::Array(vec![ContentBlock::Image {
+                        source: ImageSource {
+                            source_type: "base64".to_string(),
+                            media_type: "image/png".to_string(),
+                            data: "iVBORw0KGgo=".to_string(),
                         },
-                    ]),
+                        cache_control: Some(json!({"type": "ephemeral"})), // 这个也应该被清理
+                    }]),
                 },
             ],
             system: None,
@@ -1247,7 +1290,7 @@ mod tests {
         // 验证请求成功转换
         let body = result.unwrap();
         assert_eq!(body["project"], "test-project");
-        
+
         // 注意: cache_control 的清理发生在内部,我们无法直接从 JSON 输出验证
         // 但如果没有清理,后续发送到 Anthropic API 时会报错
         // 这个测试主要确保清理逻辑不会导致转换失败
@@ -1275,34 +1318,30 @@ mod tests {
                             id: "tool_1".to_string(),
                             name: "list_files".to_string(),
                             input: json!({}),
-                            cache_control: None, 
-                            signature: None 
+                            cache_control: None,
+                            signature: None,
                         },
                     ]),
                 },
                 // 用户返回工具结果
                 Message {
                     role: "user".to_string(),
-                    content: MessageContent::Array(vec![
-                        ContentBlock::ToolResult {
-                            tool_use_id: "tool_1".to_string(),
-                            content: serde_json::Value::String("file1.txt\nfile2.txt".to_string()),
-                            is_error: Some(false),
-                            // cache_control: None, // removed
-                        },
-                    ]),
+                    content: MessageContent::Array(vec![ContentBlock::ToolResult {
+                        tool_use_id: "tool_1".to_string(),
+                        content: serde_json::Value::String("file1.txt\nfile2.txt".to_string()),
+                        is_error: Some(false),
+                        // cache_control: None, // removed
+                    }]),
                 },
             ],
             system: None,
-            tools: Some(vec![
-                Tool {
-                    name: Some("list_files".to_string()),
-                    description: Some("List files".to_string()),
-                    input_schema: Some(json!({"type": "object"})),
-                    type_: None,
-                    // cache_control: None, // removed
-                }
-            ]),
+            tools: Some(vec![Tool {
+                name: Some("list_files".to_string()),
+                description: Some("List files".to_string()),
+                input_schema: Some(json!({"type": "object"})),
+                type_: None,
+                // cache_control: None, // removed
+            }]),
             stream: false,
             max_tokens: None,
             temperature: None,
@@ -1325,14 +1364,15 @@ mod tests {
         // 验证: generationConfig 中不应包含 thinkingConfig (因为被降级了)
         // 即使请求中明确启用了 thinking
         if let Some(gen_config) = request.get("generationConfig") {
-             assert!(gen_config.get("thinkingConfig").is_none(), "thinkingConfig should be removed due to downgrade");
+            assert!(
+                gen_config.get("thinkingConfig").is_none(),
+                "thinkingConfig should be removed due to downgrade"
+            );
         }
-        
+
         // 验证: 依然能生成有效的请求体
         assert!(request.get("contents").is_some());
     }
-
-
 
     #[test]
     fn test_thinking_block_not_prepend_when_disabled() {
@@ -1346,11 +1386,9 @@ mod tests {
                 },
                 Message {
                     role: "assistant".to_string(),
-                    content: MessageContent::Array(vec![
-                        ContentBlock::Text {
-                            text: "Response".to_string(),
-                        },
-                    ]),
+                    content: MessageContent::Array(vec![ContentBlock::Text {
+                        text: "Response".to_string(),
+                    }]),
                 },
             ],
             system: None,
@@ -1378,7 +1416,7 @@ mod tests {
             .unwrap();
 
         let parts = last_model_msg["parts"].as_array().unwrap();
-        
+
         // 验证没有补全 thinking 块
         assert_eq!(parts.len(), 1, "Should only have the original text block");
         assert_eq!(parts[0]["text"], "Response");
@@ -1390,19 +1428,19 @@ mod tests {
         // 期望: 自动填充 "..."
         let req = ClaudeRequest {
             model: "claude-sonnet-4-5".to_string(),
-            messages: vec![
-                Message {
-                    role: "assistant".to_string(),
-                    content: MessageContent::Array(vec![
-                        ContentBlock::Thinking {
-                            thinking: "".to_string(), // 空内容
-                            signature: Some("sig".to_string()),
-                            cache_control: None,
-                        },
-                        ContentBlock::Text { text: "Hi".to_string() }
-                    ]),
-                },
-            ],
+            messages: vec![Message {
+                role: "assistant".to_string(),
+                content: MessageContent::Array(vec![
+                    ContentBlock::Thinking {
+                        thinking: "".to_string(), // 空内容
+                        signature: Some("sig".to_string()),
+                        cache_control: None,
+                    },
+                    ContentBlock::Text {
+                        text: "Hi".to_string(),
+                    },
+                ]),
+            }],
             system: None,
             tools: None,
             stream: false,
@@ -1423,10 +1461,16 @@ mod tests {
         let body = result.unwrap();
         let contents = body["request"]["contents"].as_array().unwrap();
         let parts = contents[0]["parts"].as_array().unwrap();
-        
+
         // 验证 thinking 块
-        assert_eq!(parts[0]["text"], "...", "Empty thinking should be filled with ...");
-        assert!(parts[0].get("thought").is_none(), "Empty thinking should be downgraded to text");
+        assert_eq!(
+            parts[0]["text"], "...",
+            "Empty thinking should be filled with ..."
+        );
+        assert!(
+            parts[0].get("thought").is_none(),
+            "Empty thinking should be downgraded to text"
+        );
     }
 
     #[test]
@@ -1435,17 +1479,17 @@ mod tests {
         // 期望: 降级为普通文本，不带 thought: true
         let req = ClaudeRequest {
             model: "claude-sonnet-4-5".to_string(),
-            messages: vec![
-                Message {
-                    role: "assistant".to_string(),
-                    content: MessageContent::Array(vec![
-                        ContentBlock::RedactedThinking {
-                            data: "some data".to_string(),
-                        },
-                         ContentBlock::Text { text: "Hi".to_string() }
-                    ]),
-                },
-            ],
+            messages: vec![Message {
+                role: "assistant".to_string(),
+                content: MessageContent::Array(vec![
+                    ContentBlock::RedactedThinking {
+                        data: "some data".to_string(),
+                    },
+                    ContentBlock::Text {
+                        text: "Hi".to_string(),
+                    },
+                ]),
+            }],
             system: None,
             tools: None,
             stream: false,
@@ -1466,6 +1510,9 @@ mod tests {
         // 验证 RedactedThinking -> Text
         let text = parts[0]["text"].as_str().unwrap();
         assert!(text.contains("[Redacted Thinking: some data]"));
-        assert!(parts[0].get("thought").is_none(), "Redacted thinking should NOT have thought: true");
+        assert!(
+            parts[0].get("thought").is_none(),
+            "Redacted thinking should NOT have thought: true"
+        );
     }
 }

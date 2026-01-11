@@ -1,10 +1,10 @@
+use crate::modules::oauth;
+use std::sync::{Mutex, OnceLock};
+use tauri::Url;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio::sync::watch;
-use std::sync::{Mutex, OnceLock};
-use tauri::Url;
-use crate::modules::oauth;
 
 struct OAuthFlowState {
     auth_url: String,
@@ -150,7 +150,10 @@ async fn ensure_oauth_flow_prepared(app_handle: &tauri::AppHandle) -> Result<Str
 
                 let (result, response_html) = match code {
                     Some(code) => (Ok(code), oauth_success_html()),
-                    None => (Err("未能在回调中获取 Authorization Code".to_string()), oauth_fail_html()),
+                    None => (
+                        Err("未能在回调中获取 Authorization Code".to_string()),
+                        oauth_fail_html(),
+                    ),
                 };
                 let _ = stream.write_all(response_html.as_bytes()).await;
                 let _ = stream.flush().await;
@@ -188,7 +191,10 @@ async fn ensure_oauth_flow_prepared(app_handle: &tauri::AppHandle) -> Result<Str
 
                 let (result, response_html) = match code {
                     Some(code) => (Ok(code), oauth_success_html()),
-                    None => (Err("未能在回调中获取 Authorization Code".to_string()), oauth_fail_html()),
+                    None => (
+                        Err("未能在回调中获取 Authorization Code".to_string()),
+                        oauth_fail_html(),
+                    ),
                 };
                 let _ = stream.write_all(response_html.as_bytes()).await;
                 let _ = stream.flush().await;
@@ -233,7 +239,9 @@ pub fn cancel_oauth_flow() {
 }
 
 /// 启动 OAuth 流程并等待回调，再交换 token
-pub async fn start_oauth_flow(app_handle: tauri::AppHandle) -> Result<oauth::TokenResponse, String> {
+pub async fn start_oauth_flow(
+    app_handle: tauri::AppHandle,
+) -> Result<oauth::TokenResponse, String> {
     // 确保已准备好 URL + listener（这样即使用户先授权，也不会卡住）
     let auth_url = ensure_oauth_flow_prepared(&app_handle).await?;
 
@@ -277,7 +285,9 @@ pub async fn start_oauth_flow(app_handle: tauri::AppHandle) -> Result<oauth::Tok
 /// Завершить OAuth flow без открытия браузера.
 /// Предполагается, что пользователь открыл ссылку вручную (или ранее была открыта),
 /// а мы только ждём callback и обмениваем code на token.
-pub async fn complete_oauth_flow(app_handle: tauri::AppHandle) -> Result<oauth::TokenResponse, String> {
+pub async fn complete_oauth_flow(
+    app_handle: tauri::AppHandle,
+) -> Result<oauth::TokenResponse, String> {
     // Ensure URL + listeners exist
     let _ = ensure_oauth_flow_prepared(&app_handle).await?;
 

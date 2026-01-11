@@ -17,18 +17,18 @@ pub struct RequestConfig {
 }
 
 pub fn resolve_request_config(
-    original_model: &str, 
+    original_model: &str,
     mapped_model: &str,
-    tools: &Option<Vec<Value>>
+    tools: &Option<Vec<Value>>,
 ) -> RequestConfig {
     // 1. Image Generation Check (Priority)
     if mapped_model.starts_with("gemini-3-pro-image") {
         let (image_config, parsed_base_model) = parse_image_config(original_model);
-        
+
         return RequestConfig {
             request_type: "image_gen".to_string(),
             inject_google_search: false,
-            final_model: parsed_base_model, 
+            final_model: parsed_base_model,
             image_config: Some(image_config),
         };
     }
@@ -40,7 +40,7 @@ pub fn resolve_request_config(
 
     // Strip -online suffix from original model if present (to detect networking intent)
     let is_online_suffix = original_model.ends_with("-online");
-    
+
     // High-quality grounding allowlist (Only for models known to support search and be relatively 'safe')
     let _is_high_quality_model = mapped_model == "gemini-2.5-flash"
         || mapped_model == "gemini-1.5-pro"
@@ -59,7 +59,7 @@ pub fn resolve_request_config(
     // 仅在用户显式请求联网时启用：1) -online 后缀 2) 携带联网工具定义
     let enable_networking = is_online_suffix || has_networking_tool;
 
-    // The final model to send upstream should be the MAPPED model, 
+    // The final model to send upstream should be the MAPPED model,
     // but if searching, we MUST ensure the model name is one the backend associates with search.
     // Force a stable search model for search requests.
     let mut final_model = mapped_model.trim_end_matches("-online").to_string();
@@ -93,19 +93,26 @@ fn parse_image_config(model_name: &str) -> (Value, String) {
     let mut aspect_ratio = "1:1";
     let _image_size = "1024x1024"; // Default, not explicitly sent unless 4k/hd
 
-    if model_name.contains("-21x9") || model_name.contains("-21-9") { aspect_ratio = "21:9"; }
-    else if model_name.contains("-16x9") || model_name.contains("-16-9") { aspect_ratio = "16:9"; }
-    else if model_name.contains("-9x16") || model_name.contains("-9-16") { aspect_ratio = "9:16"; }
-    else if model_name.contains("-4x3") || model_name.contains("-4-3") { aspect_ratio = "4:3"; }
-    else if model_name.contains("-3x4") || model_name.contains("-3-4") { aspect_ratio = "3:4"; }
-    else if model_name.contains("-1x1") || model_name.contains("-1-1") { aspect_ratio = "1:1"; }
+    if model_name.contains("-21x9") || model_name.contains("-21-9") {
+        aspect_ratio = "21:9";
+    } else if model_name.contains("-16x9") || model_name.contains("-16-9") {
+        aspect_ratio = "16:9";
+    } else if model_name.contains("-9x16") || model_name.contains("-9-16") {
+        aspect_ratio = "9:16";
+    } else if model_name.contains("-4x3") || model_name.contains("-4-3") {
+        aspect_ratio = "4:3";
+    } else if model_name.contains("-3x4") || model_name.contains("-3-4") {
+        aspect_ratio = "3:4";
+    } else if model_name.contains("-1x1") || model_name.contains("-1-1") {
+        aspect_ratio = "1:1";
+    }
 
     let is_hd = model_name.contains("-4k") || model_name.contains("-hd");
     let is_2k = model_name.contains("-2k");
 
     let mut config = serde_json::Map::new();
     config.insert("aspectRatio".to_string(), json!(aspect_ratio));
-    
+
     if is_hd {
         config.insert("imageSize".to_string(), json!("4K"));
     } else if is_2k {
@@ -113,7 +120,10 @@ fn parse_image_config(model_name: &str) -> (Value, String) {
     }
 
     // The upstream model must be EXACTLY "gemini-3-pro-image"
-    (serde_json::Value::Object(config), "gemini-3-pro-image".to_string())
+    (
+        serde_json::Value::Object(config),
+        "gemini-3-pro-image".to_string(),
+    )
 }
 
 /// Inject current googleSearch tool and ensure no duplicate legacy search tools
@@ -124,11 +134,14 @@ pub fn inject_google_search_tool(body: &mut Value) {
             // [安全校验] 如果数组中已经包含 functionDeclarations，严禁注入 googleSearch
             // 因为 Gemini v1internal 不支持在一次请求中混用 search 和 functions
             let has_functions = tools_arr.iter().any(|t| {
-                t.as_object().map_or(false, |o| o.contains_key("functionDeclarations"))
+                t.as_object()
+                    .map_or(false, |o| o.contains_key("functionDeclarations"))
             });
 
             if has_functions {
-                tracing::debug!("Skipping googleSearch injection due to existing functionDeclarations");
+                tracing::debug!(
+                    "Skipping googleSearch injection due to existing functionDeclarations"
+                );
                 return;
             }
 
@@ -182,13 +195,21 @@ pub fn detects_networking_tool(tools: &Option<Vec<Value>>) -> bool {
         for tool in list {
             // 1. 直发风格 (Claude/Simple OpenAI/Anthropic Builtin/Vertex): { "name": "..." } 或 { "type": "..." }
             if let Some(n) = tool.get("name").and_then(|v| v.as_str()) {
-                if n == "web_search" || n == "google_search" || n == "web_search_20250305" || n == "google_search_retrieval" {
+                if n == "web_search"
+                    || n == "google_search"
+                    || n == "web_search_20250305"
+                    || n == "google_search_retrieval"
+                {
                     return true;
                 }
             }
 
             if let Some(t) = tool.get("type").and_then(|v| v.as_str()) {
-                if t == "web_search_20250305" || t == "google_search" || t == "web_search" || t == "google_search_retrieval" {
+                if t == "web_search_20250305"
+                    || t == "google_search"
+                    || t == "web_search"
+                    || t == "google_search_retrieval"
+                {
                     return true;
                 }
             }
@@ -196,7 +217,12 @@ pub fn detects_networking_tool(tools: &Option<Vec<Value>>) -> bool {
             // 2. OpenAI 嵌套风格: { "type": "function", "function": { "name": "..." } }
             if let Some(func) = tool.get("function") {
                 if let Some(n) = func.get("name").and_then(|v| v.as_str()) {
-                    let keywords = ["web_search", "google_search", "web_search_20250305", "google_search_retrieval"];
+                    let keywords = [
+                        "web_search",
+                        "google_search",
+                        "web_search_20250305",
+                        "google_search_retrieval",
+                    ];
                     if keywords.contains(&n) {
                         return true;
                     }
@@ -207,7 +233,10 @@ pub fn detects_networking_tool(tools: &Option<Vec<Value>>) -> bool {
             if let Some(decls) = tool.get("functionDeclarations").and_then(|v| v.as_array()) {
                 for decl in decls {
                     if let Some(n) = decl.get("name").and_then(|v| v.as_str()) {
-                        if n == "web_search" || n == "google_search" || n == "google_search_retrieval" {
+                        if n == "web_search"
+                            || n == "google_search"
+                            || n == "google_search_retrieval"
+                        {
                             return true;
                         }
                     }
@@ -228,24 +257,41 @@ pub fn contains_non_networking_tool(tools: &Option<Vec<Value>>) -> bool {
     if let Some(list) = tools {
         for tool in list {
             let mut is_networking = false;
-            
+
             // 简单逻辑：如果它是一个函数声明且名字不是联网关键词，则视为非联网工具
             if let Some(n) = tool.get("name").and_then(|v| v.as_str()) {
-                 let keywords = ["web_search", "google_search", "web_search_20250305", "google_search_retrieval"];
-                 if keywords.contains(&n) { is_networking = true; }
+                let keywords = [
+                    "web_search",
+                    "google_search",
+                    "web_search_20250305",
+                    "google_search_retrieval",
+                ];
+                if keywords.contains(&n) {
+                    is_networking = true;
+                }
             } else if let Some(func) = tool.get("function") {
-                 if let Some(n) = func.get("name").and_then(|v| v.as_str()) {
-                     let keywords = ["web_search", "google_search", "web_search_20250305", "google_search_retrieval"];
-                     if keywords.contains(&n) { is_networking = true; }
-                 }
-            } else if tool.get("googleSearch").is_some() || tool.get("googleSearchRetrieval").is_some() {
+                if let Some(n) = func.get("name").and_then(|v| v.as_str()) {
+                    let keywords = [
+                        "web_search",
+                        "google_search",
+                        "web_search_20250305",
+                        "google_search_retrieval",
+                    ];
+                    if keywords.contains(&n) {
+                        is_networking = true;
+                    }
+                }
+            } else if tool.get("googleSearch").is_some()
+                || tool.get("googleSearchRetrieval").is_some()
+            {
                 is_networking = true;
             } else if tool.get("functionDeclarations").is_some() {
                 // 如果是 Gemini 风格的 functionDeclarations，进去看一眼
                 if let Some(decls) = tool.get("functionDeclarations").and_then(|v| v.as_array()) {
                     for decl in decls {
                         if let Some(n) = decl.get("name").and_then(|v| v.as_str()) {
-                            let keywords = ["web_search", "google_search", "google_search_retrieval"];
+                            let keywords =
+                                ["web_search", "google_search", "google_search_retrieval"];
                             if !keywords.contains(&n) {
                                 return true; // 发现本地函数
                             }
@@ -318,13 +364,13 @@ mod tests {
         assert_eq!(config_21x9["aspectRatio"], "21:9");
 
         // Test Combined (if logic allows, though suffix parsing is greedy)
-         let (config_combined, _) = parse_image_config("gemini-3-pro-image-2k-21x9");
-         assert_eq!(config_combined["imageSize"], "2K");
-         assert_eq!(config_combined["aspectRatio"], "21:9");
+        let (config_combined, _) = parse_image_config("gemini-3-pro-image-2k-21x9");
+        assert_eq!(config_combined["imageSize"], "2K");
+        assert_eq!(config_combined["aspectRatio"], "21:9");
 
-         // Test 4K + 21:9
-         let (config_4k_wide, _) = parse_image_config("gemini-3-pro-image-4k-21x9");
-         assert_eq!(config_4k_wide["imageSize"], "4K");
-         assert_eq!(config_4k_wide["aspectRatio"], "21:9");
+        // Test 4K + 21:9
+        let (config_4k_wide, _) = parse_image_config("gemini-3-pro-image-4k-21x9");
+        assert_eq!(config_4k_wide["imageSize"], "4K");
+        assert_eq!(config_4k_wide["aspectRatio"], "21:9");
     }
 }

@@ -32,7 +32,8 @@ pub fn transform_openai_response(gemini_response: &Value) -> OpenAIResponse {
                     }
 
                     // 检查该 part 是否是思考内容 (thought: true)
-                    let is_thought_part = part.get("thought")
+                    let is_thought_part = part
+                        .get("thought")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
 
@@ -78,7 +79,8 @@ pub fn transform_openai_response(gemini_response: &Value) -> OpenAIResponse {
                             .unwrap_or("image/png");
                         let data = img.get("data").and_then(|v| v.as_str()).unwrap_or("");
                         if !data.is_empty() {
-                            content_out.push_str(&format!("![image](data:{};base64,{})", mime_type, data));
+                            content_out
+                                .push_str(&format!("![image](data:{};base64,{})", mime_type, data));
                         }
                     }
                 }
@@ -89,7 +91,8 @@ pub fn transform_openai_response(gemini_response: &Value) -> OpenAIResponse {
                 let mut grounding_text = String::new();
 
                 // 1. 处理搜索词
-                if let Some(queries) = grounding.get("webSearchQueries").and_then(|q| q.as_array()) {
+                if let Some(queries) = grounding.get("webSearchQueries").and_then(|q| q.as_array())
+                {
                     let query_list: Vec<&str> = queries.iter().filter_map(|v| v.as_str()).collect();
                     if !query_list.is_empty() {
                         grounding_text.push_str("\n\n---\n**🔍 已为您搜索：** ");

@@ -1,11 +1,14 @@
 // Gemini v1internal 包装/解包
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// 包装请求体为 v1internal 格式
 pub fn wrap_request(body: &Value, project_id: &str, mapped_model: &str) -> Value {
     // 优先使用传入的 mapped_model，其次尝试从 body 获取
-    let original_model = body.get("model").and_then(|v| v.as_str()).unwrap_or(mapped_model);
-    
+    let original_model = body
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or(mapped_model);
+
     // 如果 mapped_model 是空的，则使用 original_model
     let final_model_name = if !mapped_model.is_empty() {
         mapped_model
@@ -24,13 +27,18 @@ pub fn wrap_request(body: &Value, project_id: &str, mapped_model: &str) -> Value
     // relying on upstream defaults or user provided values is safer.
 
     // 提取 tools 列表以进行联网探测 (Gemini 风格可能是嵌套的)
-    let tools_val: Option<Vec<Value>> = inner_request.get("tools").and_then(|t| t.as_array()).map(|arr| {
-        arr.clone()
-    });
+    let tools_val: Option<Vec<Value>> = inner_request
+        .get("tools")
+        .and_then(|t| t.as_array())
+        .map(|arr| arr.clone());
 
     // Use shared grounding/config logic
-    let config = crate::proxy::mappers::common_utils::resolve_request_config(original_model, final_model_name, &tools_val);
-    
+    let config = crate::proxy::mappers::common_utils::resolve_request_config(
+        original_model,
+        final_model_name,
+        &tools_val,
+    );
+
     // Clean tool declarations (remove forbidden Schema fields like multipleOf, and remove redundant search decls)
     if let Some(tools) = inner_request.get_mut("tools") {
         if let Some(tools_arr) = tools.as_array_mut() {
@@ -59,9 +67,14 @@ pub fn wrap_request(body: &Value, project_id: &str, mapped_model: &str) -> Value
         }
     }
 
-    tracing::debug!("[Debug] Gemini Wrap: original='{}', mapped='{}', final='{}', type='{}'", 
-        original_model, final_model_name, config.final_model, config.request_type);
-    
+    tracing::debug!(
+        "[Debug] Gemini Wrap: original='{}', mapped='{}', final='{}', type='{}'",
+        original_model,
+        final_model_name,
+        config.final_model,
+        config.request_type
+    );
+
     // Inject googleSearch tool if needed
     if config.inject_google_search {
         crate::proxy::mappers::common_utils::inject_google_search_tool(&mut inner_request);
@@ -69,47 +82,48 @@ pub fn wrap_request(body: &Value, project_id: &str, mapped_model: &str) -> Value
 
     // Inject imageConfig if present (for image generation models)
     if let Some(image_config) = config.image_config {
-         if let Some(obj) = inner_request.as_object_mut() {
-             // 1. Remove tools (image generation does not support tools)
-             obj.remove("tools");
-             
-             // 2. Remove systemInstruction (image generation does not support system prompts)
-             obj.remove("systemInstruction");
+        if let Some(obj) = inner_request.as_object_mut() {
+            // 1. Remove tools (image generation does not support tools)
+            obj.remove("tools");
 
-             // 3. Clean generationConfig (remove thinkingConfig, responseMimeType, responseModalities etc.)
-             let gen_config = obj.entry("generationConfig").or_insert_with(|| json!({}));
-             if let Some(gen_obj) = gen_config.as_object_mut() {
-                 gen_obj.remove("thinkingConfig");
-                 gen_obj.remove("responseMimeType"); 
-                 gen_obj.remove("responseModalities"); // Cherry Studio sends this, might conflict
-                 gen_obj.insert("imageConfig".to_string(), image_config);
-             }
-         }
+            // 2. Remove systemInstruction (image generation does not support system prompts)
+            obj.remove("systemInstruction");
+
+            // 3. Clean generationConfig (remove thinkingConfig, responseMimeType, responseModalities etc.)
+            let gen_config = obj.entry("generationConfig").or_insert_with(|| json!({}));
+            if let Some(gen_obj) = gen_config.as_object_mut() {
+                gen_obj.remove("thinkingConfig");
+                gen_obj.remove("responseMimeType");
+                gen_obj.remove("responseModalities"); // Cherry Studio sends this, might conflict
+                gen_obj.insert("imageConfig".to_string(), image_config);
+            }
+        }
     } else {
         // [NEW] 只在非图像生成模式下注入 Antigravity 身份 (原始简化版)
         let antigravity_identity = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.\n\
         You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.\n\
         **Absolute paths only**\n\
         **Proactiveness**";
-        
+
         // [HYBRID] 检查是否已有 systemInstruction
         if let Some(system_instruction) = inner_request.get_mut("systemInstruction") {
             // [NEW] 补全 role: user
             if let Some(obj) = system_instruction.as_object_mut() {
                 if !obj.contains_key("role") {
-                     obj.insert("role".to_string(), json!("user"));
+                    obj.insert("role".to_string(), json!("user"));
                 }
             }
 
             if let Some(parts) = system_instruction.get_mut("parts") {
                 if let Some(parts_array) = parts.as_array_mut() {
                     // 检查第一个 part 是否已包含 Antigravity 身份
-                    let has_antigravity = parts_array.get(0)
+                    let has_antigravity = parts_array
+                        .get(0)
                         .and_then(|p| p.get("text"))
                         .and_then(|t| t.as_str())
                         .map(|s| s.contains("You are Antigravity"))
                         .unwrap_or(false);
-                    
+
                     if !has_antigravity {
                         // 在前面插入 Antigravity 身份
                         parts_array.insert(0, json!({"text": antigravity_identity}));
@@ -145,6 +159,7 @@ pub fn unwrap_response(response: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_wrap_request() {
@@ -171,12 +186,6 @@ mod tests {
         assert!(result.get("candidates").is_some());
         assert!(result.get("response").is_none());
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
 
     #[test]
     fn test_antigravity_identity_injection_with_role() {
@@ -184,15 +193,19 @@ mod tests {
             "model": "gemini-pro",
             "messages": []
         });
-        
+
         let result = wrap_request(&body, "test-proj", "gemini-pro");
-        
+
         // 验证 systemInstruction
-        let sys = result.get("request").unwrap().get("systemInstruction").unwrap();
-        
+        let sys = result
+            .get("request")
+            .unwrap()
+            .get("systemInstruction")
+            .unwrap();
+
         // 1. 验证 role: "user"
         assert_eq!(sys.get("role").unwrap(), "user");
-        
+
         // 2. 验证 Antigravity 身份注入
         let parts = sys.get("parts").unwrap().as_array().unwrap();
         assert!(!parts.is_empty());
@@ -211,13 +224,27 @@ mod tests {
         });
 
         let result = wrap_request(&body, "test-proj", "gemini-pro");
-        let sys = result.get("request").unwrap().get("systemInstruction").unwrap();
+        let sys = result
+            .get("request")
+            .unwrap()
+            .get("systemInstruction")
+            .unwrap();
         let parts = sys.get("parts").unwrap().as_array().unwrap();
 
         // Should have 2 parts: Antigravity + User
         assert_eq!(parts.len(), 2);
-        assert!(parts[0].get("text").unwrap().as_str().unwrap().contains("You are Antigravity"));
-        assert_eq!(parts[1].get("text").unwrap().as_str().unwrap(), "User custom prompt");
+        assert!(
+            parts[0]
+                .get("text")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .contains("You are Antigravity")
+        );
+        assert_eq!(
+            parts[1].get("text").unwrap().as_str().unwrap(),
+            "User custom prompt"
+        );
     }
 
     #[test]
@@ -230,7 +257,11 @@ mod tests {
         });
 
         let result = wrap_request(&body, "test-proj", "gemini-pro");
-        let sys = result.get("request").unwrap().get("systemInstruction").unwrap();
+        let sys = result
+            .get("request")
+            .unwrap()
+            .get("systemInstruction")
+            .unwrap();
         let parts = sys.get("parts").unwrap().as_array().unwrap();
 
         // Should NOT inject duplicate, so only 1 part remains

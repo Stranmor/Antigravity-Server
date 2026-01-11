@@ -19,7 +19,10 @@ fn get_antigravity_path() -> Option<PathBuf> {
 pub fn get_db_path() -> Result<PathBuf, String> {
     // 优先检查 --user-data-dir 参数指定的路径
     if let Some(user_data_dir) = crate::modules::process::get_user_data_dir_from_process() {
-        let custom_db_path = user_data_dir.join("User").join("globalStorage").join("state.vscdb");
+        let custom_db_path = user_data_dir
+            .join("User")
+            .join("globalStorage")
+            .join("state.vscdb");
         if custom_db_path.exists() {
             return Ok(custom_db_path);
         }

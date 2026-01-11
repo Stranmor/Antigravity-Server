@@ -1,10 +1,9 @@
 // Handlers 模块 - API 端点处理器
 // 核心端点处理器模块
 
+pub mod audio;
 pub mod claude;
-pub mod openai;
+pub mod common;
 pub mod gemini;
 pub mod mcp;
-pub mod common;
-pub mod audio;  // 音频转录处理器 (PR #311)
-
+pub mod openai; // 音频转录处理器 (PR #311)

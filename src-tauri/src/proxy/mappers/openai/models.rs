@@ -48,17 +48,11 @@ pub enum OpenAIContent {
 #[serde(tag = "type")]
 pub enum OpenAIContentBlock {
     #[serde(rename = "text")]
-    Text {
-        text: String,
-    },
+    Text { text: String },
     #[serde(rename = "image_url")]
-    ImageUrl {
-        image_url: OpenAIImageUrl,
-    },
+    ImageUrl { image_url: OpenAIImageUrl },
     #[serde(rename = "audio_url")]
-    AudioUrl {
-        audio_url: AudioUrlContent,
-    },
+    AudioUrl { audio_url: AudioUrlContent },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

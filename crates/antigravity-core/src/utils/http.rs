@@ -11,7 +11,7 @@ pub struct UpstreamProxyConfig {
 }
 
 /// Create HTTP client with default timeout and optional global proxy.
-/// 
+///
 /// Note: In core library, we don't have access to config files directly.
 /// The caller should provide proxy config if needed.
 pub fn create_client(timeout_secs: u64) -> Client {
@@ -20,11 +20,10 @@ pub fn create_client(timeout_secs: u64) -> Client {
 
 /// Create HTTP client with specific proxy configuration.
 pub fn create_client_with_proxy(
-    timeout_secs: u64, 
-    proxy_config: Option<UpstreamProxyConfig>
+    timeout_secs: u64,
+    proxy_config: Option<UpstreamProxyConfig>,
 ) -> Client {
-    let mut builder = Client::builder()
-        .timeout(std::time::Duration::from_secs(timeout_secs));
+    let mut builder = Client::builder().timeout(std::time::Duration::from_secs(timeout_secs));
 
     if let Some(config) = proxy_config {
         if config.enabled && !config.url.is_empty() {

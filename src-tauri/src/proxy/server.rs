@@ -6,12 +6,12 @@ use axum::{
     routing::{any, get, post},
     Router,
 };
+use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use tokio::sync::oneshot;
+use tokio::sync::RwLock;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error};
-use tokio::sync::RwLock;
-use std::sync::atomic::AtomicUsize;
 
 /// Axum 应用状态
 #[derive(Clone)]
@@ -80,21 +80,19 @@ impl AxumServer {
         zai_config: crate::proxy::ZaiConfig,
         monitor: Arc<crate::proxy::monitor::ProxyMonitor>,
         experimental_config: crate::proxy::config::ExperimentalConfig,
-
     ) -> Result<(Self, tokio::task::JoinHandle<()>), String> {
         let custom_mapping_state = Arc::new(tokio::sync::RwLock::new(custom_mapping));
-	        let proxy_state = Arc::new(tokio::sync::RwLock::new(upstream_proxy.clone()));
-	        let security_state = Arc::new(RwLock::new(security_config));
-	        let zai_state = Arc::new(RwLock::new(zai_config));
-	        let provider_rr = Arc::new(AtomicUsize::new(0));
-	        let zai_vision_mcp_state =
-	            Arc::new(crate::proxy::zai_vision_mcp::ZaiVisionMcpState::new());
-	        let experimental_state = Arc::new(RwLock::new(experimental_config));
+        let proxy_state = Arc::new(tokio::sync::RwLock::new(upstream_proxy.clone()));
+        let security_state = Arc::new(RwLock::new(security_config));
+        let zai_state = Arc::new(RwLock::new(zai_config));
+        let provider_rr = Arc::new(AtomicUsize::new(0));
+        let zai_vision_mcp_state = Arc::new(crate::proxy::zai_vision_mcp::ZaiVisionMcpState::new());
+        let experimental_state = Arc::new(RwLock::new(experimental_config));
 
-	        let state = AppState {
-	            token_manager: token_manager.clone(),
-	            custom_mapping: custom_mapping_state.clone(),
-	            request_timeout: 300, // 5分钟超时
+        let state = AppState {
+            token_manager: token_manager.clone(),
+            custom_mapping: custom_mapping_state.clone(),
+            request_timeout: 300, // 5分钟超时
             thought_signature_map: Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
@@ -108,7 +106,6 @@ impl AxumServer {
             monitor: monitor.clone(),
             experimental: experimental_state,
         };
-
 
         // 构建路由 - 使用新架构的 handlers！
         use crate::proxy::handlers;
@@ -152,16 +149,13 @@ impl AxumServer {
                 "/mcp/web_search_prime/mcp",
                 any(handlers::mcp::handle_web_search_prime),
             )
-	            .route(
-	                "/mcp/web_reader/mcp",
-	                any(handlers::mcp::handle_web_reader),
-	            )
-	            .route(
-	                "/mcp/zai-mcp-server/mcp",
-	                any(handlers::mcp::handle_zai_mcp_server),
-	            )
-	            // Gemini Protocol (Native)
-	            .route("/v1beta/models", get(handlers::gemini::handle_list_models))
+            .route("/mcp/web_reader/mcp", any(handlers::mcp::handle_web_reader))
+            .route(
+                "/mcp/zai-mcp-server/mcp",
+                any(handlers::mcp::handle_zai_mcp_server),
+            )
+            // Gemini Protocol (Native)
+            .route("/v1beta/models", get(handlers::gemini::handle_list_models))
             // Handle both GET (get info) and POST (generateContent with colon) at the same route
             .route(
                 "/v1beta/models/:model",
@@ -171,12 +165,18 @@ impl AxumServer {
                 "/v1beta/models/:model/countTokens",
                 post(handlers::gemini::handle_count_tokens),
             ) // Specific route priority
-            .route("/v1/models/detect", post(handlers::common::handle_detect_model))
+            .route(
+                "/v1/models/detect",
+                post(handlers::common::handle_detect_model),
+            )
             .route("/v1/api/event_logging/batch", post(silent_ok_handler))
             .route("/v1/api/event_logging", post(silent_ok_handler))
             .route("/healthz", get(health_check_handler))
             .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
-            .layer(axum::middleware::from_fn_with_state(state.clone(), crate::proxy::middleware::monitor::monitor_middleware))
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                crate::proxy::middleware::monitor::monitor_middleware,
+            ))
             .layer(TraceLayer::new_for_http())
             .layer(axum::middleware::from_fn_with_state(
                 security_state.clone(),

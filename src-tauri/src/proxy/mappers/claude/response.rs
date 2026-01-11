@@ -23,7 +23,7 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
                         tracing::debug!("[Response] Remapped Grep: query → pattern");
                     }
                 }
-                
+
                 // [CRITICAL FIX] Claude Code uses "path" (string), NOT "paths" (array)!
                 if !obj.contains_key("path") {
                     if let Some(paths) = obj.remove("paths") {
@@ -53,7 +53,7 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
                         tracing::debug!("[Response] Remapped Glob: query → pattern");
                     }
                 }
-                
+
                 // [CRITICAL FIX] Claude Code uses "path" (string), NOT "paths" (array)!
                 if !obj.contains_key("path") {
                     if let Some(paths) = obj.remove("paths") {
@@ -85,14 +85,18 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
                 }
             }
             "ls" => {
-                 // LS tool: ensure "path" parameter exists
-                 if !obj.contains_key("path") {
-                     obj.insert("path".to_string(), serde_json::json!("."));
-                     tracing::debug!("[Response] Remapped LS: default path → \".\"");
-                 }
+                // LS tool: ensure "path" parameter exists
+                if !obj.contains_key("path") {
+                    obj.insert("path".to_string(), serde_json::json!("."));
+                    tracing::debug!("[Response] Remapped LS: default path → \".\"");
+                }
             }
             other => {
-                 tracing::debug!("[Response] Unmapped tool call: {} (args: {:?})", other, obj.keys());
+                tracing::debug!(
+                    "[Response] Unmapped tool call: {} (args: {:?})",
+                    other,
+                    obj.keys()
+                );
             }
         }
     }

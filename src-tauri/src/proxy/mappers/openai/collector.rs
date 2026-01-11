@@ -25,9 +25,7 @@ fn parse_sse_line(line: &str) -> Option<(String, String)> {
 }
 
 /// 将 OpenAI SSE Stream 收集为完整的 OpenAIResponse
-pub async fn collect_openai_stream_to_json<S>(
-    mut stream: S,
-) -> Result<OpenAIResponse, String>
+pub async fn collect_openai_stream_to_json<S>(mut stream: S) -> Result<OpenAIResponse, String>
 where
     S: futures::Stream<Item = Result<Bytes, io::Error>> + Unpin,
 {
@@ -96,8 +94,9 @@ where
                     // 累积 tool_calls
                     if let Some(tc_arr) = delta.get("tool_calls").and_then(|v| v.as_array()) {
                         for tc in tc_arr {
-                            let index = tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                            
+                            let index =
+                                tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
                             // 确保 tool_calls 有足够的空间
                             while tool_calls.len() <= index {
                                 tool_calls.push(ToolCall {
@@ -139,7 +138,11 @@ where
     let message = if !tool_calls.is_empty() {
         OpenAIMessage {
             role: "assistant".to_string(),
-            content: if content.is_empty() { None } else { Some(OpenAIContent::String(content)) },
+            content: if content.is_empty() {
+                None
+            } else {
+                Some(OpenAIContent::String(content))
+            },
             tool_calls: Some(tool_calls),
             reasoning_content: None,
             tool_call_id: None,
@@ -180,7 +183,9 @@ mod tests {
         ];
 
         let byte_stream = stream::iter(
-            sse_data.into_iter().map(|s| Ok::<Bytes, io::Error>(Bytes::from(s)))
+            sse_data
+                .into_iter()
+                .map(|s| Ok::<Bytes, io::Error>(Bytes::from(s))),
         );
 
         let result = collect_openai_stream_to_json(byte_stream).await;
@@ -190,7 +195,7 @@ mod tests {
         assert_eq!(response.id, "chatcmpl-123");
         assert_eq!(response.model, "gpt-4");
         assert_eq!(response.choices.len(), 1);
-        
+
         if let Some(OpenAIContent::String(text)) = &response.choices[0].message.content {
             assert_eq!(text, "Hello World");
         } else {

@@ -1,23 +1,23 @@
 //! Settings page
 
-use leptos::prelude::*;
-use leptos::task::spawn_local;
 use crate::app::AppState;
 use crate::components::{Button, ButtonVariant};
 use crate::tauri::commands;
 use crate::types::UpdateInfo;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
 
 #[component]
 pub fn Settings() -> impl IntoView {
     let state = expect_context::<AppState>();
-    
+
     // Saving state
     let saving = RwSignal::new(false);
     let checking_update = RwSignal::new(false);
     let update_info = RwSignal::new(Option::<UpdateInfo>::None);
     let data_path = RwSignal::new(String::new());
     let message = RwSignal::new(Option::<(String, bool)>::None);
-    
+
     // Load data path on mount
     Effect::new(move |_| {
         spawn_local(async move {
@@ -26,7 +26,7 @@ pub fn Settings() -> impl IntoView {
             }
         });
     });
-    
+
     let show_message = move |msg: String, is_error: bool| {
         message.set(Some((msg, is_error)));
         spawn_local(async move {
@@ -34,7 +34,7 @@ pub fn Settings() -> impl IntoView {
             message.set(None);
         });
     };
-    
+
     // Save settings
     let on_save = move || {
         saving.set(true);
@@ -49,7 +49,7 @@ pub fn Settings() -> impl IntoView {
             saving.set(false);
         });
     };
-    
+
     // Check for updates
     let on_check_update = move || {
         checking_update.set(true);
@@ -68,7 +68,7 @@ pub fn Settings() -> impl IntoView {
             checking_update.set(false);
         });
     };
-    
+
     // Open data folder
     let on_open_data = move || {
         spawn_local(async move {
@@ -77,7 +77,7 @@ pub fn Settings() -> impl IntoView {
             }
         });
     };
-    
+
     // Clear logs
     let on_clear_logs = move || {
         spawn_local(async move {
@@ -92,14 +92,14 @@ pub fn Settings() -> impl IntoView {
         <div class="page settings">
             <header class="page-header">
                 <h1>"Settings"</h1>
-                <Button 
+                <Button
                     text="💾 Save".to_string()
                     variant=ButtonVariant::Primary
                     loading=saving.get()
                     on_click=on_save
                 />
             </header>
-            
+
             // Message banner
             <Show when=move || message.get().is_some()>
                 {move || {
@@ -111,17 +111,17 @@ pub fn Settings() -> impl IntoView {
                     }
                 }}
             </Show>
-            
+
             // General
             <section class="settings-section">
                 <h2>"General"</h2>
-                
+
                 <div class="setting-row">
                     <div class="setting-info">
                         <label>"Language"</label>
                         <p class="setting-desc">"Interface language"</p>
                     </div>
-                    <select 
+                    <select
                         prop:value=move || state.config.get().map(|c| c.language.clone()).unwrap_or_default()
                         on:change=move |ev| {
                             let value = event_target_value(&ev);
@@ -137,7 +137,7 @@ pub fn Settings() -> impl IntoView {
                         <option value="ru">"Русский"</option>
                     </select>
                 </div>
-                
+
                 <div class="setting-row">
                     <div class="setting-info">
                         <label>"Theme"</label>
@@ -159,14 +159,14 @@ pub fn Settings() -> impl IntoView {
                         <option value="system">"System"</option>
                     </select>
                 </div>
-                
+
                 <div class="setting-row">
                     <div class="setting-info">
                         <label>"Auto-launch"</label>
                         <p class="setting-desc">"Start with system"</p>
                     </div>
-                    <input 
-                        type="checkbox" 
+                    <input
+                        type="checkbox"
                         class="toggle"
                         checked=move || state.config.get().map(|c| c.auto_launch).unwrap_or(false)
                         on:change=move |ev| {
@@ -180,18 +180,18 @@ pub fn Settings() -> impl IntoView {
                     />
                 </div>
             </section>
-            
+
             // Quota Refresh
             <section class="settings-section">
                 <h2>"Quota Refresh"</h2>
-                
+
                 <div class="setting-row">
                     <div class="setting-info">
                         <label>"Auto-refresh quotas"</label>
                         <p class="setting-desc">"Automatically update account quotas"</p>
                     </div>
-                    <input 
-                        type="checkbox" 
+                    <input
+                        type="checkbox"
                         class="toggle"
                         checked=move || state.config.get().map(|c| c.auto_refresh).unwrap_or(true)
                         on:change=move |ev| {
@@ -204,15 +204,15 @@ pub fn Settings() -> impl IntoView {
                         }
                     />
                 </div>
-                
+
                 <div class="setting-row">
                     <div class="setting-info">
                         <label>"Refresh interval"</label>
                         <p class="setting-desc">"Minutes between quota updates"</p>
                     </div>
-                    <input 
-                        type="number" 
-                        min="1" 
+                    <input
+                        type="number"
+                        min="1"
                         max="1440"
                         prop:value=move || state.config.get().map(|c| c.refresh_interval.to_string()).unwrap_or_default()
                         on:change=move |ev| {
@@ -227,31 +227,31 @@ pub fn Settings() -> impl IntoView {
                     />
                 </div>
             </section>
-            
+
             // Paths
             <section class="settings-section">
                 <h2>"Data & Storage"</h2>
-                
+
                 <div class="setting-row">
                     <div class="setting-info">
                         <label>"Data directory"</label>
                         <p class="setting-desc">{move || data_path.get()}</p>
                     </div>
-                    <Button 
+                    <Button
                         text="📁 Open".to_string()
                         variant=ButtonVariant::Secondary
                         on_click=on_open_data
                     />
                 </div>
-                
+
                 <div class="setting-row">
                     <div class="setting-info">
                         <label>"Export directory"</label>
                         <p class="setting-desc">"Default location for exported data"</p>
                     </div>
                     <div class="path-input">
-                        <input 
-                            type="text" 
+                        <input
+                            type="text"
                             readonly=true
                             prop:value=move || state.config.get()
                                 .and_then(|c| c.default_export_path)
@@ -261,11 +261,11 @@ pub fn Settings() -> impl IntoView {
                     </div>
                 </div>
             </section>
-            
+
             // About
             <section class="settings-section settings-section--about">
                 <h2>"About"</h2>
-                
+
                 <div class="about-info">
                     <div class="app-icon">"🚀"</div>
                     <div class="app-details">
@@ -276,7 +276,7 @@ pub fn Settings() -> impl IntoView {
                         </p>
                     </div>
                 </div>
-                
+
                 <div class="update-section">
                     <Show when=move || update_info.get().is_some_and(|u| u.available)>
                         {move || {
@@ -292,7 +292,7 @@ pub fn Settings() -> impl IntoView {
                             }
                         }}
                     </Show>
-                    <Button 
+                    <Button
                         text="🔍 Check for Updates".to_string()
                         variant=ButtonVariant::Secondary
                         loading=checking_update.get()
@@ -300,17 +300,17 @@ pub fn Settings() -> impl IntoView {
                     />
                 </div>
             </section>
-            
+
             // Danger zone
             <section class="settings-section settings-section--danger">
                 <h2>"Maintenance"</h2>
-                
+
                 <div class="setting-row">
                     <div class="setting-info">
                         <label>"Clear logs"</label>
                         <p class="setting-desc">"Remove all request logs"</p>
                     </div>
-                    <Button 
+                    <Button
                         text="Clear Logs".to_string()
                         variant=ButtonVariant::Danger
                         on_click=on_clear_logs

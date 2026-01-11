@@ -29,9 +29,7 @@ fn parse_sse_line(line: &str) -> Option<(String, String)> {
 ///
 /// 此函数接收一个 SSE 字节流，解析所有事件，并重建完整的 ClaudeResponse 对象。
 /// 这使得非 Stream 客户端可以透明地享受 Stream 模式的配额优势。
-pub async fn collect_stream_to_json<S>(
-    mut stream: S,
-) -> Result<ClaudeResponse, String>
+pub async fn collect_stream_to_json<S>(mut stream: S) -> Result<ClaudeResponse, String>
 where
     S: futures::Stream<Item = Result<Bytes, io::Error>> + Unpin,
 {
@@ -136,12 +134,16 @@ where
                                 }
                             }
                             "thinking_delta" => {
-                                if let Some(thinking) = delta.get("thinking").and_then(|v| v.as_str()) {
+                                if let Some(thinking) =
+                                    delta.get("thinking").and_then(|v| v.as_str())
+                                {
                                     current_thinking.push_str(thinking);
                                 }
                             }
                             "input_json_delta" => {
-                                if let Some(partial_json) = delta.get("partial_json").and_then(|v| v.as_str()) {
+                                if let Some(partial_json) =
+                                    delta.get("partial_json").and_then(|v| v.as_str())
+                                {
                                     current_tool_input.push_str(partial_json);
                                 }
                             }
@@ -167,8 +169,16 @@ where
                     current_thinking.clear();
                 } else if let Some(tool_use) = current_tool_use.take() {
                     // 构建 tool_use 块
-                    let id = tool_use.get("id").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
-                    let name = tool_use.get("name").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+                    let id = tool_use
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+                    let name = tool_use
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                        .to_string();
                     let input = if !current_tool_input.is_empty() {
                         serde_json::from_str(&current_tool_input).unwrap_or(json!({}))
                     } else {
@@ -237,7 +247,9 @@ mod tests {
         ];
 
         let byte_stream = stream::iter(
-            sse_data.into_iter().map(|s| Ok::<Bytes, io::Error>(Bytes::from(s)))
+            sse_data
+                .into_iter()
+                .map(|s| Ok::<Bytes, io::Error>(Bytes::from(s))),
         );
 
         let result = collect_stream_to_json(byte_stream).await;
@@ -247,7 +259,7 @@ mod tests {
         assert_eq!(response.id, "msg_123");
         assert_eq!(response.model, "claude-3-5-sonnet");
         assert_eq!(response.content.len(), 1);
-        
+
         if let ContentBlock::Text { text } = &response.content[0] {
             assert_eq!(text, "Hello World");
         } else {

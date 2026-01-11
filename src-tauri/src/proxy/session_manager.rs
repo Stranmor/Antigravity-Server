@@ -1,7 +1,7 @@
-use sha2::{Sha256, Digest};
 use crate::proxy::mappers::claude::models::{ClaudeRequest, MessageContent};
-use crate::proxy::mappers::openai::models::{OpenAIRequest, OpenAIContent};
+use crate::proxy::mappers::openai::models::{OpenAIContent, OpenAIRequest};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 /// 会话管理器工具
 pub struct SessionManager;
@@ -21,25 +21,28 @@ impl SessionManager {
         // 2. 备选方案：智能内容指纹 (SHA256)
         // 策略：提取第一条核心用户消息，移除空白和系统干扰项
         let mut hasher = Sha256::new();
-        
+
         // 混入模型名称增加区分度
         hasher.update(request.model.as_bytes());
 
         let mut content_found = false;
         for msg in &request.messages {
-            if msg.role != "user" { continue; }
-            
+            if msg.role != "user" {
+                continue;
+            }
+
             let text = match &msg.content {
                 MessageContent::String(s) => s.clone(),
-                MessageContent::Array(blocks) => {
-                    blocks.iter()
-                        .filter_map(|block| match block {
-                            crate::proxy::mappers::claude::models::ContentBlock::Text { text } => Some(text.as_str()),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                }
+                MessageContent::Array(blocks) => blocks
+                    .iter()
+                    .filter_map(|block| match block {
+                        crate::proxy::mappers::claude::models::ContentBlock::Text { text } => {
+                            Some(text.as_str())
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" "),
             };
 
             let clean_text = text.trim();
@@ -60,8 +63,12 @@ impl SessionManager {
 
         let hash = format!("{:x}", hasher.finalize());
         let sid = format!("sid-{}", &hash[..16]);
-        
-        tracing::debug!("[SessionManager] Generated fingerprint: {} for model {}", sid, request.model);
+
+        tracing::debug!(
+            "[SessionManager] Generated fingerprint: {} for model {}",
+            sid,
+            request.model
+        );
         sid
     }
 
@@ -72,19 +79,22 @@ impl SessionManager {
 
         let mut content_found = false;
         for msg in &request.messages {
-            if msg.role != "user" { continue; }
+            if msg.role != "user" {
+                continue;
+            }
             if let Some(content) = &msg.content {
                 let text = match content {
                     OpenAIContent::String(s) => s.clone(),
-                    OpenAIContent::Array(blocks) => {
-                        blocks.iter()
-                            .filter_map(|block| match block {
-                                crate::proxy::mappers::openai::models::OpenAIContentBlock::Text { text } => Some(text.as_str()),
-                                _ => None,
-                            })
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                    }
+                    OpenAIContent::Array(blocks) => blocks
+                        .iter()
+                        .filter_map(|block| match block {
+                            crate::proxy::mappers::openai::models::OpenAIContentBlock::Text {
+                                text,
+                            } => Some(text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" "),
                 };
 
                 let clean_text = text.trim();
@@ -116,8 +126,10 @@ impl SessionManager {
         let mut content_found = false;
         if let Some(contents) = request.get("contents").and_then(|v| v.as_array()) {
             for content in contents {
-                if content.get("role").and_then(|v| v.as_str()) != Some("user") { continue; }
-                
+                if content.get("role").and_then(|v| v.as_str()) != Some("user") {
+                    continue;
+                }
+
                 if let Some(parts) = content.get("parts").and_then(|v| v.as_array()) {
                     let mut text_parts = Vec::new();
                     for part in parts {
@@ -125,7 +137,7 @@ impl SessionManager {
                             text_parts.push(text);
                         }
                     }
-                    
+
                     let combined_text = text_parts.join(" ");
                     let clean_text = combined_text.trim();
                     if clean_text.len() > 10 && !clean_text.contains("<system-reminder>") {
@@ -138,8 +150,8 @@ impl SessionManager {
         }
 
         if !content_found {
-             // 兜底：对整个 Body 的首个 user part 进行摘要
-             hasher.update(request.to_string().as_bytes());
+            // 兜底：对整个 Body 的首个 user part 进行摘要
+            hasher.update(request.to_string().as_bytes());
         }
 
         let hash = format!("{:x}", hasher.finalize());

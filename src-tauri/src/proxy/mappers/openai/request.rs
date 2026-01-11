@@ -1,40 +1,56 @@
 // OpenAI → Gemini 请求转换
 use super::models::*;
-use serde_json::{json, Value};
 use super::streaming::get_thought_signature;
+use serde_json::{json, Value};
 
-pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mapped_model: &str) -> Value {
+pub fn transform_openai_request(
+    request: &OpenAIRequest,
+    project_id: &str,
+    mapped_model: &str,
+) -> Value {
     // 将 OpenAI 工具转为 Value 数组以便探测
-    let tools_val = request.tools.as_ref().map(|list| {
-        list.iter().map(|v| v.clone()).collect::<Vec<_>>()
-    });
+    let tools_val = request
+        .tools
+        .as_ref()
+        .map(|list| list.iter().map(|v| v.clone()).collect::<Vec<_>>());
 
     // Resolve grounding config
-    let config = crate::proxy::mappers::common_utils::resolve_request_config(&request.model, mapped_model, &tools_val);
+    let config = crate::proxy::mappers::common_utils::resolve_request_config(
+        &request.model,
+        mapped_model,
+        &tools_val,
+    );
 
-    tracing::debug!("[Debug] OpenAI Request: original='{}', mapped='{}', type='{}', has_image_config={}", 
-        request.model, mapped_model, config.request_type, config.image_config.is_some());
-    
+    tracing::debug!(
+        "[Debug] OpenAI Request: original='{}', mapped='{}', type='{}', has_image_config={}",
+        request.model,
+        mapped_model,
+        config.request_type,
+        config.image_config.is_some()
+    );
+
     // 1. 提取所有 System Message 并注入补丁
-    let system_instructions: Vec<String> = request.messages.iter()
+    let system_instructions: Vec<String> = request
+        .messages
+        .iter()
         .filter(|msg| msg.role == "system")
         .filter_map(|msg| {
             msg.content.as_ref().map(|c| match c {
                 OpenAIContent::String(s) => s.clone(),
-                OpenAIContent::Array(blocks) => {
-                    blocks.iter().filter_map(|b| {
+                OpenAIContent::Array(blocks) => blocks
+                    .iter()
+                    .filter_map(|b| {
                         if let OpenAIContentBlock::Text { text } = b {
                             Some(text.clone())
                         } else {
                             None
                         }
-                    }).collect::<Vec<_>>().join("\n")
-                }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
             })
         })
         .collect();
-
-
 
     // Pre-scan to map tool_call_id to function name (for Codex)
     let mut tool_id_to_name = std::collections::HashMap::new();
@@ -42,7 +58,11 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
         if let Some(tool_calls) = &msg.tool_calls {
             for call in tool_calls {
                 let name = &call.function.name;
-                let final_name = if name == "local_shell_call" { "shell" } else { name };
+                let final_name = if name == "local_shell_call" {
+                    "shell"
+                } else {
+                    name
+                };
                 tool_id_to_name.insert(call.id.clone(), final_name.to_string());
             }
         }
@@ -51,7 +71,10 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
     // 从全局存储获取 thoughtSignature (PR #93 支持)
     let global_thought_sig = get_thought_signature();
     if global_thought_sig.is_some() {
-        tracing::debug!("从全局存储获取到 thoughtSignature (长度: {})", global_thought_sig.as_ref().unwrap().len());
+        tracing::debug!(
+            "从全局存储获取到 thoughtSignature (长度: {})",
+            global_thought_sig.as_ref().unwrap().len()
+        );
     }
 
     // 2. 构建 Gemini contents (过滤掉 system)
@@ -207,7 +230,9 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
         if let Some(last) = merged_contents.last_mut() {
             if last["role"] == msg["role"] {
                 // 合并 parts
-                if let (Some(last_parts), Some(msg_parts)) = (last["parts"].as_array_mut(), msg["parts"].as_array()) {
+                if let (Some(last_parts), Some(msg_parts)) =
+                    (last["parts"].as_array_mut(), msg["parts"].as_array())
+                {
                     last_parts.extend(msg_parts.iter().cloned());
                     continue;
                 }
@@ -219,13 +244,15 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
 
     // 3. 构建请求体
     // [FIX PR #368] 检测 Gemini 3 Pro thinking 模型，注入 thinkingBudget 配置
-    let is_gemini_3_thinking = mapped_model.contains("gemini-3") && 
-        (mapped_model.ends_with("-high") || mapped_model.ends_with("-low") || mapped_model.contains("-pro"));
+    let is_gemini_3_thinking = mapped_model.contains("gemini-3")
+        && (mapped_model.ends_with("-high")
+            || mapped_model.ends_with("-low")
+            || mapped_model.contains("-pro"));
 
     let mut gen_config = json!({
         "maxOutputTokens": request.max_tokens.unwrap_or(64000),
         "temperature": request.temperature.unwrap_or(1.0),
-        "topP": request.top_p.unwrap_or(1.0), 
+        "topP": request.top_p.unwrap_or(1.0),
     });
 
     // [NEW] 支持多候选结果数量 (n -> candidateCount)
@@ -239,13 +266,17 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
             "includeThoughts": true,
             "thinkingBudget": 16000
         });
-        tracing::debug!("[OpenAI-Request] Injected thinkingConfig for Gemini 3 Pro: thinkingBudget=16000");
+        tracing::debug!(
+            "[OpenAI-Request] Injected thinkingConfig for Gemini 3 Pro: thinkingBudget=16000"
+        );
     }
 
-
     if let Some(stop) = &request.stop {
-        if stop.is_string() { gen_config["stopSequences"] = json!([stop]); }
-        else if stop.is_array() { gen_config["stopSequences"] = stop.clone(); }
+        if stop.is_string() {
+            gen_config["stopSequences"] = json!([stop]);
+        } else if stop.is_array() {
+            gen_config["stopSequences"] = stop.clone();
+        }
     }
 
     if let Some(fmt) = &request.response_format {
@@ -287,10 +318,11 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
 
             if let Some(name) = gemini_func.get("name").and_then(|v| v.as_str()) {
                 // 跳过内置联网工具名称，避免重复定义
-                if name == "web_search" || name == "google_search" || name == "web_search_20250305" {
+                if name == "web_search" || name == "google_search" || name == "web_search_20250305"
+                {
                     continue;
                 }
-                
+
                 if name == "local_shell_call" {
                     if let Some(obj) = gemini_func.as_object_mut() {
                         obj.insert("name".to_string(), json!("shell"));
@@ -318,18 +350,18 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
                         params_obj.insert("type".to_string(), json!("OBJECT"));
                     }
                 }
-                
+
                 // 递归转换 type 为大写 (符合 Protobuf 定义)
                 enforce_uppercase_types(params);
             }
             function_declarations.push(gemini_func);
         }
-        
+
         if !function_declarations.is_empty() {
             inner_request["tools"] = json!([{ "functionDeclarations": function_declarations }]);
         }
     }
-    
+
     // [NEW] Antigravity 身份指令 (原始简化版)
     let antigravity_identity = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.\n\
     You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.\n\
@@ -337,7 +369,8 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
     **Proactiveness**";
 
     // [HYBRID] 检查用户是否已提供 Antigravity 身份
-    let user_has_antigravity = system_instructions.iter()
+    let user_has_antigravity = system_instructions
+        .iter()
         .any(|s| s.contains("You are Antigravity"));
 
     let mut parts = Vec::new();
@@ -352,27 +385,27 @@ pub fn transform_openai_request(request: &OpenAIRequest, project_id: &str, mappe
         parts.push(json!({"text": inst}));
     }
 
-    inner_request["systemInstruction"] = json!({ 
+    inner_request["systemInstruction"] = json!({
         "role": "user",
-        "parts": parts 
+        "parts": parts
     });
-    
+
     if config.inject_google_search {
         crate::proxy::mappers::common_utils::inject_google_search_tool(&mut inner_request);
     }
 
     if let Some(image_config) = config.image_config {
-         if let Some(obj) = inner_request.as_object_mut() {
-             obj.remove("tools");
-             obj.remove("systemInstruction");
-             let gen_config = obj.entry("generationConfig").or_insert_with(|| json!({}));
-             if let Some(gen_obj) = gen_config.as_object_mut() {
-                 gen_obj.remove("thinkingConfig");
-                 gen_obj.remove("responseMimeType"); 
-                 gen_obj.remove("responseModalities");
-                 gen_obj.insert("imageConfig".to_string(), image_config);
-             }
-         }
+        if let Some(obj) = inner_request.as_object_mut() {
+            obj.remove("tools");
+            obj.remove("systemInstruction");
+            let gen_config = obj.entry("generationConfig").or_insert_with(|| json!({}));
+            if let Some(gen_obj) = gen_config.as_object_mut() {
+                gen_obj.remove("thinkingConfig");
+                gen_obj.remove("responseMimeType");
+                gen_obj.remove("responseModalities");
+                gen_obj.insert("imageConfig".to_string(), image_config);
+            }
+        }
     }
 
     json!({
@@ -400,7 +433,7 @@ fn enforce_uppercase_types(value: &mut Value) {
             }
         }
         if let Some(items) = map.get_mut("items") {
-             enforce_uppercase_types(items);
+            enforce_uppercase_types(items);
         }
     } else if let Value::Array(arr) = value {
         for item in arr {
@@ -450,6 +483,9 @@ mod tests {
         let parts = &result["request"]["contents"][0]["parts"];
         assert_eq!(parts.as_array().unwrap().len(), 2);
         assert_eq!(parts[0]["text"].as_str().unwrap(), "What is in this image?");
-        assert_eq!(parts[1]["inlineData"]["mimeType"].as_str().unwrap(), "image/png");
+        assert_eq!(
+            parts[1]["inlineData"]["mimeType"].as_str().unwrap(),
+            "image/png"
+        );
     }
 }

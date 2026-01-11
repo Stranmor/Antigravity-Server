@@ -1,6 +1,6 @@
-use axum::{extract::State, extract::Json, http::StatusCode, response::IntoResponse};
-use serde_json::{json, Value};
 use crate::proxy::server::AppState;
+use axum::{extract::Json, extract::State, http::StatusCode, response::IntoResponse};
+use serde_json::{json, Value};
 
 /// Detects model capabilities and configuration
 /// POST /v1/models/detect
@@ -9,7 +9,7 @@ pub async fn handle_detect_model(
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
     let model_name = body.get("model").and_then(|v| v.as_str()).unwrap_or("");
-    
+
     if model_name.is_empty() {
         return (StatusCode::BAD_REQUEST, "Missing 'model' field").into_response();
     }
@@ -24,7 +24,7 @@ pub async fn handle_detect_model(
     let config = crate::proxy::mappers::common_utils::resolve_request_config(
         model_name,
         &mapped_model,
-        &None // We don't check tools for static capability detection
+        &None, // We don't check tools for static capability detection
     );
 
     // 3. Construct response

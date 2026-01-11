@@ -1,12 +1,11 @@
 //! Accounts page with full parity
 
+use crate::app::AppState;
+use crate::components::{AccountCard, Button, ButtonVariant, Modal, ModalType, Pagination};
+use crate::tauri::commands;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use std::collections::HashSet;
-use crate::app::AppState;
-use crate::components::{Button, ButtonVariant, Modal, ModalType, Pagination, AccountCard};
-use crate::tauri::commands;
-
 
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum ViewMode {
@@ -27,33 +26,33 @@ pub enum FilterType {
 #[component]
 pub fn Accounts() -> impl IntoView {
     let state = expect_context::<AppState>();
-    
+
     // View and filter state
     let view_mode = RwSignal::new(ViewMode::List);
     let filter = RwSignal::new(FilterType::All);
     let search_query = RwSignal::new(String::new());
-    
+
     // Selection state
     let selected_ids = RwSignal::new(HashSet::<String>::new());
-    
+
     // Pagination state
     let current_page = RwSignal::new(1usize);
     let items_per_page = RwSignal::new(20usize);
-    
+
     // Loading states
     let refresh_pending = RwSignal::new(false);
     let oauth_pending = RwSignal::new(false);
     let sync_pending = RwSignal::new(false);
     let refreshing_ids = RwSignal::new(HashSet::<String>::new());
-    
+
     // Modal states
     let delete_confirm = RwSignal::new(Option::<String>::None);
     let batch_delete_confirm = RwSignal::new(false);
     let toggle_proxy_confirm = RwSignal::new(Option::<(String, bool)>::None);
-    
+
     // Messages
     let message = RwSignal::new(Option::<(String, bool)>::None);
-    
+
     let show_message = move |msg: String, is_error: bool| {
         message.set(Some((msg, is_error)));
         spawn_local(async move {
@@ -61,32 +60,41 @@ pub fn Accounts() -> impl IntoView {
             message.set(None);
         });
     };
-    
+
     // Filter counts
     let filter_counts = Memo::new(move |_| {
         let accounts = state.accounts.get();
         let all = accounts.len();
-        let pro = accounts.iter()
-            .filter(|a| a.quota.as_ref()
-                .and_then(|q| q.subscription_tier.as_ref())
-                .is_some_and(|t| t.to_lowercase().contains("pro")))
+        let pro = accounts
+            .iter()
+            .filter(|a| {
+                a.quota
+                    .as_ref()
+                    .and_then(|q| q.subscription_tier.as_ref())
+                    .is_some_and(|t| t.to_lowercase().contains("pro"))
+            })
             .count();
-        let ultra = accounts.iter()
-            .filter(|a| a.quota.as_ref()
-                .and_then(|q| q.subscription_tier.as_ref())
-                .is_some_and(|t| t.to_lowercase().contains("ultra")))
+        let ultra = accounts
+            .iter()
+            .filter(|a| {
+                a.quota
+                    .as_ref()
+                    .and_then(|q| q.subscription_tier.as_ref())
+                    .is_some_and(|t| t.to_lowercase().contains("ultra"))
+            })
             .count();
         let free = all - pro - ultra;
         (all, pro, ultra, free)
     });
-    
+
     // Filtered accounts
     let filtered_accounts = Memo::new(move |_| {
         let query = search_query.get().to_lowercase();
         let accounts = state.accounts.get();
         let current_filter = filter.get();
-        
-        accounts.into_iter()
+
+        accounts
+            .into_iter()
             .filter(|a| {
                 // Search filter
                 if !query.is_empty() && !a.email.to_lowercase().contains(&query) {
@@ -95,14 +103,20 @@ pub fn Accounts() -> impl IntoView {
                 // Tier filter
                 match current_filter {
                     FilterType::All => true,
-                    FilterType::Pro => a.quota.as_ref()
+                    FilterType::Pro => a
+                        .quota
+                        .as_ref()
                         .and_then(|q| q.subscription_tier.as_ref())
                         .is_some_and(|t| t.to_lowercase().contains("pro")),
-                    FilterType::Ultra => a.quota.as_ref()
+                    FilterType::Ultra => a
+                        .quota
+                        .as_ref()
                         .and_then(|q| q.subscription_tier.as_ref())
                         .is_some_and(|t| t.to_lowercase().contains("ultra")),
                     FilterType::Free => {
-                        let tier = a.quota.as_ref()
+                        let tier = a
+                            .quota
+                            .as_ref()
                             .and_then(|q| q.subscription_tier.as_ref())
                             .map(|t| t.to_lowercase())
                             .unwrap_or_default();
@@ -112,22 +126,25 @@ pub fn Accounts() -> impl IntoView {
             })
             .collect::<Vec<_>>()
     });
-    
+
     // Paginated accounts
     let paginated_accounts = Memo::new(move |_| {
         let all = filtered_accounts.get();
         let page = current_page.get();
         let per_page = items_per_page.get();
         let start = (page - 1) * per_page;
-        all.into_iter().skip(start).take(per_page).collect::<Vec<_>>()
+        all.into_iter()
+            .skip(start)
+            .take(per_page)
+            .collect::<Vec<_>>()
     });
-    
+
     let total_pages = Memo::new(move |_| {
         let total = filtered_accounts.get().len();
         let per_page = items_per_page.get();
         (total + per_page - 1) / per_page.max(1)
     });
-    
+
     // Selection helpers
     let selected_count = Memo::new(move |_| selected_ids.get().len());
     let all_page_selected = Memo::new(move |_| {
@@ -135,7 +152,7 @@ pub fn Accounts() -> impl IntoView {
         let selected = selected_ids.get();
         !page_accounts.is_empty() && page_accounts.iter().all(|a| selected.contains(&a.id))
     });
-    
+
     // Reset pagination when filter changes
     Effect::new(move |_| {
         let _ = filter.get();
@@ -143,9 +160,9 @@ pub fn Accounts() -> impl IntoView {
         current_page.set(1);
         selected_ids.set(HashSet::new());
     });
-    
+
     // Actions
-    let on_refresh_list = move || {
+    let _on_refresh_list = move || {
         refresh_pending.set(true);
         spawn_local(async move {
             if let Ok(accounts) = commands::list_accounts().await {
@@ -155,13 +172,16 @@ pub fn Accounts() -> impl IntoView {
             refresh_pending.set(false);
         });
     };
-    
+
     let on_refresh_all_quotas = move || {
         refresh_pending.set(true);
         spawn_local(async move {
             match commands::refresh_all_quotas().await {
                 Ok(stats) => {
-                    show_message(format!("Refreshed {}/{} accounts", stats.success, stats.total), false);
+                    show_message(
+                        format!("Refreshed {}/{} accounts", stats.success, stats.total),
+                        false,
+                    );
                     if let Ok(accounts) = commands::list_accounts().await {
                         let state = expect_context::<AppState>();
                         state.accounts.set(accounts);
@@ -172,7 +192,7 @@ pub fn Accounts() -> impl IntoView {
             refresh_pending.set(false);
         });
     };
-    
+
     let on_add_account = move || {
         oauth_pending.set(true);
         spawn_local(async move {
@@ -189,7 +209,7 @@ pub fn Accounts() -> impl IntoView {
             oauth_pending.set(false);
         });
     };
-    
+
     let on_sync_local = move || {
         sync_pending.set(true);
         spawn_local(async move {
@@ -207,7 +227,7 @@ pub fn Accounts() -> impl IntoView {
             sync_pending.set(false);
         });
     };
-    
+
     let on_switch_account = move |account_id: String| {
         spawn_local(async move {
             if commands::switch_account(&account_id).await.is_ok() {
@@ -217,24 +237,28 @@ pub fn Accounts() -> impl IntoView {
             }
         });
     };
-    
+
     let on_refresh_account = move |account_id: String| {
         let aid = account_id.clone();
-        refreshing_ids.update(|ids| { ids.insert(aid); });
+        refreshing_ids.update(|ids| {
+            ids.insert(aid);
+        });
         spawn_local(async move {
             let _ = commands::fetch_account_quota(&account_id).await;
             if let Ok(accounts) = commands::list_accounts().await {
                 let state = expect_context::<AppState>();
                 state.accounts.set(accounts);
             }
-            refreshing_ids.update(|ids| { ids.remove(&account_id); });
+            refreshing_ids.update(|ids| {
+                ids.remove(&account_id);
+            });
         });
     };
-    
+
     let on_delete_account = move |account_id: String| {
         delete_confirm.set(Some(account_id));
     };
-    
+
     let execute_delete = move || {
         if let Some(id) = delete_confirm.get() {
             delete_confirm.set(None);
@@ -249,13 +273,13 @@ pub fn Accounts() -> impl IntoView {
             });
         }
     };
-    
+
     let on_batch_delete = move || {
         if selected_ids.get().len() > 0 {
             batch_delete_confirm.set(true);
         }
     };
-    
+
     let execute_batch_delete = move || {
         let ids: Vec<String> = selected_ids.get().into_iter().collect();
         let count = ids.len();
@@ -271,22 +295,28 @@ pub fn Accounts() -> impl IntoView {
             }
         });
     };
-    
+
     let on_toggle_proxy = move |account_id: String, current_disabled: bool| {
         toggle_proxy_confirm.set(Some((account_id, !current_disabled)));
     };
-    
+
     let execute_toggle_proxy = move || {
-        if let Some((id, enable)) = toggle_proxy_confirm.get() {
+        if let Some((_id, enable)) = toggle_proxy_confirm.get() {
             toggle_proxy_confirm.set(None);
             spawn_local(async move {
                 // This would need a toggle_proxy_status command
                 // For now we'll just refresh the list
-                show_message(format!("Proxy {} (TODO: implement)", if enable { "enabled" } else { "disabled" }), false);
+                show_message(
+                    format!(
+                        "Proxy {} (TODO: implement)",
+                        if enable { "enabled" } else { "disabled" }
+                    ),
+                    false,
+                );
             });
         }
     };
-    
+
     let on_toggle_select = move |account_id: String| {
         selected_ids.update(|ids| {
             if ids.contains(&account_id) {
@@ -296,9 +326,13 @@ pub fn Accounts() -> impl IntoView {
             }
         });
     };
-    
+
     let on_toggle_all = move || {
-        let page_ids: HashSet<String> = paginated_accounts.get().iter().map(|a| a.id.clone()).collect();
+        let page_ids: HashSet<String> = paginated_accounts
+            .get()
+            .iter()
+            .map(|a| a.id.clone())
+            .collect();
         if all_page_selected.get() {
             selected_ids.update(|ids| {
                 for id in &page_ids {
@@ -311,11 +345,11 @@ pub fn Accounts() -> impl IntoView {
             });
         }
     };
-    
+
     let on_page_change = Callback::new(move |page: usize| {
         current_page.set(page);
     });
-    
+
     let on_page_size_change = Callback::new(move |size: usize| {
         items_per_page.set(size);
         current_page.set(1);
@@ -331,27 +365,27 @@ pub fn Accounts() -> impl IntoView {
                     </p>
                 </div>
                 <div class="header-actions">
-                    <Button 
+                    <Button
                         text="📥 Sync".to_string()
                         variant=ButtonVariant::Secondary
                         on_click=on_sync_local
                         loading=sync_pending.get()
                     />
-                    <Button 
+                    <Button
                         text="🔄 Refresh All".to_string()
                         variant=ButtonVariant::Secondary
                         on_click=on_refresh_all_quotas
                         loading=refresh_pending.get()
                     />
-                    <Button 
+                    <Button
                         text="➕ Add".to_string()
-                        variant=ButtonVariant::Primary 
+                        variant=ButtonVariant::Primary
                         on_click=on_add_account
                         loading=oauth_pending.get()
                     />
                 </div>
             </header>
-            
+
             // Message banner
             <Show when=move || message.get().is_some()>
                 {move || {
@@ -363,57 +397,57 @@ pub fn Accounts() -> impl IntoView {
                     }
                 }}
             </Show>
-            
+
             // Toolbar
             <div class="toolbar">
                 // Search
                 <div class="search-box">
-                    <input 
+                    <input
                         type="text"
                         placeholder="Search accounts..."
                         prop:value=move || search_query.get()
                         on:input=move |ev| search_query.set(event_target_value(&ev))
                     />
                 </div>
-                
+
                 // View mode toggle
                 <div class="view-toggle">
-                    <button 
+                    <button
                         class=move || if matches!(view_mode.get(), ViewMode::List) { "active" } else { "" }
                         on:click=move |_| view_mode.set(ViewMode::List)
                         title="List view"
                     >"☰"</button>
-                    <button 
+                    <button
                         class=move || if matches!(view_mode.get(), ViewMode::Grid) { "active" } else { "" }
                         on:click=move |_| view_mode.set(ViewMode::Grid)
                         title="Grid view"
                     >"▦"</button>
                 </div>
-                
+
                 // Filter tabs
                 <div class="filter-tabs">
-                    <button 
+                    <button
                         class=move || if matches!(filter.get(), FilterType::All) { "active" } else { "" }
                         on:click=move |_| filter.set(FilterType::All)
                     >
                         "All"
                         <span class="filter-count">{move || filter_counts.get().0}</span>
                     </button>
-                    <button 
+                    <button
                         class=move || if matches!(filter.get(), FilterType::Pro) { "active" } else { "" }
                         on:click=move |_| filter.set(FilterType::Pro)
                     >
                         "Pro"
                         <span class="filter-count">{move || filter_counts.get().1}</span>
                     </button>
-                    <button 
+                    <button
                         class=move || if matches!(filter.get(), FilterType::Ultra) { "active" } else { "" }
                         on:click=move |_| filter.set(FilterType::Ultra)
                     >
                         "Ultra"
                         <span class="filter-count">{move || filter_counts.get().2}</span>
                     </button>
-                    <button 
+                    <button
                         class=move || if matches!(filter.get(), FilterType::Free) { "active" } else { "" }
                         on:click=move |_| filter.set(FilterType::Free)
                     >
@@ -421,14 +455,14 @@ pub fn Accounts() -> impl IntoView {
                         <span class="filter-count">{move || filter_counts.get().3}</span>
                     </button>
                 </div>
-                
+
                 <div class="toolbar-spacer"></div>
-                
+
                 // Selection actions
                 <Show when=move || selected_count.get() != 0>
                     <div class="selection-actions">
                         <span class="selection-count">{move || selected_count.get()}" selected"</span>
-                        <Button 
+                        <Button
                             text="🗑 Delete".to_string()
                             variant=ButtonVariant::Danger
                             on_click=on_batch_delete
@@ -436,9 +470,9 @@ pub fn Accounts() -> impl IntoView {
                     </div>
                 </Show>
             </div>
-            
+
             // Content
-            <Show 
+            <Show
                 when=move || matches!(view_mode.get(), ViewMode::List)
                 fallback=move || view! {
                     // Grid view
@@ -454,7 +488,7 @@ pub fn Accounts() -> impl IntoView {
                                 let id5 = account.id.clone();
                                 let id6 = account.id.clone();
                                 let proxy_disabled = account.proxy_disabled;
-                                
+
                                 view! {
                                     <AccountCard
                                         account=account.clone()
@@ -485,7 +519,7 @@ pub fn Accounts() -> impl IntoView {
                         <thead>
                             <tr>
                                 <th class="col-checkbox">
-                                    <input 
+                                    <input
                                         type="checkbox"
                                         checked=move || all_page_selected.get()
                                         on:change=move |_| on_toggle_all()
@@ -509,20 +543,20 @@ pub fn Accounts() -> impl IntoView {
                                     let account_id2 = account.id.clone();
                                     let account_id3 = account.id.clone();
                                     let account_id4 = account.id.clone();
-                                    let account_id5 = account.id.clone();
+                                    let _account_id5 = account.id.clone();
                                     let account_id_select = account.id.clone();
                                     let account_id_switch = account.id.clone();
-                                    let account_id_refresh = account.id.clone();
+                                    let _account_id_refresh = account.id.clone();
                                     let account_id_delete = account.id.clone();
                                     let account_id_proxy = account.id.clone();
                                     let email = account.email.clone();
                                     let is_disabled = account.disabled;
                                     let proxy_disabled = account.proxy_disabled;
-                                    
+
                                     let tier = account.quota.as_ref()
                                         .and_then(|q| q.subscription_tier.clone())
                                         .unwrap_or_else(|| "Free".to_string());
-                                    
+
                                     let tier_class = if tier.to_lowercase().contains("ultra") {
                                         "tier-ultra"
                                     } else if tier.to_lowercase().contains("pro") {
@@ -530,28 +564,28 @@ pub fn Accounts() -> impl IntoView {
                                     } else {
                                         "tier-free"
                                     };
-                                    
+
                                     let quota_gemini = account.quota.as_ref().map(|q| {
                                         q.models.iter()
                                             .find(|m| m.model.contains("gemini") || m.model.contains("flash"))
                                             .map(|m| if m.limit > 0 { (m.limit - m.used) * 100 / m.limit } else { 0 })
                                             .unwrap_or(0)
                                     }).unwrap_or(0);
-                                    
+
                                     let quota_claude = account.quota.as_ref().map(|q| {
                                         q.models.iter()
                                             .find(|m| m.model.contains("claude"))
                                             .map(|m| if m.limit > 0 { (m.limit - m.used) * 100 / m.limit } else { 0 })
                                             .unwrap_or(0)
                                     }).unwrap_or(0);
-                                    
+
                                     // Clone account_id for each closure
                                     let account_id_class = account_id.clone();
                                     let account_id_class2 = account_id2.clone();
                                     let account_id_status = account_id4.clone();
                                     let account_id_show = account_id.clone();
                                     let account_id_refresh = account_id3.clone();
-                                    
+
                                     view! {
                                         <tr class=move || format!(
                                             "account-row {} {}",
@@ -559,8 +593,8 @@ pub fn Accounts() -> impl IntoView {
                                             if selected_ids.get().contains(&account_id_class2) { "is-selected" } else { "" }
                                         )>
                                             <td class="col-checkbox">
-                                                <input 
-                                                    type="checkbox" 
+                                                <input
+                                                    type="checkbox"
                                                     checked=move || selected_ids.get().contains(&account_id2.clone())
                                                     on:change={
                                                         let id = account_id_select.clone();
@@ -591,7 +625,7 @@ pub fn Accounts() -> impl IntoView {
                                             </td>
                                             <td class="col-quota">
                                                 <div class="quota-bar">
-                                                    <div 
+                                                    <div
                                                         class=format!("quota-fill {}", quota_class(quota_gemini))
                                                         style=format!("width: {}%", quota_gemini)
                                                     ></div>
@@ -600,7 +634,7 @@ pub fn Accounts() -> impl IntoView {
                                             </td>
                                             <td class="col-quota">
                                                 <div class="quota-bar">
-                                                    <div 
+                                                    <div
                                                         class=format!("quota-fill {}", quota_class(quota_claude))
                                                         style=format!("width: {}%", quota_claude)
                                                     ></div>
@@ -608,7 +642,7 @@ pub fn Accounts() -> impl IntoView {
                                                 <span class="quota-text">{quota_claude}"%"</span>
                                             </td>
                                             <td class="col-proxy">
-                                                <button 
+                                                <button
                                                     class=format!("proxy-badge {}", if proxy_disabled { "off" } else { "on" })
                                                     on:click={
                                                         let id = account_id_proxy.clone();
@@ -619,15 +653,15 @@ pub fn Accounts() -> impl IntoView {
                                                 </button>
                                             </td>
                                             <td class="col-actions">
-                                                <button 
-                                                    class="btn btn--icon" 
+                                                <button
+                                                    class="btn btn--icon"
                                                     title="Switch"
                                                     on:click={
                                                         let id = account_id_switch.clone();
                                                         move |_| on_switch_account(id.clone())
                                                     }
                                                 >"⚡"</button>
-                                                <button 
+                                                <button
                                                     class={
                                                         let id = account_id_refresh.clone();
                                                         move || format!("btn btn--icon {}", if refreshing_ids.get().contains(&id.clone()) { "loading" } else { "" })
@@ -639,8 +673,8 @@ pub fn Accounts() -> impl IntoView {
                                                         move |_| on_refresh_account(id.clone())
                                                     }
                                                 >"🔄"</button>
-                                                <button 
-                                                    class="btn btn--icon btn--danger" 
+                                                <button
+                                                    class="btn btn--icon btn--danger"
                                                     title="Delete"
                                                     on:click={
                                                         let id = account_id_delete.clone();
@@ -654,7 +688,7 @@ pub fn Accounts() -> impl IntoView {
                             />
                         </tbody>
                     </table>
-                    
+
                     <Show when=move || paginated_accounts.get().is_empty()>
                         <div class="empty-state">
                             <span class="empty-icon">"👥"</span>
@@ -663,7 +697,7 @@ pub fn Accounts() -> impl IntoView {
                     </Show>
                 </div>
             </Show>
-            
+
             // Pagination
             <Show when=move || { total_pages.get() > 1 }>
                 <Pagination
@@ -675,7 +709,7 @@ pub fn Accounts() -> impl IntoView {
                     on_page_size_change=on_page_size_change
                 />
             </Show>
-            
+
             // Modals
             <Modal
                 is_open=Signal::derive(move || delete_confirm.get().is_some())
@@ -686,7 +720,7 @@ pub fn Accounts() -> impl IntoView {
                 on_confirm=Callback::new(move |_| execute_delete())
                 on_cancel=Callback::new(move |_| delete_confirm.set(None))
             />
-            
+
             <Modal
                 is_open=Signal::derive(move || batch_delete_confirm.get())
                 title="Delete Selected Accounts".to_string()
@@ -696,7 +730,7 @@ pub fn Accounts() -> impl IntoView {
                 on_confirm=Callback::new(move |_| execute_batch_delete())
                 on_cancel=Callback::new(move |_| batch_delete_confirm.set(false))
             />
-            
+
             <Modal
                 is_open=Signal::derive(move || toggle_proxy_confirm.get().is_some())
                 title="Toggle Proxy".to_string()

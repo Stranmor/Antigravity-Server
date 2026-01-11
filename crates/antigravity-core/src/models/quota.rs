@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelQuota {
     pub name: String,
-    pub percentage: i32,  // 剩余百分比 0-100
+    pub percentage: i32, // 剩余百分比 0-100
     pub reset_time: String,
 }
 

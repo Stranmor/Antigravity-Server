@@ -1,11 +1,11 @@
 //! Main App component with routing
 
+use crate::components::Sidebar;
+use crate::pages::{Accounts, ApiProxy, Dashboard, Monitor, Settings};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use leptos_router::components::{Router, Routes, Route};
+use leptos_router::components::{Route, Router, Routes};
 use leptos_router::path;
-use crate::pages::{Dashboard, Accounts, ApiProxy, Settings, Monitor};
-use crate::components::Sidebar;
 
 /// Global application state
 #[derive(Clone)]
@@ -41,7 +41,7 @@ pub fn App() -> impl IntoView {
     // Create global state
     let state = AppState::new();
     provide_context(state.clone());
-    
+
     // Load initial data
     Effect::new(move |_| {
         spawn_local(async move {
@@ -71,27 +71,27 @@ pub fn App() -> impl IntoView {
 async fn load_initial_data() {
     let state = expect_context::<AppState>();
     state.loading.set(true);
-    
+
     // Load accounts
     if let Ok(accounts) = crate::tauri::commands::list_accounts().await {
         state.accounts.set(accounts);
     }
-    
+
     // Load current account
     if let Ok(Some(account)) = crate::tauri::commands::get_current_account().await {
         state.current_account_id.set(Some(account.id));
     }
-    
+
     // Load config
     if let Ok(config) = crate::tauri::commands::load_config().await {
         state.config.set(Some(config));
     }
-    
+
     // Load proxy status
     if let Ok(status) = crate::tauri::commands::get_proxy_status().await {
         state.proxy_status.set(status);
     }
-    
+
     state.loading.set(false);
     log::info!("Initial data loaded");
 }
