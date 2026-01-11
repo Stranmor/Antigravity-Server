@@ -609,6 +609,8 @@ pub async fn show_main_window(window: tauri::Window) -> Result<(), String> {
 }
 
 /// 打开文件保存对话框
+/// Note: Not exported to invoke_handler yet - reserved for frontend integration.
+#[allow(dead_code)]
 #[tauri::command]
 pub async fn save_file_dialog(
     app_handle: tauri::AppHandle,

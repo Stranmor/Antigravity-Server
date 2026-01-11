@@ -12,6 +12,10 @@ fn get_thought_sig_storage() -> &'static Mutex<Option<String>> {
 /// Store thought_signature to global storage.
 /// Only stores if the new signature is longer than the existing one,
 /// to avoid short/partial signatures overwriting valid ones.
+///
+/// NOTE: Currently unused in main code path. Reserved for Gemini 3+ 
+/// function call scenarios where thought signatures need to be preserved.
+#[allow(dead_code)]
 pub fn store_thought_signature(sig: &str) {
     if let Ok(mut guard) = get_thought_sig_storage().lock() {
         let should_store = match &*guard {

@@ -712,11 +712,14 @@ pub fn start_antigravity() -> Result<(), String> {
         .and_then(|c| c.antigravity_executable.clone());
     let args = config.and_then(|c| c.antigravity_args.clone());
 
-    if let Some(mut path_str) = manual_path {
-        let mut path = std::path::PathBuf::from(&path_str);
-
+    if let Some(path_str) = manual_path {
+        // On macOS, we may need to correct the path if it points inside .app
+        // Use shadowing to avoid unused_mut warnings on non-macOS platforms
         #[cfg(target_os = "macos")]
-        {
+        let (path_str, path) = {
+            let mut path_str = path_str;
+            let mut path = std::path::PathBuf::from(&path_str);
+            
             // 容错处理：如果指定的路径位于 .app 内部（比如误选了 Helper），则自动修正为 .app 目录
             if let Some(app_idx) = path_str.find(".app") {
                 let corrected_app = &path_str[..app_idx + 4];
@@ -729,7 +732,11 @@ pub fn start_antigravity() -> Result<(), String> {
                     path = std::path::PathBuf::from(&path_str);
                 }
             }
-        }
+            (path_str, path)
+        };
+        
+        #[cfg(not(target_os = "macos"))]
+        let path = std::path::PathBuf::from(&path_str);
 
         if path.exists() {
             crate::modules::logger::log_info(&format!("使用手动配置路径启动: {}", path_str));

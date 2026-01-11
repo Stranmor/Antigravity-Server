@@ -1,6 +1,8 @@
 # Antigravity Manager - Leptos UI Status
 
-## Current Status: ~85% Feature Parity ✅
+## Current Status: ~90% Feature Parity ✅
+
+**Build Status: COMPILING SUCCESSFULLY** (2026-01-11)
 
 ## Completed Features
 
@@ -8,6 +10,7 @@
 - Account, ProxyStatus, AppConfig types
 - Full Tauri IPC bindings (OAuth, quotas, logs, updates)
 - ProxyConfig, RefreshStats, ProxyStats types
+- Display/FromStr implementations for ProxyAuthMode, ZaiDispatchMode
 
 ### Dashboard ✅
 - Personalized greeting with account name
@@ -17,6 +20,7 @@
 - Best accounts list (top 5 by quota)
 - Tier breakdown (Ultra/Pro/Free/Low)
 - Quick action cards
+- Export to clipboard (JSON format)
 
 ### Accounts Page ✅
 - View modes: List (table) and Grid (cards)
@@ -43,6 +47,11 @@
   - Mode selector (Balance/Priority/Sticky)
   - Sticky session TTL
   - Clear session bindings
+- Z.ai Provider section (collapsible):
+  - Enable/disable toggle
+  - Base URL, API Key configuration
+  - Dispatch mode selector
+  - Model mapping
 - Quick start section:
   - Protocol tabs (OpenAI/Anthropic/Gemini)
   - Model selector dropdown
@@ -69,13 +78,15 @@
 - AccountCard (for grid view)
 - StatsCard (with optional subtitle)
 - Button (variants: Primary/Secondary/Danger/Ghost)
+- CollapsibleCard (expandable sections)
+- Select (custom dropdown with search)
 
 ## Remaining Work
 
 ### Minor Enhancements
-- [ ] Export accounts to JSON (file dialog needed)
+- [ ] Export accounts to file (file dialog integration)
 - [ ] Drag-and-drop reorder (complex in WASM)
-- [ ] Z.ai/GLM external provider integration
+- [ ] Z.ai/GLM external provider integration (partially done)
 - [ ] Path selectors in Settings (file dialogs)
 
 ### Known Issues
@@ -87,3 +98,5 @@
 - Type-safe Tauri IPC bindings
 - Reactive signals and memos throughout
 - Component-based UI design
+- ChildrenFn pattern for Show components
+

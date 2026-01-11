@@ -150,5 +150,12 @@ pub fn run() {
                         .unwrap_or(());
                 }
             }
+
+            // Suppress unused variable warnings on non-macOS platforms
+            #[cfg(not(target_os = "macos"))]
+            {
+                let _ = app_handle;
+                let _ = event;
+            }
         });
 }

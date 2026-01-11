@@ -28,10 +28,12 @@ pub struct RateLimitInfo {
     /// 检测时间
     #[allow(dead_code)]
     pub detected_at: SystemTime,
-    /// 限流原因
+    /// 限流原因 (used for logging and debugging)
+    #[allow(dead_code)]
     pub reason: RateLimitReason,
     /// 关联的模型 (用于模型级别限流)
     /// None 表示账号级别限流,Some(model) 表示特定模型限流
+    #[allow(dead_code)]
     pub model: Option<String>,
 }
 

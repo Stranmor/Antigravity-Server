@@ -224,6 +224,9 @@ pub fn emit_force_stop(state: &mut StreamingState) -> Vec<Bytes> {
 }
 
 /// Process grounding metadata from Gemini's googleSearch and emit as Claude web_search blocks
+/// NOTE: Currently disabled for Cherry Studio compatibility (see lines 158-168)
+/// Reserved for future implementation when proper type mapping is researched.
+#[allow(dead_code)]
 fn process_grounding_metadata(
     metadata: &serde_json::Value,
     state: &mut StreamingState,
