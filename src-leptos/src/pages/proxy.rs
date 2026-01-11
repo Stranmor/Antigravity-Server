@@ -63,13 +63,13 @@ pub fn ApiProxy() -> impl IntoView {
         spawn_local(async move {
             if let Ok(config) = commands::load_config().await {
                 port.set(config.proxy.port);
-                timeout.set(config.proxy.request_timeout.unwrap_or(120));
+                timeout.set(config.proxy.request_timeout as u32);
                 auto_start.set(config.proxy.auto_start);
                 allow_lan.set(config.proxy.allow_lan_access.unwrap_or(false));
-                auth_mode.set(config.proxy.auth_mode.clone().unwrap_or("off".to_string()));
+                auth_mode.set(config.proxy.auth_mode.clone().unwrap_or_else(|| "off".to_string()));
                 api_key.set(config.proxy.api_key.clone());
-                enable_logging.set(config.proxy.enable_logging.unwrap_or(true));
-                custom_mappings.set(config.proxy.custom_mapping.clone().unwrap_or_default());
+                enable_logging.set(config.proxy.enable_logging);
+                // custom_mappings not in proxy config directly, skip for now
             }
         });
     });
@@ -102,12 +102,12 @@ pub fn ApiProxy() -> impl IntoView {
         spawn_local(async move {
             if let Ok(mut config) = commands::load_config().await {
                 config.proxy.port = port.get();
-                config.proxy.request_timeout = Some(timeout.get());
+                config.proxy.request_timeout = timeout.get() as i32;
                 config.proxy.auto_start = auto_start.get();
                 config.proxy.allow_lan_access = Some(allow_lan.get());
                 config.proxy.auth_mode = Some(auth_mode.get());
-                config.proxy.enable_logging = Some(enable_logging.get());
-                config.proxy.custom_mapping = Some(custom_mappings.get());
+                config.proxy.enable_logging = enable_logging.get();
+                // custom_mappings not in proxy config directly
                 
                 if commands::save_config(&config).await.is_ok() {
                     show_message("Configuration saved".to_string(), false);
@@ -126,9 +126,10 @@ pub fn ApiProxy() -> impl IntoView {
     };
     
     let on_copy = move |text: String, label: String| {
-        let _ = web_sys::window()
-            .and_then(|w| w.navigator().clipboard())
-            .map(|c| c.write_text(&text));
+        if let Some(window) = web_sys::window() {
+            let clipboard = window.navigator().clipboard();
+            let _ = clipboard.write_text(&text);
+        }
         copied.set(Some(label.clone()));
         spawn_local(async move {
             gloo_timers::future::TimeoutFuture::new(2000).await;

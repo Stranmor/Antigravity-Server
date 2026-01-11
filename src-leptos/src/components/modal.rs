@@ -14,15 +14,15 @@ pub enum ModalType {
 pub fn Modal(
     #[prop(into)] is_open: Signal<bool>,
     #[prop(into)] title: String,
-    #[prop(optional)] message: Option<String>,
+    #[prop(into)] message: String,
     #[prop(default = ModalType::Confirm)] modal_type: ModalType,
-    #[prop(optional)] confirm_text: Option<String>,
-    #[prop(optional)] cancel_text: Option<String>,
+    #[prop(into, optional)] confirm_text: String,
+    #[prop(into, optional)] cancel_text: String,
     #[prop(into)] on_confirm: Callback<()>,
     #[prop(into)] on_cancel: Callback<()>,
 ) -> impl IntoView {
-    let confirm_text = confirm_text.unwrap_or_else(|| "Confirm".to_string());
-    let cancel_text = cancel_text.unwrap_or_else(|| "Cancel".to_string());
+    let confirm_text = if confirm_text.is_empty() { "Confirm".to_string() } else { confirm_text };
+    let cancel_text = if cancel_text.is_empty() { "Cancel".to_string() } else { cancel_text };
     
     let confirm_class = match modal_type {
         ModalType::Danger => "btn btn--danger",
@@ -49,7 +49,7 @@ pub fn Modal(
                     </div>
                     
                     <div class="modal-body">
-                        {message_clone.clone().map(|msg| view! { <p>{msg}</p> })}
+                        <p>{message_clone.clone()}</p>
                     </div>
                     
                     <div class="modal-footer">

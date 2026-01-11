@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use crate::app::AppState;
 use crate::components::{Button, ButtonVariant, Modal, ModalType, Pagination, AccountCard};
 use crate::tauri::commands;
-use crate::types::Account;
+
 
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum ViewMode {
@@ -545,30 +545,23 @@ pub fn Accounts() -> impl IntoView {
                                             .unwrap_or(0)
                                     }).unwrap_or(0);
                                     
-                                    let is_current = move || state.current_account_id.get() == Some(account_id.clone());
-                                    let is_selected = move || selected_ids.get().contains(&account_id2);
-                                    let is_refreshing = move || refreshing_ids.get().contains(&account_id3);
-                                    
-                                    let status_class = move || {
-                                        if state.current_account_id.get() == Some(account_id4.clone()) {
-                                            "status-dot--active"
-                                        } else if is_disabled {
-                                            "status-dot--disabled"
-                                        } else {
-                                            "status-dot--idle"
-                                        }
-                                    };
+                                    // Clone account_id for each closure
+                                    let account_id_class = account_id.clone();
+                                    let account_id_class2 = account_id2.clone();
+                                    let account_id_status = account_id4.clone();
+                                    let account_id_show = account_id.clone();
+                                    let account_id_refresh = account_id3.clone();
                                     
                                     view! {
                                         <tr class=move || format!(
                                             "account-row {} {}",
-                                            if is_current() { "is-current" } else { "" },
-                                            if is_selected() { "is-selected" } else { "" }
+                                            if state.current_account_id.get() == Some(account_id_class.clone()) { "is-current" } else { "" },
+                                            if selected_ids.get().contains(&account_id_class2) { "is-selected" } else { "" }
                                         )>
                                             <td class="col-checkbox">
                                                 <input 
                                                     type="checkbox" 
-                                                    checked=is_selected
+                                                    checked=move || selected_ids.get().contains(&account_id2.clone())
                                                     on:change={
                                                         let id = account_id_select.clone();
                                                         move |_| on_toggle_select(id.clone())
@@ -576,11 +569,20 @@ pub fn Accounts() -> impl IntoView {
                                                 />
                                             </td>
                                             <td class="col-status">
-                                                <span class=move || format!("status-dot {}", status_class())></span>
+                                                <span class=move || {
+                                                    let cls = if state.current_account_id.get() == Some(account_id_status.clone()) {
+                                                        "status-dot--active"
+                                                    } else if is_disabled {
+                                                        "status-dot--disabled"
+                                                    } else {
+                                                        "status-dot--idle"
+                                                    };
+                                                    format!("status-dot {}", cls)
+                                                }></span>
                                             </td>
                                             <td class="col-email">
                                                 <span class="email-text">{email.clone()}</span>
-                                                <Show when=is_current>
+                                                <Show when=move || state.current_account_id.get() == Some(account_id_show.clone())>
                                                     <span class="current-badge">"ACTIVE"</span>
                                                 </Show>
                                             </td>
@@ -626,9 +628,12 @@ pub fn Accounts() -> impl IntoView {
                                                     }
                                                 >"⚡"</button>
                                                 <button 
-                                                    class=move || format!("btn btn--icon {}", if is_refreshing() { "loading" } else { "" })
+                                                    class={
+                                                        let id = account_id_refresh.clone();
+                                                        move || format!("btn btn--icon {}", if refreshing_ids.get().contains(&id.clone()) { "loading" } else { "" })
+                                                    }
                                                     title="Refresh"
-                                                    disabled=is_refreshing
+                                                    disabled=move || refreshing_ids.get().contains(&account_id3.clone())
                                                     on:click={
                                                         let id = account_id_refresh.clone();
                                                         move |_| on_refresh_account(id.clone())
@@ -660,7 +665,7 @@ pub fn Accounts() -> impl IntoView {
             </Show>
             
             // Pagination
-            <Show when=move || total_pages.get() > 1>
+            <Show when=move || { total_pages.get() > 1 }>
                 <Pagination
                     current_page=Signal::derive(move || current_page.get())
                     total_pages=Signal::derive(move || total_pages.get())
@@ -675,9 +680,9 @@ pub fn Accounts() -> impl IntoView {
             <Modal
                 is_open=Signal::derive(move || delete_confirm.get().is_some())
                 title="Delete Account".to_string()
-                message=Some("Are you sure you want to delete this account?".to_string())
+                message="Are you sure you want to delete this account?".to_string()
                 modal_type=ModalType::Danger
-                confirm_text=Some("Delete".to_string())
+                confirm_text="Delete".to_string()
                 on_confirm=Callback::new(move |_| execute_delete())
                 on_cancel=Callback::new(move |_| delete_confirm.set(None))
             />
@@ -685,9 +690,9 @@ pub fn Accounts() -> impl IntoView {
             <Modal
                 is_open=Signal::derive(move || batch_delete_confirm.get())
                 title="Delete Selected Accounts".to_string()
-                message=Some(format!("Delete {} selected accounts?", selected_count.get()))
+                message=format!("Delete {} selected accounts?", selected_count.get())
                 modal_type=ModalType::Danger
-                confirm_text=Some("Delete All".to_string())
+                confirm_text="Delete All".to_string()
                 on_confirm=Callback::new(move |_| execute_batch_delete())
                 on_cancel=Callback::new(move |_| batch_delete_confirm.set(false))
             />
@@ -695,7 +700,7 @@ pub fn Accounts() -> impl IntoView {
             <Modal
                 is_open=Signal::derive(move || toggle_proxy_confirm.get().is_some())
                 title="Toggle Proxy".to_string()
-                message=Some("Toggle proxy status for this account?".to_string())
+                message="Toggle proxy status for this account?".to_string()
                 modal_type=ModalType::Confirm
                 on_confirm=Callback::new(move |_| execute_toggle_proxy())
                 on_cancel=Callback::new(move |_| toggle_proxy_confirm.set(None))

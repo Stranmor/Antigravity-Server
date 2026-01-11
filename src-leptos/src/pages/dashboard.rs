@@ -5,7 +5,7 @@ use leptos::task::spawn_local;
 use crate::app::AppState;
 use crate::components::{StatsCard, Button, ButtonVariant};
 use crate::tauri::commands;
-use crate::types::{DashboardStats, Account};
+use crate::types::DashboardStats;
 
 #[component]
 pub fn Dashboard() -> impl IntoView {
@@ -158,34 +158,34 @@ pub fn Dashboard() -> impl IntoView {
                     value=Signal::derive(move || format!("{}%", stats.get().avg_gemini_quota))
                     icon="✨".to_string()
                     color="green".to_string()
-                    subtitle=Some(Signal::derive(move || {
+                    subtitle=Signal::derive(move || {
                         if stats.get().avg_gemini_quota >= 50 { "Sufficient" } else { "Low" }.to_string()
-                    }))
+                    })
                 />
                 <StatsCard 
                     title="Avg Image Quota".to_string()
                     value=Signal::derive(move || format!("{}%", stats.get().avg_gemini_image_quota))
                     icon="🎨".to_string()
                     color="purple".to_string()
-                    subtitle=Some(Signal::derive(move || {
+                    subtitle=Signal::derive(move || {
                         if stats.get().avg_gemini_image_quota >= 50 { "Sufficient" } else { "Low" }.to_string()
-                    }))
+                    })
                 />
                 <StatsCard 
                     title="Avg Claude Quota".to_string()
                     value=Signal::derive(move || format!("{}%", stats.get().avg_claude_quota))
                     icon="🤖".to_string()
                     color="cyan".to_string()
-                    subtitle=Some(Signal::derive(move || {
+                    subtitle=Signal::derive(move || {
                         if stats.get().avg_claude_quota >= 50 { "Sufficient" } else { "Low" }.to_string()
-                    }))
+                    })
                 />
                 <StatsCard 
                     title="Low Quota".to_string()
                     value=Signal::derive(move || stats.get().low_quota_count.to_string())
                     icon="⚠️".to_string()
                     color="orange".to_string()
-                    subtitle=Some(Signal::derive(|| "< 20% remaining".to_string()))
+                    subtitle=Signal::derive(|| "< 20% remaining".to_string())
                 />
             </section>
             
@@ -213,12 +213,14 @@ pub fn Dashboard() -> impl IntoView {
                             let tier = account.quota.as_ref()
                                 .and_then(|q| q.subscription_tier.clone())
                                 .unwrap_or_else(|| "Free".to_string());
+                            let tier_class = tier.to_lowercase();
+                            let tier_display = tier.clone();
                             
                             view! {
                                 <div class="current-account-detail">
                                     <div class="account-header">
                                         <span class="account-email">{account.email.clone()}</span>
-                                        <span class=format!("tier-badge tier-{}", tier.to_lowercase())>{tier}</span>
+                                        <span class=format!("tier-badge tier-{}", tier_class)>{tier_display}</span>
                                     </div>
                                     <div class="quota-bars">
                                         <div class="quota-row">
@@ -275,12 +277,14 @@ pub fn Dashboard() -> impl IntoView {
                                 let tier = account.quota.as_ref()
                                     .and_then(|q| q.subscription_tier.clone())
                                     .unwrap_or_else(|| "Free".to_string());
+                                let tier_class = tier.to_lowercase();
+                                let tier_display = tier.clone();
                                 
                                 view! {
                                     <div class=move || format!("best-account-item {}", if is_current.get() { "is-current" } else { "" })>
                                         <div class="account-info">
                                             <span class="email">{email_short}</span>
-                                            <span class=format!("tier-badge tier-badge--sm tier-{}", tier.to_lowercase())>{tier}</span>
+                                            <span class=format!("tier-badge tier-badge--sm tier-{}", tier_class)>{tier_display}</span>
                                             <Show when=move || is_current.get()>
                                                 <span class="current-badge">"ACTIVE"</span>
                                             </Show>
