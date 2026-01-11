@@ -10,6 +10,7 @@ pub struct AccountQuota {
     pub models: Vec<ModelQuota>,
     pub is_forbidden: bool,
     pub updated_at: i64,
+    pub subscription_tier: Option<String>,
 }
 
 /// Model quota entry

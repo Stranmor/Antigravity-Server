@@ -1,109 +1,109 @@
-# Antigravity Manager - Development Progress
+# Antigravity Manager - Leptos UI Parity Plan
 
-## Tech Stack (January 2026)
-- **Frontend**: Leptos (Rust → WASM) 
-- **Backend**: Tauri (existing, unchanged)
-- **Build**: Trunk → WASM + CSS
+## Current Status: ~45% Feature Parity
 
-## Current Status: ✅ LEPTOS FRONTEND FULLY INTEGRATED
+## Phase 1: Core Types & IPC (DONE ✅)
+- [x] Account, ProxyStatus, AppConfig types
+- [x] Basic Tauri IPC bindings
+- [x] Extended IPC (OAuth, quotas, logs, updates)
 
-### Completed Phases
+## Phase 2: Pages Foundation (DONE ✅)
+- [x] Dashboard - basic stats
+- [x] Accounts - basic list
+- [x] Proxy - basic controls
+- [x] Settings - basic form
+- [x] Monitor - basic logs
 
-| Phase | Status | Commit |
-|-------|--------|--------|
-| Architecture Decision | ✅ | Chose Leptos over Slint |
-| Leptos Scaffold | ✅ | `dc6c6735` |
-| All Pages UI | ✅ | Dashboard, Accounts, Proxy, Settings, Monitor |
-| Trunk WASM Build | ✅ | `274f684d` |
-| Dark Theme CSS | ✅ | Premium design in main.css |
-| Tauri Integration Config | ✅ | Updated tauri.conf.json |
-| **Full Backend Integration** | ✅ | `b81de89a` |
+---
 
-### src-leptos Structure
-```
-src-leptos/
-├── Cargo.toml          # Leptos + WASM deps
-├── Trunk.toml          # Trunk build config
-├── index.html          # WASM entry point
-├── styles/
-│   └── main.css        # Premium dark theme (1000+ lines)
-└── src/
-    ├── lib.rs          # Library root
-    ├── main.rs         # Entry point
-    ├── app.rs          # Router + AppState
-    ├── tauri.rs        # Tauri IPC bindings (40+ commands)
-    ├── types.rs        # Shared types (Account, Config, Proxy, etc.)
-    ├── components/
-    │   ├── mod.rs
-    │   ├── sidebar.rs
-    │   ├── stats_card.rs
-    │   └── button.rs
-    └── pages/
-        ├── mod.rs
-        ├── dashboard.rs      # Stats cards, tier breakdown, quick actions
-        ├── accounts.rs       # OAuth login, sync, quotas, batch delete
-        ├── proxy.rs          # Start/stop, config, API key, code examples
-        ├── settings.rs       # All settings, updates check, data folder
-        └── monitor.rs        # Real-time logs, stats, filtering
-```
+## Phase 3: Accounts Page Full Parity (IN PROGRESS)
+### 3.1 View Modes
+- [ ] List view (current, improve)
+- [ ] Grid view (AccountGrid cards)
+- [ ] View mode toggle button group
 
-## Implemented Features
+### 3.2 Filtering & Pagination
+- [ ] Filter tabs: All / Pro / Ultra / Free with counts
+- [ ] Pagination component
+- [ ] Dynamic page size
 
-### Accounts Page
-- [x] OAuth login flow via `start_oauth_login`
-- [x] Sync from local Antigravity DB
-- [x] Refresh all quotas with progress
-- [x] Switch active account
-- [x] Batch delete accounts
-- [x] Search/filter accounts
-- [x] Quota progress bars (Gemini/Claude)
-- [x] Success/error message banners
+### 3.3 Account Actions
+- [ ] Individual refresh (per account)
+- [ ] Toggle proxy status on/off
+- [ ] Batch enable/disable proxy
+- [ ] Export accounts to JSON
+- [ ] View details modal
+- [ ] Confirmation dialogs
 
-### Monitor Page
-- [x] Real-time request logs from backend
-- [x] Stats: total/success/error requests
-- [x] Token usage tracking (input/output)
-- [x] Auto-refresh every 2 seconds
-- [x] Toggle monitoring on/off
-- [x] Quick filters (All/Errors/Gemini/Claude/OpenAI)
-- [x] Proxy status warning banner
+### 3.4 Reordering
+- [ ] Drag-and-drop reorder (optional - complex in WASM)
 
-### Settings Page
-- [x] Language/Theme selection with two-way binding
-- [x] Auto-launch toggle
-- [x] Quota refresh settings
-- [x] Check for updates with version comparison
-- [x] Open data folder button
-- [x] Clear logs functionality
+---
 
-### Proxy Page
-- [x] Start/Stop with status indicator
-- [x] Port/timeout/auto-start configuration
-- [x] API key generation and copy
-- [x] Quick Start code examples (Python)
-- [x] Link to Monitor page
+## Phase 4: API Proxy Page Full Parity
+### 4.1 Configuration Section
+- [ ] Port, timeout, auto-start (done)
+- [ ] LAN access toggle
+- [ ] Auth mode selector (off/strict/auto/all_except_health)
+- [ ] API key section (done)
 
-## Run Commands
+### 4.2 Model Routing
+- [ ] Custom mapping table (add/edit/remove)
+- [ ] Preset mappings button (GPT-4→Gemini etc)
+- [ ] Reset mappings button
 
-### Development
-```bash
-cd src-tauri && cargo tauri dev
-```
+### 4.3 Scheduling
+- [ ] Sticky session config
+- [ ] Balance mode selector
+- [ ] Clear session bindings button
 
-### Build WASM only
-```bash
-cd src-leptos && trunk build --release
-```
+### 4.4 External Providers
+- [ ] Z.ai/GLM integration section
+- [ ] Base URL, dispatch mode
+- [ ] Model mapping for Z.ai
 
-### Production Build
-```bash
-cd src-tauri && cargo tauri build --release
-```
+### 4.5 Quick Start Examples
+- [ ] Protocol selector (OpenAI/Anthropic/Gemini)
+- [ ] Model selector dropdown
+- [ ] Dynamic code generation
 
-## TODO / Future Improvements
-- [ ] Model routing configuration UI
-- [ ] Account import from file
-- [ ] Upstream sync integration
-- [ ] Real-time WebSocket events for logs
-- [ ] Export accounts functionality
-- [ ] Light theme support
+---
+
+## Phase 5: Dashboard Improvements
+- [ ] BestAccounts component (top 5 by quota)
+- [ ] Export all button
+- [ ] Personalized greeting with account name
+- [ ] Quick action cards (done)
+
+---
+
+## Phase 6: Settings Improvements  
+- [ ] Export path selector (file dialog)
+- [ ] Antigravity path config
+- [ ] Locale/i18n support (optional)
+
+---
+
+## Phase 7: Shared Components
+- [ ] Modal dialogs (confirm/alert)
+- [ ] Pagination component
+- [ ] Tooltip component
+- [ ] Collapsible card component
+- [ ] Select/Dropdown component
+
+---
+
+## Build & Deploy
+- [ ] Fix wasm-opt for release builds
+- [ ] Production bundle optimization
+- [ ] Tauri integration test
+
+---
+
+## Priority Order (Critical Path):
+1. **Phase 3.2** - Pagination & Filters (high visibility)
+2. **Phase 4.2** - Model Routing (key feature)
+3. **Phase 7** - Modal dialogs (needed for confirmations)
+4. **Phase 3.3** - Account actions
+5. **Phase 4.1** - LAN/Auth config
+6. **Phase 5** - Dashboard polish

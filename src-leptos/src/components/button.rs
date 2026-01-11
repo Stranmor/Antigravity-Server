@@ -12,7 +12,7 @@ pub enum ButtonVariant {
 }
 
 impl ButtonVariant {
-    fn class(&self) -> &'static str {
+    pub fn class(&self) -> &'static str {
         match self {
             ButtonVariant::Primary => "btn--primary",
             ButtonVariant::Secondary => "btn--secondary",
@@ -43,17 +43,17 @@ pub fn Button(
     on_click: impl Fn() + 'static + Clone,
 ) -> impl IntoView {
     let variant_class = variant.class();
-    let loading_class = if loading { "btn--loading" } else { "" };
-    let btn_class = format!("btn {} {} {}", variant_class, loading_class, class);
-    let btn_text = if loading { "Loading...".to_string() } else { text };
     
     view! {
         <button 
-            class=btn_class
-            disabled=disabled || loading
+            class=move || {
+                let loading_class = if loading { "btn--loading" } else { "" };
+                format!("btn {} {} {}", variant_class, loading_class, class)
+            }
+            disabled=move || disabled || loading
             on:click=move |_| on_click()
         >
-            {btn_text}
+            {move || if loading { "Loading...".to_string() } else { text.clone() }}
         </button>
     }
 }

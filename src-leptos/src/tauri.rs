@@ -131,9 +131,11 @@ pub mod commands {
         tauri_invoke_no_args("get_proxy_status").await
     }
     
-    /// Start proxy service
-    pub async fn start_proxy_service(config: &ProxyConfig) -> Result<ProxyStatus, String> {
-        tauri_invoke("start_proxy_service", serde_json::json!({ "config": config })).await
+    /// Start proxy service (uses saved config)
+    pub async fn start_proxy_service() -> Result<ProxyStatus, String> {
+        // Load current config and pass it
+        let config = load_config().await?;
+        tauri_invoke("start_proxy_service", serde_json::json!({ "config": config.proxy })).await
     }
     
     /// Stop proxy service
@@ -159,6 +161,11 @@ pub mod commands {
     /// Enable/disable proxy monitoring
     pub async fn set_proxy_monitor_enabled(enabled: bool) -> Result<(), String> {
         tauri_invoke("set_proxy_monitor_enabled", serde_json::json!({ "enabled": enabled })).await
+    }
+    
+    /// Clear proxy session bindings
+    pub async fn clear_proxy_session_bindings() -> Result<(), String> {
+        tauri_invoke_no_args("clear_proxy_session_bindings").await
     }
     
     /// Clear proxy logs

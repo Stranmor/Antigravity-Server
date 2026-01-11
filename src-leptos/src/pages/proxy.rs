@@ -1,10 +1,19 @@
-//! API Proxy page
+//! API Proxy page with full parity
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use std::collections::HashMap;
 use crate::app::AppState;
 use crate::components::{Button, ButtonVariant};
 use crate::tauri::commands;
+
+#[derive(Clone, Copy, PartialEq, Default)]
+pub enum Protocol {
+    #[default]
+    OpenAI,
+    Anthropic,
+    Gemini,
+}
 
 #[component]
 pub fn ApiProxy() -> impl IntoView {
@@ -12,64 +21,219 @@ pub fn ApiProxy() -> impl IntoView {
     
     // Local state
     let loading = RwSignal::new(false);
-    let copied = RwSignal::new(false);
+    let copied = RwSignal::new(Option::<String>::None);
+    let selected_protocol = RwSignal::new(Protocol::OpenAI);
+    let selected_model = RwSignal::new("gemini-3-flash".to_string());
+    
+    // Config state
+    let port = RwSignal::new(8045u16);
+    let timeout = RwSignal::new(120u32);
+    let auto_start = RwSignal::new(false);
+    let allow_lan = RwSignal::new(false);
+    let auth_mode = RwSignal::new("off".to_string());
+    let api_key = RwSignal::new(String::new());
+    let enable_logging = RwSignal::new(true);
+    
+    // Model mapping state
+    let custom_mappings = RwSignal::new(HashMap::<String, String>::new());
+    let new_mapping_from = RwSignal::new(String::new());
+    let new_mapping_to = RwSignal::new(String::new());
+    
+    // Scheduling state
+    let scheduling_mode = RwSignal::new("balance".to_string());
+    let sticky_session_ttl = RwSignal::new(3600u32);
+    
+    // Collapsed sections
+    let routing_expanded = RwSignal::new(true);
+    let scheduling_expanded = RwSignal::new(false);
+    
+    // Message
+    let message = RwSignal::new(Option::<(String, bool)>::None);
+    
+    let show_message = move |msg: String, is_error: bool| {
+        message.set(Some((msg, is_error)));
+        spawn_local(async move {
+            gloo_timers::future::TimeoutFuture::new(3000).await;
+            message.set(None);
+        });
+    };
+    
+    // Load config on mount
+    Effect::new(move |_| {
+        spawn_local(async move {
+            if let Ok(config) = commands::load_config().await {
+                port.set(config.proxy.port);
+                timeout.set(config.proxy.request_timeout.unwrap_or(120));
+                auto_start.set(config.proxy.auto_start);
+                allow_lan.set(config.proxy.allow_lan_access.unwrap_or(false));
+                auth_mode.set(config.proxy.auth_mode.clone().unwrap_or("off".to_string()));
+                api_key.set(config.proxy.api_key.clone());
+                enable_logging.set(config.proxy.enable_logging.unwrap_or(true));
+                custom_mappings.set(config.proxy.custom_mapping.clone().unwrap_or_default());
+            }
+        });
+    });
+    
+    // Status shortcut
+    let status = state.proxy_status.clone();
     
     // Toggle proxy
     let on_toggle = move || {
         loading.set(true);
         spawn_local(async move {
-            let state = expect_context::<AppState>();
-            let status = state.proxy_status.get();
-            
-            if status.running {
-                // Stop proxy
-                if commands::stop_proxy_service().await.is_ok() {
-                    if let Ok(new_status) = commands::get_proxy_status().await {
-                        state.proxy_status.set(new_status);
-                    }
-                }
+            let current = status.get();
+            let result = if current.running {
+                commands::stop_proxy_service().await
             } else {
-                // Start proxy
-                if let Some(config) = state.config.get() {
-                    if let Ok(new_status) = commands::start_proxy_service(&config.proxy).await {
-                        state.proxy_status.set(new_status);
-                    }
+                commands::start_proxy_service().await.map(|_| ())
+            };
+            
+            if result.is_ok() {
+                if let Ok(s) = commands::get_proxy_status().await {
+                    let state = expect_context::<AppState>();
+                    state.proxy_status.set(s);
                 }
             }
-            
             loading.set(false);
         });
     };
     
-    // Generate API key
-    let on_generate_key = move || {
+    let on_save_config = move || {
         spawn_local(async move {
-            if let Ok(new_key) = commands::generate_api_key().await {
-                let state = expect_context::<AppState>();
-                state.config.update(|c| {
-                    if let Some(config) = c.as_mut() {
-                        config.proxy.api_key = new_key;
-                    }
-                });
+            if let Ok(mut config) = commands::load_config().await {
+                config.proxy.port = port.get();
+                config.proxy.request_timeout = Some(timeout.get());
+                config.proxy.auto_start = auto_start.get();
+                config.proxy.allow_lan_access = Some(allow_lan.get());
+                config.proxy.auth_mode = Some(auth_mode.get());
+                config.proxy.enable_logging = Some(enable_logging.get());
+                config.proxy.custom_mapping = Some(custom_mappings.get());
+                
+                if commands::save_config(&config).await.is_ok() {
+                    show_message("Configuration saved".to_string(), false);
+                }
             }
         });
     };
     
-    // Copy to clipboard
-    let on_copy = move || {
-        if let Some(config) = state.config.get() {
-            if let Some(window) = web_sys::window() {
-                let clipboard = window.navigator().clipboard();
-                let _ = clipboard.write_text(&config.proxy.api_key);
+    let on_generate_key = move || {
+        spawn_local(async move {
+            if let Ok(key) = commands::generate_api_key().await {
+                api_key.set(key);
+                show_message("API key regenerated".to_string(), false);
             }
-            copied.set(true);
-            // Reset after 2 seconds
-            spawn_local(async move {
-                gloo_timers::future::TimeoutFuture::new(2000).await;
-                copied.set(false);
-            });
+        });
+    };
+    
+    let on_copy = move |text: String, label: String| {
+        let _ = web_sys::window()
+            .and_then(|w| w.navigator().clipboard())
+            .map(|c| c.write_text(&text));
+        copied.set(Some(label.clone()));
+        spawn_local(async move {
+            gloo_timers::future::TimeoutFuture::new(2000).await;
+            copied.set(None);
+        });
+    };
+    
+    let on_add_mapping = move || {
+        let from = new_mapping_from.get();
+        let to = new_mapping_to.get();
+        if !from.is_empty() && !to.is_empty() {
+            custom_mappings.update(|m| { m.insert(from.clone(), to.clone()); });
+            new_mapping_from.set(String::new());
+            new_mapping_to.set(String::new());
         }
     };
+    
+    let on_remove_mapping = move |key: String| {
+        custom_mappings.update(|m| { m.remove(&key); });
+    };
+    
+    let on_apply_presets = move || {
+        let presets: HashMap<String, String> = [
+            ("gpt-4*", "gemini-3-pro-high"),
+            ("gpt-4o*", "gemini-3-flash"),
+            ("gpt-3.5*", "gemini-2.5-flash"),
+            ("claude-3-sonnet-*", "claude-sonnet-4-5"),
+            ("claude-3-opus-*", "claude-opus-4-5-thinking"),
+        ].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        
+        custom_mappings.update(|m| m.extend(presets));
+        show_message("Presets applied".to_string(), false);
+    };
+    
+    let on_reset_mappings = move || {
+        custom_mappings.set(HashMap::new());
+        show_message("Mappings reset".to_string(), false);
+    };
+    
+    let on_clear_bindings = move || {
+        spawn_local(async move {
+            if commands::clear_proxy_session_bindings().await.is_ok() {
+                show_message("Session bindings cleared".to_string(), false);
+            }
+        });
+    };
+    
+    // Generate code example
+    let get_example = move || {
+        let p = port.get();
+        let key = api_key.get();
+        let model = selected_model.get();
+        let base_url = format!("http://127.0.0.1:{}/v1", p);
+        
+        match selected_protocol.get() {
+            Protocol::OpenAI => format!(
+r#"from openai import OpenAI
+
+client = OpenAI(
+    base_url="{}",
+    api_key="{}"
+)
+
+response = client.chat.completions.create(
+    model="{}",
+    messages=[{{"role": "user", "content": "Hello"}}]
+)
+
+print(response.choices[0].message.content)"#, base_url, key, model),
+            Protocol::Anthropic => format!(
+r#"from anthropic import Anthropic
+
+client = Anthropic(
+    base_url="http://127.0.0.1:{}",
+    api_key="{}"
+)
+
+response = client.messages.create(
+    model="{}",
+    max_tokens=1024,
+    messages=[{{"role": "user", "content": "Hello"}}]
+)
+
+print(response.content[0].text)"#, p, key, model),
+            Protocol::Gemini => format!(
+r#"import google.generativeai as genai
+
+genai.configure(
+    api_key="{}",
+    transport='rest',
+    client_options={{'api_endpoint': 'http://127.0.0.1:{}'}}
+)
+
+model = genai.GenerativeModel('{}')
+response = model.generate_content("Hello")
+print(response.text)"#, key, p, model),
+        }
+    };
+    
+    let models = vec![
+        ("gemini-3-flash", "Gemini 3 Flash"),
+        ("gemini-3-pro-high", "Gemini 3 Pro"),
+        ("claude-sonnet-4-5", "Claude Sonnet 4.5"),
+        ("gemini-2.5-flash", "Gemini 2.5 Flash"),
+    ];
 
     view! {
         <div class="page proxy">
@@ -78,133 +242,338 @@ pub fn ApiProxy() -> impl IntoView {
                     <h1>"API Proxy"</h1>
                     <p class="subtitle">"OpenAI-compatible API endpoint"</p>
                 </div>
-                <div class="header-actions">
-                    <a href="/monitor" class="btn btn--secondary">"📡 Monitor"</a>
+                <div class="header-status">
+                    <span class=move || format!("status-indicator {}", if status.get().running { "running" } else { "stopped" })>
+                        <span class="status-dot"></span>
+                        {move || if status.get().running { 
+                            format!("Running ({} accounts)", status.get().active_accounts)
+                        } else { 
+                            "Stopped".to_string()
+                        }}
+                    </span>
+                    // Dynamic button - use native for dynamic variant
+                    <button 
+                        class=move || format!("btn {}", if status.get().running { "btn--danger" } else { "btn--primary" })
+                        disabled=move || loading.get()
+                        on:click=move |_| on_toggle()
+                    >
+                        {move || if loading.get() { 
+                            "...".to_string()
+                        } else if status.get().running { 
+                            "⏹ Stop".to_string()
+                        } else { 
+                            "▶ Start".to_string()
+                        }}
+                    </button>
                 </div>
             </header>
             
-            // Status card
-            <section class="status-card">
-                <div class="status-indicator">
-                    <span class=move || format!("status-dot status-dot--{}", 
-                        if state.proxy_status.get().running { "running" } else { "stopped" }
-                    )></span>
-                    <div class="status-info">
-                        <h3>{move || if state.proxy_status.get().running { "Running" } else { "Stopped" }}</h3>
-                        <p>{move || {
-                            let status = state.proxy_status.get();
-                            if status.running {
-                                format!("{} • {} accounts", status.base_url, status.active_accounts)
-                            } else {
-                                "Proxy is not running".to_string()
-                            }
-                        }}</p>
-                    </div>
-                </div>
-                <Button 
-                    text={if state.proxy_status.get().running { "⏹ Stop".to_string() } else { "▶ Start".to_string() }}
-                    variant=if state.proxy_status.get().running { ButtonVariant::Danger } else { ButtonVariant::Primary }
-                    loading=loading.get()
-                    on_click=on_toggle
-                />
-            </section>
+            // Message banner
+            <Show when=move || message.get().is_some()>
+                {move || {
+                    let (msg, is_error) = message.get().unwrap();
+                    view! {
+                        <div class=format!("alert {}", if is_error { "alert--error" } else { "alert--success" })>
+                            <span>{msg}</span>
+                        </div>
+                    }
+                }}
+            </Show>
             
-            // Configuration
-            <section class="config-section">
-                <h2>"Configuration"</h2>
+            // Main config card
+            <div class="config-card">
+                <div class="config-header">
+                    <h2>"🔧 Configuration"</h2>
+                    <Button 
+                        text="💾 Save".to_string()
+                        variant=ButtonVariant::Primary
+                        on_click=on_save_config
+                    />
+                </div>
                 
                 <div class="config-grid">
-                    <div class="config-item">
+                    <div class="form-group">
                         <label>"Port"</label>
                         <input 
-                            type="number" 
-                            prop:value=move || state.config.get().map(|c| c.proxy.port.to_string()).unwrap_or_default()
-                            disabled=move || state.proxy_status.get().running
+                            type="number"
+                            min="1024" max="65535"
+                            prop:value=move || port.get().to_string()
+                            on:input=move |ev| {
+                                if let Ok(v) = event_target_value(&ev).parse::<u16>() {
+                                    port.set(v);
+                                }
+                            }
+                            disabled=move || status.get().running
                         />
                     </div>
                     
-                    <div class="config-item">
-                        <label>"Request Timeout (s)"</label>
+                    <div class="form-group">
+                        <label>"Timeout (s)"</label>
                         <input 
-                            type="number" 
-                            prop:value=move || state.config.get().map(|c| c.proxy.request_timeout.to_string()).unwrap_or_default()
+                            type="number"
+                            min="30" max="3600"
+                            prop:value=move || timeout.get().to_string()
+                            on:input=move |ev| {
+                                if let Ok(v) = event_target_value(&ev).parse::<u32>() {
+                                    timeout.set(v);
+                                }
+                            }
                         />
                     </div>
                     
-                    <div class="config-item config-item--toggle">
+                    <div class="form-group form-group--toggle">
                         <label>"Auto-start"</label>
                         <input 
-                            type="checkbox" 
-                            checked=move || state.config.get().map(|c| c.proxy.auto_start).unwrap_or(false)
+                            type="checkbox"
+                            class="toggle"
+                            prop:checked=move || auto_start.get()
+                            on:change=move |ev| auto_start.set(event_target_checked(&ev))
                         />
                     </div>
                     
-                    <div class="config-item config-item--toggle">
-                        <label>"Enable Logging"</label>
+                    <div class="form-group form-group--toggle">
+                        <label>"Logging"</label>
                         <input 
-                            type="checkbox" 
-                            checked=move || state.config.get().map(|c| c.proxy.enable_logging).unwrap_or(true)
+                            type="checkbox"
+                            class="toggle"
+                            prop:checked=move || enable_logging.get()
+                            on:change=move |ev| enable_logging.set(event_target_checked(&ev))
                         />
                     </div>
                 </div>
-            </section>
-            
-            // API Key
-            <section class="api-key-section">
-                <h2>"API Authentication"</h2>
                 
-                <div class="api-key-row">
-                    <input 
-                        type="password" 
-                        class="api-key-input"
-                        prop:value=move || state.config.get().map(|c| c.proxy.api_key.clone()).unwrap_or_default()
-                        readonly=true
-                    />
-                    <button class="btn btn--icon" on:click=move |_| on_copy()>
-                        {move || if copied.get() { "✓" } else { "📋" }}
-                    </button>
-                    <Button 
-                        text="🔄 Generate".to_string()
-                        variant=ButtonVariant::Secondary
-                        on_click=on_generate_key
-                    />
+                // Access Control
+                <div class="config-section">
+                    <h3>"🔐 Access Control"</h3>
+                    <div class="config-grid">
+                        <div class="form-group form-group--toggle">
+                            <label>"Allow LAN"</label>
+                            <input 
+                                type="checkbox"
+                                class="toggle"
+                                prop:checked=move || allow_lan.get()
+                                on:change=move |ev| allow_lan.set(event_target_checked(&ev))
+                            />
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>"Auth Mode"</label>
+                            <select 
+                                prop:value=move || auth_mode.get()
+                                on:change=move |ev| auth_mode.set(event_target_value(&ev))
+                            >
+                                <option value="off">"Off"</option>
+                                <option value="strict">"Strict"</option>
+                                <option value="all_except_health">"All except /health"</option>
+                                <option value="auto">"Auto"</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
-            </section>
+                
+                // API Key
+                <div class="config-section">
+                    <h3>"🔑 API Key"</h3>
+                    <div class="api-key-row">
+                        <input 
+                            type="text"
+                            readonly=true
+                            prop:value=move || api_key.get()
+                            class="api-key-input"
+                        />
+                        <button 
+                            class="btn btn--icon"
+                            title="Copy"
+                            on:click={
+                                let key = api_key.get_untracked();
+                                move |_| on_copy(key.clone(), "api_key".to_string())
+                            }
+                        >
+                            {move || if copied.get() == Some("api_key".to_string()) { "✓" } else { "📋" }}
+                        </button>
+                        <button 
+                            class="btn btn--icon"
+                            title="Regenerate"
+                            on:click=move |_| on_generate_key()
+                        >"🔄"</button>
+                    </div>
+                </div>
+            </div>
+            
+            // Model Routing
+            <div class="config-card collapsible">
+                <div class="config-header clickable" on:click=move |_| routing_expanded.update(|v| *v = !*v)>
+                    <h2>"🔀 Model Routing"</h2>
+                    <span class=move || format!("expand-icon {}", if routing_expanded.get() { "expanded" } else { "" })>"▼"</span>
+                </div>
+                
+                <Show when=move || routing_expanded.get()>
+                    <div class="config-content">
+                        <div class="mapping-actions">
+                            <Button 
+                                text="✨ Presets".to_string()
+                                variant=ButtonVariant::Secondary
+                                on_click=on_apply_presets
+                            />
+                            <Button 
+                                text="🗑 Reset".to_string()
+                                variant=ButtonVariant::Danger
+                                on_click=on_reset_mappings
+                            />
+                        </div>
+                        
+                        <div class="mapping-form">
+                            <input 
+                                type="text"
+                                placeholder="From (e.g., gpt-4*)"
+                                prop:value=move || new_mapping_from.get()
+                                on:input=move |ev| new_mapping_from.set(event_target_value(&ev))
+                            />
+                            <span class="arrow">"→"</span>
+                            <input 
+                                type="text"
+                                placeholder="To (e.g., gemini-3-flash)"
+                                prop:value=move || new_mapping_to.get()
+                                on:input=move |ev| new_mapping_to.set(event_target_value(&ev))
+                            />
+                            <Button 
+                                text="➕".to_string()
+                                variant=ButtonVariant::Primary
+                                on_click=on_add_mapping
+                            />
+                        </div>
+                        
+                        <div class="mapping-list">
+                            {move || {
+                                let mappings: Vec<_> = custom_mappings.get().into_iter().collect();
+                                if mappings.is_empty() {
+                                    view! { <p class="empty-text">"No custom mappings"</p> }.into_any()
+                                } else {
+                                    mappings.into_iter().map(|(from, to)| {
+                                        let from_clone = from.clone();
+                                        let from_display = from.clone();
+                                        view! {
+                                            <div class="mapping-item">
+                                                <span class="mapping-from">{from_display}</span>
+                                                <span class="mapping-arrow">"→"</span>
+                                                <span class="mapping-to">{to}</span>
+                                                <button 
+                                                    class="btn btn--icon btn--sm"
+                                                    on:click=move |_| on_remove_mapping(from_clone.clone())
+                                                >"×"</button>
+                                            </div>
+                                        }
+                                    }).collect_view().into_any()
+                                }
+                            }}
+                        </div>
+
+                    </div>
+                </Show>
+            </div>
+            
+            // Scheduling
+            <div class="config-card collapsible">
+                <div class="config-header clickable" on:click=move |_| scheduling_expanded.update(|v| *v = !*v)>
+                    <h2>"⚖️ Load Balancing"</h2>
+                    <span class=move || format!("expand-icon {}", if scheduling_expanded.get() { "expanded" } else { "" })>"▼"</span>
+                </div>
+                
+                <Show when=move || scheduling_expanded.get()>
+                    <div class="config-content">
+                        <div class="config-grid">
+                            <div class="form-group">
+                                <label>"Mode"</label>
+                                <select 
+                                    prop:value=move || scheduling_mode.get()
+                                    on:change=move |ev| scheduling_mode.set(event_target_value(&ev))
+                                >
+                                    <option value="balance">"Balance"</option>
+                                    <option value="priority">"Priority"</option>
+                                    <option value="sticky">"Sticky"</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>"Sticky TTL (s)"</label>
+                                <input 
+                                    type="number"
+                                    min="60" max="86400"
+                                    prop:value=move || sticky_session_ttl.get().to_string()
+                                    on:input=move |ev| {
+                                        if let Ok(v) = event_target_value(&ev).parse::<u32>() {
+                                            sticky_session_ttl.set(v);
+                                        }
+                                    }
+                                />
+                            </div>
+                        </div>
+                        
+                        <Button 
+                            text="🗑 Clear Bindings".to_string()
+                            variant=ButtonVariant::Secondary
+                            on_click=on_clear_bindings
+                        />
+                    </div>
+                </Show>
+            </div>
             
             // Quick Start
-            <section class="quick-start-section">
-                <h2>"Quick Start"</h2>
-                
-                <div class="endpoint-card">
-                    <label>"Base URL"</label>
-                    <div class="endpoint-row">
-                        <code>{move || format!("http://127.0.0.1:{}/v1", 
-                            state.config.get().map(|c| c.proxy.port).unwrap_or(8045)
-                        )}</code>
-                        <button class="btn btn--icon">"📋"</button>
-                    </div>
+            <div class="config-card">
+                <div class="config-header">
+                    <h2>"🚀 Quick Start"</h2>
                 </div>
                 
-                <div class="code-example">
-                    <div class="code-header">
-                        <span>"Python"</span>
+                <div class="quick-start">
+                    <div class="protocol-tabs">
+                        <button 
+                            class=move || if matches!(selected_protocol.get(), Protocol::OpenAI) { "active" } else { "" }
+                            on:click=move |_| selected_protocol.set(Protocol::OpenAI)
+                        >"OpenAI"</button>
+                        <button 
+                            class=move || if matches!(selected_protocol.get(), Protocol::Anthropic) { "active" } else { "" }
+                            on:click=move |_| selected_protocol.set(Protocol::Anthropic)
+                        >"Anthropic"</button>
+                        <button 
+                            class=move || if matches!(selected_protocol.get(), Protocol::Gemini) { "active" } else { "" }
+                            on:click=move |_| selected_protocol.set(Protocol::Gemini)
+                        >"Gemini"</button>
                     </div>
-                    <pre><code>{move || format!(r#"from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://127.0.0.1:{}/v1",
-    api_key="{}"
-)
-
-response = client.chat.completions.create(
-    model="gemini-3-flash",
-    messages=[{{"role": "user", "content": "Hello!"}}]
-)"#, 
-                        state.config.get().map(|c| c.proxy.port).unwrap_or(8045),
-                        state.config.get().map(|c| c.proxy.api_key.clone()).unwrap_or_else(|| "YOUR_API_KEY".to_string())
-                    )}</code></pre>
+                    
+                    <div class="model-selector">
+                        <label>"Model:"</label>
+                        <select 
+                            prop:value=move || selected_model.get()
+                            on:change=move |ev| selected_model.set(event_target_value(&ev))
+                        >
+                            {models.iter().map(|(id, name)| {
+                                view! { <option value=*id>{*name}</option> }
+                            }).collect_view()}
+                        </select>
+                    </div>
+                    
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span>"Python"</span>
+                            <button 
+                                class="btn btn--icon btn--sm"
+                                on:click=move |_| {
+                                    let code = get_example();
+                                    on_copy(code, "code".to_string());
+                                }
+                            >
+                                {move || if copied.get() == Some("code".to_string()) { "✓" } else { "Copy" }}
+                            </button>
+                        </div>
+                        <pre class="code">{get_example}</pre>
+                    </div>
+                    
+                    <div class="base-url">
+                        <label>"Base URL:"</label>
+                        <code>{move || format!("http://127.0.0.1:{}/v1", port.get())}</code>
+                    </div>
                 </div>
-            </section>
+            </div>
         </div>
     }
 }
