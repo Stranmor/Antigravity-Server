@@ -7,7 +7,7 @@ use crate::proxy::mappers::gemini::{wrap_request, unwrap_response};
 use crate::proxy::server::AppState;
 use crate::proxy::session_manager::SessionManager;
  
-const MAX_RETRY_ATTEMPTS: usize = 3;
+const MAX_RETRY_ATTEMPTS: usize = 10;
  
 /// 处理 generateContent 和 streamGenerateContent
 /// 路径参数: model_name, method (e.g. "gemini-pro", "generateContent")

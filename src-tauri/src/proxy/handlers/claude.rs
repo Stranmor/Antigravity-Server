@@ -20,7 +20,7 @@ use crate::proxy::server::AppState;
 use axum::http::HeaderMap;
 use std::sync::atomic::Ordering;
 
-const MAX_RETRY_ATTEMPTS: usize = 3;
+const MAX_RETRY_ATTEMPTS: usize = 10;
 const MIN_SIGNATURE_LENGTH: usize = 10;  // 最小有效签名长度
 
 // ===== Model Constants for Background Tasks =====

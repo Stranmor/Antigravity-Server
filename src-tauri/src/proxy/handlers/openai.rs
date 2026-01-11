@@ -11,7 +11,7 @@ use crate::proxy::mappers::openai::{
 // use crate::proxy::upstream::client::UpstreamClient; // 通过 state 获取
 use crate::proxy::server::AppState;
 
-const MAX_RETRY_ATTEMPTS: usize = 3;
+const MAX_RETRY_ATTEMPTS: usize = 10;
 use crate::proxy::session_manager::SessionManager;
 
 pub async fn handle_chat_completions(
