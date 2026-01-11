@@ -2,8 +2,8 @@
 use dashmap::DashMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use crate::models::StickySessionConfig;
 use crate::proxy::rate_limit::RateLimitTracker;
@@ -261,7 +261,7 @@ impl TokenManager {
             // 模式 A: 粘性会话处理 (CacheFirst 或 Balance 且有 session_id)
             if !rotate
                 && session_id.is_some()
-                && scheduling.mode != SchedulingMode::PerformanceFirst.to_string()
+                && scheduling.mode != SchedulingMode::PerformanceFirst
             {
                 let sid = session_id.unwrap();
 
@@ -334,7 +334,7 @@ impl TokenManager {
 
                         // 如果是会话首次分配且需要粘性，在此建立绑定
                         if let Some(sid) = session_id {
-                            if scheduling.mode != SchedulingMode::PerformanceFirst.to_string() {
+                            if scheduling.mode != SchedulingMode::PerformanceFirst {
                                 self.session_accounts
                                     .insert(sid.to_string(), candidate.account_id.clone());
                                 tracing::debug!(

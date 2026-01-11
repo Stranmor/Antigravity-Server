@@ -153,3 +153,10 @@ just test         # Run tests
 just frontend-release  # Build Leptos only
 just build-deb    # Linux .deb package
 ```
+
+## 2026-01-11 - Architectural Refactoring
+- **Status:** Completed
+- **Action:** Extracted shared types and models into new crate `antigravity-shared`.
+- **Scope:** `src-tauri`, `src-leptos`, `antigravity-core`.
+- **Benefit:** Eliminated code duplication, resolved circular dependencies, and unified type definitions between frontend and backend.
+- **Verification:** `cargo check --workspace` passes with 0 errors.

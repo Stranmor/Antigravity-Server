@@ -154,7 +154,8 @@ pub async fn forward_anthropic_json(
     };
 
     let timeout_secs = state.request_timeout.max(5);
-    let upstream_proxy = state.upstream_proxy.read().await.clone();
+    let upstream_proxy: crate::models::UpstreamProxyConfig =
+        state.upstream_proxy.read().await.clone();
     let client = match build_client(Some(upstream_proxy), timeout_secs) {
         Ok(c) => c,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),

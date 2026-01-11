@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
+use validator::Validate;
 
 // Re-export UpstreamProxyConfig from utils
 pub use crate::utils::http::UpstreamProxyConfig;
@@ -68,14 +69,35 @@ pub enum Protocol {
     Gemini,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub enum SchedulingMode {
+    CacheFirst,
+    #[default]
+    Balance,
+    PerformanceFirst,
+}
+
+impl fmt::Display for SchedulingMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SchedulingMode::CacheFirst => write!(f, "CacheFirst"),
+            SchedulingMode::Balance => write!(f, "Balance"),
+            SchedulingMode::PerformanceFirst => write!(f, "PerformanceFirst"),
+        }
+    }
+}
+
 // --- Z.ai Structs ---
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
 pub struct ZaiModelDefaults {
+    #[validate(length(min = 1))]
     #[serde(default = "default_zai_opus_model")]
     pub opus: String,
+    #[validate(length(min = 1))]
     #[serde(default = "default_zai_sonnet_model")]
     pub sonnet: String,
+    #[validate(length(min = 1))]
     #[serde(default = "default_zai_haiku_model")]
     pub haiku: String,
 }
@@ -90,7 +112,7 @@ impl Default for ZaiModelDefaults {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, Validate)]
 pub struct ZaiMcpConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -102,10 +124,11 @@ pub struct ZaiMcpConfig {
     pub vision_enabled: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, Validate)]
 pub struct ZaiConfig {
     #[serde(default)]
     pub enabled: bool,
+    #[validate(url)]
     #[serde(default = "default_zai_base_url")]
     pub base_url: String,
     #[serde(default)]
@@ -115,14 +138,16 @@ pub struct ZaiConfig {
     #[serde(default)]
     pub model_mapping: HashMap<String, String>,
     #[serde(default)]
+    #[validate(nested)]
     pub models: ZaiModelDefaults,
     #[serde(default)]
+    #[validate(nested)]
     pub mcp: ZaiMcpConfig,
 }
 
 // --- Other Config Structs ---
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, Validate)]
 pub struct ExperimentalConfig {
     #[serde(default = "default_true")]
     pub enable_signature_cache: bool,
@@ -132,38 +157,47 @@ pub struct ExperimentalConfig {
     pub enable_cross_model_checks: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Validate)]
 pub struct StickySessionConfig {
     pub enabled: bool,
-    pub mode: String,
+    // #[validate(nested)] // Enum doesn't implement Validate
+    pub mode: SchedulingMode,
+    #[validate(range(min = 1))]
     pub ttl: u32,
 }
 
 // --- Proxy Config ---
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
 pub struct ProxyConfig {
     pub enabled: bool,
     #[serde(default)]
     pub allow_lan_access: bool,
     #[serde(default)]
     pub auth_mode: ProxyAuthMode,
+    #[validate(range(min = 1024, max = 65535))]
     pub port: u16,
+    #[validate(length(min = 1))]
     pub api_key: String,
     pub auto_start: bool,
     #[serde(default)]
     pub custom_mapping: HashMap<String, String>,
+    #[validate(range(min = 30, max = 3600))]
     #[serde(default = "default_request_timeout")]
     pub request_timeout: u64,
     #[serde(default)]
     pub enable_logging: bool,
     #[serde(default)]
+    #[validate(nested)]
     pub upstream_proxy: UpstreamProxyConfig,
     #[serde(default)]
+    #[validate(nested)]
     pub zai: ZaiConfig,
     #[serde(default)]
+    #[validate(nested)]
     pub scheduling: StickySessionConfig,
     #[serde(default)]
+    #[validate(nested)]
     pub experimental: ExperimentalConfig,
 }
 

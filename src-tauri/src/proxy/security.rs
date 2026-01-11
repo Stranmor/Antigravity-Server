@@ -1,4 +1,4 @@
-use crate::models::{ProxyAuthMode, ProxyConfig};
+use antigravity_shared::proxy::config::{ProxyAuthMode, ProxyConfig};
 
 #[derive(Debug, Clone)]
 pub struct ProxySecurityConfig {

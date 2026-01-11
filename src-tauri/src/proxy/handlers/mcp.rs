@@ -354,7 +354,8 @@ async fn handle_vision_post(state: AppState, headers: HeaderMap, body: Body) -> 
                 .unwrap_or(Value::Object(Default::default()));
 
             let zai = state.zai.read().await.clone();
-            let upstream_proxy = state.upstream_proxy.read().await.clone();
+            let upstream_proxy: crate::models::UpstreamProxyConfig =
+                state.upstream_proxy.read().await.clone();
             let timeout = state.request_timeout;
 
             match crate::proxy::zai_vision_tools::call_tool(
