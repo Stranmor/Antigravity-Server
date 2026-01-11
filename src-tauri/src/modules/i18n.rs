@@ -18,8 +18,8 @@ pub struct TrayTexts {
 /// 从 JSON 加载翻译
 fn load_translations(lang: &str) -> HashMap<String, String> {
     let json_content = match lang {
-        "en" | "en-US" => include_str!("../../../src/locales/en.json"),
-        _ => include_str!("../../../src/locales/zh.json"),
+        "en" | "en-US" => include_str!("../locales/en.json"),
+        _ => include_str!("../locales/zh.json"),
     };
 
     let v: Value = serde_json::from_str(json_content).unwrap_or_else(|_| serde_json::json!({}));

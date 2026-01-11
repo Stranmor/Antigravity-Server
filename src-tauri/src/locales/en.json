@@ -1,0 +1,13 @@
+{
+    "tray": {
+        "current": "Current",
+        "quota": "Quota",
+        "switch_next": "Switch to Next Account",
+        "refresh_current": "Refresh Current Quota",
+        "show_window": "Show Main Window",
+        "quit": "Quit Application",
+        "no_account": "No Account",
+        "unknown_quota": "Unknown",
+        "forbidden": "Account Forbidden"
+    }
+}

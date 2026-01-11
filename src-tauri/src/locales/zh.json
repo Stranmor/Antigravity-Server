@@ -1,0 +1,13 @@
+{
+    "tray": {
+        "current": "当前账户",
+        "quota": "配额",
+        "switch_next": "切换到下一个账户",
+        "refresh_current": "刷新当前配额",
+        "show_window": "显示主窗口",
+        "quit": "退出应用",
+        "no_account": "无账户",
+        "unknown_quota": "未知",
+        "forbidden": "账户已禁用"
+    }
+}
