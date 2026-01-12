@@ -19,7 +19,9 @@ pub struct ProxyToken {
     pub account_path: PathBuf,  // 账号文件路径，用于更新
     pub project_id: Option<String>,
     pub subscription_tier: Option<String>, // "FREE" | "PRO" | "ULTRA"
+    pub remaining_quota: Option<i32>, // [FIX #563] Remaining quota for priority sorting
 }
+
 
 pub struct TokenManager {
     tokens: Arc<DashMap<String, ProxyToken>>,  // account_id -> ProxyToken
@@ -191,11 +193,17 @@ impl TokenManager {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
         
+        
         // 【新增】提取订阅等级 (subscription_tier 为 "FREE" | "PRO" | "ULTRA")
         let subscription_tier = account.get("quota")
             .and_then(|q| q.get("subscription_tier"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        
+        // [FIX #563] 提取剩余配额用于优先级排序
+        let remaining_quota = account.get("quota")
+            .map(|q| self.calculate_quota_stats(q).1) // (total, remaining) -> remaining
+            .filter(|&r| r > 0);
         
         Ok(Some(ProxyToken {
             account_id,
@@ -207,8 +215,10 @@ impl TokenManager {
             account_path: path.clone(),
             project_id,
             subscription_tier,
+            remaining_quota,
         }))
     }
+
     
     /// 检查账号是否应该被配额保护
     /// 如果配额低于阈值，自动禁用账号并返回 true
@@ -401,8 +411,10 @@ impl TokenManager {
             return Err("Token pool is empty".to_string());
         }
 
-        // ===== 【优化】根据订阅等级排序 (优先级: ULTRA > PRO > FREE) =====
+        // ===== 【优化】根据订阅等级和剩余配额排序 =====
+        // [FIX #563] 优先级: ULTRA > PRO > FREE, 同tier内优先高配额账号
         // 理由: ULTRA/PRO 重置快，优先消耗；FREE 重置慢，用于兜底
+        //       高配額账号优先使用，避免低配额账号被用光
         tokens_snapshot.sort_by(|a, b| {
             let tier_priority = |tier: &Option<String>| match tier.as_deref() {
                 Some("ULTRA") => 0,
@@ -410,8 +422,22 @@ impl TokenManager {
                 Some("FREE") => 2,
                 _ => 3,
             };
-            tier_priority(&a.subscription_tier).cmp(&tier_priority(&b.subscription_tier))
+            
+            // First: compare by subscription tier
+            let tier_cmp = tier_priority(&a.subscription_tier)
+                .cmp(&tier_priority(&b.subscription_tier));
+            
+            if tier_cmp != std::cmp::Ordering::Equal {
+                return tier_cmp;
+            }
+            
+            // [FIX #563] Second: compare by remaining quota (higher is better)
+            // Accounts with unknown/zero quota go last within their tier
+            let quota_a = a.remaining_quota.unwrap_or(0);
+            let quota_b = b.remaining_quota.unwrap_or(0);
+            quota_b.cmp(&quota_a)  // Descending: higher quota first
         });
+
 
         // 0. 读取当前调度配置
         let scheduling = self.sticky_config.read().await.clone();
