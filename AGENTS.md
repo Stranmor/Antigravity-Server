@@ -1,9 +1,53 @@
-# Antigravity Manager - Leptos UI Status
+# Antigravity Manager - Project Status
 
-## Current Status: 100% Feature Parity ✅
+## 🚨 ARCHITECTURAL DECISION [2026-01-12]: Tauri → Headless Daemon + WebUI
 
-**Build Status: COMPILING SUCCESSFULLY** (2026-01-11)
-**Clippy Status: 0 WARNINGS** ✅
+**Problem:** Tauri/WebKitGTK renders black screen on target system. 2 days of debugging failed.
+
+**Root Cause:** GTK WebView is fragile on Linux (especially Nvidia/Wayland). Desktop apps are not our core problem.
+
+**Solution (SOTA Model: Syncthing/Transmission):**
+
+```
+┌─────────────────────────────────────────────────────┐
+│  antigravity-server (Rust Daemon)                   │
+│  ├── Proxy Logic (accounts, rotation, handlers)    │
+│  ├── HTTP API (REST/JSON-RPC for CLI/UI)           │
+│  └── Static File Server (serves Leptos dist/)      │
+│                                                     │
+│  Accessible via: http://localhost:8045              │
+└─────────────────────────────────────────────────────┘
+         ↑                    ↑
+         │                    │
+┌────────┴───────┐    ┌───────┴────────┐
+│  Browser UI    │    │  CLI (ag)      │
+│  (Chrome/FF)   │    │  HTTP client   │
+│  Leptos WASM   │    │  curl wrapper  │
+└────────────────┘    └────────────────┘
+```
+
+**Benefits:**
+- ✅ No Tauri, no GTK, no WebKit
+- ✅ Browser rendering is 100% reliable
+- ✅ CLI for automation
+- ✅ Leptos UI reused as-is
+
+**Migration Tasks:**
+- [ ] Create `antigravity-server` binary (Axum + static files + proxy logic)
+- [ ] Move proxy handlers from `src-tauri` to `antigravity-server`
+- [ ] Add REST API endpoints matching Tauri IPC commands
+- [ ] Serve `src-leptos/dist/` as static files
+- [ ] Update systemd service to run `antigravity-server`
+- [ ] Create `ag` CLI that calls HTTP API
+- [ ] Delete `src-tauri/` after verification
+
+---
+
+## Current Status: Architecture Migration In Progress
+
+**UI Status:** Leptos UI complete (100% parity with React)
+**Backend Status:** Core logic in `antigravity-core`, handlers in `src-tauri`
+**Build Status:** Tauri build works but UI doesn't render (WebKit issue)
 
 ## Completed Features
 
@@ -48,6 +92,14 @@
   - Mode selector (Balance/Priority/Sticky)
   - Sticky session TTL
   - Clear session bindings
+- [x] Resolve merge conflicts in `Antigravity-Manager` [2026-01-12]
+- [x] Implement "Upstream Isolation" (Option 4) for handlers [2026-01-12]
+  - [x] Create `handlers/custom/`
+  - [x] Feature-gate custom logic
+- [x] Restore Leptos UI from git reflog [2026-01-12]
+- [x] Create `Justfile` for build/sync automation [2026-01-12]
+- [ ] Build & Install local version (In Progress)
+- [ ] Verify UI functionality (Green/Teal Theme) bindings
 - Z.ai Provider section (collapsible):
   - Enable/disable toggle
   - Base URL, API Key configuration

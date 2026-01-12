@@ -11,6 +11,8 @@ members = [
     "crates/antigravity-shared",
     "src-leptos",
     "src-tauri",
+    "antigravity-vps-cli",
+    "antigravity-server",
 ]
 
 [workspace.package]

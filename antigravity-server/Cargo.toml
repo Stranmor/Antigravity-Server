@@ -1,0 +1,38 @@
+[package]
+name = "antigravity-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Headless Antigravity Manager daemon with HTTP API and WebUI"
+
+[[bin]]
+name = "antigravity-server"
+path = "src/main.rs"
+
+[dependencies]
+# Core
+antigravity-core = { path = "../crates/antigravity-core" }
+antigravity-shared = { path = "../crates/antigravity-shared" }
+
+# Web Framework
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "cors", "trace"] }
+
+# Async Runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error Handling
+anyhow = "1"
+thiserror = "2"
+
+# Utilities
+chrono = { version = "0.4", features = ["serde"] }
