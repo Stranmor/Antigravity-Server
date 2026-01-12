@@ -181,6 +181,80 @@ fn remove_trailing_unsigned_thinking(blocks: &mut Vec<ContentBlock>) {
     }
 }
 
+// ===== Context Length Error Handling =====
+
+/// Extract the actual error message from Vertex/Anthropic nested error format.
+/// Vertex wraps Anthropic errors as escaped JSON string in the message field.
+fn extract_nested_error_message(error_text: &str) -> String {
+    // Try to parse as Vertex error format
+    if let Ok(vertex_err) = serde_json::from_str::<Value>(error_text) {
+        // Check for nested message in Vertex format: {"error": {"message": "<escaped json>"}}
+        if let Some(outer_msg) = vertex_err.get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.as_str())
+        {
+            // Try to parse the nested JSON inside the message field
+            if let Ok(inner) = serde_json::from_str::<Value>(outer_msg) {
+                // Anthropic format: {"error": {"message": "..."}}
+                if let Some(inner_msg) = inner.get("error")
+                    .and_then(|e| e.get("message"))
+                    .and_then(|m| m.as_str())
+                {
+                    return inner_msg.to_string();
+                }
+            }
+            // If inner parsing fails, use the outer message
+            return outer_msg.to_string();
+        }
+        
+        // Direct Anthropic format: {"error": {"message": "..."}}
+        if let Some(msg) = vertex_err.get("error")
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.as_str())
+        {
+            return msg.to_string();
+        }
+    }
+    
+    // Fallback: return original text
+    error_text.to_string()
+}
+
+/// Check if the error indicates context/prompt is too long
+fn is_context_length_error(error_text: &str) -> bool {
+    let lower = error_text.to_lowercase();
+    let extracted = extract_nested_error_message(error_text).to_lowercase();
+    
+    lower.contains("prompt is too long")
+        || lower.contains("context length exceeded")
+        || lower.contains("maximum context length")
+        || lower.contains("exceeds the context")
+        || lower.contains("token limit exceeded")
+        || extracted.contains("prompt is too long")
+        || extracted.contains("context length exceeded")
+        || extracted.contains("exceeds the context")
+}
+
+/// Create a Claude API compatible error response for context length errors.
+/// This format is expected by clients like opencode that use @ai-sdk/anthropic.
+fn create_claude_context_length_error(error_text: &str) -> Response {
+    let clean_message = extract_nested_error_message(error_text);
+    
+    let claude_error = json!({
+        "type": "error",
+        "error": {
+            "type": "invalid_request_error",
+            "code": "context_length_exceeded",
+            "message": clean_message
+        }
+    });
+    
+    (
+        StatusCode::BAD_REQUEST,
+        Json(claude_error)
+    ).into_response()
+}
+
 // ===== 统一退避策略模块 =====
 
 // [REMOVED] apply_jitter function
@@ -917,6 +991,17 @@ pub async fn handle_messages(
                     Some(&request_with_mapped.model),
                 )
                 .await;
+        }
+
+        // Handle context length exceeded error (400) - non-retryable, return Claude-compatible format
+        // This ensures clients like opencode receive proper error messages instead of raw JSON
+        if status_code == 400 && is_context_length_error(&error_text) {
+            error!(
+                "[{}] Context length exceeded: {}",
+                trace_id,
+                extract_nested_error_message(&error_text)
+            );
+            return create_claude_context_length_error(&error_text);
         }
 
         // 4. 处理 400 错误 (Thinking 签名失效)
