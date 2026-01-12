@@ -161,7 +161,7 @@ pub fn transform_claude_request_in(
             Some(model) => model,
             None => {
                 return Err(format!(
-                    "Unknown model: '{}'. No mapping rule found. Supported models: claude-*, gemini-*, gpt-*",
+                    "Unknown model: '{}'. No mapping rule found. Use claude-* or gemini-* models.",
                     claude_req.model
                 ));
             }

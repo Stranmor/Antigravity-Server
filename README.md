@@ -1,5 +1,5 @@
 # Antigravity Tools 🚀
-> 专业的 AI 账号管理与协议反代系统 (v3.3.20)
+> 专业的 AI 账号管理与协议反代系统 (v3.3.24)
 <div align="center">
   <img src="public/icon.png" alt="Antigravity Logo" width="120" height="120" style="border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.15);">
 
@@ -8,10 +8,11 @@
   
   <p>
     <a href="https://github.com/lbjlaq/Antigravity-Manager">
-      <img src="https://img.shields.io/badge/Version-3.3.20-blue?style=flat-square" alt="Version">
+      <img src="https://img.shields.io/badge/Version-3.3.24-blue?style=flat-square" alt="Version">
     </a>
-    <img src="https://img.shields.io/badge/Backend-Rust%20Daemon-red?style=flat-square" alt="Rust Daemon">
-    <img src="https://img.shields.io/badge/Frontend-Leptos-orange?style=flat-square" alt="Leptos">
+    <img src="https://img.shields.io/badge/Tauri-v2-orange?style=flat-square" alt="Tauri">
+    <img src="https://img.shields.io/badge/Backend-Rust-red?style=flat-square" alt="Rust">
+    <img src="https://img.shields.io/badge/Frontend-React-61DAFB?style=flat-square" alt="React">
     <img src="https://img.shields.io/badge/License-CC--BY--NC--SA--4.0-lightgrey?style=flat-square" alt="License">
   </p>
 
@@ -31,7 +32,7 @@
 
 ---
 
-**Antigravity Tools** 是一个专为开发者和 AI 爱好者设计的高性能 AI 调度网关。它将多账号管理、协议转换和智能请求调度完美结合，为您提供一个稳定、极速且成本低廉的 **本地 AI 中转站**。
+**Antigravity Tools** 是一个专为开发者和 AI 爱好者设计的全功能桌面应用。它将多账号管理、协议转换和智能请求调度完美结合，为您提供一个稳定、极速且成本低廉的 **本地 AI 中转站**。
 
 通过本应用，您可以将常见的 Web 端 Session (Google/Anthropic) 转化为标准化的 API 接口，彻底消除不同厂商间的协议鸿沟。
 
@@ -73,7 +74,7 @@
 
 ![仪表盘 - 全局配额监控与一键切换](docs/images/dashboard-light.png)
 ![账号列表 - 高密度配额展示与 403 智能标注](docs/images/accounts-light.png)
-![关于页面 - 关于 Antigravity Tools](docs/images/images/about-dark.png)
+![关于页面 - 关于 Antigravity Tools](docs/images/about-dark.png)
 ![API 反代 - 服务控制](docs/images/v3/proxy-settings.png)
 ![系统设置 - 通用配置](docs/images/settings-dark.png)
 
