@@ -126,7 +126,7 @@ async fn switch_account(
     }
 }
 
-// ============ Proxy (Placeholders) ============
+// ============ Proxy ============
 
 #[derive(Serialize)]
 struct ProxyStatusResponse {
@@ -137,23 +137,47 @@ struct ProxyStatusResponse {
 }
 
 async fn get_proxy_status(State(state): State<AppState>) -> Json<ProxyStatusResponse> {
-    // TODO: Integrate proxy server from antigravity-core
+    let running = state.is_proxy_running().await;
+    let port = state.get_proxy_port().await;
+    
     Json(ProxyStatusResponse {
-        running: false,
-        port: 8045,
-        base_url: "http://127.0.0.1:8045".to_string(),
+        running,
+        port,
+        base_url: format!("http://127.0.0.1:{}", port),
         active_accounts: state.get_account_count(),
     })
 }
 
-async fn start_proxy(State(_state): State<AppState>) -> Json<bool> {
-    // TODO: Start proxy
-    Json(false)
+#[derive(Serialize)]
+struct ProxyStartResponse {
+    success: bool,
+    message: String,
 }
 
-async fn stop_proxy(State(_state): State<AppState>) -> Json<bool> {
-    // TODO: Stop proxy
-    Json(false)
+async fn start_proxy(State(state): State<AppState>) -> Result<Json<ProxyStartResponse>, (StatusCode, String)> {
+    match state.start_proxy().await {
+        Ok(()) => Ok(Json(ProxyStartResponse {
+            success: true,
+            message: "Proxy started successfully".to_string(),
+        })),
+        Err(e) => Ok(Json(ProxyStartResponse {
+            success: false,
+            message: e,
+        }))
+    }
+}
+
+async fn stop_proxy(State(state): State<AppState>) -> Result<Json<ProxyStartResponse>, (StatusCode, String)> {
+    match state.stop_proxy().await {
+        Ok(()) => Ok(Json(ProxyStartResponse {
+            success: true,
+            message: "Proxy stopped successfully".to_string(),
+        })),
+        Err(e) => Ok(Json(ProxyStartResponse {
+            success: false,
+            message: e,
+        }))
+    }
 }
 
 // ============ Config (Placeholders) ============

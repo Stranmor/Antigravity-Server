@@ -1,115 +1,116 @@
+//! Proxy monitoring and logging.
+//!
+//! This module provides abstractions for monitoring proxy requests
+//! without any GUI-specific dependencies.
+
 use antigravity_shared::models::{ProxyRequestLog, ProxyStats};
-use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// Trait for emitting proxy events to the UI/Subscriber
+/// Trait for event bus implementations to emit proxy events.
+/// Different frontends (Tauri, WebSocket, etc.) can implement this.
 pub trait ProxyEventBus: Send + Sync {
     fn emit_request_log(&self, log: &ProxyRequestLog);
 }
 
+/// A no-op event bus for headless mode
+pub struct NoopEventBus;
+
+impl ProxyEventBus for NoopEventBus {
+    fn emit_request_log(&self, _log: &ProxyRequestLog) {
+        // No-op
+    }
+}
+
+/// Proxy monitor for tracking requests and statistics
 pub struct ProxyMonitor {
-    pub logs: RwLock<VecDeque<ProxyRequestLog>>,
-    pub stats: RwLock<ProxyStats>,
-    pub max_logs: usize,
-    pub enabled: AtomicBool,
-    event_bus: Option<Box<dyn ProxyEventBus>>,
+    enabled: AtomicBool,
+    stats: RwLock<ProxyStats>,
+    event_bus: Arc<dyn ProxyEventBus>,
+    logs: RwLock<Vec<ProxyRequestLog>>,
+    max_logs: usize,
 }
 
 impl ProxyMonitor {
-    pub fn new(max_logs: usize, event_bus: Option<Box<dyn ProxyEventBus>>) -> Self {
-        // Initialize DB
-        if let Err(e) = crate::modules::proxy_db::init_db() {
-            tracing::error!("Failed to initialize proxy DB: {}", e);
-        }
-
-        Self {
-            logs: RwLock::new(VecDeque::with_capacity(max_logs)),
-            stats: RwLock::new(ProxyStats::default()),
-            max_logs,
-            enabled: AtomicBool::new(false), // Default to disabled
-            event_bus,
-        }
+    pub fn new() -> Self {
+        Self::with_event_bus(Arc::new(NoopEventBus))
     }
 
-    pub fn set_enabled(&self, enabled: bool) {
-        self.enabled.store(enabled, Ordering::Relaxed);
+    pub fn with_event_bus(event_bus: Arc<dyn ProxyEventBus>) -> Self {
+        Self {
+            enabled: AtomicBool::new(true),
+            stats: RwLock::new(ProxyStats::default()),
+            event_bus,
+            logs: RwLock::new(Vec::new()),
+            max_logs: 1000,
+        }
     }
 
     pub fn is_enabled(&self) -> bool {
         self.enabled.load(Ordering::Relaxed)
     }
 
+    pub fn set_enabled(&self, enabled: bool) {
+        self.enabled.store(enabled, Ordering::Relaxed);
+    }
+
     pub async fn log_request(&self, log: ProxyRequestLog) {
-        if !self.is_enabled() {
-            return;
-        }
-        tracing::info!("[Monitor] Logging request: {} {}", log.method, log.url);
         // Update stats
         {
             let mut stats = self.stats.write().await;
             stats.total_requests += 1;
-            if log.status >= 200 && log.status < 400 {
-                stats.success_count += 1;
-            } else {
+            if log.status >= 400 {
                 stats.error_count += 1;
+            } else {
+                stats.success_count += 1;
+            }
+            if let Some(tokens) = log.input_tokens {
+                stats.total_input_tokens += tokens as u64;
+            }
+            if let Some(tokens) = log.output_tokens {
+                stats.total_output_tokens += tokens as u64;
             }
         }
 
-        // Add log to memory
+        // Emit to event bus
+        self.event_bus.emit_request_log(&log);
+
+        // Store in logs buffer
         {
             let mut logs = self.logs.write().await;
-            if logs.len() >= self.max_logs {
-                logs.pop_back();
-            }
-            logs.push_front(log.clone());
-        }
-
-        // Save to DB
-        let log_to_save = log.clone();
-        tokio::spawn(async move {
-            if let Err(e) = crate::modules::proxy_db::save_log(&log_to_save) {
-                tracing::error!("Failed to save proxy log to DB: {}", e);
-            }
-        });
-
-        // Emit event
-        if let Some(bus) = &self.event_bus {
-            bus.emit_request_log(&log);
-        }
-    }
-
-    pub async fn get_logs(&self, limit: usize) -> Vec<ProxyRequestLog> {
-        // Try to get from DB first for true history
-        match crate::modules::proxy_db::get_logs(limit) {
-            Ok(logs) => logs,
-            Err(e) => {
-                tracing::error!("Failed to get logs from DB: {}", e);
-                // Fallback to memory
-                let logs = self.logs.read().await;
-                logs.iter().take(limit).cloned().collect()
+            logs.push(log);
+            // Trim if exceeds max
+            let len = logs.len();
+            if len > self.max_logs {
+                logs.drain(0..len - self.max_logs);
             }
         }
     }
 
     pub async fn get_stats(&self) -> ProxyStats {
-        match crate::modules::proxy_db::get_stats() {
-            Ok(stats) => stats,
-            Err(e) => {
-                tracing::error!("Failed to get stats from DB: {}", e);
-                self.stats.read().await.clone()
-            }
-        }
+        self.stats.read().await.clone()
     }
 
-    pub async fn clear(&self) {
+    pub async fn get_logs(&self, limit: Option<usize>) -> Vec<ProxyRequestLog> {
+        let logs = self.logs.read().await;
+        let limit = limit.unwrap_or(logs.len());
+        logs.iter().rev().take(limit).cloned().collect()
+    }
+
+    pub async fn clear_logs(&self) {
         let mut logs = self.logs.write().await;
         logs.clear();
+    }
+
+    pub async fn reset_stats(&self) {
         let mut stats = self.stats.write().await;
         *stats = ProxyStats::default();
+    }
+}
 
-        if let Err(e) = crate::modules::proxy_db::clear_proxy_logs() {
-            tracing::error!("Failed to clear logs in DB: {}", e);
-        }
+impl Default for ProxyMonitor {
+    fn default() -> Self {
+        Self::new()
     }
 }

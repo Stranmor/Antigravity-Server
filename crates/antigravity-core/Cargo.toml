@@ -20,11 +20,13 @@ serde_json = { workspace = true }
 
 # HTTP
 reqwest = { workspace = true }
-axum = { workspace = true }
+axum = { version = "0.7", features = ["multipart"] }
 hyper = { workspace = true }
 hyper-util = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
+http = "1"
+http-body-util = "0.1"
 
 # Database
 rusqlite = { workspace = true }
@@ -55,6 +57,10 @@ bytes = { workspace = true }
 pin-project = { workspace = true }
 eventsource-stream = { workspace = true }
 
+# Validation
+validator = "0.18"
+validator_derive = "0.18"
+
 # System info (for process detection)
 sysinfo = "0.31"
 
@@ -62,6 +68,8 @@ sysinfo = "0.31"
 image = "0.25"
 
 [features]
-default = []
+default = ["custom_handlers"]
 # Enable Tauri-specific integrations (tray, etc)
 tauri-compat = []
+# Enable custom handler modifications (account rotation, etc)
+custom_handlers = []
