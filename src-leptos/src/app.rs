@@ -77,26 +77,26 @@ async fn load_initial_data(state: AppState) {
     state.loading.set(true);
 
     // Load accounts
-    match crate::tauri::commands::list_accounts().await {
+    match crate::api::commands::list_accounts().await {
         Ok(accounts) => state.accounts.set(accounts),
         Err(e) => log::error!("Failed to load accounts: {:?}", e),
     }
 
     // Load current account
-    match crate::tauri::commands::get_current_account().await {
+    match crate::api::commands::get_current_account().await {
         Ok(Some(account)) => state.current_account_id.set(Some(account.id)),
         Ok(None) => log::info!("No current account found."),
         Err(e) => log::error!("Failed to load current account: {:?}", e),
     }
 
     // Load config
-    match crate::tauri::commands::load_config().await {
+    match crate::api::commands::load_config().await {
         Ok(config) => state.config.set(Some(config)),
         Err(e) => log::error!("Failed to load config: {:?}", e),
     }
 
     // Load proxy status
-    match crate::tauri::commands::get_proxy_status().await {
+    match crate::api::commands::get_proxy_status().await {
         Ok(status) => state.proxy_status.set(status),
         Err(e) => log::error!("Failed to load proxy status: {:?}", e),
     }

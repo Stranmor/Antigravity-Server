@@ -2,7 +2,7 @@
 
 use crate::app::AppState;
 use crate::components::{Button, ButtonVariant, StatsCard};
-use crate::tauri::commands;
+use crate::api::commands;
 use crate::types::DashboardStats;
 use leptos::prelude::*;
 use leptos::task::spawn_local;

@@ -2,7 +2,7 @@
 
 use crate::app::AppState;
 use crate::components::{AccountCard, Button, ButtonVariant, Modal, ModalType, Pagination};
-use crate::tauri::commands;
+use crate::api::commands;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use std::collections::HashSet;

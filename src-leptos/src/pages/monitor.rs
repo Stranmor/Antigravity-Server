@@ -2,7 +2,7 @@
 
 use crate::app::AppState;
 use crate::components::{Button, ButtonVariant};
-use crate::tauri::commands;
+use crate::api::commands;
 use crate::types::{ProxyRequestLog, ProxyStats};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
