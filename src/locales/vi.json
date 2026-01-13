@@ -8,6 +8,7 @@
         "saved": "Đã lưu",
         "cancel": "Hủy",
         "confirm": "Xác nhận",
+        "close": "Đóng",
         "delete": "Xóa",
         "edit": "Chỉnh sửa",
         "refresh": "Làm mới",
@@ -311,7 +312,13 @@
             "latest_version": "Bạn đang dùng bản mới nhất",
             "new_version_available": "Có phiên bản mới {{version}}",
             "download_update": "Tải xuống",
-            "update_check_failed": "Kiểm tra cập nhật thất bại"
+            "update_check_failed": "Kiểm tra cập nhật thất bại",
+            "support_btn": "Hỗ trợ tác giả",
+            "support_title": "Quyên góp & Hỗ trợ",
+            "support_desc": "Nếu bạn thấy dự án này hữu ích, hãy mời tác giả một ly cà phê! Sự hỗ trợ của bạn là động lực lớn nhất để tôi duy trì dự án này.",
+            "support_alipay": "Alipay",
+            "support_wechat": "WeChat Pay",
+            "support_buymeacoffee": "Buy Me a Coffee"
         }
     },
     "tray": {
@@ -455,13 +462,18 @@
                 },
                 "modes_desc": {
                     "CacheFirst": "Gắn session với tài khoản, chờ đợi chính xác nếu bị giới hạn (Tối đa hóa Prompt Cache hits).",
-                    "Balance": "Gắn session, tự động chuyển tài khoản khả dụng nếu bị giới hạn (Cân bằng cache & sự sẵn sàng).",
                     "PerformanceFirst": "Không gắn session, xoay vòng thuần túy (Tốt nhất cho tải cao/đồng thời). "
                 },
                 "max_wait": "Chờ Tối đa (giây)",
                 "max_wait_tooltip": "Chỉ dùng trong chế độ 'Ưu tiên Cache': chờ thay vì đổi tài khoản nếu thời gian reset rate limit thấp hơn giá trị này.",
-                "clear_bindings": "Xóa Liên kết Session",
-                "clear_bindings_tooltip": "Xóa cứng tất cả liên kết session-tài khoản, buộc gán lại tài khoản ở request tiếp theo."
+                "clear_bindings": "Xóa liên kết phiên",
+                "clear_bindings_tooltip": "Ngắt ngay lập tức tất cả các mối quan hệ liên kết giữa phiên và tài khoản, buộc lần yêu cầu tiếp theo phải phân bổ lại tài khoản."
+            },
+            "experimental": {
+                "title": "Cài đặt thử nghiệm",
+                "title_tooltip": "Các tính năng mang tính khám phá, có thể được điều chỉnh hoặc loại bỏ trong các phiên bản tương lai.",
+                "enable_usage_scaling": "Bật thu phóng dữ liệu sử dụng",
+                "enable_usage_scaling_tooltip": "Dành cho giao thức tương thích với Claude. Khi tổng đầu vào vượt quá 30k Token, hãy bật tính năng thu phóng linh hoạt để ngăn việc kích hoạt nén phía máy khách thường xuyên trong ngữ cảnh lớn. Lưu ý: Sau khi bật, lượng dữ liệu sử dụng hiển thị trên máy khách sẽ không còn đại diện cho điểm thanh toán thực tế."
             }
         },
         "example": {

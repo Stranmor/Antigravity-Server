@@ -8,6 +8,7 @@
         "saved": "儲存成功",
         "cancel": "取消",
         "confirm": "確認",
+        "close": "關閉",
         "delete": "刪除",
         "edit": "編輯",
         "refresh": "重新整理",
@@ -313,7 +314,13 @@
             "latest_version": "已是最新版本",
             "new_version_available": "發現新版本 {{version}}",
             "download_update": "前往下載",
-            "update_check_failed": "檢測更新失敗"
+            "update_check_failed": "檢測更新失敗",
+            "support_btn": "支持作者",
+            "support_title": "贊助支持",
+            "support_desc": "如果您覺得本工具對您有帮助，歡迎掃碼請作者喝杯咖啡！您的支持是我持續維護項目的最大動力。",
+            "support_alipay": "支付寶",
+            "support_wechat": "微信支付",
+            "support_buymeacoffee": "Buy Me a Coffee"
         }
     },
     "tray": {
@@ -464,6 +471,12 @@
                 "max_wait_tooltip": "僅在“快取優先”模式下生效：如果帳號限流重置時間小於此值，則原地等待而非切換帳號。",
                 "clear_bindings": "清除會話繫結",
                 "clear_bindings_tooltip": "立即斷開所有會話與帳號的繫結關係，強制下一次請求重新分配帳號。"
+            },
+            "experimental": {
+                "title": "實驗性設定 (Experimental)",
+                "title_tooltip": "探索性功能，可能在未來版本中調整或移除。",
+                "enable_usage_scaling": "啟用用量縮放",
+                "enable_usage_scaling_tooltip": "針對 Claude 相容協定。當總輸入超過 30k Token 時開啟激進縮放，防止在大上下文下頻繁觸發用戶端壓縮。注意：開啟後用戶端顯示的用量不再代表實際計費點數。"
             }
         },
         "example": {

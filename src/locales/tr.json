@@ -7,6 +7,7 @@
         "saved": "Başarıyla kaydedildi",
         "cancel": "İptal",
         "confirm": "Onayla",
+        "close": "Kapat",
         "delete": "Sil",
         "edit": "Düzenle",
         "refresh": "Yenile",
@@ -277,7 +278,13 @@
             "latest_version": "Güncelsiniz",
             "new_version_available": "Yeni sürüm {{version}} mevcut",
             "download_update": "İndir",
-            "update_check_failed": "Güncelleme kontrolü başarısız"
+            "update_check_failed": "Güncelleme kontrolü başarısız",
+            "support_btn": "Yazarı Destekle",
+            "support_title": "Bağış ve Destek",
+            "support_desc": "Bu projeyi yararlı buluyorsanız, yazara bir kahve ısmarlayabilirsiniz! Desteğiniz, bu projeyi sürdürmek için en büyük motivasyon kaynağımdır.",
+            "support_alipay": "Alipay",
+            "support_wechat": "WeChat Pay",
+            "support_buymeacoffee": "Buy Me a Coffee"
         }
     },
     "tray": {
@@ -427,7 +434,13 @@
                 "max_wait": "Maks Bekleme (sn)",
                 "max_wait_tooltip": "Yalnızca 'Önbellek Öncelikli' modunda kullanılır: oran limiti sıfırlama zamanı bu değerin altındaysa geçiş yapmak yerine bekle.",
                 "clear_bindings": "Oturum Bağlantılarını Temizle",
-                "clear_bindings_tooltip": "Tüm oturum-hesap bağlantılarını sert sıfırlama, hesapların bir sonraki istekte yeniden atanmasını zorlar."
+                "clear_bindings_tooltip": "Tüm oturum ve hesap bağlantılarını hemen kesin, bir sonraki istekte hesapları yeniden atanmaya zorlayın."
+            },
+            "experimental": {
+                "title": "Deneysel Ayarlar",
+                "title_tooltip": "Gelecek sürümlerde ayarlanabilecek veya kaldırılabilecek keşifsel özellikler.",
+                "enable_usage_scaling": "Kullanım Ölçeklendirmeyi Etkinleştir",
+                "enable_usage_scaling_tooltip": "Claude protokolü için. Toplam giriş 30 bin jetonu aştığında, büyük bağlamlarda sık istemci tarafı sıkıştırmayı önlemek için agresif ölçeklendirmeyi etkinleştirir. Not: Etkinleştirildikten sonra bildirilen kullanım gerçek faturalandırmayı yansıtmayacaktır."
             }
         },
         "example": {

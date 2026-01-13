@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Github, User, MessageCircle, ExternalLink, RefreshCw, Sparkles } from 'lucide-react';
+import { Save, Github, User, MessageCircle, ExternalLink, RefreshCw, Sparkles, Heart, Coffee } from 'lucide-react';
 import { request as invoke } from '../utils/request';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useConfigStore } from '../stores/useConfigStore';
@@ -49,6 +49,7 @@ function Settings() {
     // Dialog state
     // Dialog state
     const [isClearLogsOpen, setIsClearLogsOpen] = useState(false);
+    const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
     const [dataDirPath, setDataDirPath] = useState<string>('~/.antigravity_tools/');
 
     // Update check state
@@ -613,7 +614,7 @@ function Settings() {
                                     <p className="text-sm text-gray-600 dark:text-gray-400">{t('settings.advanced.logs_desc')}</p>
                                 </div>
                                 <div className="badge badge-primary badge-outline gap-2 font-mono">
-                                    v3.3.26
+                                    v3.3.27
                                 </div>
                                 <div className="flex items-center gap-4">
                                     <button
@@ -715,7 +716,7 @@ function Settings() {
                                         <h3 className="text-3xl font-black text-gray-900 dark:text-base-content tracking-tight mb-2">Antigravity Tools</h3>
                                         <div className="flex items-center justify-center gap-2 text-sm">
                                             <span className="px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium border border-blue-200 dark:border-blue-800">
-                                                v3.3.26
+                                                v3.3.27
                                             </span>
                                             <span className="text-gray-400 dark:text-gray-600">•</span>
                                             <span className="text-gray-500 dark:text-gray-400">Professional Account Management</span>
@@ -724,7 +725,7 @@ function Settings() {
                                 </div>
 
                                 {/* Cards Grid - Now 3 columns */}
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-3xl px-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-5xl px-4">
                                     {/* Author Card */}
                                     <div className="bg-white dark:bg-base-100 p-4 rounded-2xl border border-gray-100 dark:border-base-300 shadow-sm hover:shadow-md hover:border-blue-200 dark:hover:border-blue-800 transition-all group flex flex-col items-center text-center gap-3">
                                         <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl group-hover:scale-110 transition-transform duration-300">
@@ -765,6 +766,20 @@ function Settings() {
                                             </div>
                                         </div>
                                     </a>
+
+                                    {/* Support Card */}
+                                    <div
+                                        onClick={() => setIsSupportModalOpen(true)}
+                                        className="bg-white dark:bg-base-100 p-4 rounded-2xl border border-gray-100 dark:border-base-300 shadow-sm hover:shadow-md hover:border-pink-200 dark:hover:border-pink-800 transition-all group flex flex-col items-center text-center gap-3 cursor-pointer"
+                                    >
+                                        <div className="p-3 bg-pink-50 dark:bg-pink-900/20 rounded-xl group-hover:scale-110 transition-transform duration-300">
+                                            <Heart className="w-6 h-6 text-pink-500 fill-pink-500" />
+                                        </div>
+                                        <div>
+                                            <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-1">{t('settings.about.support_title')}</div>
+                                            <div className="font-bold text-gray-900 dark:text-base-content">{t('settings.about.support_btn')}</div>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {/* Tech Stack Badges */}
@@ -837,6 +852,58 @@ function Settings() {
                     onConfirm={confirmClearLogs}
                     onCancel={() => setIsClearLogsOpen(false)}
                 />
+
+                {/* Support Modal */}
+                <div className={`modal ${isSupportModalOpen ? 'modal-open' : ''} z-[100]`}>
+                    <div data-tauri-drag-region className="fixed top-0 left-0 right-0 h-8 z-[110]" />
+                    <div className="modal-box relative max-w-2xl bg-white dark:bg-base-100 shadow-2xl rounded-3xl p-0 overflow-hidden transform transition-all animate-in fade-in zoom-in-95 duration-300">
+                        <div className="flex flex-col items-center p-8">
+                            <div className="w-16 h-16 bg-pink-50 dark:bg-pink-900/20 rounded-2xl flex items-center justify-center mb-6 shadow-sm">
+                                <Coffee className="w-8 h-8 text-pink-500" />
+                            </div>
+
+                            <h3 className="text-2xl font-black text-gray-900 dark:text-base-content mb-3">{t('settings.about.support_title')}</h3>
+                            <p className="text-gray-500 dark:text-gray-400 text-sm text-center mb-8 max-w-md leading-relaxed">
+                                {t('settings.about.support_desc')}
+                            </p>
+
+                            {/* QR Codes Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full mb-8">
+                                {/* Alipay */}
+                                <div className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-gray-50 dark:bg-base-200 border border-gray-100 dark:border-base-300">
+                                    <div className="w-full aspect-square relative bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100">
+                                        <img src="/images/donate/alipay.png" alt="Alipay" className="w-full h-full object-contain" />
+                                    </div>
+                                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300">{t('settings.about.support_alipay')}</span>
+                                </div>
+
+                                {/* WeChat */}
+                                <div className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-gray-50 dark:bg-base-200 border border-gray-100 dark:border-base-300">
+                                    <div className="w-full aspect-square relative bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100">
+                                        <img src="/images/donate/wechat.png" alt="WeChat" className="w-full h-full object-contain" />
+                                    </div>
+                                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300">{t('settings.about.support_wechat')}</span>
+                                </div>
+
+                                {/* Buy Me a Coffee */}
+                                <div className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-gray-50 dark:bg-base-200 border border-gray-100 dark:border-base-300">
+                                    <div className="w-full aspect-square relative bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100">
+                                        <img src="/images/donate/coffee.png" alt="Buy Me A Coffee" className="w-full h-full object-contain" />
+                                    </div>
+                                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Buy Me a Coffee</span>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={() => setIsSupportModalOpen(false)}
+                                className="w-full md:w-auto px-12 py-3 bg-gray-100 dark:bg-base-300 text-gray-700 dark:text-gray-200 font-bold rounded-xl hover:bg-gray-200 dark:hover:bg-base-200 transition-all"
+                            >
+                                {t('common.close') || 'Close'}
+                            </button>
+                        </div>
+                    </div>
+                    <div className="modal-backdrop bg-black/60 backdrop-blur-md fixed inset-0 z-[-1]" onClick={() => setIsSupportModalOpen(false)}></div>
+                </div>
             </div>
         </div>
     );

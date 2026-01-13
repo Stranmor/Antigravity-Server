@@ -26,6 +26,7 @@ pub fn create_claude_sse_stream(
     trace_id: String,
     email: String,
     session_id: Option<String>, // [NEW v3.3.17] Session ID for signature caching
+    scaling_enabled: bool, // [NEW] Flag for context usage scaling
 ) -> Pin<Box<dyn Stream<Item = Result<Bytes, String>> + Send>> {
     use async_stream::stream;
     use bytes::BytesMut;
@@ -34,6 +35,7 @@ pub fn create_claude_sse_stream(
     Box::pin(stream! {
         let mut state = StreamingState::new();
         state.session_id = session_id; // Set session ID for signature caching
+        state.scaling_enabled = scaling_enabled; // Set scaling enabled flag
         let mut buffer = BytesMut::new();
 
         while let Some(chunk_result) = gemini_stream.next().await {

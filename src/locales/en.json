@@ -8,6 +8,7 @@
         "saved": "Saved successfully",
         "cancel": "Cancel",
         "confirm": "Confirm",
+        "close": "Close",
         "delete": "Delete",
         "edit": "Edit",
         "refresh": "Refresh",
@@ -313,7 +314,13 @@
             "latest_version": "You're up to date",
             "new_version_available": "New version {{version}} available",
             "download_update": "Download",
-            "update_check_failed": "Update check failed"
+            "update_check_failed": "Update check failed",
+            "support_btn": "Support Author",
+            "support_title": "Donation & Support",
+            "support_desc": "If you find this project helpful, feel free to buy me a coffee! Your support is the biggest motivation for me to maintain this project.",
+            "support_alipay": "Alipay",
+            "support_wechat": "WeChat Pay",
+            "support_buymeacoffee": "Buy Me a Coffee"
         }
     },
     "tray": {
@@ -464,6 +471,12 @@
                 "max_wait_tooltip": "Only used in 'Cache First' mode: wait instead of switching if the rate limit reset time is below this value.",
                 "clear_bindings": "Clear Session Bindings",
                 "clear_bindings_tooltip": "Hard reset all session-account bindings, forcing accounts to be re-assigned on next request."
+            },
+            "experimental": {
+                "title": "Experimental Settings",
+                "title_tooltip": "Exploratory features that may be adjusted or removed in future versions.",
+                "enable_usage_scaling": "Enable Usage Scaling",
+                "enable_usage_scaling_tooltip": "For Claude protocol. Enables aggressive scaling when total input exceeds 30k tokens to prevent frequent client-side compression. Note: Reported usage will not reflect actual billing after enabling."
             }
         },
         "example": {

@@ -16,6 +16,7 @@ export interface ProxyConfig {
     upstream_proxy: UpstreamProxyConfig;
     zai?: ZaiConfig;
     scheduling?: StickySessionConfig;
+    experimental?: ExperimentalConfig;
 }
 
 export type SchedulingMode = 'CacheFirst' | 'Balance' | 'PerformanceFirst';
@@ -59,6 +60,10 @@ export interface QuotaProtectionConfig {
     enabled: boolean;
     threshold_percentage: number; // 1-99
     monitored_models: string[];
+}
+
+export interface ExperimentalConfig {
+    enable_usage_scaling: boolean;
 }
 
 export interface AppConfig {

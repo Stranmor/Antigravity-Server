@@ -160,6 +160,8 @@ pub struct StreamingState {
     pub model_name: Option<String>,
     // [NEW v3.3.17] Session ID for session-based signature caching
     pub session_id: Option<String>,
+    // [NEW] Flag for context usage scaling
+    pub scaling_enabled: bool,
 }
 
 impl StreamingState {
@@ -179,6 +181,7 @@ impl StreamingState {
             last_valid_state: None,
             model_name: None,
             session_id: None,
+            scaling_enabled: false,
         }
     }
 
@@ -201,7 +204,7 @@ impl StreamingState {
         let usage = raw_json
             .get("usageMetadata")
             .and_then(|u| serde_json::from_value::<UsageMetadata>(u.clone()).ok())
-            .map(|u| to_claude_usage(&u));
+            .map(|u| to_claude_usage(&u, self.scaling_enabled));
 
         let mut message = json!({
             "id": raw_json.get("responseId")
@@ -395,7 +398,7 @@ impl StreamingState {
         };
 
         let usage = usage_metadata
-            .map(|u| to_claude_usage(u))
+            .map(|u| to_claude_usage(u, self.scaling_enabled))
             .unwrap_or(Usage {
                 input_tokens: 0,
                 output_tokens: 0,

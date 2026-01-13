@@ -7,6 +7,7 @@
         "saved": "正常に保存されました",
         "cancel": "キャンセル",
         "confirm": "確認",
+        "close": "閉じる",
         "delete": "削除",
         "edit": "編集",
         "refresh": "更新",
@@ -277,7 +278,13 @@
             "latest_version": "最新バージョンです",
             "new_version_available": "新バージョン {{version}} が利用可能です",
             "download_update": "ダウンロード",
-            "update_check_failed": "アップデートの確認に失敗しました"
+            "update_check_failed": "アップデートの確認に失敗しました",
+            "support_btn": "作者をサポート",
+            "support_title": "寄付とサポート",
+            "support_desc": "このプロジェクトがお役に立てば、コーヒーを一杯ご馳走してください！皆様のサポートが、プロジェクトを継続する最大の動機です。",
+            "support_alipay": "Alipay",
+            "support_wechat": "WeChat Pay",
+            "support_buymeacoffee": "Buy Me a Coffee"
         }
     },
     "tray": {
@@ -428,6 +435,12 @@
                 "max_wait_tooltip": "「キャッシュ優先」モードでのみ使用: レートリミットのリセット時間がこの値以下の場合、切り替えずに待機します。",
                 "clear_bindings": "セッションバインディングをクリア",
                 "clear_bindings_tooltip": "すべてのセッションとアカウントの紐付けを強制リセットし、次のリクエストでアカウントを再割り当てします。"
+            },
+            "experimental": {
+                "title": "実験設定 (Experimental)",
+                "title_tooltip": "探索的な機能であり、将来のバージョンで調整または削除される可能性があります。",
+                "enable_usage_scaling": "使用量スケーリングを有効にする",
+                "enable_usage_scaling_tooltip": "Claude互換プロトコル向け。総入力が30kトークンを超えると、アグレッシブなスケーリングを有効にし、大きなコンテキストでの頻繁なクライアント側圧縮を防ぎます。注意：有効にすると、クライアントに表示される使用量は実際の課金ポイントを反映しなくなります。"
             }
         },
         "example": {

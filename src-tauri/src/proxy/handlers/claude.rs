@@ -398,6 +398,9 @@ pub async fn handle_messages(
     
     // Google Flow 继续使用 request 对象
     // (后续代码不需要再次 filter_invalid_thinking_blocks)
+    
+    // [NEW] 获取上下文缩放配置
+    let scaling_enabled = state.experimental.read().await.enable_usage_scaling;
 
     // 获取最新一条“有意义”的消息内容（用于日志记录和后台任务检测）
     // 策略：反向遍历，首先筛选出所有角色为 "user" 的消息，然后从中找到第一条非 "Warmup" 且非空的文本消息
@@ -678,7 +681,8 @@ pub async fn handle_messages(
                     gemini_stream, 
                     trace_id.clone(), 
                     email.clone(),
-                    Some(session_id_str.clone())
+                    Some(session_id_str.clone()),
+                    scaling_enabled
                 );
 
                 // [FIX #530/#529] Peek first chunk to detect empty response and allow retry
@@ -774,7 +778,7 @@ pub async fn handle_messages(
                 };
                 
                 // 转换
-                let claude_response = match transform_response(&gemini_response) {
+                let claude_response = match transform_response(&gemini_response, scaling_enabled) {
                     Ok(r) => r,
                     Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Transform error: {}", e)).into_response(),
                 };
