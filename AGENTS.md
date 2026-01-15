@@ -278,3 +278,78 @@ state.circuit_breaker.should_allow(...)        // Fast-fail check
 - `antigravity_aimd_rewards_total` - Limit expansions
 - `antigravity_aimd_penalties_total` - Limit contractions
 - `antigravity_hedge_wins_total` - Hedge request wins
+
+## 2026-01-15 - Vendor Overlay Architecture for Upstream Sync
+
+**Status:** Implemented ✅
+**Commit:** e78dfea5
+
+### Problem
+
+Direct `git merge upstream/main` creates 50+ merge conflicts because:
+- Upstream is Tauri desktop app with React UI
+- Our fork is headless Axum server with Leptos UI
+- Every merge requires tedious conflict resolution, risking loss of custom logic
+
+### Solution: Vendor Overlay Pattern
+
+```
+Antigravity-Manager/
+├── src-tauri/                    # ← UPSTREAM ONLY (read-only reference)
+│   └── src/proxy/                # Their code — never edit directly
+│       ├── mappers/claude/       # Bugfixes source
+│       └── token_manager.rs      # Reference implementation
+│
+├── antigravity-server/           # ← OUR HEADLESS IMPLEMENTATION
+│   └── src/
+│       └── proxy/                # Our handlers (import from core)
+│
+├── crates/antigravity-core/      # ← CORE LOGIC (ported from src-tauri)
+│   └── src/proxy/
+│       ├── mappers/              # SYNCED from upstream
+│       ├── aimd.rs               # Our custom AIMD logic
+│       └── token_manager.rs      # Our adapted version
+│
+└── scripts/sync-upstream.sh      # ← SYNC TOOL
+```
+
+### Sync Process
+
+```bash
+# 1. Fetch upstream changes
+git fetch upstream
+
+# 2. Review what changed
+git log upstream/main --oneline -10
+
+# 3. Sync proxy code to our crates
+./scripts/sync-upstream.sh
+
+# 4. Fix any import path issues
+cargo check -p antigravity-core
+
+# 5. Commit
+git add -A && git commit -m "feat(sync): upstream v3.3.XX"
+```
+
+### Key Fixes Ported (v3.3.32)
+
+- **FIX #632**: Claude tool_result duplicate prevention (pre-scan IDs)
+- **FIX #564**: Thinking blocks ordering (thinking first rule)
+- **FIX #593**: Deep cache_control cleanup (recursive JSON cleaning)
+- **FIX #546/547**: Gemini parameter hallucinations remapping
+- **FIX #295**: Function call signature validation
+
+### What Stays Isolated (Never Synced)
+
+- `crates/antigravity-core/src/proxy/aimd.rs` - Our AIMD rate limiting
+- `crates/antigravity-core/src/proxy/server.rs` - Our Axum server structure  
+- `antigravity-server/` - Our headless daemon
+- `src-leptos/` - Our Leptos UI
+
+### Benefits
+
+✅ `git fetch upstream` is safe — no conflicts in src-tauri/
+✅ Cherry-pick is trivial: just run sync script
+✅ Our custom logic is protected in dedicated files
+✅ Clear separation: upstream reference vs our production code
