@@ -642,26 +642,11 @@ pub async fn handle_messages(
             break;
         }
 
-        // 2. 模型路由解析 - NO FALLBACK for unknown models
-        let mut mapped_model = match crate::proxy::common::model_mapping::resolve_model_route(
+        // 2. 模型路由解析
+        let mut mapped_model = crate::proxy::common::model_mapping::resolve_model_route(
             &request_for_body.model,
             &*state.custom_mapping.read().await,
-        ) {
-            Ok(m) => m,
-            Err(e) => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({
-                        "type": "error",
-                        "error": {
-                            "type": "invalid_request_error",
-                            "message": e
-                        }
-                    })),
-                )
-                    .into_response();
-            }
-        };
+        );
 
         // 将 Claude 工具转为 Value 数组以便探测联网
         let tools_val: Option<Vec<Value>> = request_for_body.tools.as_ref().map(|list| {

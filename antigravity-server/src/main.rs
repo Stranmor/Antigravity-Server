@@ -12,6 +12,7 @@ use axum::{
     extract::DefaultBodyLimit, http::StatusCode, response::IntoResponse, routing::get, Router,
 };
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tower_http::{
     cors::{Any, CorsLayer},
     services::{ServeDir, ServeFile},
@@ -23,13 +24,13 @@ use tracing_subscriber::FmtSubscriber;
 mod api;
 mod state;
 
+use antigravity_core::proxy::server::{AxumServer, ServerStartConfig};
 use state::AppState;
 
 const DEFAULT_PORT: u16 = 8045;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
         .finish();
@@ -37,13 +38,47 @@ async fn main() -> Result<()> {
 
     info!("🚀 Antigravity Server starting...");
 
-    // Initialize application state
-    let state = AppState::new().await?;
+    let data_dir = antigravity_core::modules::account::get_data_dir()
+        .map_err(|e| anyhow::anyhow!("Failed to get data directory: {}", e))?;
+    let initial_app_config = antigravity_core::modules::config::load_config().unwrap_or_default();
+    let initial_proxy_config = initial_app_config.proxy;
+
+    let token_manager = Arc::new(antigravity_core::proxy::TokenManager::new(data_dir.clone()));
+    match token_manager.load_accounts().await {
+        Ok(count) => {
+            tracing::info!("📊 Loaded {} accounts into token manager", count);
+        }
+        Err(e) => {
+            tracing::warn!("⚠️ Could not load accounts into token manager: {}", e);
+        }
+    }
+
+    let monitor = Arc::new(antigravity_core::proxy::ProxyMonitor::new());
+
+    let server_start_config = ServerStartConfig {
+        host: "127.0.0.1".to_string(),
+        port: initial_proxy_config.port,
+        token_manager: token_manager.clone(),
+        custom_mapping: initial_proxy_config.custom_mapping.clone(),
+        upstream_proxy: initial_proxy_config.upstream_proxy.clone(),
+        security_config: antigravity_core::proxy::ProxySecurityConfig::from_proxy_config(
+            &initial_proxy_config,
+        ),
+        zai_config: initial_proxy_config.zai.clone(),
+        monitor: monitor.clone(),
+        experimental_config: initial_proxy_config.experimental.clone(),
+    };
+
+    let (axum_server_instance, _server_handle) = AxumServer::start(server_start_config)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to start Axum server: {}", e))?;
+    let axum_server = Arc::new(axum_server_instance);
+
+    let state = AppState::new(axum_server.clone()).await?;
     info!("✅ Application state initialized");
     info!("📊 {} accounts loaded", state.get_account_count());
 
-    // Build the router with proxy integrated
-    let app = build_router(state);
+    let app = build_router(state, axum_server).await;
 
     // Start server
     let addr = SocketAddr::from(([127, 0, 0, 1], DEFAULT_PORT));
@@ -62,9 +97,9 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn build_router(state: AppState) -> Router {
-    // Get proxy router from core (has its own state already applied)
-    let proxy_router = state.build_proxy_router();
+async fn build_router(state: AppState, _axum_server: Arc<AxumServer>) -> Router {
+    // Get proxy router from state (has its own state already applied)
+    let proxy_router = state.build_proxy_router().await;
 
     // Static files for WebUI (Leptos dist)
     let static_dir =

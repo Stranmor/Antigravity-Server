@@ -11,6 +11,9 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
+use antigravity_core::models::AppConfig;
+use antigravity_core::modules::config as core_config;
+
 use crate::state::{get_model_quota, AppState};
 
 pub fn router() -> Router<AppState> {
@@ -138,7 +141,7 @@ struct ProxyStatusResponse {
 }
 
 async fn get_proxy_status(State(state): State<AppState>) -> Json<ProxyStatusResponse> {
-    let port = state.get_proxy_port();
+    let port = state.get_proxy_port().await;
 
     Json(ProxyStatusResponse {
         running: true, // Always running on same port
@@ -177,15 +180,24 @@ async fn clear_monitor_logs(State(state): State<AppState>) -> Json<bool> {
 
 // ============ Config (Placeholders) ============
 
-async fn get_config(State(_state): State<AppState>) -> Json<serde_json::Value> {
-    // TODO: Load config from antigravity-core
-    Json(serde_json::json!({}))
+async fn get_config(
+    State(_state): State<AppState>,
+) -> Result<Json<AppConfig>, (StatusCode, String)> {
+    match core_config::load_config() {
+        Ok(config) => Ok(Json(config)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
+    }
 }
 
 async fn save_config(
-    State(_state): State<AppState>,
-    Json(_payload): Json<serde_json::Value>,
-) -> Json<bool> {
-    // TODO: Save config
-    Json(false)
+    State(state): State<AppState>,
+    Json(payload): Json<AppConfig>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    match core_config::save_config(&payload) {
+        Ok(_) => {
+            state.hot_reload_proxy_config().await;
+            Ok(Json(true))
+        }
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
+    }
 }

@@ -7,7 +7,6 @@ static CLAUDE_TO_GEMINI: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|
 
     // 直接支持的模型
     m.insert("claude-opus-4-5-thinking", "claude-opus-4-5-thinking");
-    m.insert("claude-opus-4-5", "claude-opus-4-5-thinking"); // Base model maps to thinking variant
     m.insert("claude-sonnet-4-5", "claude-sonnet-4-5");
     m.insert("claude-sonnet-4-5-thinking", "claude-sonnet-4-5-thinking");
 
@@ -55,22 +54,19 @@ static CLAUDE_TO_GEMINI: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|
     m
 });
 
-/// Maps model name to internal target.
-/// Returns None for unknown models - caller MUST handle this as an error.
-/// NO FALLBACKS - unknown model = error, not silent redirect.
-pub fn map_claude_model_to_gemini(input: &str) -> Option<String> {
+pub fn map_claude_model_to_gemini(input: &str) -> String {
     // 1. Check exact match in map
     if let Some(mapped) = CLAUDE_TO_GEMINI.get(input) {
-        return Some(mapped.to_string());
+        return mapped.to_string();
     }
 
-    // 2. Pass-through known prefixes (gemini-, -thinking, claude-) to support dynamic suffixes
-    if input.starts_with("gemini-") || input.starts_with("claude-") || input.contains("thinking") {
-        return Some(input.to_string());
+    // 2. Pass-through known prefixes (gemini-, -thinking) to support dynamic suffixes
+    if input.starts_with("gemini-") || input.contains("thinking") {
+        return input.to_string();
     }
 
-    // 3. Unknown model - NO FALLBACK, return None
-    None
+    // 3. Fallback to default
+    "claude-sonnet-4-5".to_string()
 }
 
 /// 获取所有内置支持的模型列表关键字
@@ -103,7 +99,7 @@ pub async fn get_all_dynamic_models(
 
     // [NEW] Issue #247: Dynamically generate all Image Gen Combinations
     let base = "gemini-3-pro-image";
-    let resolutions = ["", "-2k", "-4k"];
+    let resolutions = vec!["", "-2k", "-4k"];
     let ratios = ["", "-1x1", "-4x3", "-3x4", "-16x9", "-9x16", "-21x9"];
 
     for res in resolutions {
@@ -152,51 +148,36 @@ fn wildcard_match(pattern: &str, text: &str) -> bool {
 /// - `custom_mapping`: 用户自定义映射表
 ///
 /// # 返回
-/// Result with mapped model name or error for unknown models
-/// NO FALLBACKS - unknown model = error
+/// 映射后的目标模型名称
 pub fn resolve_model_route(
     original_model: &str,
     custom_mapping: &std::collections::HashMap<String, String>,
-) -> Result<String, String> {
+) -> String {
     // 1. 精确匹配 (最高优先级)
     if let Some(target) = custom_mapping.get(original_model) {
-        crate::modules::logger::log_info(&format!(
-            "[Router] 精确映射: {} -> {}",
-            original_model, target
-        ));
-        return Ok(target.clone());
+        tracing::info!("[Router] 精确映射: {} -> {}", original_model, target);
+        return target.clone();
     }
 
     // 2. 通配符匹配
     for (pattern, target) in custom_mapping.iter() {
         if pattern.contains('*') && wildcard_match(pattern, original_model) {
-            crate::modules::logger::log_info(&format!(
+            tracing::info!(
                 "[Router] 通配符映射: {} -> {} (规则: {})",
-                original_model, target, pattern
-            ));
-            return Ok(target.clone());
+                original_model,
+                target,
+                pattern
+            );
+            return target.clone();
         }
     }
 
-    // 3. 系统内置映射 - NO FALLBACK
-    match map_claude_model_to_gemini(original_model) {
-        Some(result) => {
-            if result != original_model {
-                crate::modules::logger::log_info(&format!(
-                    "[Router] 系统默认映射: {} -> {}",
-                    original_model, result
-                ));
-            }
-            Ok(result)
-        }
-        None => {
-            crate::modules::logger::log_warn(&format!(
-                "[Router] 未知模型，无映射规则: {}",
-                original_model
-            ));
-            Err(format!("Unknown model: '{}'. No mapping rule found. Add it to custom_mapping or use a supported model.", original_model))
-        }
+    // 3. 系统默认映射
+    let result = map_claude_model_to_gemini(original_model);
+    if result != original_model {
+        tracing::info!("[Router] 系统默认映射: {} -> {}", original_model, result);
     }
+    result
 }
 
 #[cfg(test)]
@@ -207,18 +188,20 @@ mod tests {
     fn test_model_mapping() {
         assert_eq!(
             map_claude_model_to_gemini("claude-3-5-sonnet-20241022"),
-            Some("claude-sonnet-4-5".to_string())
+            "claude-sonnet-4-5"
         );
         assert_eq!(
             map_claude_model_to_gemini("claude-opus-4"),
-            Some("claude-opus-4-5-thinking".to_string())
+            "claude-opus-4-5-thinking"
         );
-        // Test gemini pass-through
+        // Test gemini pass-through (should not be caught by "mini" rule)
         assert_eq!(
             map_claude_model_to_gemini("gemini-2.5-flash-mini-test"),
-            Some("gemini-2.5-flash-mini-test".to_string())
+            "gemini-2.5-flash-mini-test"
         );
-        // Unknown model returns None - NO FALLBACK
-        assert_eq!(map_claude_model_to_gemini("unknown-model"), None);
+        assert_eq!(
+            map_claude_model_to_gemini("unknown-model"),
+            "claude-sonnet-4-5"
+        );
     }
 }

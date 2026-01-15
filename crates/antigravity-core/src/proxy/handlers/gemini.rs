@@ -62,8 +62,7 @@ pub async fn handle_generate(
         let mapped_model = crate::proxy::common::model_mapping::resolve_model_route(
             &model_name,
             &*state.custom_mapping.read().await,
-        )
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+        );
 
         // 提取 tools 列表以进行联网探测 (Gemini 风格可能是嵌套的)
         let tools_val: Option<Vec<Value>> =

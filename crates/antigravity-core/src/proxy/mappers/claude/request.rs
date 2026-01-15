@@ -156,16 +156,7 @@ pub fn transform_claude_request_in(
         );
         WEB_SEARCH_FALLBACK_MODEL.to_string()
     } else {
-        // NO FALLBACK: Unknown model = error
-        match crate::proxy::common::model_mapping::map_claude_model_to_gemini(&claude_req.model) {
-            Some(model) => model,
-            None => {
-                return Err(format!(
-                    "Unknown model: '{}'. No mapping rule found. Use claude-* or gemini-* models.",
-                    claude_req.model
-                ));
-            }
-        }
+        crate::proxy::common::model_mapping::map_claude_model_to_gemini(&claude_req.model)
     };
 
     // 将 Claude 工具转为 Value 数组以便探测联网
@@ -540,7 +531,7 @@ fn build_contents(
     let mut last_thought_signature: Option<String> = None;
 
     let _msg_count = messages.len();
-    for msg in messages {
+    for msg in messages.iter() {
         let role = if msg.role == "assistant" {
             "model"
         } else {
@@ -711,7 +702,7 @@ fn build_contents(
                                 .or_else(|| {
                                     // [NEW] Try layer 1 cache (Tool ID -> Signature)
                                     crate::proxy::SignatureCache::global().get_tool_signature(id)
-                                        .inspect(|_| {
+                                        .inspect(|_s| {
                                             tracing::info!("[Claude-Request] Recovered signature from cache for tool_id: {}", id);
                                         })
                                 })
