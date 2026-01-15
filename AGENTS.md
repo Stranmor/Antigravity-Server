@@ -42,7 +42,7 @@
 - [x] Exclude `src-tauri/` from workspace (kept as read-only upstream reference) ✅ [2026-01-15]
 - [x] Update CI/CD for headless architecture ✅ [2026-01-15]
 - [ ] Create `ag` CLI that calls HTTP API
-- [ ] Full AIMD integration (restore from upstream)
+- [x] Full AIMD integration (restored from git history) ✅ [2026-01-15]
 
 ---
 

@@ -1,5 +1,6 @@
-// Common 模块 - 公共工具
+// Common utilities for proxy
 
+pub mod circuit_breaker;
 pub mod json_schema;
 pub mod model_mapping;
 pub mod utils;

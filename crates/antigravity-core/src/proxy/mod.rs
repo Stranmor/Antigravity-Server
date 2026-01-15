@@ -13,6 +13,12 @@ pub mod security;
 pub mod server;
 pub mod token_manager;
 
+// AIMD Predictive Rate Limiting System (restored 2026-01-15)
+pub mod adaptive_limit;
+pub mod health;
+pub mod prometheus;
+pub mod smart_prober;
+
 // Handler modules
 pub mod audio;
 pub mod common;
@@ -40,6 +46,12 @@ pub use server::{
 };
 pub use signature_cache::SignatureCache;
 pub use token_manager::TokenManager;
+
+// Re-export AIMD types
+pub use adaptive_limit::{AIMDController, AdaptiveLimitTracker, ProbeStrategy};
+pub use common::circuit_breaker::{CircuitBreakerManager, CircuitState};
+pub use health::HealthMonitor;
+pub use smart_prober::SmartProber;
 
 #[cfg(test)]
 pub mod tests;

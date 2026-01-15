@@ -67,6 +67,11 @@ sysinfo = "0.31"
 # Image processing (for icons, etc)
 image = "0.25"
 
+# AIMD Resilience System
+metrics = "0.23"
+metrics-exporter-prometheus = "0.15"
+parking_lot = "0.12"
+
 [features]
 default = ["custom_handlers"]
 # Enable Tauri-specific integrations (tray, etc)

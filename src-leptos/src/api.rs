@@ -115,12 +115,11 @@ pub mod commands {
     // ========== Config ==========
 
     pub async fn load_config() -> Result<AppConfig, String> {
-        // TODO: When config endpoint is implemented
-        Ok(AppConfig::default())
+        api_get("/config").await
     }
 
-    pub async fn save_config(_config: &AppConfig) -> Result<(), String> {
-        // TODO: When config endpoint is implemented
+    pub async fn save_config(config: &AppConfig) -> Result<(), String> {
+        let _: bool = api_post("/config", config).await?;
         Ok(())
     }
 
