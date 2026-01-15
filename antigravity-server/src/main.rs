@@ -24,7 +24,7 @@ use tracing_subscriber::FmtSubscriber;
 mod api;
 mod state;
 
-use antigravity_core::proxy::server::{AxumServer, ServerStartConfig};
+use antigravity_core::proxy::server::AxumServer;
 use state::AppState;
 
 const DEFAULT_PORT: u16 = 8045;
@@ -55,26 +55,22 @@ async fn main() -> Result<()> {
 
     let monitor = Arc::new(antigravity_core::proxy::ProxyMonitor::new());
 
-    let server_start_config = ServerStartConfig {
-        host: "127.0.0.1".to_string(),
-        port: initial_proxy_config.port,
-        token_manager: token_manager.clone(),
-        custom_mapping: initial_proxy_config.custom_mapping.clone(),
-        upstream_proxy: initial_proxy_config.upstream_proxy.clone(),
-        security_config: antigravity_core::proxy::ProxySecurityConfig::from_proxy_config(
-            &initial_proxy_config,
-        ),
-        zai_config: initial_proxy_config.zai.clone(),
-        monitor: monitor.clone(),
-        experimental_config: initial_proxy_config.experimental.clone(),
-    };
+    // Create AxumServer for hot reload capabilities (without starting listener)
+    let axum_server = Arc::new(AxumServer::new(
+        initial_proxy_config.custom_mapping.clone(),
+        initial_proxy_config.upstream_proxy.clone(),
+        antigravity_core::proxy::ProxySecurityConfig::from_proxy_config(&initial_proxy_config),
+        initial_proxy_config.zai.clone(),
+    ));
 
-    let (axum_server_instance, _server_handle) = AxumServer::start(server_start_config)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to start Axum server: {}", e))?;
-    let axum_server = Arc::new(axum_server_instance);
+    let state = AppState::new_with_components(
+        token_manager.clone(),
+        monitor.clone(),
+        initial_proxy_config.clone(),
+        axum_server.clone(),
+    )
+    .await?;
 
-    let state = AppState::new(axum_server.clone()).await?;
     info!("✅ Application state initialized");
     info!("📊 {} accounts loaded", state.get_account_count());
 

@@ -28,34 +28,18 @@ pub struct AppStateInner {
 }
 
 impl AppState {
-    pub async fn new(axum_server: Arc<AxumServer>) -> Result<Self> {
-        let data_dir = account::get_data_dir()
-            .map_err(|e| anyhow::anyhow!("Failed to get data directory: {}", e))?;
-
-        tracing::info!("📁 Data directory: {:?}", data_dir);
-
-        let token_manager = Arc::new(TokenManager::new(data_dir.clone()));
-
-        match token_manager.load_accounts().await {
-            Ok(count) => {
-                tracing::info!("📊 Loaded {} accounts into token manager", count);
-            }
-            Err(e) => {
-                tracing::warn!("⚠️ Could not load accounts: {}", e);
-            }
-        }
-
-        let monitor = Arc::new(ProxyMonitor::new());
-
-        let proxy_config = Arc::new(RwLock::new(
-            load_proxy_config(&data_dir).unwrap_or_default(),
-        ));
-
+    /// Create AppState with pre-initialized components (for headless mode)
+    pub async fn new_with_components(
+        token_manager: Arc<TokenManager>,
+        monitor: Arc<ProxyMonitor>,
+        proxy_config: ProxyConfig,
+        axum_server: Arc<AxumServer>,
+    ) -> Result<Self> {
         Ok(Self {
             inner: Arc::new(AppStateInner {
                 token_manager,
                 monitor,
-                proxy_config,
+                proxy_config: Arc::new(RwLock::new(proxy_config)),
                 axum_server,
             }),
         })
@@ -147,21 +131,4 @@ pub fn get_model_quota(account: &Account, model_prefix: &str) -> Option<i32> {
             .find(|m| m.name.to_lowercase().contains(&model_prefix.to_lowercase()))
             .map(|m| m.percentage)
     })
-}
-
-fn load_proxy_config(data_dir: &std::path::Path) -> Option<ProxyConfig> {
-    let config_path = data_dir.join("config.json");
-
-    if !config_path.exists() {
-        return None;
-    }
-
-    let content = std::fs::read_to_string(&config_path).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&content).ok()?;
-
-    if let Some(proxy) = value.get("proxy") {
-        serde_json::from_value(proxy.clone()).ok()
-    } else {
-        None
-    }
 }

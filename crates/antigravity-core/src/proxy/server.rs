@@ -56,6 +56,23 @@ pub struct AxumServer {
 }
 
 impl AxumServer {
+    /// Create a new AxumServer for hot-reload capabilities without starting a listener.
+    /// Use this with headless server that manages its own listener.
+    pub fn new(
+        custom_mapping: std::collections::HashMap<String, String>,
+        upstream_proxy: antigravity_shared::utils::http::UpstreamProxyConfig,
+        security_config: crate::proxy::ProxySecurityConfig,
+        zai_config: antigravity_shared::proxy::config::ZaiConfig,
+    ) -> Self {
+        Self {
+            shutdown_tx: None,
+            custom_mapping: Arc::new(tokio::sync::RwLock::new(custom_mapping)),
+            proxy_state: Arc::new(tokio::sync::RwLock::new(upstream_proxy)),
+            security_state: Arc::new(RwLock::new(security_config)),
+            zai_state: Arc::new(RwLock::new(zai_config)),
+        }
+    }
+
     pub async fn update_mapping(&self, config: &antigravity_shared::proxy::config::ProxyConfig) {
         {
             let mut m = self.custom_mapping.write().await;
