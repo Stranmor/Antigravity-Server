@@ -30,7 +30,7 @@ pub async fn handle_detect_model(
     // 3. Construct response
     let mut response = json!({
         "model": model_name,
-        "mapped_model": &mapped_model,
+        "mapped_model": mapped_model,
         "type": config.request_type,
         "features": {
             "has_web_search": config.inject_google_search,

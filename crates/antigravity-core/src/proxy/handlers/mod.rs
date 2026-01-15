@@ -6,4 +6,4 @@ pub mod claude;
 pub mod common;
 pub mod gemini;
 pub mod mcp;
-pub mod openai; // 音频转录处理器 (PR #311)
+pub mod openai;

@@ -50,13 +50,39 @@ rsync -av --delete \
     "$UPSTREAM_PROXY/common/" \
     "$OUR_PROXY/common/"
 
-# 6. Get last upstream commit for tracking
+# 6. Sync handlers (request handlers)
+echo ""
+echo "📦 Syncing handlers/..."
+rsync -av --delete \
+    "$UPSTREAM_PROXY/handlers/" \
+    "$OUR_PROXY/handlers/"
+
+# 7. Post-processing: Fix import paths
+echo ""
+echo "🔧 Fixing import paths..."
+
+# Replace antigravity_core::modules::logger with tracing
+find "$OUR_PROXY" -name "*.rs" -exec sed -i \
+    's/antigravity_core::modules::logger::log_info(\&format!/tracing::info!/g' {} \;
+find "$OUR_PROXY" -name "*.rs" -exec sed -i \
+    's/antigravity_core::modules::logger::log_error(\&format!/tracing::error!/g' {} \;
+find "$OUR_PROXY" -name "*.rs" -exec sed -i \
+    's/antigravity_core::modules::logger::log_warn(\&format!/tracing::warn!/g' {} \;
+find "$OUR_PROXY" -name "*.rs" -exec sed -i \
+    's/antigravity_core::modules::logger::log_debug(\&format!/tracing::debug!/g' {} \;
+
+# Fix common pattern where sed leaves broken ))
+find "$OUR_PROXY" -name "*.rs" -exec sed -i \
+    's/tracing::info!\($/tracing::info!(/g' {} \;
+
+# 8. Get last upstream commit for tracking
 UPSTREAM_COMMIT=$(cd "$PROJECT_ROOT" && git log -1 --format="%H %s" upstream/main 2>/dev/null || echo "unknown")
 echo ""
 echo "✅ Sync complete!"
 echo "   Upstream commit: $UPSTREAM_COMMIT"
 echo ""
 echo "⚠️  Remember to:"
-echo "   1. Fix any import paths (crate::proxy:: -> crate::proxy::)"
-echo "   2. Run 'cargo check -p antigravity-core' to verify"
+echo "   1. Run 'cargo check -p antigravity-core' to verify"
+echo "   2. Review clippy warnings"
 echo "   3. Commit the changes"
+
