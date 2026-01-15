@@ -2,12 +2,12 @@
 # Vendor Overlay Sync Script
 # Syncs upstream src-tauri proxy code to our crates/antigravity-core
 #
-# Usage: ./scripts/sync-upstream.sh
+# Usage: ./scripts/sync-upstream.sh [--check-only]
 #
 # This script maintains the Vendor Overlay architecture:
-# - src-tauri/ is upstream-only (read-only reference)
-# - crates/antigravity-core/src/proxy/ contains our adapted copy
-# - Our custom logic lives in files prefixed with our_ or aimd_
+# - src-tauri/ is upstream-only (read-only reference, excluded from workspace)
+# - crates/antigravity-core/src/proxy/ contains our production copy
+# - Our custom logic lives in dedicated files (not synced from upstream)
 
 set -euo pipefail
 
@@ -17,72 +17,156 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 UPSTREAM_PROXY="$PROJECT_ROOT/src-tauri/src/proxy"
 OUR_PROXY="$PROJECT_ROOT/crates/antigravity-core/src/proxy"
 
-echo "🔄 Syncing upstream proxy code..."
+# Files/directories we maintain ourselves (never overwritten by sync)
+PROTECTED_FILES=(
+    "mod.rs"           # Our module exports differ from upstream
+    "server.rs"        # Our Axum server structure
+    "token_manager.rs" # Our adapted token_manager
+    "monitor.rs"       # Our monitor implementation
+)
+
+CHECK_ONLY=false
+if [[ "${1:-}" == "--check-only" ]]; then
+    CHECK_ONLY=true
+fi
+
+echo "🔄 Antigravity Vendor Overlay Sync"
 echo "   From: $UPSTREAM_PROXY"
 echo "   To:   $OUR_PROXY"
-
-# 1. Sync mappers (core transformation logic)
 echo ""
-echo "📦 Syncing mappers..."
-rsync -av --delete \
-    "$UPSTREAM_PROXY/mappers/" \
-    "$OUR_PROXY/mappers/"
 
-# 2. Sync session_manager (session tracking)
+# Verify upstream exists
+if [[ ! -d "$UPSTREAM_PROXY" ]]; then
+    echo "❌ Error: Upstream proxy directory not found!"
+    echo "   Expected: $UPSTREAM_PROXY"
+    echo "   Run 'git fetch upstream' first"
+    exit 1
+fi
+
+# Show upstream version
+UPSTREAM_COMMIT=$(cd "$PROJECT_ROOT" && git log -1 --format="%h %s" upstream/main 2>/dev/null || echo "unknown")
+echo "📌 Upstream HEAD: $UPSTREAM_COMMIT"
 echo ""
-echo "📦 Syncing session_manager.rs..."
-cp "$UPSTREAM_PROXY/session_manager.rs" "$OUR_PROXY/"
 
-# 3. Sync signature_cache (thinking signatures)
+if $CHECK_ONLY; then
+    echo "🔍 Check-only mode: showing what would be synced"
+    echo ""
+fi
+
+sync_directory() {
+    local src="$1"
+    local dst="$2"
+    local name="$3"
+    
+    if [[ ! -d "$src" ]]; then
+        echo "⚠️  Skipping $name (not found in upstream)"
+        return
+    fi
+    
+    echo "📦 Syncing $name..."
+    if $CHECK_ONLY; then
+        rsync -avn --delete "$src/" "$dst/" 2>/dev/null | grep -v "^$" | head -20 || true
+    else
+        rsync -av --delete "$src/" "$dst/"
+    fi
+}
+
+sync_file() {
+    local src="$1"
+    local dst="$2"
+    local name="$3"
+    
+    if [[ ! -f "$src" ]]; then
+        echo "⚠️  Skipping $name (not found in upstream)"
+        return
+    fi
+    
+    echo "📦 Syncing $name..."
+    if $CHECK_ONLY; then
+        if [[ -f "$dst" ]]; then
+            if ! diff -q "$src" "$dst" >/dev/null 2>&1; then
+                echo "   Would update: $dst"
+            else
+                echo "   No changes"
+            fi
+        else
+            echo "   Would create: $dst"
+        fi
+    else
+        cp "$src" "$dst"
+    fi
+}
+
+# 1. Sync mappers (core transformation logic - this is the gold)
+sync_directory "$UPSTREAM_PROXY/mappers" "$OUR_PROXY/mappers" "mappers"
+
+# 2. Sync common utilities
+sync_directory "$UPSTREAM_PROXY/common" "$OUR_PROXY/common" "common"
+
+# 3. Sync handlers (request handlers)
+sync_directory "$UPSTREAM_PROXY/handlers" "$OUR_PROXY/handlers" "handlers"
+
+# 4. Sync middleware
+sync_directory "$UPSTREAM_PROXY/middleware" "$OUR_PROXY/middleware" "middleware"
+
+# 5. Sync providers (z.ai, etc.)
+sync_directory "$UPSTREAM_PROXY/providers" "$OUR_PROXY/providers" "providers"
+
+# 6. Sync upstream (client)
+sync_directory "$UPSTREAM_PROXY/upstream" "$OUR_PROXY/upstream" "upstream"
+
+# 7. Sync audio
+sync_directory "$UPSTREAM_PROXY/audio" "$OUR_PROXY/audio" "audio"
+
+# 8. Sync individual files
 echo ""
-echo "📦 Syncing signature_cache.rs..."
-cp "$UPSTREAM_PROXY/signature_cache.rs" "$OUR_PROXY/"
+sync_file "$UPSTREAM_PROXY/session_manager.rs" "$OUR_PROXY/session_manager.rs" "session_manager.rs"
+sync_file "$UPSTREAM_PROXY/signature_cache.rs" "$OUR_PROXY/signature_cache.rs" "signature_cache.rs"
+sync_file "$UPSTREAM_PROXY/rate_limit.rs" "$OUR_PROXY/rate_limit.rs" "rate_limit.rs"
+sync_file "$UPSTREAM_PROXY/project_resolver.rs" "$OUR_PROXY/project_resolver.rs" "project_resolver.rs"
+sync_file "$UPSTREAM_PROXY/security.rs" "$OUR_PROXY/security.rs" "security.rs"
+sync_file "$UPSTREAM_PROXY/sticky_config.rs" "$OUR_PROXY/sticky_config.rs" "sticky_config.rs"
+sync_file "$UPSTREAM_PROXY/zai_vision_mcp.rs" "$OUR_PROXY/zai_vision_mcp.rs" "zai_vision_mcp.rs"
+sync_file "$UPSTREAM_PROXY/zai_vision_tools.rs" "$OUR_PROXY/zai_vision_tools.rs" "zai_vision_tools.rs"
 
-# 4. Copy token_manager as reference (we have our own implementation)
+# 9. Copy token_manager as reference (we have our own implementation)
 echo ""
-echo "📦 Copying token_manager.rs as reference..."
-cp "$UPSTREAM_PROXY/token_manager.rs" "$OUR_PROXY/token_manager_upstream.rs"
+echo "📦 Copying token_manager.rs as reference copy..."
+if ! $CHECK_ONLY; then
+    cp "$UPSTREAM_PROXY/token_manager.rs" "$OUR_PROXY/token_manager_upstream.rs"
+fi
 
-# 5. Sync common utilities
-echo ""
-echo "📦 Syncing common/..."
-rsync -av --delete \
-    "$UPSTREAM_PROXY/common/" \
-    "$OUR_PROXY/common/"
+if $CHECK_ONLY; then
+    echo ""
+    echo "✅ Check complete. Run without --check-only to apply changes."
+    exit 0
+fi
 
-# 6. Sync handlers (request handlers)
-echo ""
-echo "📦 Syncing handlers/..."
-rsync -av --delete \
-    "$UPSTREAM_PROXY/handlers/" \
-    "$OUR_PROXY/handlers/"
-
-# 7. Post-processing: Fix import paths
+# 10. Post-processing: Fix import paths
 echo ""
 echo "🔧 Fixing import paths..."
 
-# Replace antigravity_core::modules::logger with tracing
+# Replace crate::modules::logger calls with tracing macros
 find "$OUR_PROXY" -name "*.rs" -exec sed -i \
-    's/antigravity_core::modules::logger::log_info(\&format!/tracing::info!/g' {} \;
+    's/crate::modules::logger::log_info(&format!/tracing::info!/g' {} \;
 find "$OUR_PROXY" -name "*.rs" -exec sed -i \
-    's/antigravity_core::modules::logger::log_error(\&format!/tracing::error!/g' {} \;
+    's/crate::modules::logger::log_error(&format!/tracing::error!/g' {} \;
 find "$OUR_PROXY" -name "*.rs" -exec sed -i \
-    's/antigravity_core::modules::logger::log_warn(\&format!/tracing::warn!/g' {} \;
+    's/crate::modules::logger::log_warn(&format!/tracing::warn!/g' {} \;
 find "$OUR_PROXY" -name "*.rs" -exec sed -i \
-    's/antigravity_core::modules::logger::log_debug(\&format!/tracing::debug!/g' {} \;
+    's/crate::modules::logger::log_debug(&format!/tracing::debug!/g' {} \;
 
-# Fix common pattern where sed leaves broken ))
-find "$OUR_PROXY" -name "*.rs" -exec sed -i \
-    's/tracing::info!\($/tracing::info!(/g' {} \;
+# Replace use crate:: with use super:: in submodules (if needed)
+# This is context-dependent, so we skip automatic replacement
 
-# 8. Get last upstream commit for tracking
-UPSTREAM_COMMIT=$(cd "$PROJECT_ROOT" && git log -1 --format="%H %s" upstream/main 2>/dev/null || echo "unknown")
 echo ""
+echo "═══════════════════════════════════════════════════════════"
 echo "✅ Sync complete!"
-echo "   Upstream commit: $UPSTREAM_COMMIT"
+echo "   Upstream: $UPSTREAM_COMMIT"
 echo ""
-echo "⚠️  Remember to:"
-echo "   1. Run 'cargo check -p antigravity-core' to verify"
-echo "   2. Review clippy warnings"
-echo "   3. Commit the changes"
-
+echo "🔍 Next steps:"
+echo "   1. cargo check -p antigravity-core"
+echo "   2. cargo clippy -p antigravity-core -- -D warnings"  
+echo "   3. Review changes: git diff crates/antigravity-core/src/proxy"
+echo "   4. git add -A && git commit -m \"feat(sync): upstream sync\""
+echo "═══════════════════════════════════════════════════════════"

@@ -34,14 +34,15 @@
 
 **Migration Tasks:**
 - [x] Create `antigravity-server` binary (Axum + static files + proxy logic) ✅
-- [ ] Move proxy handlers from `src-tauri` to `antigravity-server`
+- [x] Move proxy handlers from `src-tauri` to `antigravity-core` ✅
 - [x] Add REST API endpoints matching Tauri IPC commands ✅
 - [x] Serve `src-leptos/dist/` as static files ✅
 - [x] Update systemd service to run `antigravity-server` ✅
 - [x] Frontend uses HTTP API instead of Tauri IPC ✅
+- [x] Exclude `src-tauri/` from workspace (kept as read-only upstream reference) ✅ [2026-01-15]
+- [x] Update CI/CD for headless architecture ✅ [2026-01-15]
 - [ ] Create `ag` CLI that calls HTTP API
-- [ ] Integrate proxy logic from `antigravity-core`
-- [ ] Delete `src-tauri/` after verification
+- [ ] Full AIMD integration (restore from upstream)
 
 ---
 

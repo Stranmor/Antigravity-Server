@@ -4,7 +4,7 @@ set shell := ["bash", "-c"]
 default:
     @just --list
 
-# ============ НОВАЯ АРХИТЕКТУРА: Headless Server + WebUI ============
+# ============ HEADLESS SERVER (Production Target) ============
 
 # Собрать headless сервер (рекомендуемый способ)
 build-server:
@@ -40,22 +40,12 @@ status:
     @echo "API Status:"
     curl -s http://localhost:8045/api/status || echo "Server not running"
 
-# ============ LEGACY: Tauri Desktop App (deprecated) ============
-
-# Собрать Tauri app (устаревший способ)
-build-tauri:
-    @echo "⚠️  WARNING: Tauri app is deprecated. Use 'just build-server' instead."
-    @echo "📦 Building Tauri Release Binary..."
-    cargo tauri build
-    @echo "✅ Build complete: target/release/antigravity_tools"
-
 # ============ ОБЩИЕ КОМАНДЫ ============
 
 # Полная очистка кешей
 clean:
     @echo "🧹 Cleaning everything..."
     cargo clean
-    rm -rf src-tauri/target
     rm -rf src-leptos/dist
     rm -rf src-leptos/target
     @echo "✨ Sparkle clean"
@@ -66,12 +56,13 @@ build-frontend:
     cd src-leptos && trunk build --release
     @echo "✅ Frontend built: src-leptos/dist/"
 
-# Обновить upstream (fetch + merge, без reset!)
+# Синхронизировать upstream proxy код в antigravity-core
 sync-upstream:
-    @echo "🔄 Syncing with Upstream..."
+    @echo "🔄 Syncing upstream proxy code..."
     git fetch upstream
-    git merge upstream/main
-    @echo "✅ Synced. If conflicts occurred, resolve them manually."
+    ./scripts/sync-upstream.sh
+    cargo check -p antigravity-core
+    @echo "✅ Sync complete. Review changes and commit."
 
 # Линтинг
 lint:
@@ -80,3 +71,7 @@ lint:
 # Тесты
 test:
     cargo test --workspace
+
+# Проверка компиляции
+check:
+    cargo check --workspace

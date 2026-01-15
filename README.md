@@ -85,14 +85,14 @@ antigravity-manager/
 ├── crates/
 │   ├── antigravity-core/      # 🧩 Shared business logic
 │   │   ├── proxy/             #    Protocol handlers, mappers, routing
-│   │   ├── accounts/          #    OAuth, token management
-│   │   └── models/            #    Model registry, validation
-│   └── antigravity-shared/    # 📋 Common types & utilities
+│   │   ├── modules/           #    Account, OAuth, quota management
+│   │   └── models/            #    Domain types, validation
+│   └── antigravity-shared/    # 📋 Common types & DTOs
 │
-├── antigravity-server/        # 🖥️ Headless daemon (VPS deployment)
+├── antigravity-server/        # 🖥️ Headless daemon (PRODUCTION TARGET)
 ├── antigravity-vps-cli/       # 🔧 Remote management CLI
-├── src-tauri/                 # 🖼️ Desktop app (Tauri v2)
-└── src-leptos/                # 🌐 WASM UI (Leptos)
+├── src-leptos/                # 🌐 Leptos WASM UI (browser)
+└── src-tauri/                 # 📚 Upstream reference (read-only)
 ```
 
 ### Crate Dependency Graph
@@ -100,7 +100,6 @@ antigravity-manager/
 graph TD
     CLI[antigravity-vps-cli] --> CORE
     SERVER[antigravity-server] --> CORE
-    TAURI[src-tauri] --> CORE
     CORE[antigravity-core] --> SHARED[antigravity-shared]
     LEPTOS[src-leptos] --> SHARED
 ```
@@ -109,30 +108,31 @@ graph TD
 
 ## 🚀 Installation
 
-### Option A: Headless Server (VPS/Docker)
+### Option A: Headless Server (Recommended)
 
 ```bash
 # Clone & build
 git clone https://github.com/Stranmor/Antigravity-Manager.git
 cd Antigravity-Manager
-cargo build --release -p antigravity-server
+
+# Build frontend + server
+just build-server
 
 # Run daemon
 ./target/release/antigravity-server
-# → API: http://0.0.0.0:8045
-# → WebUI: http://0.0.0.0:8045/ui
+# → API: http://localhost:8045/v1
+# → WebUI: http://localhost:8045
 ```
 
-### Option B: Desktop App (Tauri)
+### Option B: Development Mode
 
 ```bash
-# Prerequisites: Rust, Node.js, Trunk
+# Prerequisites: Rust, Trunk
 cargo install trunk
 rustup target add wasm32-unknown-unknown
 
-# Build & run
-cd src-leptos && trunk build --release
-cd ../src-tauri && cargo tauri dev
+# Run with hot reload
+just run-server
 ```
 
 ### Option C: Homebrew (macOS/Linux)
