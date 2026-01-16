@@ -18,12 +18,25 @@ UPSTREAM_PROXY="$PROJECT_ROOT/src-tauri/src/proxy"
 OUR_PROXY="$PROJECT_ROOT/crates/antigravity-core/src/proxy"
 
 # Files/directories we maintain ourselves (never overwritten by sync)
+# These are excluded from rsync --delete to prevent accidental removal
 PROTECTED_FILES=(
-    "mod.rs"           # Our module exports differ from upstream
-    "server.rs"        # Our Axum server structure
-    "token_manager.rs" # Our adapted token_manager
-    "monitor.rs"       # Our monitor implementation
+    "mod.rs"              # Our module exports differ from upstream
+    "server.rs"           # Our Axum server structure
+    "token_manager.rs"    # Our adapted token_manager
+    "monitor.rs"          # Our monitor implementation
+    "circuit_breaker.rs"  # Our AIMD circuit breaker (upstream deleted theirs)
 )
+
+# Build rsync exclude arguments from PROTECTED_FILES
+build_exclude_args() {
+    local exclude_args=""
+    for file in "${PROTECTED_FILES[@]}"; do
+        exclude_args="$exclude_args --exclude=$file"
+    done
+    echo "$exclude_args"
+}
+
+EXCLUDE_ARGS=$(build_exclude_args)
 
 CHECK_ONLY=false
 if [[ "${1:-}" == "--check-only" ]]; then
@@ -65,9 +78,11 @@ sync_directory() {
     
     echo "📦 Syncing $name..."
     if $CHECK_ONLY; then
-        rsync -avn --delete "$src/" "$dst/" 2>/dev/null | grep -v "^$" | head -20 || true
+        # shellcheck disable=SC2086
+        rsync -avn --delete $EXCLUDE_ARGS "$src/" "$dst/" 2>/dev/null | grep -v "^$" | head -20 || true
     else
-        rsync -av --delete "$src/" "$dst/"
+        # shellcheck disable=SC2086
+        rsync -av --delete $EXCLUDE_ARGS "$src/" "$dst/"
     fi
 }
 
@@ -146,15 +161,26 @@ fi
 echo ""
 echo "🔧 Fixing import paths..."
 
-# Replace crate::modules::logger calls with tracing macros
+# Replace logger calls with tracing macros
+# Handle both crate::modules::logger and antigravity_core::modules::logger patterns
+# Key fix: remove &format!( and convert to direct tracing macro calls
+
+# Step 1: Replace log_info/error/warn/debug patterns
+for pattern in "crate::modules::logger" "antigravity_core::modules::logger"; do
+    find "$OUR_PROXY" -name "*.rs" -exec sed -i \
+        "s/${pattern}::log_info(\&format!/tracing::info!/g" {} \;
+    find "$OUR_PROXY" -name "*.rs" -exec sed -i \
+        "s/${pattern}::log_error(\&format!/tracing::error!/g" {} \;
+    find "$OUR_PROXY" -name "*.rs" -exec sed -i \
+        "s/${pattern}::log_warn(\&format!/tracing::warn!/g" {} \;
+    find "$OUR_PROXY" -name "*.rs" -exec sed -i \
+        "s/${pattern}::log_debug(\&format!/tracing::debug!/g" {} \;
+done
+
+# Step 2: Fix trailing )); which should be just ); after tracing macro conversion
+# This handles the case where format!(...) was followed by ));
 find "$OUR_PROXY" -name "*.rs" -exec sed -i \
-    's/crate::modules::logger::log_info(&format!/tracing::info!/g' {} \;
-find "$OUR_PROXY" -name "*.rs" -exec sed -i \
-    's/crate::modules::logger::log_error(&format!/tracing::error!/g' {} \;
-find "$OUR_PROXY" -name "*.rs" -exec sed -i \
-    's/crate::modules::logger::log_warn(&format!/tracing::warn!/g' {} \;
-find "$OUR_PROXY" -name "*.rs" -exec sed -i \
-    's/crate::modules::logger::log_debug(&format!/tracing::debug!/g' {} \;
+    's/tracing::\(info\|error\|warn\|debug\)!(\(.*\)));/tracing::\1!(\2);/g' {} \;
 
 # Replace use crate:: with use super:: in submodules (if needed)
 # This is context-dependent, so we skip automatic replacement

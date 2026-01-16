@@ -5,7 +5,7 @@ use reqwest::{header, Client, Response, StatusCode};
 use serde_json::Value;
 use tokio::time::Duration;
 
-// Cloud Code v1internal API (fallback order: prod → daily)
+// Cloud Code v1internal endpoints (fallback order: prod → daily)
 // 优先使用稳定的 prod 端点，避免影响缓存命中率
 const V1_INTERNAL_BASE_URL_PROD: &str = "https://cloudcode-pa.googleapis.com/v1internal";
 const V1_INTERNAL_BASE_URL_DAILY: &str =
