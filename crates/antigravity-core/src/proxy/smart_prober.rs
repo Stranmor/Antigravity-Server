@@ -8,7 +8,7 @@
 //! - **Delayed Hedge**: Launch secondary request after P95 latency
 //! - **Immediate Hedge**: Parallel requests when near limit
 
-use crate::proxy::adaptive_limit::{AdaptiveLimitManager, ProbeStrategy};
+use super::adaptive_limit::{AdaptiveLimitManager, ProbeStrategy};
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;

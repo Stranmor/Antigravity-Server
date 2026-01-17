@@ -78,7 +78,7 @@ pub enum ProbeStrategy {
 }
 
 impl ProbeStrategy {
-    /// Determine probe strategy based on usage ratio
+    /// Determine probe strategy based on current state
     pub fn from_usage_ratio(ratio: f64) -> Self {
         match ratio {
             r if r < 0.70 => ProbeStrategy::None,
@@ -278,6 +278,26 @@ impl AdaptiveLimitTracker {
         }
     }
 
+    /// Record a general error for account
+    pub fn record_error(&self, status_code: u16) {
+        // For now, only 429 triggers a full penalize
+        // Other errors (5xx, 401, 403) might indicate temporary issues or configuration problems
+        // We still want to reset consecutive successes
+        self.consecutive_above_threshold.store(0, Ordering::Relaxed);
+
+        if status_code == 429 {
+            self.record_429();
+        } else if (500..600).contains(&status_code) {
+            // For 5xx errors, we might want to temporarily reduce the limit
+            // but not as aggressively as a 429. For now, just reset success counter.
+            // Future: Implement a more nuanced 5xx handling.
+            tracing::warn!(
+                "Received 5xx error ({}). Resetting AIMD success counter.",
+                status_code
+            );
+        }
+    }
+
     /// Record a 429 error - immediately contract limit
     pub fn record_429(&self) {
         self.maybe_reset_minute();
@@ -427,6 +447,11 @@ impl AdaptiveLimitManager {
     /// Record 429 for account
     pub fn record_429(&self, account_id: &str) {
         self.get_or_create(account_id).record_429();
+    }
+
+    /// Record a general error for account
+    pub fn record_error(&self, account_id: &str, status_code: u16) {
+        self.get_or_create(account_id).record_error(status_code);
     }
 
     /// Force expand after successful probe
