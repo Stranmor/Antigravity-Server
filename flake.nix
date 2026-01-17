@@ -3,8 +3,8 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    rust-overlay.url = "github:oxalica/rust-overlay";
-    flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay.url = "github:oxalica/rust-overlay/master";
+    flake-utils.url = "github:numtide/flake-utils/master";
   };
 
   outputs = { self, nixpkgs, rust-overlay, flake-utils, ... }:
@@ -51,7 +51,6 @@
             echo "🚀 Loading Antigravity Container Image into Podman..."
             # Load the image into Podman
             podman load -i "$local_image_path"
-
             echo "📄 Generating Systemd Quadlet file..."
             # Generate the Quadlet file
             local_quadlet_path=$(nix build .#antigravity-manager-quadlet --json --no-link | jq -r '.[0].outputs.out')
@@ -65,7 +64,7 @@
             systemctl --user enable --now antigravity-manager.service
             systemctl --user restart antigravity-manager.service
             echo "✅ Antigravity Manager Container Service Started"
-            echo "🌐 WebUI available at: http://localhost:8045/"
+            echo "🌐 WebUI available at: http://localhost:8046/"
           '';
 
           run-server = mkScript "run-server" ''
@@ -127,7 +126,7 @@
 
         antigravity-server-bin = pkgs.rustPlatform.buildRustPackage {
           pname = "antigravity-server";
-          version = self.version; # Use the version from flake.nix metadata
+          version = self.rev or "dirty"; # Use the version from flake.nix metadata
           src = ./.; # The entire repository is the source
 
           cargoLock = {
@@ -148,34 +147,31 @@
         antigravity-server-image = pkgs.dockerTools.buildLayeredImage {
           name = "antigravity-manager";
           tag = "latest";
-          created = "2026-01-17T00:00:00Z"; # Fixed date for reproducibility
+          created = "2026-01-17T00:00:00Z";
 
-          from = "debian:bullseye-slim"; # Base image for runtime
-
-          # The Containerfile from the current directory
-          dockerfile = ./Containerfile;
-
-          # Context for the Dockerfile build, includes everything
-          # This should ideally be a filtered source to reduce context size
-          # For now, we use the entire repo as context to simplify
-          buildContext = ./.;
-
-          # These inputs represent the final binaries and static assets
-          # that the Dockerfile expects to find in the build context
-          # The Dockerfile build will COPY them from the builder stage
-          # and also from the build context directly (e.g. src-leptos/dist)
-          # So we need to ensure they are built and available.
-          # For buildLayeredImage, this ensures the binaries are part of the image
-          # and also satisfies the Dockerfile's expectations for COPYing from context.
           contents = [
             antigravity-server-bin
             frontendDist
+            pkgs.cacert # Essential for HTTPS requests
+            pkgs.bashInteractive # For shell scripts if needed
           ];
 
-          # We need to ensure the Rust toolchain is available for the builder stage in Dockerfile
-          # This is implicitly handled by the Dockerfile's `FROM rust:1.92-slim-bullseye`
-          # but we might need to specify nativeBuildInputs if Nix was building the image
-          # directly without Dockerfile. Given we use a Dockerfile, it manages its own build env.
+          config = {
+            Cmd = [ "${antigravity-server-bin}/bin/antigravity-server" ];
+            Env = [
+              "RUST_LOG=info"
+              "ANTIGRAVITY_PORT=8046" # Updated to 8046
+              "ANTIGRAVITY_STATIC_DIR=/app/src-leptos/dist"
+            ];
+            WorkingDir = "/app";
+            ExposedPorts = {
+              "8046/tcp" = {};
+            };
+          };
+
+          extraCommands = ''
+            mkdir -p /app/.antigravity
+          '';
         };
 
         antigravity-manager-quadlet = pkgs.writeText "antigravity-manager.container" ''
@@ -186,7 +182,7 @@
           # Exec=/usr/local/bin/antigravity-server
 
           # Map container port 8045 to host port 8045
-          Port=8045:8045
+          Port=8046:8046
 
           # Mount host's ~/.antigravity directory into the container
           # This is where the server stores its data (db, logs etc.)
@@ -197,7 +193,7 @@
           # ANTIGRAVITY_PORT should match the Port mapping
           # ANTIGRAVITY_STATIC_DIR points to the static files within the container
           Environment=RUST_LOG=info
-          Environment=ANTIGRAVITY_PORT=8045
+          Environment=ANTIGRAVITY_PORT=8046
           Environment=ANTIGRAVITY_STATIC_DIR=/app/src-leptos/dist
 
           # Restart the container always if it exits

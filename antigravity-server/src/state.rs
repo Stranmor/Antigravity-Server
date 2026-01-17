@@ -33,12 +33,9 @@ pub struct AppStateInner {
     pub zai_config: Arc<RwLock<antigravity_shared::proxy::config::ZaiConfig>>,
     pub experimental_config: Arc<RwLock<antigravity_shared::proxy::config::ExperimentalConfig>>,
     // AIMD Predictive Rate Limiting System
-    // TODO: Wire these into handlers for pre-request/post-request feedback
-    #[allow(dead_code)]
+    // Wired into proxy router via build_proxy_router_with_shared_state
     pub adaptive_limits: Arc<AdaptiveLimitManager>,
-    #[allow(dead_code)]
     pub health_monitor: Arc<HealthMonitor>,
-    #[allow(dead_code)]
     pub circuit_breaker: Arc<CircuitBreakerManager>,
 }
 
@@ -188,18 +185,15 @@ impl AppState {
         }
     }
 
-    // AIMD accessors (reserved for future handler integration)
-    #[allow(dead_code)]
+    // AIMD accessors (used by /api/resilience/* endpoints)
     pub fn adaptive_limits(&self) -> &Arc<AdaptiveLimitManager> {
         &self.inner.adaptive_limits
     }
 
-    #[allow(dead_code)]
     pub fn health_monitor(&self) -> &Arc<HealthMonitor> {
         &self.inner.health_monitor
     }
 
-    #[allow(dead_code)]
     pub fn circuit_breaker(&self) -> &Arc<CircuitBreakerManager> {
         &self.inner.circuit_breaker
     }

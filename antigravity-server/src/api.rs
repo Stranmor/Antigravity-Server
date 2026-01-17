@@ -33,6 +33,10 @@ pub fn router() -> Router<AppState> {
         // Config
         .route("/config", get(get_config))
         .route("/config", post(save_config))
+        // Resilience (AIMD, Circuit Breaker, Health)
+        .route("/resilience/health", get(get_health_status))
+        .route("/resilience/circuits", get(get_circuit_status))
+        .route("/resilience/aimd", get(get_aimd_status))
 }
 
 // ============ Status ============
@@ -200,4 +204,81 @@ async fn save_config(
         }
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
     }
+}
+
+// ============ Resilience (AIMD/Circuit Breaker/Health) ============
+
+#[derive(Serialize)]
+struct HealthStatusResponse {
+    healthy_accounts: usize,
+    disabled_accounts: usize,
+    overall_healthy: bool,
+}
+
+async fn get_health_status(State(state): State<AppState>) -> Json<HealthStatusResponse> {
+    let health_monitor = state.health_monitor();
+    
+    let healthy = health_monitor.healthy_count();
+    let disabled = health_monitor.disabled_count();
+    
+    Json(HealthStatusResponse {
+        healthy_accounts: healthy,
+        disabled_accounts: disabled,
+        overall_healthy: healthy > 0,
+    })
+}
+
+#[derive(Serialize)]
+struct CircuitStatusResponse {
+    circuits: std::collections::HashMap<String, String>,
+}
+
+async fn get_circuit_status(State(state): State<AppState>) -> Json<CircuitStatusResponse> {
+    let circuit_breaker = state.circuit_breaker();
+    
+    let mut circuits = std::collections::HashMap::new();
+    for provider in ["anthropic", "google", "openai"] {
+        let state_str = match circuit_breaker.get_state(provider) {
+            antigravity_core::proxy::CircuitState::Closed => "closed",
+            antigravity_core::proxy::CircuitState::Open => "open",
+            antigravity_core::proxy::CircuitState::HalfOpen => "half_open",
+        };
+        circuits.insert(provider.to_string(), state_str.to_string());
+    }
+    
+    Json(CircuitStatusResponse { circuits })
+}
+
+#[derive(Serialize)]
+struct AimdAccountStats {
+    account_id: String,
+    confirmed_limit: u64,
+    ceiling: u64,
+    requests_this_minute: u64,
+}
+
+#[derive(Serialize)]
+struct AimdStatusResponse {
+    tracked_accounts: usize,
+    accounts: Vec<AimdAccountStats>,
+}
+
+async fn get_aimd_status(State(state): State<AppState>) -> Json<AimdStatusResponse> {
+    let adaptive_limits = state.adaptive_limits();
+    
+    let all_persisted = adaptive_limits.all_for_persistence();
+    let accounts: Vec<AimdAccountStats> = all_persisted
+        .into_iter()
+        .map(|(account_id, confirmed_limit, ceiling, requests)| AimdAccountStats {
+            account_id,
+            confirmed_limit,
+            ceiling,
+            requests_this_minute: requests,
+        })
+        .collect();
+    
+    Json(AimdStatusResponse {
+        tracked_accounts: adaptive_limits.len(),
+        accounts,
+    })
 }

@@ -15,6 +15,7 @@ static CLAUDE_TO_GEMINI: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|
     m.insert("claude-3-5-sonnet-20241022", "claude-sonnet-4-5");
     m.insert("claude-3-5-sonnet-20240620", "claude-sonnet-4-5");
     m.insert("claude-opus-4", "claude-opus-4-5-thinking");
+    m.insert("claude-opus-4-5", "claude-opus-4-5-thinking"); // [FIX] Missing base model ID
     m.insert("claude-opus-4-5-20251101", "claude-opus-4-5-thinking");
     m.insert("claude-haiku-4", "claude-sonnet-4-5");
     m.insert("claude-3-haiku-20240307", "claude-sonnet-4-5");

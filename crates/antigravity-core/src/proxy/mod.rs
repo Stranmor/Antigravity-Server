@@ -14,65 +14,41 @@
 
 // ============= UPSTREAM SYMLINKED MODULES =============
 // These are symlinks to vendor/antigravity-upstream/src-tauri/src/proxy/
-#[rustfmt::skip]
-#[allow(clippy::all)]
+//
+// DOCTRINE 2.11 (Wrapper): Upstream code is treated as read-only dependency.
+// We apply #[allow(warnings)] to accept upstream as-is without modification.
+// Our custom modules (below) remain clippy-strict.
 #[allow(warnings)]
 pub mod audio;
-#[rustfmt::skip]
-#[allow(clippy::all)]
 #[allow(warnings)]
 pub mod handlers;
-#[rustfmt::skip]
-#[allow(clippy::all)]
 #[allow(warnings)]
 pub mod mappers;
-#[rustfmt::skip]
-#[allow(clippy::all)]
 #[allow(warnings)]
 pub mod middleware;
-#[rustfmt::skip]
-#[allow(clippy::all)]
 #[allow(warnings)]
 pub mod project_resolver;
-#[rustfmt::skip]
-#[allow(clippy::all)]
 #[allow(warnings)]
 pub mod providers;
-#[rustfmt::skip]
-#[allow(clippy::all)]
 #[allow(warnings)]
 pub mod rate_limit;
-#[rustfmt::skip]
-#[allow(clippy::all)]
 #[allow(warnings)]
 pub mod security;
-#[rustfmt::skip]
-#[allow(clippy::all)]
 #[allow(warnings)]
 pub mod session_manager;
-#[rustfmt::skip]
-#[allow(clippy::all)]
 #[allow(warnings)]
 pub mod signature_cache;
-#[rustfmt::skip]
-#[allow(clippy::all)]
 #[allow(warnings)]
 pub mod sticky_config;
-#[rustfmt::skip]
-#[allow(clippy::all)]
 #[allow(warnings)]
 pub mod upstream;
-#[rustfmt::skip]
-#[allow(clippy::all)]
 #[allow(warnings)]
 pub mod zai_vision_mcp;
-#[rustfmt::skip]
-#[allow(clippy::all)]
 #[allow(warnings)]
 pub mod zai_vision_tools;
 
 // ============= OUR CUSTOM MODULES =============
-// These are real files maintained by us
+// These are real files maintained by us - CLIPPY STRICT (no allows!)
 pub mod adaptive_limit;
 pub mod health;
 pub mod monitor;
@@ -82,9 +58,8 @@ pub mod smart_prober;
 pub mod token_manager;
 
 // ============= MIXED (UPSTREAM + OUR ADDITIONS) =============
-// common/ has symlinks to upstream files + our circuit_breaker.rs
-#[rustfmt::skip]
-#[allow(clippy::all)]
+// common/ contains #[path] includes to upstream files + our circuit_breaker.rs
+// The #[path] includes point to vendor, so we allow warnings for those
 #[allow(warnings)]
 pub mod common;
 
