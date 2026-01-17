@@ -10,7 +10,7 @@ use tokio::sync::RwLock;
 use antigravity_core::models::Account;
 use antigravity_core::modules::account;
 use antigravity_core::proxy::{
-    build_proxy_router_with_shared_state, server::AxumServer, AdaptiveLimitTracker,
+    build_proxy_router_with_shared_state, server::AxumServer, AdaptiveLimitManager,
     CircuitBreakerManager, HealthMonitor, ProxyMonitor, ProxySecurityConfig, TokenManager,
 };
 use antigravity_shared::proxy::config::ProxyConfig;
@@ -35,7 +35,7 @@ pub struct AppStateInner {
     // AIMD Predictive Rate Limiting System
     // TODO: Wire these into handlers for pre-request/post-request feedback
     #[allow(dead_code)]
-    pub adaptive_limits: Arc<AdaptiveLimitTracker>,
+    pub adaptive_limits: Arc<AdaptiveLimitManager>,
     #[allow(dead_code)]
     pub health_monitor: Arc<HealthMonitor>,
     #[allow(dead_code)]
@@ -59,7 +59,7 @@ impl AppState {
         let experimental_config = Arc::new(RwLock::new(proxy_config.experimental.clone()));
 
         // Initialize AIMD Predictive Rate Limiting System
-        let adaptive_limits = Arc::new(AdaptiveLimitTracker::new(
+        let adaptive_limits = Arc::new(AdaptiveLimitManager::new(
             0.85, // safety_margin: 85% of confirmed limit is working threshold
             antigravity_core::proxy::AIMDController::default(),
         ));
@@ -68,6 +68,11 @@ impl AppState {
 
         // Start health monitor recovery task
         health_monitor.start_recovery_task();
+
+        // Inject AIMD into TokenManager
+        token_manager
+            .set_adaptive_limits(adaptive_limits.clone())
+            .await;
 
         tracing::info!("🎯 AIMD rate limiting system initialized");
 
@@ -98,6 +103,9 @@ impl AppState {
             self.inner.zai_config.clone(),
             self.inner.monitor.clone(),
             self.inner.experimental_config.clone(),
+            self.inner.adaptive_limits.clone(),
+            self.inner.health_monitor.clone(),
+            self.inner.circuit_breaker.clone(),
         )
     }
 
@@ -182,7 +190,7 @@ impl AppState {
 
     // AIMD accessors (reserved for future handler integration)
     #[allow(dead_code)]
-    pub fn adaptive_limits(&self) -> &Arc<AdaptiveLimitTracker> {
+    pub fn adaptive_limits(&self) -> &Arc<AdaptiveLimitManager> {
         &self.inner.adaptive_limits
     }
 

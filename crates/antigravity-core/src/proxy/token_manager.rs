@@ -7,8 +7,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::proxy::rate_limit::RateLimitTracker;
+use crate::proxy::AdaptiveLimitManager;
 use antigravity_shared::proxy::config::StickySessionConfig;
-use antigravity_shared::proxy::SchedulingMode;  // Use shared version to avoid type conflict
+use antigravity_shared::proxy::SchedulingMode; // Use shared version to avoid type conflict
 
 #[derive(Debug, Clone)]
 pub struct ProxyToken {
@@ -31,6 +32,7 @@ pub struct TokenManager {
     rate_limit_tracker: Arc<RateLimitTracker>, // 新增: 限流跟踪器
     sticky_config: Arc<tokio::sync::RwLock<StickySessionConfig>>, // 新增：调度配置
     session_accounts: Arc<DashMap<String, String>>, // 新增：会话与账号映射 (SessionID -> AccountID)
+    adaptive_limits: Arc<tokio::sync::RwLock<Option<Arc<AdaptiveLimitManager>>>>, // AIMD integration
 }
 
 impl TokenManager {
@@ -44,7 +46,14 @@ impl TokenManager {
             rate_limit_tracker: Arc::new(RateLimitTracker::new()),
             sticky_config: Arc::new(tokio::sync::RwLock::new(StickySessionConfig::default())),
             session_accounts: Arc::new(DashMap::new()),
+            adaptive_limits: Arc::new(tokio::sync::RwLock::new(None)),
         }
+    }
+
+    /// Inject AIMD tracker for predictive rate limiting
+    pub async fn set_adaptive_limits(&self, tracker: Arc<AdaptiveLimitManager>) {
+        let mut guard = self.adaptive_limits.write().await;
+        *guard = Some(tracker);
     }
 
     /// 从主应用账号目录加载所有账号
@@ -196,7 +205,7 @@ impl TokenManager {
         quota_group: &str,
         force_rotate: bool,
         session_id: Option<&str>,
-        _target_model: &str,  // Added for upstream API compatibility
+        _target_model: &str, // Added for upstream API compatibility
     ) -> Result<(String, String, String), String> {
         // 【优化 Issue #284】添加 5 秒超时，防止死锁
         let timeout_duration = std::time::Duration::from_secs(5);
@@ -218,18 +227,18 @@ impl TokenManager {
     pub async fn has_available_account(&self, quota_group: &str, _target_model: &str) -> bool {
         let tokens_snapshot: Vec<ProxyToken> =
             self.tokens.iter().map(|e| e.value().clone()).collect();
-        
+
         if tokens_snapshot.is_empty() {
             return false;
         }
-        
+
         // Check if any account is available (not rate limited)
         for token in &tokens_snapshot {
             if !self.is_rate_limited(&token.account_id) {
                 return true;
             }
         }
-        
+
         // Log for debugging
         tracing::debug!("No available accounts for quota_group={}", quota_group);
         false
@@ -237,17 +246,22 @@ impl TokenManager {
 
     /// 通过 email 获取指定账号的 Token（用于预热等需要指定账号的场景）
     /// Added for upstream API compatibility
-    pub async fn get_token_by_email(&self, email: &str) -> Result<(String, String, String), String> {
+    pub async fn get_token_by_email(
+        &self,
+        email: &str,
+    ) -> Result<(String, String, String), String> {
         // Find account by email
-        let token = self.tokens.iter()
+        let token = self
+            .tokens
+            .iter()
             .find(|entry| entry.value().email == email)
             .map(|entry| entry.value().clone());
-        
+
         let mut token = match token {
             Some(t) => t,
             None => return Err(format!("Account not found: {}", email)),
         };
-        
+
         // Check if token needs refresh
         let now = chrono::Utc::now().timestamp();
         if now >= token.timestamp - 300 {
@@ -256,7 +270,7 @@ impl TokenManager {
                     token.access_token = token_response.access_token.clone();
                     token.expires_in = token_response.expires_in;
                     token.timestamp = now + token_response.expires_in;
-                    
+
                     // Update in-memory
                     if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
                         entry.access_token = token.access_token.clone();
@@ -269,7 +283,7 @@ impl TokenManager {
                 }
             }
         }
-        
+
         let project_id = token.project_id.clone().unwrap_or_default();
         Ok((token.access_token, project_id, token.email))
     }
@@ -316,6 +330,9 @@ impl TokenManager {
         let mut attempted: HashSet<String> = HashSet::new();
         let mut last_error: Option<String> = None;
         let mut need_update_last_used: Option<(String, std::time::Instant)> = None;
+
+        // 获取 AIMD tracker 引用 (避免在循环中多次获取锁)
+        let aimd = self.adaptive_limits.read().await.clone();
 
         for attempt in 0..total {
             let rotate = force_rotate || attempt > 0;
@@ -389,6 +406,19 @@ impl TokenManager {
                             continue;
                         }
 
+                        // 【新增】AIMD 预测性检查
+                        if let Some(aimd) = &aimd {
+                            // usage_ratio > 1.0 means we are over the confirmed safe limit
+                            // But we might want to probe. For now, strict check if significantly over.
+                            if aimd.usage_ratio(&candidate.account_id) > 1.2 {
+                                tracing::debug!(
+                                    "AIMD: Skipping account {} (usage ratio > 1.2)",
+                                    candidate.email
+                                );
+                                continue;
+                            }
+                        }
+
                         target_token = Some(candidate.clone());
                         // 【优化】标记需要更新，稍后统一写回
                         need_update_last_used =
@@ -422,6 +452,17 @@ impl TokenManager {
                     // 【新增】主动避开限流或 5xx 锁定的账号
                     if self.is_rate_limited(&candidate.account_id) {
                         continue;
+                    }
+
+                    // 【新增】AIMD 预测性检查
+                    if let Some(aimd) = &aimd {
+                        if aimd.usage_ratio(&candidate.account_id) > 1.2 {
+                            tracing::debug!(
+                                "AIMD: Skipping account {} (usage ratio > 1.2)",
+                                candidate.email
+                            );
+                            continue;
+                        }
                     }
 
                     target_token = Some(candidate.clone());
@@ -959,7 +1000,7 @@ impl TokenManager {
                 status,
                 retry_after_header,
                 error_body,
-                None,  // model
+                None, // model
             );
             return;
         }
@@ -1010,7 +1051,7 @@ impl TokenManager {
             status,
             retry_after_header,
             error_body,
-            None,  // model
+            None, // model
         );
     }
 

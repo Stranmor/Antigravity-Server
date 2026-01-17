@@ -116,7 +116,11 @@ git clone https://github.com/Stranmor/Antigravity-Manager.git
 cd Antigravity-Manager
 
 # Build frontend + server
-just build-server
+nix run .#build-server
+
+# Or enter dev shell and run
+# nix develop
+# build-server
 
 # Run daemon
 ./target/release/antigravity-server
@@ -127,12 +131,8 @@ just build-server
 ### Option B: Development Mode
 
 ```bash
-# Prerequisites: Rust, Trunk
-cargo install trunk
-rustup target add wasm32-unknown-unknown
-
-# Run with hot reload
-just run-server
+# Prerequisites: Nix (highly recommended) or Rust + Trunk
+nix run .#run-server
 ```
 
 ### Option C: Homebrew (macOS/Linux)

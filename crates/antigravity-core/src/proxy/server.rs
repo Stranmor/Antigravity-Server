@@ -2,404 +2,51 @@ use crate::proxy::TokenManager;
 use axum::{
     extract::DefaultBodyLimit,
     http::StatusCode,
-    response::{IntoResponse, Json, Response},
     routing::{any, get, post},
     Router,
 };
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
-use tokio::sync::oneshot;
+
 use tokio::sync::RwLock;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, error};
 
 /// Axum 应用状态
 #[derive(Clone)]
 pub struct AppState {
     pub token_manager: Arc<TokenManager>,
     pub custom_mapping: Arc<tokio::sync::RwLock<std::collections::HashMap<String, String>>>,
-    #[allow(dead_code)]
-    pub request_timeout: u64, // API 请求超时(秒)
-    #[allow(dead_code)]
-    pub thought_signature_map: Arc<tokio::sync::Mutex<std::collections::HashMap<String, String>>>, // 思维链签名映射 (ID -> Signature)
-    #[allow(dead_code)]
     pub upstream_proxy:
         Arc<tokio::sync::RwLock<antigravity_shared::utils::http::UpstreamProxyConfig>>,
-    pub upstream: Arc<crate::proxy::upstream::client::UpstreamClient>,
+    pub security_config: Arc<RwLock<crate::proxy::ProxySecurityConfig>>,
     pub zai: Arc<RwLock<antigravity_shared::proxy::config::ZaiConfig>>,
-    pub provider_rr: Arc<AtomicUsize>,
-    pub zai_vision_mcp: Arc<crate::proxy::zai_vision_mcp::ZaiVisionMcpState>,
     pub monitor: Arc<crate::proxy::monitor::ProxyMonitor>,
     pub experimental: Arc<RwLock<antigravity_shared::proxy::config::ExperimentalConfig>>,
-}
-
-/// Configuration for starting the Axum server
-pub struct ServerStartConfig {
-    pub host: String,
-    pub port: u16,
-    pub token_manager: Arc<TokenManager>,
-    pub custom_mapping: std::collections::HashMap<String, String>,
-    pub upstream_proxy: antigravity_shared::utils::http::UpstreamProxyConfig,
-    pub security_config: crate::proxy::ProxySecurityConfig,
-    pub zai_config: antigravity_shared::proxy::config::ZaiConfig,
-    pub monitor: Arc<crate::proxy::monitor::ProxyMonitor>,
-    pub experimental_config: antigravity_shared::proxy::config::ExperimentalConfig,
-}
-
-/// Axum 服务器实例
-pub struct AxumServer {
-    shutdown_tx: Option<oneshot::Sender<()>>,
-    custom_mapping: Arc<tokio::sync::RwLock<std::collections::HashMap<String, String>>>,
-    proxy_state: Arc<tokio::sync::RwLock<antigravity_shared::utils::http::UpstreamProxyConfig>>,
-    security_state: Arc<RwLock<crate::proxy::ProxySecurityConfig>>,
-    zai_state: Arc<RwLock<antigravity_shared::proxy::config::ZaiConfig>>,
-}
-
-impl AxumServer {
-    /// Create a new AxumServer for hot-reload capabilities without starting a listener.
-    /// Use this with headless server that manages its own listener.
-    pub fn new(
-        custom_mapping: std::collections::HashMap<String, String>,
-        upstream_proxy: antigravity_shared::utils::http::UpstreamProxyConfig,
-        security_config: crate::proxy::ProxySecurityConfig,
-        zai_config: antigravity_shared::proxy::config::ZaiConfig,
-    ) -> Self {
-        Self {
-            shutdown_tx: None,
-            custom_mapping: Arc::new(tokio::sync::RwLock::new(custom_mapping)),
-            proxy_state: Arc::new(tokio::sync::RwLock::new(upstream_proxy)),
-            security_state: Arc::new(RwLock::new(security_config)),
-            zai_state: Arc::new(RwLock::new(zai_config)),
-        }
-    }
-
-    pub async fn update_mapping(&self, config: &antigravity_shared::proxy::config::ProxyConfig) {
-        {
-            let mut m = self.custom_mapping.write().await;
-            *m = config.custom_mapping.clone();
-        }
-        tracing::debug!("模型映射 (Custom) 已全量热更新");
-    }
-
-    /// 更新代理配置
-    pub async fn update_proxy(
-        &self,
-        new_config: antigravity_shared::utils::http::UpstreamProxyConfig,
-    ) {
-        let mut proxy = self.proxy_state.write().await;
-        *proxy = new_config;
-        tracing::info!("上游代理配置已热更新");
-    }
-
-    pub async fn update_security(&self, config: &antigravity_shared::proxy::config::ProxyConfig) {
-        let mut sec = self.security_state.write().await;
-        *sec = crate::proxy::ProxySecurityConfig::from_proxy_config(config);
-        tracing::info!("反代服务安全配置已热更新");
-    }
-
-    pub async fn update_zai(&self, config: &antigravity_shared::proxy::config::ProxyConfig) {
-        let mut zai = self.zai_state.write().await;
-        *zai = config.zai.clone();
-        tracing::info!("z.ai 配置已热更新");
-    }
-
-    /// 启动 Axum 服务器
-    pub async fn start(
-        config: ServerStartConfig,
-    ) -> Result<(Self, tokio::task::JoinHandle<()>), String> {
-        let custom_mapping_state = Arc::new(tokio::sync::RwLock::new(config.custom_mapping));
-        let proxy_state = Arc::new(tokio::sync::RwLock::new(config.upstream_proxy.clone()));
-        let security_state = Arc::new(RwLock::new(config.security_config));
-        let zai_state = Arc::new(RwLock::new(config.zai_config));
-        let provider_rr = Arc::new(AtomicUsize::new(0));
-        let zai_vision_mcp_state = Arc::new(crate::proxy::zai_vision_mcp::ZaiVisionMcpState::new());
-        let experimental_state = Arc::new(RwLock::new(config.experimental_config));
-
-        let state = AppState {
-            token_manager: config.token_manager.clone(),
-            custom_mapping: custom_mapping_state.clone(),
-            request_timeout: 300, // 5分钟超时
-            thought_signature_map: Arc::new(tokio::sync::Mutex::new(
-                std::collections::HashMap::new(),
-            )),
-            upstream_proxy: proxy_state.clone(),
-            upstream: Arc::new(crate::proxy::upstream::client::UpstreamClient::new(Some(
-                config.upstream_proxy.clone(),
-            ))),
-            zai: zai_state.clone(),
-            provider_rr: provider_rr.clone(),
-            zai_vision_mcp: zai_vision_mcp_state,
-            monitor: config.monitor.clone(),
-            experimental: experimental_state,
-        };
-
-        // 构建路由 - 使用新架构的 handlers！
-        use crate::proxy::handlers;
-        // 构建路由
-        let app = Router::new()
-            // OpenAI Protocol
-            .route("/v1/models", get(handlers::openai::handle_list_models))
-            .route(
-                "/v1/chat/completions",
-                post(handlers::openai::handle_chat_completions),
-            )
-            .route(
-                "/v1/completions",
-                post(handlers::openai::handle_completions),
-            )
-            .route("/v1/responses", post(handlers::openai::handle_completions)) // 兼容 Codex CLI
-            .route(
-                "/v1/images/generations",
-                post(handlers::openai::handle_images_generations),
-            ) // 图像生成 API
-            .route(
-                "/v1/images/edits",
-                post(handlers::openai::handle_images_edits),
-            ) // 图像编辑 API
-            .route(
-                "/v1/audio/transcriptions",
-                post(handlers::audio::handle_audio_transcription),
-            ) // 音频转录 API (PR #311)
-            // Claude Protocol
-            .route("/v1/messages", post(handlers::claude::handle_messages))
-            .route(
-                "/v1/messages/count_tokens",
-                post(handlers::claude::handle_count_tokens),
-            )
-            .route(
-                "/v1/models/claude",
-                get(handlers::claude::handle_list_models),
-            )
-            // z.ai MCP (optional reverse-proxy)
-            .route(
-                "/mcp/web_search_prime/mcp",
-                any(handlers::mcp::handle_web_search_prime),
-            )
-            .route("/mcp/web_reader/mcp", any(handlers::mcp::handle_web_reader))
-            .route(
-                "/mcp/zai-mcp-server/mcp",
-                any(handlers::mcp::handle_zai_mcp_server),
-            )
-            // Gemini Protocol (Native)
-            .route("/v1beta/models", get(handlers::gemini::handle_list_models))
-            // Handle both GET (get info) and POST (generateContent with colon) at the same route
-            .route(
-                "/v1beta/models/:model",
-                get(handlers::gemini::handle_get_model).post(handlers::gemini::handle_generate),
-            )
-            .route(
-                "/v1beta/models/:model/countTokens",
-                post(handlers::gemini::handle_count_tokens),
-            ) // Specific route priority
-            .route(
-                "/v1/models/detect",
-                post(handlers::common::handle_detect_model),
-            )
-            .route("/v1/api/event_logging/batch", post(silent_ok_handler))
-            .route("/v1/api/event_logging", post(silent_ok_handler))
-            .route("/healthz", get(health_check_handler))
-            .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
-            .layer(axum::middleware::from_fn_with_state(
-                state.clone(),
-                crate::proxy::middleware::monitor::monitor_middleware,
-            ))
-            .layer(TraceLayer::new_for_http())
-            .layer(axum::middleware::from_fn_with_state(
-                security_state.clone(),
-                crate::proxy::middleware::auth_middleware,
-            ))
-            .layer(crate::proxy::middleware::cors_layer())
-            .with_state(state);
-
-        // 绑定地址
-        let addr = format!("{}:{}", config.host, config.port);
-        let listener = tokio::net::TcpListener::bind(&addr)
-            .await
-            .map_err(|e| format!("地址 {} 绑定失败: {}", addr, e))?;
-
-        tracing::info!("反代服务器启动在 http://{}", addr);
-
-        // 创建关闭通道
-        let (shutdown_tx, mut shutdown_rx) = oneshot::channel::<()>();
-
-        let server_instance = Self {
-            shutdown_tx: Some(shutdown_tx),
-            custom_mapping: custom_mapping_state.clone(),
-            proxy_state,
-            security_state,
-            zai_state,
-        };
-
-        // 在新任务中启动服务器
-        let handle = tokio::spawn(async move {
-            use hyper::server::conn::http1;
-            use hyper_util::rt::TokioIo;
-            use hyper_util::service::TowerToHyperService;
-
-            loop {
-                tokio::select! {
-                    res = listener.accept() => {
-                        match res {
-                            Ok((stream, _)) => {
-                                let io = TokioIo::new(stream);
-                                let service = TowerToHyperService::new(app.clone());
-
-                                tokio::task::spawn(async move {
-                                    if let Err(err) = http1::Builder::new()
-                                        .serve_connection(io, service)
-                                        .with_upgrades() // 支持 WebSocket (如果以后需要)
-                                        .await
-                                    {
-                                        debug!("连接处理结束或出错: {:?}", err);
-                                    }
-                                });
-                            }
-                            Err(e) => {
-                                error!("接收连接失败: {:?}", e);
-                            }
-                        }
-                    }
-                    _ = &mut shutdown_rx => {
-                        tracing::info!("反代服务器停止监听");
-                        break;
-                    }
-                }
-            }
-        });
-
-        Ok((server_instance, handle))
-    }
-
-    /// 停止服务器
-    pub fn stop(mut self) {
-        if let Some(tx) = self.shutdown_tx.take() {
-            let _ = tx.send(());
-        }
-    }
-}
-
-/// Build proxy router without starting a server.
-/// This allows integrating proxy routes into an existing Axum application.
-pub fn build_proxy_router(
-    token_manager: Arc<TokenManager>,
-    custom_mapping: std::collections::HashMap<String, String>,
-    upstream_proxy: antigravity_shared::utils::http::UpstreamProxyConfig,
-    security_config: crate::proxy::ProxySecurityConfig,
-    zai_config: antigravity_shared::proxy::config::ZaiConfig,
-    monitor: Arc<crate::proxy::monitor::ProxyMonitor>,
-    experimental_config: antigravity_shared::proxy::config::ExperimentalConfig,
-) -> Router<()> {
-    let custom_mapping_state = Arc::new(tokio::sync::RwLock::new(custom_mapping));
-    let proxy_state = Arc::new(tokio::sync::RwLock::new(upstream_proxy.clone()));
-    let security_state = Arc::new(RwLock::new(security_config));
-    let zai_state = Arc::new(RwLock::new(zai_config));
-    let provider_rr = Arc::new(AtomicUsize::new(0));
-    let zai_vision_mcp_state = Arc::new(crate::proxy::zai_vision_mcp::ZaiVisionMcpState::new());
-    let experimental_state = Arc::new(RwLock::new(experimental_config));
-
-    let state = AppState {
-        token_manager,
-        custom_mapping: custom_mapping_state,
-        request_timeout: 300,
-        thought_signature_map: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        upstream_proxy: proxy_state,
-        upstream: Arc::new(crate::proxy::upstream::client::UpstreamClient::new(Some(
-            upstream_proxy,
-        ))),
-        zai: zai_state,
-        provider_rr,
-        zai_vision_mcp: zai_vision_mcp_state,
-        monitor,
-        experimental: experimental_state,
-    };
-
-    use crate::proxy::handlers;
-
-    Router::new()
-        // OpenAI Protocol
-        .route("/v1/models", get(handlers::openai::handle_list_models))
-        .route(
-            "/v1/chat/completions",
-            post(handlers::openai::handle_chat_completions),
-        )
-        .route(
-            "/v1/completions",
-            post(handlers::openai::handle_completions),
-        )
-        .route("/v1/responses", post(handlers::openai::handle_completions))
-        .route(
-            "/v1/images/generations",
-            post(handlers::openai::handle_images_generations),
-        )
-        .route(
-            "/v1/images/edits",
-            post(handlers::openai::handle_images_edits),
-        )
-        .route(
-            "/v1/audio/transcriptions",
-            post(handlers::audio::handle_audio_transcription),
-        )
-        // Claude Protocol
-        .route("/v1/messages", post(handlers::claude::handle_messages))
-        .route(
-            "/v1/messages/count_tokens",
-            post(handlers::claude::handle_count_tokens),
-        )
-        .route(
-            "/v1/models/claude",
-            get(handlers::claude::handle_list_models),
-        )
-        // z.ai MCP
-        .route(
-            "/mcp/web_search_prime/mcp",
-            any(handlers::mcp::handle_web_search_prime),
-        )
-        .route("/mcp/web_reader/mcp", any(handlers::mcp::handle_web_reader))
-        .route(
-            "/mcp/zai-mcp-server/mcp",
-            any(handlers::mcp::handle_zai_mcp_server),
-        )
-        // Gemini Protocol
-        .route("/v1beta/models", get(handlers::gemini::handle_list_models))
-        .route(
-            "/v1beta/models/:model",
-            get(handlers::gemini::handle_get_model).post(handlers::gemini::handle_generate),
-        )
-        .route(
-            "/v1beta/models/:model/countTokens",
-            post(handlers::gemini::handle_count_tokens),
-        )
-        // Utility
-        .route(
-            "/v1/models/detect",
-            post(handlers::common::handle_detect_model),
-        )
-        .route("/v1/api/event_logging/batch", post(silent_ok_handler))
-        .route("/v1/api/event_logging", post(silent_ok_handler))
-        .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            crate::proxy::middleware::monitor::monitor_middleware,
-        ))
-        .layer(TraceLayer::new_for_http())
-        .layer(axum::middleware::from_fn_with_state(
-            security_state,
-            crate::proxy::middleware::auth_middleware,
-        ))
-        .with_state(state)
+    pub adaptive_limits: Arc<crate::proxy::AdaptiveLimitManager>,
+    pub health_monitor: Arc<crate::proxy::HealthMonitor>,
+    pub circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
+    pub request_timeout: u64,
+    pub thought_signature_map: Arc<tokio::sync::Mutex<std::collections::HashMap<String, String>>>,
+    pub upstream: Arc<crate::proxy::upstream::client::UpstreamClient>,
+    pub provider_rr: Arc<AtomicUsize>,
+    pub zai_vision_mcp: Arc<crate::proxy::zai_vision_mcp::ZaiVisionMcpState>,
 }
 
 /// Build proxy router with shared state references for hot-reload support.
 /// Unlike `build_proxy_router`, this version accepts pre-created Arc references
 /// so that external code can update the mapping at runtime.
+#[allow(clippy::too_many_arguments)]
 pub fn build_proxy_router_with_shared_state(
     token_manager: Arc<TokenManager>,
     custom_mapping: Arc<tokio::sync::RwLock<std::collections::HashMap<String, String>>>,
     upstream_proxy: antigravity_shared::utils::http::UpstreamProxyConfig,
     security_config: Arc<RwLock<crate::proxy::ProxySecurityConfig>>,
-    zai_config: Arc<RwLock<antigravity_shared::proxy::config::ZaiConfig>>,
+    zai: Arc<RwLock<antigravity_shared::proxy::config::ZaiConfig>>,
     monitor: Arc<crate::proxy::monitor::ProxyMonitor>,
-    experimental_config: Arc<RwLock<antigravity_shared::proxy::config::ExperimentalConfig>>,
+    experimental: Arc<RwLock<antigravity_shared::proxy::config::ExperimentalConfig>>,
+    adaptive_limits: Arc<crate::proxy::AdaptiveLimitManager>,
+    health_monitor: Arc<crate::proxy::HealthMonitor>,
+    circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
 ) -> Router<()> {
     let proxy_state = Arc::new(tokio::sync::RwLock::new(upstream_proxy.clone()));
     let provider_rr = Arc::new(AtomicUsize::new(0));
@@ -410,15 +57,19 @@ pub fn build_proxy_router_with_shared_state(
         custom_mapping: custom_mapping.clone(),
         request_timeout: 300,
         thought_signature_map: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        upstream_proxy: proxy_state,
+        upstream_proxy: proxy_state.clone(),
         upstream: Arc::new(crate::proxy::upstream::client::UpstreamClient::new(Some(
             upstream_proxy,
         ))),
-        zai: zai_config.clone(),
+        zai,
         provider_rr,
         zai_vision_mcp: zai_vision_mcp_state,
         monitor,
-        experimental: experimental_config.clone(),
+        experimental,
+        adaptive_limits,
+        health_monitor,
+        circuit_breaker,
+        security_config: security_config.clone(),
     };
 
     use crate::proxy::handlers;
@@ -482,8 +133,11 @@ pub fn build_proxy_router_with_shared_state(
             "/v1/models/detect",
             post(handlers::common::handle_detect_model),
         )
-        .route("/v1/api/event_logging/batch", post(silent_ok_handler))
-        .route("/v1/api/event_logging", post(silent_ok_handler))
+        .route(
+            "/v1/api/event_logging/batch",
+            post(|| async { StatusCode::OK }),
+        )
+        .route("/v1/api/event_logging", post(|| async { StatusCode::OK }))
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -498,16 +152,90 @@ pub fn build_proxy_router_with_shared_state(
 }
 
 // ===== API 处理器 (旧代码已移除，由 src/proxy/handlers/* 接管) =====
-
-/// 健康检查处理器
-async fn health_check_handler() -> Response {
-    Json(serde_json::json!({
-        "status": "ok"
-    }))
-    .into_response()
+/// Configuration for starting the Axum server
+pub struct ServerStartConfig {
+    pub host: String,
+    pub port: u16,
+    pub token_manager: Arc<TokenManager>,
+    pub custom_mapping: std::collections::HashMap<String, String>,
+    pub upstream_proxy: antigravity_shared::utils::http::UpstreamProxyConfig,
+    pub security_config: crate::proxy::ProxySecurityConfig,
+    pub zai: antigravity_shared::proxy::config::ZaiConfig,
+    pub monitor: Arc<crate::proxy::monitor::ProxyMonitor>,
+    pub experimental: antigravity_shared::proxy::config::ExperimentalConfig,
+    pub adaptive_limits: Arc<crate::proxy::AdaptiveLimitManager>,
+    pub health_monitor: Arc<crate::proxy::HealthMonitor>,
+    pub circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
 }
 
-/// 静默成功处理器 (用于拦截遥测日志等)
-async fn silent_ok_handler() -> Response {
-    StatusCode::OK.into_response()
+/// Axum 服务器实例
+pub struct AxumServer {
+    config: ServerStartConfig,
+}
+
+impl AxumServer {
+    pub fn new(config: ServerStartConfig) -> Self {
+        Self { config }
+    }
+
+    pub async fn run(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let addr = format!("{}:{}", self.config.host, self.config.port);
+        tracing::info!("Starting Axum server on {}", addr);
+
+        let custom_mapping = Arc::new(tokio::sync::RwLock::new(self.config.custom_mapping));
+        let security_config = Arc::new(RwLock::new(self.config.security_config));
+        let zai = Arc::new(RwLock::new(self.config.zai));
+        let experimental = Arc::new(RwLock::new(self.config.experimental));
+
+        let app = build_proxy_router_with_shared_state(
+            self.config.token_manager,
+            custom_mapping,
+            self.config.upstream_proxy,
+            security_config,
+            zai,
+            self.config.monitor,
+            experimental,
+            self.config.adaptive_limits,
+            self.config.health_monitor,
+            self.config.circuit_breaker,
+        );
+
+        let listener = tokio::net::TcpListener::bind(&addr).await?;
+        axum::serve(listener, app).await?;
+
+        Ok(())
+    }
+}
+
+/// Helper for backward compatibility or simpler usage
+#[allow(clippy::too_many_arguments)]
+pub fn build_proxy_router(
+    token_manager: Arc<TokenManager>,
+    custom_mapping: std::collections::HashMap<String, String>,
+    upstream_proxy: antigravity_shared::utils::http::UpstreamProxyConfig,
+    security_config: crate::proxy::ProxySecurityConfig,
+    zai: antigravity_shared::proxy::config::ZaiConfig,
+    monitor: Arc<crate::proxy::monitor::ProxyMonitor>,
+    experimental: antigravity_shared::proxy::config::ExperimentalConfig,
+    adaptive_limits: Arc<crate::proxy::AdaptiveLimitManager>,
+    health_monitor: Arc<crate::proxy::HealthMonitor>,
+    circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
+) -> Router<()> {
+    let custom_mapping_state = Arc::new(tokio::sync::RwLock::new(custom_mapping));
+    let security_state = Arc::new(RwLock::new(security_config));
+    let zai_state = Arc::new(RwLock::new(zai));
+    let experimental_state = Arc::new(RwLock::new(experimental));
+
+    build_proxy_router_with_shared_state(
+        token_manager,
+        custom_mapping_state,
+        upstream_proxy,
+        security_state,
+        zai_state,
+        monitor,
+        experimental_state,
+        adaptive_limits,
+        health_monitor,
+        circuit_breaker,
+    )
 }

@@ -56,12 +56,27 @@ async fn main() -> Result<()> {
     let monitor = Arc::new(antigravity_core::proxy::ProxyMonitor::new());
 
     // Create AxumServer for hot reload capabilities (without starting listener)
-    let axum_server = Arc::new(AxumServer::new(
-        initial_proxy_config.custom_mapping.clone(),
-        initial_proxy_config.upstream_proxy.clone(),
-        antigravity_core::proxy::ProxySecurityConfig::from_proxy_config(&initial_proxy_config),
-        initial_proxy_config.zai.clone(),
-    ));
+    let server_config = antigravity_core::proxy::server::ServerStartConfig {
+        host: "127.0.0.1".to_string(),
+        port: DEFAULT_PORT,
+        token_manager: token_manager.clone(),
+        custom_mapping: initial_proxy_config.custom_mapping.clone(),
+        upstream_proxy: initial_proxy_config.upstream_proxy.clone(),
+        security_config: antigravity_core::proxy::ProxySecurityConfig::from_proxy_config(
+            &initial_proxy_config,
+        ),
+        zai: initial_proxy_config.zai.clone(),
+        monitor: monitor.clone(),
+        experimental: initial_proxy_config.experimental.clone(),
+        adaptive_limits: Arc::new(antigravity_core::proxy::AdaptiveLimitManager::new(
+            0.85,
+            antigravity_core::proxy::AIMDController::default(),
+        )),
+        health_monitor: antigravity_core::proxy::HealthMonitor::new(),
+        circuit_breaker: Arc::new(antigravity_core::proxy::CircuitBreakerManager::new()),
+    };
+
+    let axum_server = Arc::new(AxumServer::new(server_config));
 
     let state = AppState::new_with_components(
         token_manager.clone(),

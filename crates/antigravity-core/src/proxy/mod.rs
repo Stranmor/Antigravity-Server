@@ -102,7 +102,9 @@ pub use signature_cache::SignatureCache;
 pub use token_manager::TokenManager;
 
 // Re-export AIMD types
-pub use adaptive_limit::{AIMDController, AdaptiveLimitTracker, ProbeStrategy};
+pub use adaptive_limit::{
+    AIMDController, AdaptiveLimitManager, AdaptiveLimitTracker, ProbeStrategy,
+};
 pub use common::circuit_breaker::{CircuitBreakerManager, CircuitState};
 pub use health::HealthMonitor;
 pub use smart_prober::SmartProber;
