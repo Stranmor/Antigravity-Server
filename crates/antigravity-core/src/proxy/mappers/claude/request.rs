@@ -252,7 +252,6 @@ fn sort_thinking_blocks_first(messages: &mut [Message]) {
 }
 
 /// 转换 Claude 请求为 Gemini v1internal 格式
-
 /// [FIX #709] Reorder serialized Gemini parts to ensure thinking blocks are first
 fn reorder_gemini_parts(parts: &mut Vec<Value>) {
     if parts.len() <= 1 {

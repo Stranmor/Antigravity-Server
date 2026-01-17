@@ -148,9 +148,6 @@ fn wildcard_match(pattern: &str, text: &str) -> bool {
 /// - `original_model`: 原始模型名称
 /// - `custom_mapping`: 用户自定义映射表
 ///
-/// # 返回
-/// 映射后的目标模型名称
-
 /// Normalize any physical model name to one of the 3 standard protection IDs.
 /// This ensures quota protection works consistently regardless of API versioning or request variations.
 ///

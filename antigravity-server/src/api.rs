@@ -37,6 +37,8 @@ pub fn router() -> Router<AppState> {
         .route("/resilience/health", get(get_health_status))
         .route("/resilience/circuits", get(get_circuit_status))
         .route("/resilience/aimd", get(get_aimd_status))
+        // Prometheus metrics
+        .route("/metrics", get(get_metrics))
 }
 
 // ============ Status ============
@@ -283,4 +285,33 @@ async fn get_aimd_status(State(state): State<AppState>) -> Json<AimdStatusRespon
         tracked_accounts: adaptive_limits.len(),
         accounts,
     })
+}
+
+// ============ Prometheus Metrics ============
+
+/// Get Prometheus metrics in text format.
+/// Returns metrics compatible with Prometheus/OpenMetrics format.
+async fn get_metrics(
+    State(state): State<AppState>,
+) -> axum::response::Response<axum::body::Body> {
+    use axum::http::header;
+    use axum::response::IntoResponse;
+
+    // Update account gauges before rendering
+    let accounts = state.list_accounts().unwrap_or_default();
+    let available = accounts.iter().filter(|a| !a.disabled && !a.proxy_disabled).count();
+    antigravity_core::proxy::prometheus::update_account_gauges(accounts.len(), available);
+
+    // Update uptime
+    antigravity_core::proxy::prometheus::update_uptime_gauge();
+
+    // Render metrics
+    let metrics = antigravity_core::proxy::prometheus::render_metrics();
+
+    // Return with proper content type for Prometheus
+    (
+        [(header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+        metrics,
+    )
+        .into_response()
 }

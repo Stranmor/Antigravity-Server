@@ -3,9 +3,8 @@
 
 // 已移除未使用的 Value 导入
 
-/// 将 JSON Schema 中的类型名称转为大写 (Gemini 要求)
-/// 例如: "string" -> "STRING", "integer" -> "INTEGER"
-// 已移除未使用的 uppercase_schema_types 函数
+// Note: uppercase_schema_types 函数已移除 (用于将 JSON Schema 类型名转大写)
+// 例如: "string" -> "STRING", "integer" -> "INTEGER"
 
 /// 根据模型名称获取上下文 Token 限制
 pub fn get_context_limit_for_model(model: &str) -> u32 {

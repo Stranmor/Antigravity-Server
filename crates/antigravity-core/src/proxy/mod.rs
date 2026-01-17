@@ -9,12 +9,13 @@
 //! ## Architecture (Post-Symlink Era)
 //!
 //! All modules are now local copies from vendor/antigravity-upstream.
-//! This allows us to fix clippy warnings and maintain the code ourselves.
-//! Vendor submodule remains as reference for upstream changes (manual port).
+//! Clippy warnings are being fixed incrementally - modules marked with
+//! #[allow(warnings)] still need cleanup.
 
-// ============= COPIED FROM UPSTREAM =============
-// These were symlinks, now copied to allow clippy fixes.
-// Temporarily allowing warnings during migration - will be fixed incrementally.
+// ============= COPIED FROM UPSTREAM (CLIPPY CLEANUP IN PROGRESS) =============
+// These modules still have clippy warnings that need to be fixed.
+// As each module is cleaned up, its #[allow(warnings)] can be removed.
+
 #[allow(warnings)]
 pub mod audio;
 #[allow(warnings)]
@@ -44,7 +45,7 @@ pub mod zai_vision_mcp;
 #[allow(warnings)]
 pub mod zai_vision_tools;
 
-// Common utilities (also copied from upstream + our additions)
+// Common utilities (also needs cleanup)
 #[allow(warnings)]
 pub mod common;
 
