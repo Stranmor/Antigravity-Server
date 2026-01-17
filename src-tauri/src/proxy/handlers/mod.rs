@@ -7,3 +7,4 @@ pub mod common;
 pub mod gemini;
 pub mod mcp;
 pub mod openai;
+pub mod warmup; // Прогрев аккаунтов (upstream)
