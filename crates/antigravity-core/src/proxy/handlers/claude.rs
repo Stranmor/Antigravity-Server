@@ -101,7 +101,7 @@ fn sanitize_thinking_block(block: ContentBlock) -> ContentBlock {
 }
 
 /// 过滤消息中的无效 thinking 块
-fn filter_invalid_thinking_blocks(messages: &mut Vec<Message>) {
+fn filter_invalid_thinking_blocks(messages: &mut [Message]) {
     let mut total_filtered = 0;
 
     for msg in messages.iter_mut() {
@@ -714,7 +714,7 @@ pub async fn handle_messages(
                     &mut msg.content
                 {
                     blocks.retain(|b| {
-                        !matches!(b, 
+                        !matches!(b,
                         crate::proxy::mappers::claude::models::ContentBlock::Thinking { .. } |
                         crate::proxy::mappers::claude::models::ContentBlock::RedactedThinking { .. }
                     )
@@ -802,14 +802,21 @@ pub async fn handle_messages(
             );
         }
 
-        // 5. 上游调用
+        // 5. 上游调用 - with WARP IP isolation
+        // Get per-account SOCKS5 proxy for IP isolation
+        let warp_proxy = state.warp_isolation.get_proxy_for_email(&email).await;
+        if warp_proxy.is_some() {
+            tracing::debug!("[{}] Using WARP proxy for account {}", trace_id, email);
+        }
+
         let response = match upstream
-            .call_v1_internal_with_headers(
+            .call_v1_internal_with_warp(
                 method,
                 &access_token,
                 gemini_body,
                 query,
                 extra_headers.clone(),
+                warp_proxy.as_deref(),
             )
             .await
         {
@@ -1131,8 +1138,8 @@ pub async fn handle_messages(
                                 // 降级为 text
                                 if !thinking.is_empty() {
                                     tracing::debug!("[Fallback] Converting thinking block to text (len={})", thinking.len());
-                                    new_blocks.push(crate::proxy::mappers::claude::models::ContentBlock::Text { 
-                                        text: thinking 
+                                    new_blocks.push(crate::proxy::mappers::claude::models::ContentBlock::Text {
+                                        text: thinking
                                     });
                                 }
                             },
@@ -1524,7 +1531,7 @@ fn create_warmup_response(request: &ClaudeRequest, is_stream: bool) -> Response 
 
     if is_stream {
         // 流式响应：发送标准的 SSE 事件序列
-        let events = vec![
+        let events = [
             // message_start
             format!(
                 "event: message_start\ndata: {{\"type\":\"message_start\",\"message\":{{\"id\":\"{}\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"{}\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{{\"input_tokens\":1,\"output_tokens\":0}}}}}}\n\n",

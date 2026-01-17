@@ -1,10 +1,6 @@
-use serde::{Deserialize, Serialize};
-use validator::Validate;
+//! HTTP utilities.
+//!
+//! This module re-exports HTTP-related types from `antigravity-types`.
 
-/// Upstream proxy configuration.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Validate)]
-pub struct UpstreamProxyConfig {
-    pub enabled: bool,
-    #[validate(url)]
-    pub url: String,
-}
+// Re-export UpstreamProxyConfig for backwards compatibility
+pub use antigravity_types::models::UpstreamProxyConfig;

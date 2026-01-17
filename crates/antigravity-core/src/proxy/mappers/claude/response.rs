@@ -59,7 +59,7 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
                 if !obj.contains_key("path") {
                     if let Some(paths) = obj.remove("paths") {
                         let path_str = if let Some(arr) = paths.as_array() {
-                            arr.get(0)
+                            arr.first()
                                 .and_then(|v| v.as_str())
                                 .unwrap_or(".")
                                 .to_string()
@@ -165,7 +165,7 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
                 if !obj.contains_key("path") {
                     if let Some(paths) = obj.remove("paths") {
                         let path_str = if let Some(arr) = paths.as_array() {
-                            arr.get(0)
+                            arr.first()
                                 .and_then(|v| v.as_str())
                                 .unwrap_or(".")
                                 .to_string()
@@ -253,7 +253,7 @@ impl NonStreamingProcessor {
         let parts = gemini_response
             .candidates
             .as_ref()
-            .and_then(|c| c.get(0))
+            .and_then(|c| c.first())
             .and_then(|candidate| candidate.content.as_ref())
             .map(|content| &content.parts)
             .unwrap_or(&empty_parts);
@@ -264,7 +264,7 @@ impl NonStreamingProcessor {
         }
 
         // 处理 grounding(web search) -> 转换为 server_tool_use / web_search_tool_result
-        if let Some(candidate) = gemini_response.candidates.as_ref().and_then(|c| c.get(0)) {
+        if let Some(candidate) = gemini_response.candidates.as_ref().and_then(|c| c.first()) {
             if let Some(grounding) = &candidate.grounding_metadata {
                 self.process_grounding(grounding);
             }
@@ -554,7 +554,7 @@ impl NonStreamingProcessor {
         let finish_reason = gemini_response
             .candidates
             .as_ref()
-            .and_then(|c| c.get(0))
+            .and_then(|c| c.first())
             .and_then(|candidate| candidate.finish_reason.as_deref());
 
         let stop_reason = if self.has_tool_call {

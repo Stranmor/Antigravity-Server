@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
+use validator::Validate;
 
 // ============================================================================
 // Enums
@@ -108,15 +109,18 @@ impl fmt::Display for SchedulingMode {
 // ============================================================================
 
 /// Z.ai default model mappings.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
 pub struct ZaiModelDefaults {
     /// Model for Opus tier
+    #[validate(length(min = 1))]
     #[serde(default = "default_zai_opus_model")]
     pub opus: String,
     /// Model for Sonnet tier
+    #[validate(length(min = 1))]
     #[serde(default = "default_zai_sonnet_model")]
     pub sonnet: String,
     /// Model for Haiku tier
+    #[validate(length(min = 1))]
     #[serde(default = "default_zai_haiku_model")]
     pub haiku: String,
 }
@@ -132,7 +136,7 @@ impl Default for ZaiModelDefaults {
 }
 
 /// Z.ai MCP (Model Context Protocol) configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, Validate)]
 pub struct ZaiMcpConfig {
     /// Enable MCP features
     #[serde(default)]
@@ -149,12 +153,13 @@ pub struct ZaiMcpConfig {
 }
 
 /// Z.ai provider configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, Validate)]
 pub struct ZaiConfig {
     /// Enable Z.ai integration
     #[serde(default)]
     pub enabled: bool,
     /// Z.ai API base URL
+    #[validate(url)]
     #[serde(default = "default_zai_base_url")]
     pub base_url: String,
     /// Z.ai API key
@@ -168,9 +173,11 @@ pub struct ZaiConfig {
     pub model_mapping: HashMap<String, String>,
     /// Default model mappings
     #[serde(default)]
+    #[validate(nested)]
     pub models: ZaiModelDefaults,
     /// MCP configuration
     #[serde(default)]
+    #[validate(nested)]
     pub mcp: ZaiMcpConfig,
 }
 
@@ -179,7 +186,7 @@ pub struct ZaiConfig {
 // ============================================================================
 
 /// Experimental features configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, Validate)]
 pub struct ExperimentalConfig {
     /// Enable signature caching for prompt reuse
     #[serde(default = "default_true")]
@@ -196,23 +203,56 @@ pub struct ExperimentalConfig {
 }
 
 /// Sticky session configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Validate)]
 pub struct StickySessionConfig {
     /// Enable sticky sessions
+    #[serde(default)]
     pub enabled: bool,
     /// Scheduling mode
+    #[serde(default)]
     pub mode: SchedulingMode,
     /// Session TTL in seconds
+    #[validate(range(min = 1))]
+    #[serde(default = "default_sticky_ttl", alias = "max_wait_seconds")]
     pub ttl: u32,
 }
 
-/// Upstream proxy configuration for outbound requests.
+/// Upstream proxy mode for routing requests.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum UpstreamProxyMode {
+    /// Direct connection (no proxy)
+    #[default]
+    Direct,
+    /// Use system proxy settings (HTTP_PROXY, HTTPS_PROXY, ALL_PROXY for SOCKS)
+    System,
+    /// Use custom proxy URL
+    Custom,
+}
+
+/// Upstream proxy configuration for outbound requests.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
 pub struct UpstreamProxyConfig {
-    /// Enable upstream proxy
+    /// Proxy mode: direct, system, or custom
+    #[serde(default)]
+    pub mode: UpstreamProxyMode,
+    /// Enable upstream proxy (legacy, kept for compatibility)
+    #[serde(default)]
     pub enabled: bool,
-    /// Proxy URL (e.g., socks5://127.0.0.1:1080)
+    /// Custom proxy URL (e.g., socks5://127.0.0.1:1080 or http://vps:8045)
+    /// Only used when mode is Custom
+    #[serde(default)]
     pub url: String,
+}
+
+impl Default for UpstreamProxyConfig {
+    fn default() -> Self {
+        Self {
+            mode: UpstreamProxyMode::Direct,
+            enabled: false,
+            url: String::new(),
+        }
+    }
 }
 
 // ============================================================================
@@ -220,7 +260,7 @@ pub struct UpstreamProxyConfig {
 // ============================================================================
 
 /// Full proxy configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
 pub struct ProxyConfig {
     /// Enable proxy server
     pub enabled: bool,
@@ -231,8 +271,10 @@ pub struct ProxyConfig {
     #[serde(default)]
     pub auth_mode: ProxyAuthMode,
     /// Port to listen on
+    #[validate(range(min = 1024, max = 65535))]
     pub port: u16,
     /// API key for authentication
+    #[validate(length(min = 1))]
     pub api_key: String,
     /// Auto-start proxy on app launch
     pub auto_start: bool,
@@ -240,6 +282,7 @@ pub struct ProxyConfig {
     #[serde(default)]
     pub custom_mapping: HashMap<String, String>,
     /// Request timeout in seconds
+    #[validate(range(min = 30, max = 3600))]
     #[serde(default = "default_request_timeout")]
     pub request_timeout: u64,
     /// Enable request logging
@@ -247,15 +290,19 @@ pub struct ProxyConfig {
     pub enable_logging: bool,
     /// Upstream proxy configuration
     #[serde(default)]
+    #[validate(nested)]
     pub upstream_proxy: UpstreamProxyConfig,
     /// Z.ai configuration
     #[serde(default)]
+    #[validate(nested)]
     pub zai: ZaiConfig,
     /// Sticky session configuration
     #[serde(default)]
+    #[validate(nested)]
     pub scheduling: StickySessionConfig,
     /// Experimental features
     #[serde(default)]
+    #[validate(nested)]
     pub experimental: ExperimentalConfig,
 }
 
@@ -375,4 +422,8 @@ fn default_zai_haiku_model() -> String {
 
 fn default_request_timeout() -> u64 {
     120
+}
+
+fn default_sticky_ttl() -> u32 {
+    300 // 5 minutes default TTL for sticky sessions
 }

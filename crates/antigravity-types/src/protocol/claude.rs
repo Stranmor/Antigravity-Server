@@ -17,9 +17,7 @@ pub enum ClaudeContentBlock {
     #[serde(rename = "text")]
     Text { text: String },
     #[serde(rename = "image")]
-    Image {
-        source: ClaudeImageSource,
-    },
+    Image { source: ClaudeImageSource },
     #[serde(rename = "tool_use")]
     ToolUse {
         id: String,

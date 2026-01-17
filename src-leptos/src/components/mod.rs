@@ -1,6 +1,7 @@
 //! Reusable UI components
 
 mod account_card;
+mod add_account_modal;
 mod button;
 mod collapsible_card;
 mod modal;
@@ -10,6 +11,7 @@ mod sidebar;
 mod stats_card;
 
 pub use account_card::AccountCard;
+pub use add_account_modal::AddAccountModal;
 pub use button::{Button, ButtonVariant};
 pub use collapsible_card::CollapsibleCard;
 pub use modal::{Modal, ModalType};

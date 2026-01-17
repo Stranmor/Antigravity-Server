@@ -168,16 +168,33 @@ pub async fn handle_warmup(
         ("streamGenerateContent", Some("alt=sse"))
     };
 
+    // Get WARP proxy for IP isolation
+    let warp_proxy = state.warp_isolation.get_proxy_for_email(&req.email).await;
+
     let mut result = state
         .upstream
-        .call_v1_internal(method, &access_token, body.clone(), query)
+        .call_v1_internal_with_warp(
+            method,
+            &access_token,
+            body.clone(),
+            query,
+            std::collections::HashMap::new(),
+            warp_proxy.as_deref(),
+        )
         .await;
 
     // 如果流式请求失败，尝试非流式请求
     if result.is_err() && !prefer_non_stream {
         result = state
             .upstream
-            .call_v1_internal("generateContent", &access_token, body, None)
+            .call_v1_internal_with_warp(
+                "generateContent",
+                &access_token,
+                body,
+                None,
+                std::collections::HashMap::new(),
+                warp_proxy.as_deref(),
+            )
             .await;
     }
 

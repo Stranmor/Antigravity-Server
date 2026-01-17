@@ -25,11 +25,7 @@ pub enum ConfigError {
 
     /// Config migration failed (version upgrade)
     #[error("Config migration failed from v{from} to v{to}: {message}")]
-    MigrationFailed {
-        from: u32,
-        to: u32,
-        message: String,
-    },
+    MigrationFailed { from: u32, to: u32, message: String },
 }
 
 impl ConfigError {

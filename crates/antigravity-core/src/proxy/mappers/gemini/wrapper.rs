@@ -63,7 +63,7 @@ pub fn wrap_request(
     let tools_val: Option<Vec<Value>> = inner_request
         .get("tools")
         .and_then(|t| t.as_array())
-        .map(|arr| arr.clone());
+        .cloned();
 
     // Use shared grounding/config logic
     let config = crate::proxy::mappers::common_utils::resolve_request_config(
@@ -151,7 +151,7 @@ pub fn wrap_request(
                 if let Some(parts_array) = parts.as_array_mut() {
                     // 检查第一个 part 是否已包含 Antigravity 身份
                     let has_antigravity = parts_array
-                        .get(0)
+                        .first()
                         .and_then(|p| p.get("text"))
                         .and_then(|t| t.as_str())
                         .map(|s| s.contains("You are Antigravity"))

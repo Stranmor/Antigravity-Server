@@ -116,8 +116,19 @@ pub async fn handle_audio_transcription(
 
     // 8. 发送请求到 Gemini
     let upstream = state.upstream.clone();
+
+    // Get WARP proxy for IP isolation
+    let warp_proxy = state.warp_isolation.get_proxy_for_email(&email).await;
+
     let response = upstream
-        .call_v1_internal("generateContent", &access_token, wrapped_body, None)
+        .call_v1_internal_with_warp(
+            "generateContent",
+            &access_token,
+            wrapped_body,
+            None,
+            std::collections::HashMap::new(),
+            warp_proxy.as_deref(),
+        )
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, format!("上游请求失败: {}", e)))?;
 

@@ -5,14 +5,15 @@
 use axum::{
     extract::State,
     http::StatusCode,
-    response::Json,
+    response::{IntoResponse, Json},
     routing::{get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
 
 use antigravity_core::models::AppConfig;
-use antigravity_core::modules::config as core_config;
+use antigravity_core::modules::{account, config as core_config, oauth};
+use antigravity_shared::models::TokenData;
 
 use crate::state::{get_model_quota, AppState};
 
@@ -24,6 +25,15 @@ pub fn router() -> Router<AppState> {
         .route("/accounts", get(list_accounts))
         .route("/accounts/current", get(get_current_account))
         .route("/accounts/switch", post(switch_account))
+        .route("/accounts/delete", post(delete_account_handler))
+        .route("/accounts/delete-batch", post(delete_accounts_handler))
+        .route("/accounts/add-by-token", post(add_account_by_token))
+        .route("/accounts/refresh-quota", post(refresh_account_quota))
+        .route("/accounts/refresh-all-quotas", post(refresh_all_quotas))
+        // OAuth (headless flow)
+        .route("/oauth/url", get(get_oauth_url))
+        .route("/oauth/callback", get(handle_oauth_callback))
+        .route("/oauth/login", post(start_oauth_login))
         // Proxy
         .route("/proxy/status", get(get_proxy_status))
         // Monitor
@@ -134,6 +144,206 @@ async fn switch_account(
         Ok(()) => Ok(Json(true)),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
     }
+}
+
+// ============ Account Management ============
+
+#[derive(Deserialize)]
+struct DeleteAccountRequest {
+    account_id: String,
+}
+
+async fn delete_account_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<DeleteAccountRequest>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    match account::delete_account(&payload.account_id) {
+        Ok(()) => {
+            // Reload token manager
+            let _ = state.reload_accounts().await;
+            Ok(Json(true))
+        }
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
+    }
+}
+
+#[derive(Deserialize)]
+struct DeleteAccountsRequest {
+    account_ids: Vec<String>,
+}
+
+async fn delete_accounts_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<DeleteAccountsRequest>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    match account::delete_accounts(&payload.account_ids) {
+        Ok(()) => {
+            // Reload token manager
+            let _ = state.reload_accounts().await;
+            Ok(Json(true))
+        }
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
+    }
+}
+
+#[derive(Deserialize)]
+struct AddByTokenRequest {
+    refresh_tokens: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct AddByTokenResponse {
+    success_count: usize,
+    fail_count: usize,
+    accounts: Vec<AccountInfo>,
+}
+
+async fn add_account_by_token(
+    State(state): State<AppState>,
+    Json(payload): Json<AddByTokenRequest>,
+) -> Result<Json<AddByTokenResponse>, (StatusCode, String)> {
+    let mut success_count = 0;
+    let mut fail_count = 0;
+    let mut added_accounts = Vec::new();
+
+    for token in payload.refresh_tokens {
+        // Try to get user info using this refresh token
+        match oauth::refresh_access_token(&token).await {
+            Ok(token_response) => {
+                // Get user info
+                match oauth::get_user_info(&token_response.access_token).await {
+                    Ok(user_info) => {
+                        // Create TokenData
+                        let token_data = TokenData::new(
+                            token_response.access_token,
+                            token.clone(),
+                            token_response.expires_in,
+                            Some(user_info.email.clone()),
+                            None,
+                            None,
+                        );
+
+                        // Upsert account
+                        match account::upsert_account(
+                            user_info.email.clone(),
+                            user_info.get_display_name(),
+                            token_data,
+                        ) {
+                            Ok(acc) => {
+                                success_count += 1;
+                                added_accounts.push(AccountInfo {
+                                    id: acc.id.clone(),
+                                    email: acc.email.clone(),
+                                    name: acc.name.clone(),
+                                    disabled: acc.disabled,
+                                    is_current: false,
+                                    gemini_quota: get_model_quota(&acc, "gemini"),
+                                    claude_quota: get_model_quota(&acc, "claude"),
+                                    subscription_tier: acc
+                                        .quota
+                                        .as_ref()
+                                        .and_then(|q| q.subscription_tier.clone()),
+                                });
+                            }
+                            Err(_) => fail_count += 1,
+                        }
+                    }
+                    Err(_) => fail_count += 1,
+                }
+            }
+            Err(_) => fail_count += 1,
+        }
+    }
+
+    // Reload token manager
+    let _ = state.reload_accounts().await;
+
+    Ok(Json(AddByTokenResponse {
+        success_count,
+        fail_count,
+        accounts: added_accounts,
+    }))
+}
+
+#[derive(Deserialize)]
+struct RefreshQuotaRequest {
+    account_id: String,
+}
+
+#[derive(Serialize)]
+struct QuotaResponse {
+    account_id: String,
+    quota: Option<antigravity_shared::models::QuotaData>,
+}
+
+async fn refresh_account_quota(
+    State(state): State<AppState>,
+    Json(payload): Json<RefreshQuotaRequest>,
+) -> Result<Json<QuotaResponse>, (StatusCode, String)> {
+    // Load account
+    let mut acc = match account::load_account(&payload.account_id) {
+        Ok(a) => a,
+        Err(e) => return Err((StatusCode::NOT_FOUND, e)),
+    };
+
+    // Fetch quota with retry
+    match account::fetch_quota_with_retry(&mut acc).await {
+        Ok(quota) => {
+            // Save updated account
+            let _ = account::save_account(&acc);
+            // Reload token manager
+            let _ = state.reload_accounts().await;
+
+            Ok(Json(QuotaResponse {
+                account_id: payload.account_id,
+                quota: Some(quota),
+            }))
+        }
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+#[derive(Serialize)]
+struct RefreshAllResponse {
+    success: usize,
+    failed: usize,
+    total: usize,
+}
+
+async fn refresh_all_quotas(
+    State(state): State<AppState>,
+) -> Result<Json<RefreshAllResponse>, (StatusCode, String)> {
+    let accounts = match account::list_accounts() {
+        Ok(a) => a,
+        Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
+    };
+
+    let total = accounts.len();
+    let mut success = 0;
+    let mut failed = 0;
+
+    for mut acc in accounts {
+        if acc.disabled {
+            continue;
+        }
+
+        match account::fetch_quota_with_retry(&mut acc).await {
+            Ok(_) => {
+                let _ = account::save_account(&acc);
+                success += 1;
+            }
+            Err(_) => failed += 1,
+        }
+    }
+
+    // Reload token manager
+    let _ = state.reload_accounts().await;
+
+    Ok(Json(RefreshAllResponse {
+        success,
+        failed,
+        total,
+    }))
 }
 
 // ============ Proxy ============
@@ -291,15 +501,16 @@ async fn get_aimd_status(State(state): State<AppState>) -> Json<AimdStatusRespon
 
 /// Get Prometheus metrics in text format.
 /// Returns metrics compatible with Prometheus/OpenMetrics format.
-async fn get_metrics(
-    State(state): State<AppState>,
-) -> axum::response::Response<axum::body::Body> {
+async fn get_metrics(State(state): State<AppState>) -> axum::response::Response<axum::body::Body> {
     use axum::http::header;
     use axum::response::IntoResponse;
 
     // Update account gauges before rendering
     let accounts = state.list_accounts().unwrap_or_default();
-    let available = accounts.iter().filter(|a| !a.disabled && !a.proxy_disabled).count();
+    let available = accounts
+        .iter()
+        .filter(|a| !a.disabled && !a.proxy_disabled)
+        .count();
     antigravity_core::proxy::prometheus::update_account_gauges(accounts.len(), available);
 
     // Update uptime
@@ -310,8 +521,221 @@ async fn get_metrics(
 
     // Return with proper content type for Prometheus
     (
-        [(header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+        [(
+            header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
         metrics,
     )
         .into_response()
+}
+
+// ============ OAuth (Headless Flow) ============
+
+/// OAuth callback redirect URI base.
+/// In headless mode, we use the same server to handle the callback.
+fn get_oauth_redirect_uri() -> String {
+    let port: u16 = std::env::var("ANTIGRAVITY_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(8045);
+
+    // Check if running behind a custom host (e.g., reverse proxy)
+    if let Ok(host) = std::env::var("ANTIGRAVITY_OAUTH_HOST") {
+        format!("{}/api/oauth/callback", host)
+    } else {
+        format!("http://127.0.0.1:{}/api/oauth/callback", port)
+    }
+}
+
+#[derive(Serialize)]
+struct OAuthUrlResponse {
+    url: String,
+    redirect_uri: String,
+}
+
+/// Generate OAuth URL for user to open manually.
+/// Returns the URL that user should open in browser.
+async fn get_oauth_url() -> Json<OAuthUrlResponse> {
+    let redirect_uri = get_oauth_redirect_uri();
+    let url = oauth::get_auth_url(&redirect_uri);
+
+    Json(OAuthUrlResponse { url, redirect_uri })
+}
+
+#[derive(Deserialize)]
+struct OAuthCallbackQuery {
+    code: Option<String>,
+    error: Option<String>,
+}
+
+/// OAuth callback handler.
+/// Google redirects here after user authorizes the app.
+async fn handle_oauth_callback(
+    State(state): State<AppState>,
+    axum::extract::Query(query): axum::extract::Query<OAuthCallbackQuery>,
+) -> impl IntoResponse {
+    use axum::response::Html;
+
+    // Check for error
+    if let Some(error) = query.error {
+        return Html(format!(
+            r#"<!DOCTYPE html>
+            <html>
+            <head><meta charset="utf-8"><title>OAuth Error</title></head>
+            <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+                <h1 style="color: red;">❌ Authorization Failed</h1>
+                <p>Error: {}</p>
+                <p>Please close this window and try again.</p>
+            </body>
+            </html>"#,
+            error
+        ))
+        .into_response();
+    }
+
+    // Check for code
+    let Some(code) = query.code else {
+        return Html(
+            r#"<!DOCTYPE html>
+            <html>
+            <head><meta charset="utf-8"><title>OAuth Error</title></head>
+            <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+                <h1 style="color: red;">❌ Missing Authorization Code</h1>
+                <p>No authorization code received.</p>
+            </body>
+            </html>"#
+                .to_string(),
+        )
+        .into_response();
+    };
+
+    let redirect_uri = get_oauth_redirect_uri();
+
+    // Exchange code for tokens
+    let token_res = match oauth::exchange_code(&code, &redirect_uri).await {
+        Ok(t) => t,
+        Err(e) => {
+            return Html(format!(
+                r#"<!DOCTYPE html>
+                <html>
+                <head><meta charset="utf-8"><title>OAuth Error</title></head>
+                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+                    <h1 style="color: red;">❌ Token Exchange Failed</h1>
+                    <p>Error: {}</p>
+                </body>
+                </html>"#,
+                e
+            ))
+            .into_response();
+        }
+    };
+
+    // Check refresh token
+    let Some(refresh_token) = token_res.refresh_token else {
+        return Html(r#"<!DOCTYPE html>
+            <html>
+            <head><meta charset="utf-8"><title>OAuth Error</title></head>
+            <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+                <h1 style="color: orange;">⚠️ No Refresh Token</h1>
+                <p>Google didn't return a refresh token.</p>
+                <p>This usually happens if you've authorized this app before.</p>
+                <p><strong>Solution:</strong></p>
+                <ol style="text-align: left; display: inline-block;">
+                    <li>Go to <a href="https://myaccount.google.com/permissions" target="_blank">Google Account Permissions</a></li>
+                    <li>Find and revoke "Antigravity Tools"</li>
+                    <li>Try authorization again</li>
+                </ol>
+            </body>
+            </html>"#.to_string()).into_response();
+    };
+
+    // Get user info
+    let user_info = match oauth::get_user_info(&token_res.access_token).await {
+        Ok(u) => u,
+        Err(e) => {
+            return Html(format!(
+                r#"<!DOCTYPE html>
+                <html>
+                <head><meta charset="utf-8"><title>OAuth Error</title></head>
+                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+                    <h1 style="color: red;">❌ Failed to Get User Info</h1>
+                    <p>Error: {}</p>
+                </body>
+                </html>"#,
+                e
+            ))
+            .into_response();
+        }
+    };
+
+    // Create TokenData
+    let token_data = TokenData::new(
+        token_res.access_token,
+        refresh_token,
+        token_res.expires_in,
+        Some(user_info.email.clone()),
+        None, // project_id - will be fetched lazily
+        None, // session_id
+    );
+
+    // Upsert account
+    match account::upsert_account(
+        user_info.email.clone(),
+        user_info.get_display_name(),
+        token_data,
+    ) {
+        Ok(acc) => {
+            // Reload token manager
+            let _ = state.reload_accounts().await;
+
+            Html(format!(
+                r#"<!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <title>Authorization Successful</title>
+                </head>
+                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+                    <h1 style="color: green;">✅ Authorization Successful!</h1>
+                    <p>Account added: <strong>{}</strong></p>
+                    <p>You can close this window and return to the app.</p>
+                    <script>setTimeout(function() {{ window.close(); }}, 3000);</script>
+                </body>
+                </html>"#,
+                acc.email
+            ))
+            .into_response()
+        }
+        Err(e) => Html(format!(
+            r#"<!DOCTYPE html>
+                <html>
+                <head><meta charset="utf-8"><title>OAuth Error</title></head>
+                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+                    <h1 style="color: red;">❌ Failed to Save Account</h1>
+                    <p>Error: {}</p>
+                </body>
+                </html>"#,
+            e
+        ))
+        .into_response(),
+    }
+}
+
+/// POST endpoint for frontend to initiate OAuth login.
+/// Returns the OAuth URL for the frontend to redirect/open.
+#[derive(Serialize)]
+struct OAuthLoginResponse {
+    url: String,
+    message: String,
+}
+
+async fn start_oauth_login() -> Json<OAuthLoginResponse> {
+    let redirect_uri = get_oauth_redirect_uri();
+    let url = oauth::get_auth_url(&redirect_uri);
+
+    Json(OAuthLoginResponse {
+        url,
+        message: "Open this URL in your browser to authorize".to_string(),
+    })
 }

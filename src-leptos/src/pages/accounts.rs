@@ -2,7 +2,9 @@
 
 use crate::api::commands;
 use crate::app::AppState;
-use crate::components::{AccountCard, Button, ButtonVariant, Modal, ModalType, Pagination};
+use crate::components::{
+    AccountCard, AddAccountModal, Button, ButtonVariant, Modal, ModalType, Pagination,
+};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use std::collections::HashSet;
@@ -48,6 +50,7 @@ pub fn Accounts() -> impl IntoView {
     // Modal states
     let delete_confirm = RwSignal::new(Option::<String>::None);
     let batch_delete_confirm = RwSignal::new(false);
+    let add_account_modal_open = RwSignal::new(false);
     let toggle_proxy_confirm = RwSignal::new(Option::<(String, bool)>::None);
 
     // Messages
@@ -203,7 +206,7 @@ pub fn Accounts() -> impl IntoView {
         });
     };
 
-    let on_add_account = move || {
+    let _on_add_account = move || {
         oauth_pending.set(true);
         let s = state_add.clone();
         spawn_local(async move {
@@ -389,8 +392,8 @@ pub fn Accounts() -> impl IntoView {
                     <Button
                         text="➕ Add".to_string()
                         variant=ButtonVariant::Primary
-                        on_click=on_add_account
-                        loading=oauth_pending.get()
+                        on_click=move || add_account_modal_open.set(true)
+                        loading=false
                     />
                 </div>
             </header>
@@ -755,6 +758,23 @@ pub fn Accounts() -> impl IntoView {
                 modal_type=ModalType::Confirm
                 on_confirm=Callback::new(move |_| execute_toggle_proxy())
                 on_cancel=Callback::new(move |_| toggle_proxy_confirm.set(None))
+            />
+
+            // Add Account Modal
+            <AddAccountModal
+                is_open=add_account_modal_open
+                on_account_added=Callback::new({
+                    let s = state.clone();
+                    move |_| {
+                        // Refresh accounts list
+                        let s = s.clone();
+                        spawn_local(async move {
+                            if let Ok(accounts) = commands::list_accounts().await {
+                                s.accounts.set(accounts);
+                            }
+                        });
+                    }
+                })
             />
         </div>
     }

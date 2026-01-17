@@ -27,7 +27,6 @@ mod tests {
     #[test]
     fn test_cors_layer_creation() {
         let _layer = cors_layer();
-        // Layer 创建成功
-        assert!(true);
+        // Layer creation succeeded - type system ensures correctness
     }
 }

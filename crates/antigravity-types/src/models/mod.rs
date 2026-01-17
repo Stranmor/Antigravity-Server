@@ -12,9 +12,11 @@ mod token;
 pub use account::{Account, AccountIndex, AccountSummary};
 pub use config::{
     AppConfig, ExperimentalConfig, Protocol, ProxyAuthMode, ProxyConfig, SchedulingMode,
-    StickySessionConfig, UpstreamProxyConfig, ZaiConfig, ZaiDispatchMode, ZaiMcpConfig,
-    ZaiModelDefaults,
+    StickySessionConfig, UpstreamProxyConfig, UpstreamProxyMode, ZaiConfig, ZaiDispatchMode,
+    ZaiMcpConfig, ZaiModelDefaults,
 };
 pub use quota::{ModelQuota, QuotaData};
-pub use stats::{DashboardStats, ProxyRequestLog, ProxyStats, ProxyStatus, RefreshStats, UpdateInfo};
+pub use stats::{
+    DashboardStats, ProxyRequestLog, ProxyStats, ProxyStatus, RefreshStats, UpdateInfo,
+};
 pub use token::TokenData;

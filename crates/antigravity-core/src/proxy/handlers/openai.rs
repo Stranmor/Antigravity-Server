@@ -102,7 +102,7 @@ pub async fn handle_chat_completions(
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     // [NEW] 自动检测并转换 Responses 格式
     // 如果请求包含 instructions 或 input 但没有 messages，则认为是 Responses 格式
-    let is_responses_format = !body.get("messages").is_some()
+    let is_responses_format = body.get("messages").is_none()
         && (body.get("instructions").is_some() || body.get("input").is_some());
 
     if is_responses_format {
@@ -117,7 +117,7 @@ pub async fn handle_chat_completions(
                 });
 
                 // 初始化 messages 数组
-                if !body.get("messages").is_some() {
+                if body.get("messages").is_none() {
                     body["messages"] = json!([]);
                 }
 
@@ -187,10 +187,7 @@ pub async fn handle_chat_completions(
             &*state.custom_mapping.read().await,
         );
         // 将 OpenAI 工具转为 Value 数组以便探测联网
-        let tools_val: Option<Vec<Value>> = openai_req
-            .tools
-            .as_ref()
-            .map(|list| list.iter().cloned().collect());
+        let tools_val: Option<Vec<Value>> = openai_req.tools.as_ref().map(|list| list.to_vec());
         let config = crate::proxy::mappers::common_utils::resolve_request_config(
             &openai_req.model,
             &mapped_model,
@@ -248,8 +245,18 @@ pub async fn handle_chat_completions(
         };
         let query_string = if actual_stream { Some("alt=sse") } else { None };
 
+        // Get per-account WARP proxy for IP isolation
+        let warp_proxy = state.warp_isolation.get_proxy_for_email(&email).await;
+
         let response = match upstream
-            .call_v1_internal(method, &access_token, gemini_body, query_string)
+            .call_v1_internal_with_warp(
+                method,
+                &access_token,
+                gemini_body,
+                query_string,
+                std::collections::HashMap::new(),
+                warp_proxy.as_deref(),
+            )
             .await
         {
             Ok(r) => r,
@@ -303,7 +310,7 @@ pub async fn handle_chat_completions(
                     let sse_stream = openai_stream.map(|result| -> Result<Bytes, std::io::Error> {
                         match result {
                             Ok(bytes) => Ok(bytes),
-                            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
+                            Err(e) => Err(std::io::Error::other(e)),
                         }
                     });
 
@@ -807,15 +814,12 @@ pub async fn handle_completions(
 
     for attempt in 0..max_attempts {
         // 1. 模型路由解析
-        let (mapped_model, reason) = crate::proxy::common::resolve_model_route(
+        let (mapped_model, _reason) = crate::proxy::common::resolve_model_route(
             &openai_req.model,
             &*state.custom_mapping.read().await,
         );
         // 将 OpenAI 工具转为 Value 数组以便探测联网
-        let tools_val: Option<Vec<Value>> = openai_req
-            .tools
-            .as_ref()
-            .map(|list| list.iter().cloned().collect());
+        let tools_val: Option<Vec<Value>> = openai_req.tools.as_ref().map(|list| list.to_vec());
         let config = crate::proxy::mappers::common_utils::resolve_request_config(
             &openai_req.model,
             &mapped_model,
@@ -872,8 +876,18 @@ pub async fn handle_completions(
         };
         let query_string = if list_response { Some("alt=sse") } else { None };
 
+        // Get per-account WARP proxy for IP isolation
+        let warp_proxy = state.warp_isolation.get_proxy_for_email(&email).await;
+
         let response = match upstream
-            .call_v1_internal(method, &access_token, gemini_body, query_string)
+            .call_v1_internal_with_warp(
+                method,
+                &access_token,
+                gemini_body,
+                query_string,
+                std::collections::HashMap::new(),
+                warp_proxy.as_deref(),
+            )
             .await
         {
             Ok(r) => r,
@@ -1131,6 +1145,9 @@ pub async fn handle_images_generations(
 
     info!("✓ Using account: {} for image generation", email);
 
+    // Get WARP proxy for IP isolation
+    let warp_proxy = state.warp_isolation.get_proxy_for_email(&email).await;
+
     // 4. 并发发送请求 (解决 candidateCount > 1 不支持的问题)
     let mut tasks = Vec::new();
 
@@ -1141,6 +1158,7 @@ pub async fn handle_images_generations(
         let final_prompt = final_prompt.clone();
         let aspect_ratio = aspect_ratio.to_string();
         let _response_format = response_format.to_string();
+        let warp_proxy_clone = warp_proxy.clone();
 
         tasks.push(tokio::spawn(async move {
             let gemini_body = json!({
@@ -1171,7 +1189,14 @@ pub async fn handle_images_generations(
             });
 
             match upstream
-                .call_v1_internal("generateContent", &access_token, gemini_body, None)
+                .call_v1_internal_with_warp(
+                    "generateContent",
+                    &access_token,
+                    gemini_body,
+                    None,
+                    std::collections::HashMap::new(),
+                    warp_proxy_clone.as_deref(),
+                )
                 .await
             {
                 Ok(response) => {
@@ -1442,14 +1467,26 @@ pub async fn handle_images_edits(
     });
 
     let mut tasks = Vec::new();
+
+    // Get WARP proxy for IP isolation
+    let warp_proxy = state.warp_isolation.get_proxy_for_email(&email).await;
+
     for _ in 0..n {
         let upstream = upstream.clone();
         let access_token = access_token.clone();
         let body = gemini_body.clone();
+        let warp_proxy_clone = warp_proxy.clone();
 
         tasks.push(tokio::spawn(async move {
             match upstream
-                .call_v1_internal("generateContent", &access_token, body, None)
+                .call_v1_internal_with_warp(
+                    "generateContent",
+                    &access_token,
+                    body,
+                    None,
+                    std::collections::HashMap::new(),
+                    warp_proxy_clone.as_deref(),
+                )
                 .await
             {
                 Ok(response) => {

@@ -9,10 +9,7 @@ pub fn transform_openai_request(
     mapped_model: &str,
 ) -> Value {
     // 将 OpenAI 工具转为 Value 数组以便探测
-    let tools_val = request
-        .tools
-        .as_ref()
-        .map(|list| list.iter().map(|v| v.clone()).collect::<Vec<_>>());
+    let tools_val = request.tools.as_ref().map(|list| list.to_vec());
 
     // Resolve grounding config
     let config = crate::proxy::mappers::common_utils::resolve_request_config(
@@ -77,11 +74,8 @@ pub fn transform_openai_request(
 
     // 从全局存储获取 thoughtSignature (PR #93 支持)
     let global_thought_sig = get_thought_signature();
-    if global_thought_sig.is_some() {
-        tracing::debug!(
-            "从全局存储获取到 thoughtSignature (长度: {})",
-            global_thought_sig.as_ref().unwrap().len()
-        );
+    if let Some(ref sig) = global_thought_sig {
+        tracing::debug!("从全局存储获取到 thoughtSignature (长度: {})", sig.len());
     }
 
     // 2. 构建 Gemini contents (过滤掉 system)
@@ -92,7 +86,7 @@ pub fn transform_openai_request(
         .map(|msg| {
             let role = match msg.role.as_str() {
                 "assistant" => "model",
-                "tool" | "function" => "user", 
+                "tool" | "function" => "user",
                 _ => &msg.role,
             };
 
@@ -135,7 +129,7 @@ pub fn transform_openai_request(
                                             let mime_part = &image_url.url[5..pos];
                                             let mime_type = mime_part.split(';').next().unwrap_or("image/jpeg");
                                             let data = &image_url.url[pos + 1..];
-                                            
+
                                             parts.push(json!({
                                                 "inlineData": { "mimeType": mime_type, "data": data }
                                             }));
@@ -155,14 +149,14 @@ pub fn transform_openai_request(
                                         } else {
                                             image_url.url.clone()
                                         };
-                                        
+
                                         tracing::debug!("[OpenAI-Request] Reading local image: {}", file_path);
-                                        
+
                                         // 读取文件并转换为 base64
                                         if let Ok(file_bytes) = std::fs::read(&file_path) {
                                             use base64::Engine as _;
                                             let b64 = base64::engine::general_purpose::STANDARD.encode(&file_bytes);
-                                            
+
                                             // 根据文件扩展名推断 MIME 类型
                                             let mime_type = if file_path.to_lowercase().ends_with(".png") {
                                                 "image/png"
@@ -173,7 +167,7 @@ pub fn transform_openai_request(
                                             } else {
                                                 "image/jpeg"
                                             };
-                                            
+
                                             parts.push(json!({
                                                 "inlineData": { "mimeType": mime_type, "data": b64 }
                                             }));
@@ -197,7 +191,7 @@ pub fn transform_openai_request(
 
             // Handle tool calls (assistant message)
             if let Some(tool_calls) = &msg.tool_calls {
-                for (_index, tc) in tool_calls.iter().enumerate() {
+                for tc in tool_calls.iter() {
                     /* 暂时移除：防止 Codex CLI 界面碎片化
                     if index == 0 && parts.is_empty() {
                          if mapped_model.contains("gemini-3") {
@@ -227,7 +221,7 @@ pub fn transform_openai_request(
             // Handle tool response
             if msg.role == "tool" || msg.role == "function" {
                 let name = msg.name.as_deref().unwrap_or("unknown");
-                let final_name = if name == "local_shell_call" { "shell" } 
+                let final_name = if name == "local_shell_call" { "shell" }
                                 else if let Some(id) = &msg.tool_call_id { tool_id_to_name.get(id).map(|s| s.as_str()).unwrap_or(name) }
                                 else { name };
 
@@ -451,16 +445,12 @@ pub fn transform_openai_request(
 
 fn enforce_uppercase_types(value: &mut Value) {
     if let Value::Object(map) = value {
-        if let Some(type_val) = map.get_mut("type") {
-            if let Value::String(ref mut s) = type_val {
-                *s = s.to_uppercase();
-            }
+        if let Some(Value::String(ref mut s)) = map.get_mut("type") {
+            *s = s.to_uppercase();
         }
-        if let Some(properties) = map.get_mut("properties") {
-            if let Value::Object(ref mut props) = properties {
-                for v in props.values_mut() {
-                    enforce_uppercase_types(v);
-                }
+        if let Some(Value::Object(ref mut props)) = map.get_mut("properties") {
+            for v in props.values_mut() {
+                enforce_uppercase_types(v);
             }
         }
         if let Some(items) = map.get_mut("items") {
@@ -485,9 +475,9 @@ mod tests {
                 role: "user".to_string(),
                 content: Some(OpenAIContent::Array(vec![
                     OpenAIContentBlock::Text { text: "What is in this image?".to_string() },
-                    OpenAIContentBlock::ImageUrl { image_url: OpenAIImageUrl { 
+                    OpenAIContentBlock::ImageUrl { image_url: OpenAIImageUrl {
                         url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==".to_string(),
-                        detail: None 
+                        detail: None
                     } }
                 ])),
                 reasoning_content: None,

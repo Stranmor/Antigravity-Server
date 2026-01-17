@@ -231,6 +231,80 @@ pub fn Settings() -> impl IntoView {
                 </div>
             </section>
 
+            // Upstream Proxy
+            <section class="settings-section">
+                <h2>"Upstream Proxy"</h2>
+                <p class="section-desc">"Configure how outgoing API requests are routed"</p>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <label>"Proxy mode"</label>
+                        <p class="setting-desc">"Direct = no proxy, System = use ALL_PROXY/HTTP_PROXY, Custom = specify URL"</p>
+                    </div>
+                    <select
+                        prop:value=move || {
+                            state.config.get()
+                                .map(|c| match c.proxy.upstream_proxy.mode {
+                                    crate::types::UpstreamProxyMode::Direct => "direct",
+                                    crate::types::UpstreamProxyMode::System => "system",
+                                    crate::types::UpstreamProxyMode::Custom => "custom",
+                                })
+                                .unwrap_or("direct")
+                                .to_string()
+                        }
+                        on:change=move |ev| {
+                            let value = event_target_value(&ev);
+                            state.config.update(|c| {
+                                if let Some(config) = c.as_mut() {
+                                    config.proxy.upstream_proxy.mode = match value.as_str() {
+                                        "system" => crate::types::UpstreamProxyMode::System,
+                                        "custom" => crate::types::UpstreamProxyMode::Custom,
+                                        _ => crate::types::UpstreamProxyMode::Direct,
+                                    };
+                                    // Sync legacy enabled field
+                                    config.proxy.upstream_proxy.enabled =
+                                        !matches!(config.proxy.upstream_proxy.mode, crate::types::UpstreamProxyMode::Direct);
+                                }
+                            });
+                        }
+                    >
+                        <option value="direct">"Direct (no proxy)"</option>
+                        <option value="system">"System (ALL_PROXY)"</option>
+                        <option value="custom">"Custom URL"</option>
+                    </select>
+                </div>
+
+                <Show when=move || {
+                    state.config.get()
+                        .map(|c| matches!(c.proxy.upstream_proxy.mode, crate::types::UpstreamProxyMode::Custom))
+                        .unwrap_or(false)
+                }>
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <label>"Proxy URL"</label>
+                            <p class="setting-desc">"e.g. socks5://127.0.0.1:1080 or http://vps:8045"</p>
+                        </div>
+                        <input
+                            type="text"
+                            placeholder="socks5://127.0.0.1:1080"
+                            prop:value=move || {
+                                state.config.get()
+                                    .map(|c| c.proxy.upstream_proxy.url.clone())
+                                    .unwrap_or_default()
+                            }
+                            on:change=move |ev| {
+                                let value = event_target_value(&ev);
+                                state.config.update(|c| {
+                                    if let Some(config) = c.as_mut() {
+                                        config.proxy.upstream_proxy.url = value;
+                                    }
+                                });
+                            }
+                        />
+                    </div>
+                </Show>
+            </section>
+
             // Paths
             <section class="settings-section">
                 <h2>"Data & Storage"</h2>

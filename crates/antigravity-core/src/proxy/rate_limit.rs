@@ -329,7 +329,7 @@ impl RateLimitTracker {
                     .get("error")
                     .and_then(|e| e.get("details"))
                     .and_then(|d| d.as_array())
-                    .and_then(|a| a.get(0))
+                    .and_then(|a| a.first())
                     .and_then(|o| o.get("reason"))
                     .and_then(|v| v.as_str())
                 {
@@ -411,7 +411,7 @@ impl RateLimitTracker {
 
         // 计算总秒数
         let total_seconds =
-            hours * 3600 + minutes * 60 + seconds.ceil() as u64 + (milliseconds + 999) / 1000;
+            hours * 3600 + minutes * 60 + seconds.ceil() as u64 + milliseconds.div_ceil(1000);
 
         // 如果总秒数为 0，说明解析失败
         if total_seconds == 0 {
@@ -442,7 +442,7 @@ impl RateLimitTracker {
                     .get("error")
                     .and_then(|e| e.get("details"))
                     .and_then(|d| d.as_array())
-                    .and_then(|a| a.get(0))
+                    .and_then(|a| a.first())
                     .and_then(|o| o.get("metadata")) // 添加 metadata 层级
                     .and_then(|m| m.get("quotaResetDelay"))
                     .and_then(|v| v.as_str())
@@ -607,9 +607,9 @@ mod tests {
         let body = r#"{
             "error": {
                 "details": [
-                    { 
+                    {
                         "metadata": {
-                            "quotaResetDelay": "42s" 
+                            "quotaResetDelay": "42s"
                         }
                     }
                 ]
@@ -642,7 +642,7 @@ mod tests {
         tracker.parse_from_error("acc1", 429, Some("1"), "", None);
         let wait = tracker.get_remaining_wait("acc1");
         // Due to time passing, it might be 1 or 2
-        assert!(wait >= 1 && wait <= 2);
+        assert!((1..=2).contains(&wait));
     }
 
     #[test]

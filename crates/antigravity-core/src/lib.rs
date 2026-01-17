@@ -2,20 +2,22 @@
 //!
 //! Core business logic for Antigravity Manager.
 //!
-//! ## Architecture (Doctrine 2.11d - Symlink Isolation)
+//! ## Architecture (Post-Symlink Era)
 //!
 //! ```text
 //! antigravity-core/src/proxy/
-//! ├── mappers/     → symlink to vendor/antigravity-upstream/.../mappers
-//! ├── handlers/    → symlink to vendor/antigravity-upstream/.../handlers
-//! ├── common/      → real dir with symlinks + our circuit_breaker.rs
-//! ├── server.rs    ← OUR Axum server (real file)
-//! ├── token_manager.rs ← OUR implementation (real file)
-//! └── adaptive_limit.rs ← OUR AIMD (real file)
+//! ├── mappers/          # LOCAL COPY (from vendor/antigravity-upstream)
+//! ├── handlers/         # LOCAL COPY (claude.rs, openai.rs, gemini.rs)
+//! ├── common/           # LOCAL COPY + our circuit_breaker.rs
+//! ├── server.rs         # OUR Axum server
+//! ├── token_manager.rs  # OUR implementation
+//! ├── adaptive_limit.rs # OUR AIMD rate limiting
+//! ├── health.rs         # OUR health monitoring
+//! └── prometheus.rs     # OUR metrics endpoint
 //! ```
 //!
-//! Upstream code lives in vendor/antigravity-upstream/ (git submodule).
-//! Symlinks allow crate::proxy::* imports to work normally.
+//! All proxy code is now local copies (no symlinks). Upstream reference lives
+//! in vendor/antigravity-upstream/ (git submodule) for feature porting.
 
 pub mod error;
 pub mod models;

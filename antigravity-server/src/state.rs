@@ -185,6 +185,20 @@ impl AppState {
         }
     }
 
+    /// Reload accounts into token manager (after OAuth or import)
+    pub async fn reload_accounts(&self) -> Result<usize, String> {
+        match self.inner.token_manager.load_accounts().await {
+            Ok(count) => {
+                tracing::info!("🔄 Reloaded {} accounts into token manager", count);
+                Ok(count)
+            }
+            Err(e) => {
+                tracing::error!("❌ Failed to reload accounts: {}", e);
+                Err(e)
+            }
+        }
+    }
+
     // AIMD accessors (used by /api/resilience/* endpoints)
     pub fn adaptive_limits(&self) -> &Arc<AdaptiveLimitManager> {
         &self.inner.adaptive_limits

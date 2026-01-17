@@ -212,26 +212,62 @@ pub mod commands {
         Ok(())
     }
 
-    pub async fn delete_account(_account_id: &str) -> Result<(), String> {
-        // TODO: Implement delete endpoint
-        Err("Not implemented".to_string())
+    pub async fn delete_account(account_id: &str) -> Result<(), String> {
+        let _: bool = api_post(
+            "/accounts/delete",
+            &serde_json::json!({
+                "account_id": account_id
+            }),
+        )
+        .await?;
+        Ok(())
     }
 
-    pub async fn delete_accounts(_account_ids: &[String]) -> Result<(), String> {
-        // TODO: Implement batch delete endpoint
-        Err("Not implemented".to_string())
+    pub async fn delete_accounts(account_ids: &[String]) -> Result<(), String> {
+        let _: bool = api_post(
+            "/accounts/delete-batch",
+            &serde_json::json!({
+                "account_ids": account_ids
+            }),
+        )
+        .await?;
+        Ok(())
     }
 
     // ========== OAuth ==========
 
+    #[derive(serde::Deserialize)]
+    struct OAuthLoginResponse {
+        url: String,
+        #[allow(dead_code)]
+        message: String,
+    }
+
     pub async fn start_oauth_login() -> Result<Account, String> {
-        // TODO: Implement OAuth endpoint
-        Err("OAuth not implemented in headless mode".to_string())
+        // Get OAuth URL from backend
+        let response: OAuthLoginResponse = api_post("/oauth/login", &serde_json::json!({})).await?;
+
+        // Open URL in browser (user will be redirected back to /api/oauth/callback)
+        let window = web_sys::window().ok_or("No window")?;
+        window
+            .open_with_url_and_target(&response.url, "_blank")
+            .map_err(|e| format!("Failed to open browser: {:?}", e))?;
+
+        // Return placeholder - the OAuth flow completes via browser redirect
+        // After redirect, user should refresh the accounts list
+        Err("OAuth flow started - check browser and refresh accounts list after login".to_string())
+    }
+
+    #[derive(serde::Deserialize)]
+    struct OAuthUrlResponse {
+        url: String,
+        #[allow(dead_code)]
+        redirect_uri: String,
     }
 
     pub async fn prepare_oauth_url() -> Result<String, String> {
-        // TODO: Implement OAuth URL endpoint
-        Err("OAuth not implemented in headless mode".to_string())
+        let response: OAuthUrlResponse = api_get("/oauth/url").await?;
+        Ok(response.url)
     }
 
     pub async fn cancel_oauth_login() -> Result<(), String> {
@@ -240,25 +276,64 @@ pub mod commands {
 
     // ========== Quota ==========
 
-    pub async fn fetch_account_quota(_account_id: &str) -> Result<QuotaData, String> {
-        // TODO: Implement quota refresh endpoint
-        Err("Not implemented".to_string())
+    #[derive(serde::Deserialize)]
+    struct QuotaResponse {
+        #[allow(dead_code)]
+        account_id: String,
+        quota: Option<QuotaData>,
+    }
+
+    pub async fn fetch_account_quota(account_id: &str) -> Result<QuotaData, String> {
+        let response: QuotaResponse = api_post(
+            "/accounts/refresh-quota",
+            &serde_json::json!({
+                "account_id": account_id
+            }),
+        )
+        .await?;
+        response
+            .quota
+            .ok_or_else(|| "No quota data returned".to_string())
     }
 
     pub async fn refresh_all_quotas() -> Result<RefreshStats, String> {
-        // TODO: Implement refresh endpoint
-        Err("Not implemented".to_string())
+        api_post("/accounts/refresh-all-quotas", &serde_json::json!({})).await
+    }
+
+    // ========== Token-based Add ==========
+
+    #[derive(serde::Deserialize)]
+    #[allow(dead_code)]
+    struct AddByTokenResponse {
+        success_count: usize,
+        fail_count: usize,
+        accounts: Vec<Account>,
+    }
+
+    pub async fn add_accounts_by_token(
+        refresh_tokens: Vec<String>,
+    ) -> Result<(usize, usize), String> {
+        let response: AddByTokenResponse = api_post(
+            "/accounts/add-by-token",
+            &serde_json::json!({
+                "refresh_tokens": refresh_tokens
+            }),
+        )
+        .await?;
+        Ok((response.success_count, response.fail_count))
     }
 
     // ========== Import ==========
 
     pub async fn sync_account_from_db() -> Result<Option<Account>, String> {
-        // TODO: Implement import endpoint
+        // Import from local DB is not available in browser mode
+        // (requires filesystem access)
         Ok(None)
     }
 
     pub async fn import_custom_db(_path: &str) -> Result<Account, String> {
-        Err("Not implemented".to_string())
+        // Import from custom DB is not available in browser mode
+        Err("Import from file not available in browser mode".to_string())
     }
 
     // ========== Proxy ==========

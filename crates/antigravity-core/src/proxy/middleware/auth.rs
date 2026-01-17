@@ -73,11 +73,8 @@ pub async fn auth_middleware(
 
 #[cfg(test)]
 mod tests {
-    // 移除未使用的 use super::*;
-
     #[test]
-    fn test_auth_placeholder() {
-        // Placeholder test
-        assert!(true);
+    fn test_auth_module_exists() {
+        // Module compilation test - actual auth testing requires integration tests
     }
 }

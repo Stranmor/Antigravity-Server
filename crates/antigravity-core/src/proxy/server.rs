@@ -30,6 +30,8 @@ pub struct AppState {
     pub upstream: Arc<crate::proxy::upstream::client::UpstreamClient>,
     pub provider_rr: Arc<AtomicUsize>,
     pub zai_vision_mcp: Arc<crate::proxy::zai_vision_mcp::ZaiVisionMcpState>,
+    /// WARP IP isolation manager for per-account SOCKS5 proxy routing.
+    pub warp_isolation: Arc<crate::proxy::warp_isolation::WarpIsolationManager>,
 }
 
 /// Build proxy router with shared state references for hot-reload support.
@@ -51,6 +53,7 @@ pub fn build_proxy_router_with_shared_state(
     let proxy_state = Arc::new(tokio::sync::RwLock::new(upstream_proxy.clone()));
     let provider_rr = Arc::new(AtomicUsize::new(0));
     let zai_vision_mcp_state = Arc::new(crate::proxy::zai_vision_mcp::ZaiVisionMcpState::new());
+    let warp_isolation = Arc::new(crate::proxy::warp_isolation::WarpIsolationManager::new());
 
     let state = AppState {
         token_manager,
@@ -70,6 +73,7 @@ pub fn build_proxy_router_with_shared_state(
         health_monitor,
         circuit_breaker,
         security_config: security_config.clone(),
+        warp_isolation,
     };
 
     use crate::proxy::handlers;

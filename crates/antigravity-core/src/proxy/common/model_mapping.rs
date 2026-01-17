@@ -101,7 +101,7 @@ pub async fn get_all_dynamic_models(
     // [NEW] Issue #247: Dynamically generate all Image Gen Combinations
     let base = "gemini-3-pro-image";
     let resolutions = vec!["", "-2k", "-4k"];
-    let ratios = vec!["", "-1x1", "-4x3", "-3x4", "-16x9", "-9x16", "-21x9"];
+    let ratios = ["", "-1x1", "-4x3", "-3x4", "-16x9", "-9x16", "-21x9"];
 
     for res in resolutions {
         for ratio in ratios.iter() {
@@ -131,6 +131,7 @@ pub async fn get_all_dynamic_models(
 /// - `gpt-4*` 匹配 `gpt-4`, `gpt-4-turbo`, `gpt-4-0613` 等
 /// - `claude-3-5-sonnet-*` 匹配所有 3.5 sonnet 版本
 /// - `*-thinking` 匹配所有以 `-thinking` 结尾的模型
+#[allow(dead_code)]
 fn wildcard_match(pattern: &str, text: &str) -> bool {
     if let Some(star_pos) = pattern.find('*') {
         let prefix = &pattern[..star_pos];

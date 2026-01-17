@@ -44,6 +44,10 @@ async fn main() -> Result<()> {
 
     info!("🚀 Antigravity Server starting on port {}...", port);
 
+    // Initialize Prometheus metrics
+    let _ = antigravity_core::proxy::prometheus::init_metrics();
+    info!("📊 Prometheus metrics initialized");
+
     let data_dir = antigravity_core::modules::account::get_data_dir()
         .map_err(|e| anyhow::anyhow!("Failed to get data directory: {}", e))?;
     let initial_app_config = antigravity_core::modules::config::load_config().unwrap_or_default();
@@ -56,6 +60,34 @@ async fn main() -> Result<()> {
         }
         Err(e) => {
             tracing::warn!("⚠️ Could not load accounts into token manager: {}", e);
+        }
+    }
+
+    // Initialize WARP IP isolation (per-account SOCKS5 proxies)
+    let warp_mapping_path = std::env::var("WARP_MAPPING_FILE").unwrap_or_else(|_| {
+        antigravity_core::proxy::warp_isolation::DEFAULT_WARP_MAPPING_PATH.to_string()
+    });
+
+    let warp_manager = Arc::new(
+        antigravity_core::proxy::warp_isolation::WarpIsolationManager::with_path(
+            &warp_mapping_path,
+        ),
+    );
+
+    match warp_manager.load_mappings().await {
+        Ok(count) if count > 0 => {
+            tracing::info!(
+                "🔐 WARP IP isolation enabled: {} accounts mapped to SOCKS5 proxies",
+                count
+            );
+        }
+        Ok(_) => {
+            tracing::info!(
+                "ℹ️ WARP IP isolation: no mappings found (direct connections will be used)"
+            );
+        }
+        Err(e) => {
+            tracing::warn!("⚠️ WARP IP isolation disabled: {}", e);
         }
     }
 

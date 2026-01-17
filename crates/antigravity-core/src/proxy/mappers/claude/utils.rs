@@ -10,10 +10,9 @@
 pub fn get_context_limit_for_model(model: &str) -> u32 {
     if model.contains("pro") {
         2_097_152 // 2M for Pro
-    } else if model.contains("flash") {
-        1_048_576 // 1M for Flash
     } else {
-        1_048_576 // Default 1M
+        // Flash and default: 1M
+        1_048_576
     }
 }
 
@@ -47,7 +46,7 @@ pub fn to_claude_usage(
             } else {
                 // 第二阶段：回归区 - 从 70% 到 100% 线性回归到 195k
                 // 计算当前处于 70% - 100% 的比例
-                let range = (context_limit as f64 * 0.3) as f64;
+                let range = context_limit as f64 * 0.3;
                 let progress = (total_raw - perception_start) as f64 / range;
 
                 // 计算第一阶段末端的数值作为起点
@@ -90,9 +89,6 @@ pub fn to_claude_usage(
         server_tool_use: None,
     }
 }
-
-/// 提取 thoughtSignature
-// 已移除未使用的 extract_thought_signature 函数
 
 #[cfg(test)]
 mod tests {

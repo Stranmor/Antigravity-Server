@@ -9,61 +9,48 @@
 //! ## Architecture (Post-Symlink Era)
 //!
 //! All modules are now local copies from vendor/antigravity-upstream.
-//! Clippy warnings are being fixed incrementally - modules marked with
-//! #[allow(warnings)] still need cleanup.
+//! All modules are clippy-clean (Phase 3c completed 2026-01-17).
 
-// ============= COPIED FROM UPSTREAM (CLIPPY CLEANUP IN PROGRESS) =============
-// These modules still have clippy warnings that need to be fixed.
-// As each module is cleaned up, its #[allow(warnings)] can be removed.
+// ============================================================================
+// ALL MODULES (clippy-clean, -D warnings compliant)
+// ============================================================================
 
-#[allow(warnings)]
-pub mod audio;
-#[allow(warnings)]
-pub mod handlers;
-#[allow(warnings)]
-pub mod mappers;
-#[allow(warnings)]
-pub mod middleware;
-#[allow(warnings)]
-pub mod project_resolver;
-#[allow(warnings)]
-pub mod providers;
-#[allow(warnings)]
-pub mod rate_limit;
-#[allow(warnings)]
-pub mod security;
-#[allow(warnings)]
-pub mod session_manager;
-#[allow(warnings)]
-pub mod signature_cache;
-#[allow(warnings)]
-pub mod sticky_config;
-#[allow(warnings)]
-pub mod upstream;
-#[allow(warnings)]
-pub mod zai_vision_mcp;
-#[allow(warnings)]
-pub mod zai_vision_tools;
-
-// Common utilities (also needs cleanup)
-#[allow(warnings)]
-pub mod common;
-
-// ============= OUR CUSTOM MODULES =============
-// These are original files maintained by us - CLIPPY STRICT (no allows!)
+// Our custom modules
 pub mod adaptive_limit;
 pub mod health;
 pub mod monitor;
 pub mod prometheus;
+pub mod security;
 pub mod server;
 pub mod smart_prober;
+pub mod sticky_config;
 pub mod token_manager;
 
-// Re-export config from shared
+// Cleaned upstream modules (Phase 3c complete)
+pub mod audio;
+pub mod common;
+pub mod handlers;
+pub mod mappers;
+pub mod middleware;
+pub mod project_resolver;
+pub mod providers;
+pub mod rate_limit;
+pub mod session_manager;
+pub mod signature_cache;
+pub mod upstream;
+pub mod warp_isolation;
+pub mod zai_vision_mcp;
+pub mod zai_vision_tools;
+
+// ============================================================================
+// RE-EXPORTS
+// ============================================================================
+
+// Config types from shared (which re-exports from types)
 pub use antigravity_shared::proxy::config;
 pub use antigravity_shared::proxy::config::{ProxyAuthMode, ZaiConfig, ZaiDispatchMode};
 
-// Re-export core types
+// Core types
 pub use monitor::{ProxyEventBus, ProxyMonitor};
 pub use security::ProxySecurityConfig;
 pub use server::{
@@ -71,8 +58,9 @@ pub use server::{
 };
 pub use signature_cache::SignatureCache;
 pub use token_manager::TokenManager;
+pub use warp_isolation::WarpIsolationManager;
 
-// Re-export AIMD types
+// AIMD rate limiting types
 pub use adaptive_limit::{
     AIMDController, AdaptiveLimitManager, AdaptiveLimitTracker, ProbeStrategy,
 };

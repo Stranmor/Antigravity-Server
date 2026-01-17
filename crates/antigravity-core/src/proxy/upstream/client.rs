@@ -89,6 +89,121 @@ impl UpstreamClient {
         .await
     }
 
+    /// 调用 v1internal API with per-account WARP proxy (for IP isolation)
+    ///
+    /// When `warp_proxy_url` is Some, a new HTTP client is built with that SOCKS5 proxy
+    /// for this specific request, enabling per-account IP isolation.
+    pub async fn call_v1_internal_with_warp(
+        &self,
+        method: &str,
+        access_token: &str,
+        body: Value,
+        query_string: Option<&str>,
+        extra_headers: std::collections::HashMap<String, String>,
+        warp_proxy_url: Option<&str>,
+    ) -> Result<Response, String> {
+        // If WARP proxy is specified, create a new client with that proxy
+        let client = if let Some(proxy_url) = warp_proxy_url {
+            let proxy = reqwest::Proxy::all(proxy_url)
+                .map_err(|e| format!("Invalid WARP proxy URL '{}': {}", proxy_url, e))?;
+
+            Client::builder()
+                .connect_timeout(Duration::from_secs(20))
+                .pool_max_idle_per_host(4) // Smaller pool for per-request clients
+                .pool_idle_timeout(Duration::from_secs(30))
+                .tcp_keepalive(Duration::from_secs(60))
+                .timeout(Duration::from_secs(600))
+                .user_agent("antigravity/1.11.9 windows/amd64")
+                .proxy(proxy)
+                .build()
+                .map_err(|e| format!("Failed to create WARP client: {}", e))?
+        } else {
+            // Use default client
+            self.http_client.clone()
+        };
+
+        // Build headers
+        let mut headers = header::HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            header::HeaderValue::from_static("application/json"),
+        );
+        headers.insert(
+            header::AUTHORIZATION,
+            header::HeaderValue::from_str(&format!("Bearer {}", access_token))
+                .map_err(|e| e.to_string())?,
+        );
+        headers.insert(
+            header::USER_AGENT,
+            header::HeaderValue::from_static("antigravity/1.11.9 windows/amd64"),
+        );
+
+        // Inject extra headers
+        for (k, v) in extra_headers {
+            if let Ok(hk) = header::HeaderName::from_bytes(k.as_bytes()) {
+                if let Ok(hv) = header::HeaderValue::from_str(&v) {
+                    headers.insert(hk, hv);
+                }
+            }
+        }
+
+        let mut last_err: Option<String> = None;
+
+        // Iterate through all endpoints with fallback
+        for (idx, base_url) in V1_INTERNAL_BASE_URL_FALLBACKS.iter().enumerate() {
+            let url = Self::build_url(base_url, method, query_string);
+            let has_next = idx + 1 < V1_INTERNAL_BASE_URL_FALLBACKS.len();
+
+            let response = client
+                .post(&url)
+                .headers(headers.clone())
+                .json(&body)
+                .send()
+                .await;
+
+            match response {
+                Ok(resp) => {
+                    let status = resp.status();
+                    if status.is_success() {
+                        if warp_proxy_url.is_some() {
+                            tracing::debug!(
+                                "✓ WARP request succeeded | Endpoint: {} | Status: {}",
+                                base_url,
+                                status
+                            );
+                        }
+                        return Ok(resp);
+                    }
+
+                    if has_next && Self::should_try_next_endpoint(status) {
+                        tracing::warn!(
+                            "Upstream endpoint returned {} at {} (method={}), trying next",
+                            status,
+                            base_url,
+                            method
+                        );
+                        last_err = Some(format!("Upstream {} returned {}", base_url, status));
+                        continue;
+                    }
+
+                    return Ok(resp);
+                }
+                Err(e) => {
+                    let msg = format!("HTTP request failed at {}: {}", base_url, e);
+                    tracing::debug!("{}", msg);
+                    last_err = Some(msg);
+
+                    if !has_next {
+                        break;
+                    }
+                    continue;
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| "All endpoints failed".to_string()))
+    }
+
     /// [FIX #765] 调用 v1internal API，支持透传额外的 Headers
     pub async fn call_v1_internal_with_headers(
         &self,

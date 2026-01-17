@@ -1,14 +1,20 @@
 //! Antigravity Shared Types
 //!
-//! This crate provides shared types for the Antigravity Manager.
-//! It re-exports core types from `antigravity-types` and adds
-//! additional types specific to the shared layer.
+//! This crate is a **compatibility layer** that re-exports types from `antigravity-types`.
+//! All canonical type definitions now live in `antigravity-types`.
 //!
-//! ## Migration Note
+//! ## Migration Status: COMPLETE
 //!
-//! Types are being consolidated into `antigravity-types`. This crate
-//! will eventually become a thin re-export layer or be deprecated.
-//! New code should prefer importing from `antigravity-types` directly.
+//! As of Phase 3 consolidation (2026-01-17), this crate contains NO duplicate
+//! type definitions — only re-exports. New code should import from `antigravity-types`
+//! directly when possible.
+//!
+//! ## Structure
+//!
+//! - `error` - Re-exports `AccountError`, `ProxyError`, `ConfigError`, `TypedError`
+//! - `models` - Re-exports `Account`, `AppConfig`, `ProxyConfig`, etc.
+//! - `proxy` - Re-exports proxy config types
+//! - `utils` - HTTP utilities (re-exports `UpstreamProxyConfig`)
 
 pub mod error;
 pub mod models;
@@ -16,10 +22,16 @@ pub mod proxy;
 pub mod utils;
 
 // Re-export all types from antigravity-types for backwards compatibility
-// New code should prefer importing from antigravity_types directly
 pub use antigravity_types::{
     // Error types
-    error::{AccountError, ConfigError, ProxyError, TypedError},
+    error::{AccountError, ConfigError, ProxyError, Result, TypedError},
+    // Model types
+    models::{
+        Account, AccountIndex, AccountSummary, AppConfig, ExperimentalConfig, ModelQuota, Protocol,
+        ProxyAuthMode, ProxyConfig, ProxyRequestLog, ProxyStats, QuotaData, SchedulingMode,
+        StickySessionConfig, TokenData, UpstreamProxyConfig, ZaiConfig, ZaiDispatchMode,
+        ZaiMcpConfig, ZaiModelDefaults,
+    },
     // Protocol types
     protocol,
 };
