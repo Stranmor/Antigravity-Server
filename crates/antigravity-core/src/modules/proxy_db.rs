@@ -20,7 +20,14 @@ pub fn init_db() -> Result<(), String> {
             status INTEGER,
             duration INTEGER,
             model TEXT,
-            error TEXT
+            error TEXT,
+            request_body TEXT,
+            response_body TEXT,
+            input_tokens INTEGER,
+            output_tokens INTEGER,
+            account_email TEXT,
+            mapped_model TEXT,
+            mapping_reason TEXT
         )",
         [],
     )
@@ -39,6 +46,10 @@ pub fn init_db() -> Result<(), String> {
     );
     let _ = conn.execute("ALTER TABLE request_logs ADD COLUMN account_email TEXT", []);
     let _ = conn.execute("ALTER TABLE request_logs ADD COLUMN mapped_model TEXT", []);
+    let _ = conn.execute(
+        "ALTER TABLE request_logs ADD COLUMN mapping_reason TEXT",
+        [],
+    );
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_timestamp ON request_logs (timestamp DESC)",
@@ -54,8 +65,8 @@ pub fn save_log(log: &ProxyRequestLog) -> Result<(), String> {
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
 
     conn.execute(
-        "INSERT INTO request_logs (id, timestamp, method, url, status, duration, model, error, request_body, response_body, input_tokens, output_tokens, account_email, mapped_model)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+        "INSERT INTO request_logs (id, timestamp, method, url, status, duration, model, error, request_body, response_body, input_tokens, output_tokens, account_email, mapped_model, mapping_reason)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         params![
             log.id,
             log.timestamp,
@@ -71,6 +82,7 @@ pub fn save_log(log: &ProxyRequestLog) -> Result<(), String> {
             log.output_tokens,
             log.account_email,
             log.mapped_model,
+            log.mapping_reason,
         ],
     ).map_err(|e| e.to_string())?;
 
@@ -82,7 +94,7 @@ pub fn get_logs(limit: usize) -> Result<Vec<ProxyRequestLog>, String> {
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
 
     let mut stmt = conn.prepare(
-        "SELECT id, timestamp, method, url, status, duration, model, error, request_body, response_body, input_tokens, output_tokens, account_email, mapped_model
+        "SELECT id, timestamp, method, url, status, duration, model, error, request_body, response_body, input_tokens, output_tokens, account_email, mapped_model, mapping_reason
          FROM request_logs
          ORDER BY timestamp DESC
          LIMIT ?1"
@@ -99,6 +111,7 @@ pub fn get_logs(limit: usize) -> Result<Vec<ProxyRequestLog>, String> {
                 duration: row.get(5)?,
                 model: row.get(6)?,
                 mapped_model: row.get(13).unwrap_or(None),
+                mapping_reason: row.get(14).unwrap_or(None),
                 account_email: row.get(12).unwrap_or(None),
                 error: row.get(7)?,
                 request_body: row.get(8).unwrap_or(None),

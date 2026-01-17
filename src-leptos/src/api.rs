@@ -310,6 +310,30 @@ pub mod commands {
         Ok(0)
     }
 
+    // ========== Models ==========
+
+    #[derive(serde::Serialize)]
+    pub struct ModelDetectRequest {
+        pub model: String,
+    }
+
+    #[derive(serde::Deserialize, Clone)]
+    pub struct ModelDetectResponse {
+        pub original_model: String,
+        pub mapped_model: String,
+        pub mapping_reason: String,
+    }
+
+    pub async fn detect_model(model: &str) -> Result<ModelDetectResponse, String> {
+        api_post(
+            "/models/detect",
+            &ModelDetectRequest {
+                model: model.to_string(),
+            },
+        )
+        .await
+    }
+
     // ========== System ==========
 
     pub async fn check_for_updates() -> Result<UpdateInfo, String> {

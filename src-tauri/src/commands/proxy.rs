@@ -1,6 +1,6 @@
 use crate::models::ProxyRequestLog;
 use crate::proxy::monitor::{ProxyMonitor, ProxyStats, TauriEventBus};
-use crate::proxy::{security::ProxySecurityConfig, TokenManager};
+use crate::proxy::{TokenManager, security::ProxySecurityConfig};
 use antigravity_shared::proxy::config::{
     ProxyConfig, StickySessionConfig, UpstreamProxyConfig, ZaiDispatchMode,
 };

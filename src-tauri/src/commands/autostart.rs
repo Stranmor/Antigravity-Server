@@ -1,4 +1,4 @@
-// Autostart 命令
+// Autostart Commands
 use tauri_plugin_autostart::ManagerExt;
 
 use antigravity_core::modules::logger;
@@ -9,10 +9,10 @@ pub async fn toggle_auto_launch(app: tauri::AppHandle, enable: bool) -> Result<(
 
     if enable {
         manager.enable().map_err(|e| e.to_string())?;
-        logger::log_info("已启用开机自动启动");
+        logger::log_info("Autostart enabled");
     } else {
         manager.disable().map_err(|e| e.to_string())?;
-        logger::log_info("已禁用开机自动启动");
+        logger::log_info("Autostart disabled");
     }
 
     Ok(())

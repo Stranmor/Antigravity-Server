@@ -46,6 +46,12 @@ pub fn ApiProxy() -> impl IntoView {
     let routing_expanded = RwSignal::new(true);
     let scheduling_expanded = RwSignal::new(false);
 
+    // Test Mapping State
+    let test_mapping_expanded = RwSignal::new(false);
+    let test_model_input = RwSignal::new(String::new());
+    let test_result = RwSignal::new(Option::<crate::api::commands::ModelDetectResponse>::None);
+    let test_loading = RwSignal::new(false);
+
     // Message
     let message = RwSignal::new(Option::<(String, bool)>::None);
 
@@ -193,6 +199,28 @@ pub fn ApiProxy() -> impl IntoView {
             if commands::clear_proxy_session_bindings().await.is_ok() {
                 show_message("Session bindings cleared".to_string(), false);
             }
+        });
+    };
+
+    let on_test_mapping = move || {
+        let model = test_model_input.get();
+        if model.is_empty() {
+            return;
+        }
+
+        test_loading.set(true);
+        test_result.set(None);
+
+        spawn_local(async move {
+            match commands::detect_model(&model).await {
+                Ok(res) => {
+                    test_result.set(Some(res));
+                }
+                Err(e) => {
+                    show_message(format!("Test failed: {}", e), true);
+                }
+            }
+            test_loading.set(false);
         });
     };
 
@@ -494,6 +522,61 @@ print(response.text)"#,
                             }}
                         </div>
 
+                    </div>
+                </Show>
+            </div>
+
+            // Test Mapping
+            <div class="config-card collapsible">
+                <div class="config-header clickable" on:click=move |_| test_mapping_expanded.update(|v| *v = !*v)>
+                    <h2>"🧪 Test Mapping"</h2>
+                    <span class=move || format!("expand-icon {}", if test_mapping_expanded.get() { "expanded" } else { "" })>"▼"</span>
+                </div>
+
+                <Show when=move || test_mapping_expanded.get()>
+                    <div class="config-content">
+                        <div class="form-group">
+                            <label>"Enter Model Name"</label>
+                            <div class="api-key-row">
+                                <input
+                                    type="text"
+                                    placeholder="e.g. gpt-4-turbo"
+                                    prop:value=move || test_model_input.get()
+                                    on:input=move |ev| test_model_input.set(event_target_value(&ev))
+                                    on:keydown=move |ev| {
+                                        if ev.key() == "Enter" {
+                                            on_test_mapping();
+                                        }
+                                    }
+                                    class="api-key-input"
+                                />
+                                <button
+                                    class="btn btn--primary"
+                                    disabled=move || test_loading.get()
+                                    on:click=move |_| on_test_mapping()
+                                >
+                                    {move || if test_loading.get() { "...".to_string() } else { "Test".to_string() }}
+                                </button>
+                            </div>
+                        </div>
+
+                        <Show when=move || test_result.get().is_some()>
+                            {move || {
+                                let res = test_result.get().unwrap();
+                                view! {
+                                    <div class="config-section" style="margin-top: 1rem; padding: 1rem; background: var(--bg-secondary); border-radius: 8px;">
+                                        <div class="result-row" style="margin-bottom: 0.5rem; display: flex; justify-content: space-between;">
+                                            <span class="label" style="opacity: 0.7;">"Mapped To:"</span>
+                                            <span class="value code" style="font-family: monospace; font-weight: bold; color: var(--accent-primary);">{res.mapped_model}</span>
+                                        </div>
+                                        <div class="result-row" style="display: flex; justify-content: space-between;">
+                                            <span class="label" style="opacity: 0.7;">"Reason:"</span>
+                                            <span class="value">{res.mapping_reason}</span>
+                                        </div>
+                                    </div>
+                                }
+                            }}
+                        </Show>
                     </div>
                 </Show>
             </div>

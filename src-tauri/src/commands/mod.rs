@@ -3,18 +3,18 @@ use crate::modules as tauri_modules;
 use antigravity_core::modules as core_modules;
 use tauri::{Emitter, Manager};
 
-// 导出 proxy 命令
+// Export proxy commands
 pub mod proxy;
-// 导出 autostart 命令
+// Export autostart commands
 pub mod autostart;
 
-/// 列出所有账号
+/// List all accounts
 #[tauri::command]
 pub async fn list_accounts() -> Result<Vec<Account>, String> {
     core_modules::account::list_accounts()
 }
 
-/// 添加账号
+/// Add an account
 #[tauri::command]
 pub async fn add_account(
     app: tauri::AppHandle,

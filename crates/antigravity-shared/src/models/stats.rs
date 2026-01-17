@@ -120,6 +120,8 @@ pub struct ProxyRequestLog {
     pub duration: u64,
     pub model: Option<String>,
     pub mapped_model: Option<String>,
+    #[serde(alias = "mapping_reason")]
+    pub mapping_reason: Option<String>,
     pub account_email: Option<String>,
     #[serde(alias = "error_message")]
     pub error: Option<String>,

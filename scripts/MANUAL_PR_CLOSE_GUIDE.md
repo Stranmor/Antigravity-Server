@@ -1,10 +1,10 @@
-# 手动关闭已集成 PR 指南
+# Manual PR Closure Guide
 
-如果你不想使用 GitHub CLI，可以按照以下步骤手动关闭 PR。
+If you prefer not to use the GitHub CLI, you can follow these steps to manually close PRs.
 
-## 需要关闭的 PR 列表
+## List of PRs to Close
 
-以下 PR 已被手动集成到 v3.3.16：
+The following PRs have been manually integrated into v3.3.16:
 
 1. **PR #395** - fix: convert enum values to strings for Gemini compatibility (@ThanhNguyxn)
 2. **PR #394** - feat: add account_email field to API monitoring logs (@ThanhNguyxn)
@@ -12,17 +12,17 @@
 4. **PR #354** - perf: concurrent quota refresh for all accounts (@Mag1cFall)
 5. **PR #353** - refactor(ui): improve API proxy page visual design (@Mag1cFall)
 6. **PR #321** - fix: increase response body limit to 10MB (@Stranmor)
-7. **PR #311** - feat: Add audio transcription API (@Jint8888) - **部分集成**
+7. **PR #311** - feat: Add audio transcription API (@Jint8888) - **Partial Integration**
 
 ---
 
-## 操作步骤
+## Operating Steps
 
-对于每个 PR，执行以下步骤：
+For each PR, perform the following steps:
 
-### 1. 访问 PR 页面
+### 1. Visit PR Page
 
-点击以下链接访问对应的 PR：
+Click the links below to access the corresponding PRs:
 
 - https://github.com/lbjlaq/Antigravity-Manager/pull/395
 - https://github.com/lbjlaq/Antigravity-Manager/pull/394
@@ -32,65 +32,53 @@
 - https://github.com/lbjlaq/Antigravity-Manager/pull/321
 - https://github.com/lbjlaq/Antigravity-Manager/pull/311
 
-### 2. 添加感谢评论
+### 2. Add Thank You Comment
 
-在 PR 页面底部的评论框中，粘贴以下感谢消息：
+In the comment box at the bottom of the PR page, paste the following thank you message:
 
 ```markdown
-感谢您的贡献！🎉
-
-此 PR 的更改已被手动集成到 v3.3.16 版本中。
-
-相关更新已包含在以下文件中：
-- README.md 的版本更新日志
-- 贡献者列表
-
-再次感谢您对 Antigravity Tools 项目的支持！
-
----
-
 Thank you for your contribution! 🎉
 
 The changes from this PR have been manually integrated into v3.3.16.
 
-The updates are documented in:
+The relevant updates are included in the following files:
 - README.md changelog
-- Contributors list
+- Contributor list
 
 Thank you again for your support of the Antigravity Tools project!
 ```
 
-### 3. 关闭 PR
+### 3. Close PR
 
-1. 点击评论框下方的 **"Close pull request"** 按钮
-2. 或者点击 **"Close with comment"** 按钮（如果你想同时添加评论）
+1. Click the **"Close pull request"** button below the comment box
+2. Or click the **"Close with comment"** button (if you want to add a comment at the same time)
 
-### 4. 特殊说明
+### 4. Special Instructions
 
-**对于 PR #311**（音频转录 API）：
+**For PR #311** (Audio Transcription API):
 
-由于只集成了部分功能，建议在评论中额外说明：
+Since only partial functionality was integrated, it is recommended to add an additional note in the comment:
 
 ```markdown
-注意：此 PR 中的音频转录功能已被集成，但对话中的 `audio_url` 支持将在后续版本中完整实现。
+Note: The audio transcription feature in this PR has been integrated, but `audio_url` support in conversations will be fully implemented in a later version.
 ```
 
 ---
 
-## 快速操作清单
+## Quick Action Checklist
 
-- [ ] PR #395 - 添加评论 + 关闭
-- [ ] PR #394 - 添加评论 + 关闭
-- [ ] PR #371 - 添加评论 + 关闭
-- [ ] PR #354 - 添加评论 + 关闭
-- [ ] PR #353 - 添加评论 + 关闭
-- [ ] PR #321 - 添加评论 + 关闭
-- [ ] PR #311 - 添加评论（含特殊说明）+ 关闭
+- [ ] PR #395 - Add comment + Close
+- [ ] PR #394 - Add comment + Close
+- [ ] PR #371 - Add comment + Close
+- [ ] PR #354 - Add comment + Close
+- [ ] PR #353 - Add comment + Close
+- [ ] PR #321 - Add comment + Close
+- [ ] PR #311 - Add comment (with special note) + Close
 
 ---
 
-## 验证
+## Verification
 
-完成后，访问以下链接确认所有 PR 已关闭：
+After completion, visit the following link to confirm all PRs are closed:
 
 https://github.com/lbjlaq/Antigravity-Manager/pulls?q=is%3Apr+is%3Aclosed

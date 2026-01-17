@@ -36,7 +36,13 @@ async fn main() -> Result<()> {
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
-    info!("🚀 Antigravity Server starting...");
+    // Determine port from env or use default
+    let port: u16 = std::env::var("ANTIGRAVITY_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(DEFAULT_PORT);
+
+    info!("🚀 Antigravity Server starting on port {}...", port);
 
     let data_dir = antigravity_core::modules::account::get_data_dir()
         .map_err(|e| anyhow::anyhow!("Failed to get data directory: {}", e))?;
@@ -58,7 +64,7 @@ async fn main() -> Result<()> {
     // Create AxumServer for hot reload capabilities (without starting listener)
     let server_config = antigravity_core::proxy::server::ServerStartConfig {
         host: "127.0.0.1".to_string(),
-        port: DEFAULT_PORT,
+        port,
         token_manager: token_manager.clone(),
         custom_mapping: initial_proxy_config.custom_mapping.clone(),
         upstream_proxy: initial_proxy_config.upstream_proxy.clone(),
@@ -92,16 +98,13 @@ async fn main() -> Result<()> {
     let app = build_router(state, axum_server).await;
 
     // Start server
-    let addr = SocketAddr::from(([127, 0, 0, 1], DEFAULT_PORT));
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     info!("🌐 Server listening on http://{}", addr);
-    info!("📊 WebUI available at http://localhost:{}/", DEFAULT_PORT);
-    info!("🔌 API available at http://localhost:{}/api/", DEFAULT_PORT);
-    info!(
-        "🔀 Proxy endpoints at http://localhost:{}/v1/",
-        DEFAULT_PORT
-    );
+    info!("📊 WebUI available at http://localhost:{}/", port);
+    info!("🔌 API available at http://localhost:{}/api/", port);
+    info!("🔀 Proxy endpoints at http://localhost:{}/v1/", port);
 
     axum::serve(listener, app).await?;
 
