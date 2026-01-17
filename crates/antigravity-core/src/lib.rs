@@ -1,18 +1,21 @@
 //! # Antigravity Core
 //!
 //! Core business logic for Antigravity Manager.
-//! This crate contains all shared functionality extracted from the Tauri app:
 //!
-//! - **Models**: Data structures (Account, Token, Quota, Config)
-//! - **Modules**: Business logic (account management, OAuth, quota fetching)
-//! - **Proxy**: API proxy server (handlers, mappers, rate limiting)
-//! - **Error**: Unified error types
+//! ## Architecture (Doctrine 2.11d - Symlink Isolation)
 //!
-//! This crate is UI-agnostic and can be used with:
-//! - Slint (native desktop)
-//! - Tauri (webview desktop)
-//! - CLI applications
-//! - Headless servers
+//! ```text
+//! antigravity-core/src/proxy/
+//! ├── mappers/     → symlink to vendor/antigravity-upstream/.../mappers
+//! ├── handlers/    → symlink to vendor/antigravity-upstream/.../handlers
+//! ├── common/      → real dir with symlinks + our circuit_breaker.rs
+//! ├── server.rs    ← OUR Axum server (real file)
+//! ├── token_manager.rs ← OUR implementation (real file)
+//! └── adaptive_limit.rs ← OUR AIMD (real file)
+//! ```
+//!
+//! Upstream code lives in vendor/antigravity-upstream/ (git submodule).
+//! Symlinks allow crate::proxy::* imports to work normally.
 
 pub mod error;
 pub mod models;

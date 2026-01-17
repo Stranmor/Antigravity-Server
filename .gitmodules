@@ -1,0 +1,3 @@
+[submodule "vendor/antigravity-upstream"]
+	path = vendor/antigravity-upstream
+	url = https://github.com/lbjlaq/Antigravity-Manager.git

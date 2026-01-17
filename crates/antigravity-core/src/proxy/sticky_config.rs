@@ -1,1 +1,1 @@
-pub use antigravity_shared::proxy::config::SchedulingMode;
+../../../../vendor/antigravity-upstream/src-tauri/src/proxy/sticky_config.rs

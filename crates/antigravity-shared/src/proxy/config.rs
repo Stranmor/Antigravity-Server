@@ -155,6 +155,9 @@ pub struct ExperimentalConfig {
     pub enable_tool_loop_recovery: bool,
     #[serde(default = "default_true")]
     pub enable_cross_model_checks: bool,
+    /// Enable usage scaling for context window optimization
+    #[serde(default)]
+    pub enable_usage_scaling: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Validate)]

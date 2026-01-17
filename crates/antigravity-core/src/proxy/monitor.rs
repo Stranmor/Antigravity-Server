@@ -3,7 +3,8 @@
 //! This module provides abstractions for monitoring proxy requests
 //! without any GUI-specific dependencies.
 
-use antigravity_shared::models::{ProxyRequestLog, ProxyStats};
+// Re-export ProxyRequestLog for upstream middleware compatibility
+pub use antigravity_shared::models::{ProxyRequestLog, ProxyStats};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;

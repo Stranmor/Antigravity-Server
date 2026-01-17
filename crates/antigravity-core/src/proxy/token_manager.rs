@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use crate::proxy::rate_limit::RateLimitTracker;
 use antigravity_shared::proxy::config::StickySessionConfig;
+use antigravity_shared::proxy::SchedulingMode;  // Use shared version to avoid type conflict
 
 #[derive(Debug, Clone)]
 pub struct ProxyToken {
@@ -189,11 +190,13 @@ impl TokenManager {
     /// 参数 `quota_group` 用于区分 "claude" vs "gemini" 组
     /// 参数 `force_rotate` 为 true 时将忽略锁定，强制切换账号
     /// 参数 `session_id` 用于跨请求维持会话粘性
+    /// 参数 `target_model` 目标模型名称（用于配额保护，暂未使用）
     pub async fn get_token(
         &self,
         quota_group: &str,
         force_rotate: bool,
         session_id: Option<&str>,
+        _target_model: &str,  // Added for upstream API compatibility
     ) -> Result<(String, String, String), String> {
         // 【优化 Issue #284】添加 5 秒超时，防止死锁
         let timeout_duration = std::time::Duration::from_secs(5);
@@ -208,6 +211,67 @@ impl TokenManager {
                 "Token acquisition timeout (5s) - system too busy or deadlock detected".to_string(),
             ),
         }
+    }
+
+    /// 检查是否有可用账号（用于预检）
+    /// Added for upstream API compatibility
+    pub async fn has_available_account(&self, quota_group: &str, _target_model: &str) -> bool {
+        let tokens_snapshot: Vec<ProxyToken> =
+            self.tokens.iter().map(|e| e.value().clone()).collect();
+        
+        if tokens_snapshot.is_empty() {
+            return false;
+        }
+        
+        // Check if any account is available (not rate limited)
+        for token in &tokens_snapshot {
+            if !self.is_rate_limited(&token.account_id) {
+                return true;
+            }
+        }
+        
+        // Log for debugging
+        tracing::debug!("No available accounts for quota_group={}", quota_group);
+        false
+    }
+
+    /// 通过 email 获取指定账号的 Token（用于预热等需要指定账号的场景）
+    /// Added for upstream API compatibility
+    pub async fn get_token_by_email(&self, email: &str) -> Result<(String, String, String), String> {
+        // Find account by email
+        let token = self.tokens.iter()
+            .find(|entry| entry.value().email == email)
+            .map(|entry| entry.value().clone());
+        
+        let mut token = match token {
+            Some(t) => t,
+            None => return Err(format!("Account not found: {}", email)),
+        };
+        
+        // Check if token needs refresh
+        let now = chrono::Utc::now().timestamp();
+        if now >= token.timestamp - 300 {
+            match crate::modules::oauth::refresh_access_token(&token.refresh_token).await {
+                Ok(token_response) => {
+                    token.access_token = token_response.access_token.clone();
+                    token.expires_in = token_response.expires_in;
+                    token.timestamp = now + token_response.expires_in;
+                    
+                    // Update in-memory
+                    if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
+                        entry.access_token = token.access_token.clone();
+                        entry.expires_in = token.expires_in;
+                        entry.timestamp = token.timestamp;
+                    }
+                }
+                Err(e) => {
+                    return Err(format!("Token refresh failed for {}: {}", email, e));
+                }
+            }
+        }
+        
+        let project_id = token.project_id.clone().unwrap_or_default();
+        Ok((token.access_token, project_id, token.email))
     }
 
     /// 内部实现：获取 Token 的核心逻辑
@@ -238,7 +302,7 @@ impl TokenManager {
 
         // 0. 读取当前调度配置
         let scheduling = self.sticky_config.read().await.clone();
-        use crate::proxy::sticky_config::SchedulingMode;
+        // SchedulingMode already imported at top from antigravity_shared
 
         // 【优化 Issue #284】将锁操作移到循环外，避免重复获取锁
         // 预先获取 last_used_account 的快照，避免在循环中多次加锁
@@ -649,6 +713,7 @@ impl TokenManager {
     // ===== 限流管理方法 =====
 
     /// 标记账号限流(从外部调用,通常在 handler 中)
+    /// Backwards-compatible 4-argument version (model defaults to None)
     pub fn mark_rate_limited(
         &self,
         account_id: &str,
@@ -656,11 +721,24 @@ impl TokenManager {
         retry_after_header: Option<&str>,
         error_body: &str,
     ) {
+        self.mark_rate_limited_with_model(account_id, status, retry_after_header, error_body, None);
+    }
+
+    /// 标记账号限流 with model parameter
+    pub fn mark_rate_limited_with_model(
+        &self,
+        account_id: &str,
+        status: u16,
+        retry_after_header: Option<&str>,
+        error_body: &str,
+        model: Option<String>,
+    ) {
         self.rate_limit_tracker.parse_from_error(
             account_id,
             status,
             retry_after_header,
             error_body,
+            model,
         );
     }
 
@@ -881,6 +959,7 @@ impl TokenManager {
                 status,
                 retry_after_header,
                 error_body,
+                None,  // model
             );
             return;
         }
@@ -931,6 +1010,7 @@ impl TokenManager {
             status,
             retry_after_header,
             error_body,
+            None,  // model
         );
     }
 

@@ -46,6 +46,62 @@
 
 ---
 
+## 🔄 PLANNED: Submodule Isolation Migration (Doctrine 2.11d) [2026-01-17]
+
+**Status:** Planned (requires dedicated session)
+
+**Current Architecture (rsync-based):**
+```
+src-tauri/           ← Merged upstream (read-only reference)
+crates/antigravity-core/src/proxy/
+├── mappers/         ← Synced via rsync
+├── handlers/        ← Synced via rsync
+├── adaptive_limit.rs ← Our custom (AIMD)
+├── server.rs        ← Our custom (Axum)
+└── ...
+```
+
+**Target Architecture (Submodule Isolation):**
+```
+vendor/antigravity-upstream/    ← Git submodule (READ-ONLY)
+    └── src-tauri/src/proxy/    ← Upstream code
+
+crates/antigravity-core/src/
+├── vendor.rs                   ← #[path] imports from submodule
+├── custom/                     ← Our extensions (AIMD, server, metrics)
+│   ├── aimd/
+│   ├── resilience/
+│   ├── metrics/
+│   └── server/
+└── proxy/mod.rs                ← Re-exports vendor + custom
+```
+
+**Migration Steps:**
+- [ ] Add submodule: `git submodule add https://github.com/lbjlaq/Antigravity-Manager.git vendor/antigravity-upstream`
+- [ ] Create `custom/` directory structure with mod.rs files
+- [ ] Move custom files: adaptive_limit.rs, smart_prober.rs, health.rs, prometheus.rs, server.rs, monitor.rs, token_manager.rs, circuit_breaker.rs
+- [ ] Create vendor.rs with #[path] imports
+- [ ] Update proxy/mod.rs to re-export from vendor + custom
+- [ ] Fix type conflicts (antigravity_shared::SchedulingMode vs sticky_config::SchedulingMode)
+- [ ] Update custom code to match new upstream API (parse_from_error now takes 5 args)
+- [ ] Verify build: `cargo check -p antigravity-core`
+- [ ] Remove old sync-upstream.sh (no longer needed)
+- [ ] Update PROTECTED_FILES → no longer needed (physical isolation)
+
+**Blockers Identified [2026-01-17]:**
+1. **Type Conflicts:** `SchedulingMode` defined in both `antigravity_shared` and upstream `sticky_config.rs`
+2. **API Drift:** Upstream `parse_from_error` now requires 5 arguments (added `model: Option<String>`)
+3. **Import Paths:** Custom code uses `crate::proxy::*` which needs update to `crate::vendor::*` or `crate::custom::*`
+
+**Benefits After Migration:**
+- ✅ No rsync scripts to maintain
+- ✅ No PROTECTED_FILES lists to remember
+- ✅ Physical isolation makes accidents impossible
+- ✅ Clear separation: vendor = theirs, custom = ours
+
+---
+
+
 ## Current Status: Architecture Migration Complete (Core)
 
 **UI Status:** Leptos WebUI works in browser ✅
