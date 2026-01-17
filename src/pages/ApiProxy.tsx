@@ -140,6 +140,8 @@ export default function ApiProxy() {
     });
 
     const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
+    const [configLoading, setConfigLoading] = useState(true);
+    const [configError, setConfigError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [copied, setCopied] = useState<string | null>(null);
     const [selectedProtocol, setSelectedProtocol] = useState<'openai' | 'anthropic' | 'gemini'>('openai');
@@ -190,11 +192,16 @@ export default function ApiProxy() {
     }, []);
 
     const loadConfig = async () => {
+        setConfigLoading(true);
+        setConfigError(null);
         try {
             const config = await invoke<AppConfig>('load_config');
             setAppConfig(config);
         } catch (error) {
             console.error('加载配置失败:', error);
+            setConfigError(String(error));
+        } finally {
+            setConfigLoading(false);
         }
     };
 
@@ -624,9 +631,46 @@ print(response.text)`;
         <div className="h-full w-full overflow-y-auto overflow-x-hidden">
             <div className="p-5 space-y-4 max-w-7xl mx-auto">
 
+                {/* Loading State */}
+                {configLoading && (
+                    <div className="flex items-center justify-center py-20">
+                        <div className="flex flex-col items-center gap-4">
+                            <RefreshCw size={32} className="animate-spin text-blue-500" />
+                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                                {t('common.loading') || 'Loading...'}
+                            </span>
+                        </div>
+                    </div>
+                )}
+
+                {/* Error State */}
+                {!configLoading && configError && (
+                    <div className="flex items-center justify-center py-20">
+                        <div className="flex flex-col items-center gap-4 text-center">
+                            <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                                <Settings size={32} className="text-red-500" />
+                            </div>
+                            <div className="space-y-2">
+                                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                                    {t('proxy.error.load_failed') || 'Failed to load configuration'}
+                                </h3>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 max-w-md">
+                                    {configError}
+                                </p>
+                            </div>
+                            <button
+                                onClick={loadConfig}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+                            >
+                                <RefreshCw size={16} />
+                                {t('common.retry') || 'Retry'}
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {/* 配置区 */}
-                {appConfig && (
+                {!configLoading && !configError && appConfig && (
                     <div className="bg-white dark:bg-base-100 rounded-xl shadow-sm border border-gray-100 dark:border-base-200">
                         <div className="px-4 py-2.5 border-b border-gray-100 dark:border-base-200 flex items-center justify-between">
                             <div className="flex items-center gap-4">
@@ -923,7 +967,7 @@ print(response.text)`;
 
                 {/* External Providers Integration */}
                 {
-                    appConfig && (
+                    !configLoading && !configError && appConfig && (
                         <div className="space-y-4">
                             <div className="px-1 flex items-center gap-2 text-gray-400">
                                 <Layers size={14} />
@@ -1289,7 +1333,7 @@ print(response.text)`;
 
                 {/* 模型路由中心 */}
                 {
-                    appConfig && (
+                    !configLoading && !configError && appConfig && (
                         <div className="bg-white dark:bg-base-100 rounded-xl shadow-sm border border-gray-100 dark:border-base-200 overflow-hidden">
                             <div className="px-4 py-2.5 border-b border-gray-100 dark:border-gray-700/50 bg-gray-50/50 dark:bg-gray-800/50">
                                 <div className="flex items-center justify-between">
@@ -1462,7 +1506,7 @@ print(response.text)`;
                 }
                 {/* CLI 同步卡片 */}
                 {
-                    appConfig && status.running && (
+                    !configLoading && !configError && appConfig && status.running && (
                         <div className="mt-4">
                             <CliSyncCard
                                 proxyUrl={status.base_url}
@@ -1474,7 +1518,7 @@ print(response.text)`;
 
                 {/* 多协议支持信息 */}
                 {
-                    appConfig && status.running && (
+                    !configLoading && !configError && appConfig && status.running && (
                         <div className="bg-white dark:bg-base-100 rounded-xl shadow-sm border border-gray-100 dark:border-base-200 overflow-hidden">
                             <div className="p-3">
                                 <div className="flex items-center gap-3 mb-3">
@@ -1565,7 +1609,7 @@ print(response.text)`;
 
                 {/* 支持模型与集成 */}
                 {
-                    appConfig && (
+                    !configLoading && !configError && appConfig && (
                         <div className="bg-white dark:bg-base-100 rounded-xl shadow-sm border border-gray-100 dark:border-base-200 overflow-hidden mt-4">
                             <div className="px-4 py-2.5 border-b border-gray-100 dark:border-base-200">
                                 <h2 className="text-base font-bold text-gray-900 dark:text-base-content flex items-center gap-2">
