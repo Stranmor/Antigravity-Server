@@ -46,58 +46,58 @@
 
 ---
 
-## 🔄 PLANNED: Submodule Isolation Migration (Doctrine 2.11d) [2026-01-17]
+## ✅ COMPLETED: Submodule Isolation Migration (Doctrine 2.11d) [2026-01-17]
 
-**Status:** Planned (requires dedicated session)
+**Status:** ✅ Complete
 
-**Current Architecture (rsync-based):**
+**Architecture (Symlink + Submodule):**
 ```
-src-tauri/           ← Merged upstream (read-only reference)
+vendor/antigravity-upstream/           ← Git submodule (READ-ONLY)
+    └── src-tauri/src/proxy/           ← Upstream code
+
 crates/antigravity-core/src/proxy/
-├── mappers/         ← Synced via rsync
-├── handlers/        ← Synced via rsync
-├── adaptive_limit.rs ← Our custom (AIMD)
-├── server.rs        ← Our custom (Axum)
-└── ...
+├── mappers/     → symlink to vendor   ← Upstream (read-only)
+├── handlers/    → symlink to vendor   ← Upstream (read-only)
+├── middleware/  → symlink to vendor   ← Upstream (read-only)
+├── providers/   → symlink to vendor   ← Upstream (read-only)
+├── upstream/    → symlink to vendor   ← Upstream (read-only)
+├── common/
+│   ├── *.rs     → #[path] to vendor   ← Upstream (read-only)
+│   └── circuit_breaker.rs             ← OUR custom (real file)
+├── server.rs                          ← OUR Axum server (real file)
+├── token_manager.rs                   ← OUR implementation (real file)
+├── adaptive_limit.rs                  ← OUR AIMD (real file)
+├── monitor.rs                         ← OUR monitoring (real file)
+├── smart_prober.rs                    ← OUR probing (real file)
+├── health.rs                          ← OUR health (real file)
+├── prometheus.rs                      ← OUR metrics (real file)
+└── mod.rs                             ← Re-exports all
 ```
 
-**Target Architecture (Submodule Isolation):**
+**Completed Steps:**
+- [x] Added submodule: `vendor/antigravity-upstream`
+- [x] Created symlinks for upstream directories (mappers, handlers, etc.)
+- [x] common/mod.rs uses #[path] for upstream + our circuit_breaker.rs
+- [x] Fixed type conflicts (SchedulingMode from antigravity_shared)
+- [x] Updated TokenManager API (get_token 4 args, has_available_account, get_token_by_email)
+- [x] Added enable_usage_scaling to ExperimentalConfig
+- [x] Verified build: `cargo check --workspace` passes
+
+**Sync Workflow:**
+```bash
+# Update upstream to latest
+cd vendor/antigravity-upstream
+git pull origin main
+cd ../..
+git add vendor/antigravity-upstream
+git commit -m "chore: sync upstream to vX.Y.Z"
 ```
-vendor/antigravity-upstream/    ← Git submodule (READ-ONLY)
-    └── src-tauri/src/proxy/    ← Upstream code
 
-crates/antigravity-core/src/
-├── vendor.rs                   ← #[path] imports from submodule
-├── custom/                     ← Our extensions (AIMD, server, metrics)
-│   ├── aimd/
-│   ├── resilience/
-│   ├── metrics/
-│   └── server/
-└── proxy/mod.rs                ← Re-exports vendor + custom
-```
-
-**Migration Steps:**
-- [ ] Add submodule: `git submodule add https://github.com/lbjlaq/Antigravity-Manager.git vendor/antigravity-upstream`
-- [ ] Create `custom/` directory structure with mod.rs files
-- [ ] Move custom files: adaptive_limit.rs, smart_prober.rs, health.rs, prometheus.rs, server.rs, monitor.rs, token_manager.rs, circuit_breaker.rs
-- [ ] Create vendor.rs with #[path] imports
-- [ ] Update proxy/mod.rs to re-export from vendor + custom
-- [ ] Fix type conflicts (antigravity_shared::SchedulingMode vs sticky_config::SchedulingMode)
-- [ ] Update custom code to match new upstream API (parse_from_error now takes 5 args)
-- [ ] Verify build: `cargo check -p antigravity-core`
-- [ ] Remove old sync-upstream.sh (no longer needed)
-- [ ] Update PROTECTED_FILES → no longer needed (physical isolation)
-
-**Blockers Identified [2026-01-17]:**
-1. **Type Conflicts:** `SchedulingMode` defined in both `antigravity_shared` and upstream `sticky_config.rs`
-2. **API Drift:** Upstream `parse_from_error` now requires 5 arguments (added `model: Option<String>`)
-3. **Import Paths:** Custom code uses `crate::proxy::*` which needs update to `crate::vendor::*` or `crate::custom::*`
-
-**Benefits After Migration:**
-- ✅ No rsync scripts to maintain
-- ✅ No PROTECTED_FILES lists to remember
-- ✅ Physical isolation makes accidents impossible
-- ✅ Clear separation: vendor = theirs, custom = ours
+**Benefits:**
+- ✅ No rsync scripts needed
+- ✅ No PROTECTED_FILES lists
+- ✅ Physical isolation (symlinks are read-only)
+- ✅ Clear separation: symlink = theirs, real file = ours
 
 ---
 
