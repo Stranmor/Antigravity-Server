@@ -537,13 +537,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_error_threshold() {
-        let _config = HealthConfig {
+        let config = HealthConfig {
             error_threshold: 3,
             cooldown_seconds: 60,
             track_rate_limits: true,
             recovery_check_interval_seconds: 30,
         };
-        let monitor = HealthMonitor::new();
+        let monitor = HealthMonitor::with_config(config);
 
         monitor.register_account("test-1".to_string(), "test@example.com".to_string());
 
@@ -585,11 +585,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_force_enable() {
-        let _config = HealthConfig {
+        let config = HealthConfig {
             error_threshold: 1,
             ..Default::default()
         };
-        let monitor = HealthMonitor::new();
+        let monitor = HealthMonitor::with_config(config);
 
         monitor.register_account("test-1".to_string(), "test@example.com".to_string());
 
