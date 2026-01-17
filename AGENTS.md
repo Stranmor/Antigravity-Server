@@ -46,6 +46,25 @@
 
 ---
 
+## 🚨 ARCHITECTURAL DECISION [2026-01-17]: Nix Task Runner Migration
+
+**Problem:** Violation of Doctrine 2.19 (Nix-Only Task Runner). `Justfile` introduces fragmentation and reliance on system-level dependencies.
+
+**Root Cause:** Legacy task runner usage.
+
+**Solution:**
+- Created `flake.nix` with `mkScript` helper.
+- Migrated all `Justfile` commands (`build-server`, `sync-upstream`, etc.) to Nix packages.
+- Deleted `Justfile`.
+- Tasks are now available via `nix run .#task` or directly in `nix develop`.
+
+**Benefits:**
+- ✅ Reproducible environment (Rust, Trunk, OpenSSL pinned).
+- ✅ Unified interface.
+- ✅ Compliance with Titan Doctrine.
+
+---
+
 ## ✅ COMPLETED: Submodule Isolation Migration (Doctrine 2.11d) [2026-01-17]
 
 **Status:** ✅ Complete

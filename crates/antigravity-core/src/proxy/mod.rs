@@ -14,19 +14,61 @@
 
 // ============= UPSTREAM SYMLINKED MODULES =============
 // These are symlinks to vendor/antigravity-upstream/src-tauri/src/proxy/
+#[rustfmt::skip]
+#[allow(clippy::all)]
+#[allow(warnings)]
 pub mod audio;
+#[rustfmt::skip]
+#[allow(clippy::all)]
+#[allow(warnings)]
 pub mod handlers;
+#[rustfmt::skip]
+#[allow(clippy::all)]
+#[allow(warnings)]
 pub mod mappers;
+#[rustfmt::skip]
+#[allow(clippy::all)]
+#[allow(warnings)]
 pub mod middleware;
+#[rustfmt::skip]
+#[allow(clippy::all)]
+#[allow(warnings)]
 pub mod project_resolver;
+#[rustfmt::skip]
+#[allow(clippy::all)]
+#[allow(warnings)]
 pub mod providers;
+#[rustfmt::skip]
+#[allow(clippy::all)]
+#[allow(warnings)]
 pub mod rate_limit;
+#[rustfmt::skip]
+#[allow(clippy::all)]
+#[allow(warnings)]
 pub mod security;
+#[rustfmt::skip]
+#[allow(clippy::all)]
+#[allow(warnings)]
 pub mod session_manager;
+#[rustfmt::skip]
+#[allow(clippy::all)]
+#[allow(warnings)]
 pub mod signature_cache;
+#[rustfmt::skip]
+#[allow(clippy::all)]
+#[allow(warnings)]
 pub mod sticky_config;
+#[rustfmt::skip]
+#[allow(clippy::all)]
+#[allow(warnings)]
 pub mod upstream;
+#[rustfmt::skip]
+#[allow(clippy::all)]
+#[allow(warnings)]
 pub mod zai_vision_mcp;
+#[rustfmt::skip]
+#[allow(clippy::all)]
+#[allow(warnings)]
 pub mod zai_vision_tools;
 
 // ============= OUR CUSTOM MODULES =============
@@ -41,6 +83,9 @@ pub mod token_manager;
 
 // ============= MIXED (UPSTREAM + OUR ADDITIONS) =============
 // common/ has symlinks to upstream files + our circuit_breaker.rs
+#[rustfmt::skip]
+#[allow(clippy::all)]
+#[allow(warnings)]
 pub mod common;
 
 // Re-export config from shared
@@ -50,7 +95,9 @@ pub use antigravity_shared::proxy::config::{ProxyAuthMode, ZaiConfig, ZaiDispatc
 // Re-export core types
 pub use monitor::{ProxyEventBus, ProxyMonitor};
 pub use security::ProxySecurityConfig;
-pub use server::{build_proxy_router, build_proxy_router_with_shared_state, AxumServer, ServerStartConfig};
+pub use server::{
+    build_proxy_router, build_proxy_router_with_shared_state, AxumServer, ServerStartConfig,
+};
 pub use signature_cache::SignatureCache;
 pub use token_manager::TokenManager;
 
