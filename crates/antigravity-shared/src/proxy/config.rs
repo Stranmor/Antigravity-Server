@@ -162,10 +162,13 @@ pub struct ExperimentalConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Validate)]
 pub struct StickySessionConfig {
+    #[serde(default)]
     pub enabled: bool,
     // #[validate(nested)] // Enum doesn't implement Validate
+    #[serde(default)]
     pub mode: SchedulingMode,
     #[validate(range(min = 1))]
+    #[serde(default = "default_sticky_ttl", alias = "max_wait_seconds")]
     pub ttl: u32,
 }
 
@@ -258,4 +261,8 @@ fn default_zai_haiku_model() -> String {
 
 fn default_request_timeout() -> u64 {
     120
+}
+
+fn default_sticky_ttl() -> u32 {
+    300 // 5 minutes default TTL for sticky sessions
 }

@@ -7,6 +7,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/antigravity-types",
     "crates/antigravity-core",
     "crates/antigravity-shared",
     "src-leptos",
@@ -24,6 +25,7 @@ authors = ["lbjlaq", "Stranmor"]
 
 [workspace.dependencies]
 antigravity-shared = { path = "crates/antigravity-shared" }
+antigravity-types = { path = "crates/antigravity-types" }
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }

@@ -100,7 +100,9 @@ impl std::fmt::Display for ProxyError {
             Self::CircuitOpen { provider } => {
                 write!(f, "Circuit breaker open for {}", provider)
             }
-            Self::Timeout { duration_secs } => write!(f, "Request timeout after {}s", duration_secs),
+            Self::Timeout { duration_secs } => {
+                write!(f, "Request timeout after {}s", duration_secs)
+            }
             Self::Internal { message } => write!(f, "Internal proxy error: {}", message),
         }
     }

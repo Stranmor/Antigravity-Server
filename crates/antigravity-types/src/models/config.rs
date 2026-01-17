@@ -1,0 +1,378 @@
+//! Application and proxy configuration models.
+
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fmt;
+
+// ============================================================================
+// Enums
+// ============================================================================
+
+/// Proxy authentication mode.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ProxyAuthMode {
+    /// No authentication required
+    #[default]
+    Off,
+    /// Always require API key
+    Strict,
+    /// Require API key for all except health checks
+    AllExceptHealth,
+    /// Automatic mode (detect from request)
+    Auto,
+}
+
+impl fmt::Display for ProxyAuthMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ProxyAuthMode::Off => write!(f, "off"),
+            ProxyAuthMode::Strict => write!(f, "strict"),
+            ProxyAuthMode::AllExceptHealth => write!(f, "all_except_health"),
+            ProxyAuthMode::Auto => write!(f, "auto"),
+        }
+    }
+}
+
+impl ProxyAuthMode {
+    /// Parse from string.
+    pub fn from_string(s: &str) -> Self {
+        match s {
+            "strict" => ProxyAuthMode::Strict,
+            "all_except_health" => ProxyAuthMode::AllExceptHealth,
+            "auto" => ProxyAuthMode::Auto,
+            _ => ProxyAuthMode::Off,
+        }
+    }
+}
+
+/// Z.ai dispatch mode for routing requests.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ZaiDispatchMode {
+    /// Z.ai disabled
+    #[default]
+    Off,
+    /// Route exclusively to Z.ai
+    Exclusive,
+    /// Pool Z.ai with other providers
+    Pooled,
+    /// Use Z.ai as fallback
+    Fallback,
+}
+
+impl fmt::Display for ZaiDispatchMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ZaiDispatchMode::Off => write!(f, "off"),
+            ZaiDispatchMode::Exclusive => write!(f, "exclusive"),
+            ZaiDispatchMode::Pooled => write!(f, "pooled"),
+            ZaiDispatchMode::Fallback => write!(f, "fallback"),
+        }
+    }
+}
+
+/// API protocol type.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub enum Protocol {
+    #[default]
+    OpenAI,
+    Anthropic,
+    Gemini,
+}
+
+/// Account scheduling mode for sticky sessions.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub enum SchedulingMode {
+    /// Prioritize cache hits
+    CacheFirst,
+    /// Balance between cache and load
+    #[default]
+    Balance,
+    /// Prioritize performance (lowest latency)
+    PerformanceFirst,
+}
+
+impl fmt::Display for SchedulingMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SchedulingMode::CacheFirst => write!(f, "CacheFirst"),
+            SchedulingMode::Balance => write!(f, "Balance"),
+            SchedulingMode::PerformanceFirst => write!(f, "PerformanceFirst"),
+        }
+    }
+}
+
+// ============================================================================
+// Z.ai Configuration
+// ============================================================================
+
+/// Z.ai default model mappings.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ZaiModelDefaults {
+    /// Model for Opus tier
+    #[serde(default = "default_zai_opus_model")]
+    pub opus: String,
+    /// Model for Sonnet tier
+    #[serde(default = "default_zai_sonnet_model")]
+    pub sonnet: String,
+    /// Model for Haiku tier
+    #[serde(default = "default_zai_haiku_model")]
+    pub haiku: String,
+}
+
+impl Default for ZaiModelDefaults {
+    fn default() -> Self {
+        Self {
+            opus: default_zai_opus_model(),
+            sonnet: default_zai_sonnet_model(),
+            haiku: default_zai_haiku_model(),
+        }
+    }
+}
+
+/// Z.ai MCP (Model Context Protocol) configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ZaiMcpConfig {
+    /// Enable MCP features
+    #[serde(default)]
+    pub enabled: bool,
+    /// Enable web search tool
+    #[serde(default)]
+    pub web_search_enabled: bool,
+    /// Enable web reader tool
+    #[serde(default)]
+    pub web_reader_enabled: bool,
+    /// Enable vision tool
+    #[serde(default)]
+    pub vision_enabled: bool,
+}
+
+/// Z.ai provider configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ZaiConfig {
+    /// Enable Z.ai integration
+    #[serde(default)]
+    pub enabled: bool,
+    /// Z.ai API base URL
+    #[serde(default = "default_zai_base_url")]
+    pub base_url: String,
+    /// Z.ai API key
+    #[serde(default)]
+    pub api_key: String,
+    /// Request dispatch mode
+    #[serde(default)]
+    pub dispatch_mode: ZaiDispatchMode,
+    /// Custom model mappings
+    #[serde(default)]
+    pub model_mapping: HashMap<String, String>,
+    /// Default model mappings
+    #[serde(default)]
+    pub models: ZaiModelDefaults,
+    /// MCP configuration
+    #[serde(default)]
+    pub mcp: ZaiMcpConfig,
+}
+
+// ============================================================================
+// Session & Experimental Config
+// ============================================================================
+
+/// Experimental features configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ExperimentalConfig {
+    /// Enable signature caching for prompt reuse
+    #[serde(default = "default_true")]
+    pub enable_signature_cache: bool,
+    /// Enable tool loop recovery
+    #[serde(default = "default_true")]
+    pub enable_tool_loop_recovery: bool,
+    /// Enable cross-model consistency checks
+    #[serde(default = "default_true")]
+    pub enable_cross_model_checks: bool,
+    /// Enable usage scaling for context window optimization
+    #[serde(default)]
+    pub enable_usage_scaling: bool,
+}
+
+/// Sticky session configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct StickySessionConfig {
+    /// Enable sticky sessions
+    pub enabled: bool,
+    /// Scheduling mode
+    pub mode: SchedulingMode,
+    /// Session TTL in seconds
+    pub ttl: u32,
+}
+
+/// Upstream proxy configuration for outbound requests.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct UpstreamProxyConfig {
+    /// Enable upstream proxy
+    pub enabled: bool,
+    /// Proxy URL (e.g., socks5://127.0.0.1:1080)
+    pub url: String,
+}
+
+// ============================================================================
+// Main Configurations
+// ============================================================================
+
+/// Full proxy configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProxyConfig {
+    /// Enable proxy server
+    pub enabled: bool,
+    /// Allow LAN access (bind to 0.0.0.0)
+    #[serde(default)]
+    pub allow_lan_access: bool,
+    /// Authentication mode
+    #[serde(default)]
+    pub auth_mode: ProxyAuthMode,
+    /// Port to listen on
+    pub port: u16,
+    /// API key for authentication
+    pub api_key: String,
+    /// Auto-start proxy on app launch
+    pub auto_start: bool,
+    /// Custom model mappings
+    #[serde(default)]
+    pub custom_mapping: HashMap<String, String>,
+    /// Request timeout in seconds
+    #[serde(default = "default_request_timeout")]
+    pub request_timeout: u64,
+    /// Enable request logging
+    #[serde(default)]
+    pub enable_logging: bool,
+    /// Upstream proxy configuration
+    #[serde(default)]
+    pub upstream_proxy: UpstreamProxyConfig,
+    /// Z.ai configuration
+    #[serde(default)]
+    pub zai: ZaiConfig,
+    /// Sticky session configuration
+    #[serde(default)]
+    pub scheduling: StickySessionConfig,
+    /// Experimental features
+    #[serde(default)]
+    pub experimental: ExperimentalConfig,
+}
+
+impl Default for ProxyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            allow_lan_access: false,
+            auth_mode: ProxyAuthMode::default(),
+            port: 8045,
+            api_key: String::new(),
+            auto_start: true,
+            custom_mapping: HashMap::new(),
+            request_timeout: 120,
+            enable_logging: false,
+            upstream_proxy: UpstreamProxyConfig::default(),
+            zai: ZaiConfig::default(),
+            scheduling: StickySessionConfig::default(),
+            experimental: ExperimentalConfig::default(),
+        }
+    }
+}
+
+impl ProxyConfig {
+    /// Get the bind address based on LAN access setting.
+    pub fn get_bind_address(&self) -> String {
+        if self.allow_lan_access {
+            "0.0.0.0".to_string()
+        } else {
+            "127.0.0.1".to_string()
+        }
+    }
+
+    /// Get the full bind socket address.
+    pub fn get_socket_addr(&self) -> String {
+        format!("{}:{}", self.get_bind_address(), self.port)
+    }
+}
+
+/// Full application configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppConfig {
+    /// UI language
+    pub language: String,
+    /// UI theme
+    pub theme: String,
+    /// Enable automatic quota refresh
+    pub auto_refresh: bool,
+    /// Refresh interval in minutes
+    pub refresh_interval: i32,
+    /// Enable automatic sync
+    pub auto_sync: bool,
+    /// Sync interval in minutes
+    pub sync_interval: i32,
+    /// Default export path
+    pub default_export_path: Option<String>,
+    /// Proxy configuration
+    #[serde(default)]
+    pub proxy: ProxyConfig,
+    /// Custom Antigravity executable path
+    pub antigravity_executable: Option<String>,
+    /// Antigravity launch arguments
+    pub antigravity_args: Option<Vec<String>>,
+    /// Enable auto-launch on system startup
+    #[serde(default)]
+    pub auto_launch: bool,
+}
+
+impl AppConfig {
+    /// Create default configuration.
+    pub fn new() -> Self {
+        Self {
+            language: "zh".to_string(),
+            theme: "system".to_string(),
+            auto_refresh: false,
+            refresh_interval: 15,
+            auto_sync: false,
+            sync_interval: 5,
+            default_export_path: None,
+            proxy: ProxyConfig::default(),
+            antigravity_executable: None,
+            antigravity_args: None,
+            auto_launch: false,
+        }
+    }
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ============================================================================
+// Default Value Functions
+// ============================================================================
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_zai_base_url() -> String {
+    "https://api.z.ai/api/anthropic".to_string()
+}
+
+fn default_zai_opus_model() -> String {
+    "glm-4.7".to_string()
+}
+
+fn default_zai_sonnet_model() -> String {
+    "glm-4.7".to_string()
+}
+
+fn default_zai_haiku_model() -> String {
+    "glm-4.5-air".to_string()
+}
+
+fn default_request_timeout() -> u64 {
+    120
+}

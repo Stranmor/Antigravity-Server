@@ -45,7 +45,7 @@ pub fn resolve_model_route(
     } else {
         "passthrough".to_string()
     };
-    
+
     (result, reason)
 }
 
@@ -69,7 +69,7 @@ mod tests {
     fn test_resolve_model_route_exact() {
         let mut mapping = HashMap::new();
         mapping.insert("test-model".to_string(), "mapped-model".to_string());
-        
+
         let (model, reason) = resolve_model_route("test-model", &mapping);
         assert_eq!(model, "mapped-model");
         assert_eq!(reason, "exact");
@@ -79,7 +79,7 @@ mod tests {
     fn test_resolve_model_route_wildcard() {
         let mut mapping = HashMap::new();
         mapping.insert("gpt-4*".to_string(), "gemini-2.5-pro".to_string());
-        
+
         let (model, reason) = resolve_model_route("gpt-4-turbo", &mapping);
         assert_eq!(model, "gemini-2.5-pro");
         assert!(reason.starts_with("wildcard:"));
@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn test_resolve_model_route_system_default() {
         let mapping = HashMap::new();
-        
+
         let (model, reason) = resolve_model_route("claude-opus-4-5-20251101", &mapping);
         assert_eq!(model, "claude-opus-4-5-thinking");
         assert_eq!(reason, "system");

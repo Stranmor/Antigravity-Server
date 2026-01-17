@@ -6,18 +6,15 @@
 //! - Rate limiting and session management
 //! - Request monitoring and logging
 //!
-//! ## Architecture (Doctrine 2.11d - Symlink Isolation)
+//! ## Architecture (Post-Symlink Era)
 //!
-//! Upstream modules are symlinked from vendor/antigravity-upstream/
-//! Our custom modules are real files in this directory.
-//! This allows crate::proxy::* imports to work normally.
+//! All modules are now local copies from vendor/antigravity-upstream.
+//! This allows us to fix clippy warnings and maintain the code ourselves.
+//! Vendor submodule remains as reference for upstream changes (manual port).
 
-// ============= UPSTREAM SYMLINKED MODULES =============
-// These are symlinks to vendor/antigravity-upstream/src-tauri/src/proxy/
-//
-// DOCTRINE 2.11 (Wrapper): Upstream code is treated as read-only dependency.
-// We apply #[allow(warnings)] to accept upstream as-is without modification.
-// Our custom modules (below) remain clippy-strict.
+// ============= COPIED FROM UPSTREAM =============
+// These were symlinks, now copied to allow clippy fixes.
+// Temporarily allowing warnings during migration - will be fixed incrementally.
 #[allow(warnings)]
 pub mod audio;
 #[allow(warnings)]
@@ -47,8 +44,12 @@ pub mod zai_vision_mcp;
 #[allow(warnings)]
 pub mod zai_vision_tools;
 
+// Common utilities (also copied from upstream + our additions)
+#[allow(warnings)]
+pub mod common;
+
 // ============= OUR CUSTOM MODULES =============
-// These are real files maintained by us - CLIPPY STRICT (no allows!)
+// These are original files maintained by us - CLIPPY STRICT (no allows!)
 pub mod adaptive_limit;
 pub mod health;
 pub mod monitor;
@@ -56,12 +57,6 @@ pub mod prometheus;
 pub mod server;
 pub mod smart_prober;
 pub mod token_manager;
-
-// ============= MIXED (UPSTREAM + OUR ADDITIONS) =============
-// common/ contains #[path] includes to upstream files + our circuit_breaker.rs
-// The #[path] includes point to vendor, so we allow warnings for those
-#[allow(warnings)]
-pub mod common;
 
 // Re-export config from shared
 pub use antigravity_shared::proxy::config;

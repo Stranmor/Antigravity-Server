@@ -1,18 +1,14 @@
 //! Common utilities module
 //!
-//! Combines upstream common modules with our custom extensions
+//! Contains shared utilities for proxy handlers and mappers.
+//! All files are now local copies (no longer symlinks to vendor).
 
-// Upstream modules via #[path]
-#[path = "../../../../../vendor/antigravity-upstream/src-tauri/src/proxy/common/json_schema.rs"]
+// Copied from vendor/antigravity-upstream (now ours to maintain)
 pub mod json_schema;
-
-#[path = "../../../../../vendor/antigravity-upstream/src-tauri/src/proxy/common/model_mapping.rs"]
 pub mod model_mapping;
-
-#[path = "../../../../../vendor/antigravity-upstream/src-tauri/src/proxy/common/utils.rs"]
 pub mod utils;
 
-// Our custom modules (real files in this directory)
+// Our custom modules
 pub mod circuit_breaker;
 pub mod model_mapping_ext;
 
@@ -20,4 +16,3 @@ pub mod model_mapping_ext;
 pub use circuit_breaker::{CircuitBreakerManager, CircuitState};
 // Re-export extended model mapping function
 pub use model_mapping_ext::resolve_model_route;
-

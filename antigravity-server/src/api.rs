@@ -217,10 +217,10 @@ struct HealthStatusResponse {
 
 async fn get_health_status(State(state): State<AppState>) -> Json<HealthStatusResponse> {
     let health_monitor = state.health_monitor();
-    
+
     let healthy = health_monitor.healthy_count();
     let disabled = health_monitor.disabled_count();
-    
+
     Json(HealthStatusResponse {
         healthy_accounts: healthy,
         disabled_accounts: disabled,
@@ -235,7 +235,7 @@ struct CircuitStatusResponse {
 
 async fn get_circuit_status(State(state): State<AppState>) -> Json<CircuitStatusResponse> {
     let circuit_breaker = state.circuit_breaker();
-    
+
     let mut circuits = std::collections::HashMap::new();
     for provider in ["anthropic", "google", "openai"] {
         let state_str = match circuit_breaker.get_state(provider) {
@@ -245,7 +245,7 @@ async fn get_circuit_status(State(state): State<AppState>) -> Json<CircuitStatus
         };
         circuits.insert(provider.to_string(), state_str.to_string());
     }
-    
+
     Json(CircuitStatusResponse { circuits })
 }
 
@@ -265,18 +265,20 @@ struct AimdStatusResponse {
 
 async fn get_aimd_status(State(state): State<AppState>) -> Json<AimdStatusResponse> {
     let adaptive_limits = state.adaptive_limits();
-    
+
     let all_persisted = adaptive_limits.all_for_persistence();
     let accounts: Vec<AimdAccountStats> = all_persisted
         .into_iter()
-        .map(|(account_id, confirmed_limit, ceiling, requests)| AimdAccountStats {
-            account_id,
-            confirmed_limit,
-            ceiling,
-            requests_this_minute: requests,
-        })
+        .map(
+            |(account_id, confirmed_limit, ceiling, requests)| AimdAccountStats {
+                account_id,
+                confirmed_limit,
+                ceiling,
+                requests_this_minute: requests,
+            },
+        )
         .collect();
-    
+
     Json(AimdStatusResponse {
         tracked_accounts: adaptive_limits.len(),
         accounts,

@@ -1,0 +1,29 @@
+[package]
+name = "antigravity-types"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Core types, models, and error definitions for Antigravity Manager"
+
+[dependencies]
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+# Time handling
+chrono = { workspace = true, features = ["serde"] }
+
+# Unique identifiers
+uuid = { workspace = true, features = ["v4", "serde"] }
+
+# Validation
+validator = { version = "0.18", features = ["derive"] }
+
+# Error handling (thiserror for derive macros)
+thiserror = { workspace = true }
+
+[features]
+default = []
+# Enable validator derive macros
+validation = []

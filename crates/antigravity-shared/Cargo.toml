@@ -6,9 +6,18 @@ description = "Shared types and models for Antigravity Manager (Frontend/Backend
 license = "CC-BY-NC-SA-4.0"
 
 [dependencies]
+# Types crate (foundation)
+antigravity-types = { workspace = true }
+
+# Serialization
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-chrono = { workspace = true, features = ["serde"] }
-uuid = { workspace = true, features = ["v4", "serde"] }
-validator = { version = "0.18", features = ["derive"] }
 
+# Time handling
+chrono = { workspace = true, features = ["serde"] }
+
+# Unique identifiers
+uuid = { workspace = true, features = ["v4", "serde"] }
+
+# Validation
+validator = { version = "0.18", features = ["derive"] }
