@@ -430,8 +430,9 @@ fn LogDetailModal(log: ProxyRequestLog, on_close: impl Fn() + 'static + Clone) -
 }
 
 fn format_timestamp(ts: i64) -> String {
-    // Simple time formatting - just show HH:MM:SS
-    let secs = ts % 86400;
+    // Backend stores timestamp in MILLISECONDS, convert to seconds first
+    let ts_secs = ts / 1000;
+    let secs = ts_secs % 86400;
     let hours = secs / 3600;
     let mins = (secs % 3600) / 60;
     let s = secs % 60;
@@ -439,9 +440,10 @@ fn format_timestamp(ts: i64) -> String {
 }
 
 fn format_timestamp_full(ts: i64) -> String {
-    // Full timestamp with date (basic formatting)
-    let days_since_epoch = ts / 86400;
-    let secs = ts % 86400;
+    // Backend stores timestamp in MILLISECONDS, convert to seconds first
+    let ts_secs = ts / 1000;
+    let days_since_epoch = ts_secs / 86400;
+    let secs = ts_secs % 86400;
     let hours = secs / 3600;
     let mins = (secs % 3600) / 60;
     let s = secs % 60;
