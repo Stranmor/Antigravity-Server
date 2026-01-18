@@ -3,8 +3,8 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    rust-overlay.url = "github:oxalica/rust-overlay/master";
-    flake-utils.url = "github:numtide/flake-utils/master";
+    rust-overlay.url = "github:oxalica/rust-overlay";
+    flake-utils.url = "github:numtide/flake-utils";
   };
 
   outputs = { self, nixpkgs, rust-overlay, flake-utils, ... }:
@@ -107,6 +107,45 @@
           check = mkScript "check" ''
             cargo check --workspace
           '';
+
+          deploy-local = mkScript "deploy-local" ''
+            set -e
+            echo "🚀 Full deploy: frontend + backend + service restart"
+            
+            # Step 1: Build frontend
+            echo "📦 [1/5] Building Leptos frontend..."
+            cd src-leptos && trunk build --release
+            cd ..
+            
+            # Step 2: Build backend
+            echo "📦 [2/5] Building Antigravity Server..."
+            cargo build --release -p antigravity-server
+            
+            # Step 3: Stop service
+            echo "⏹️  [3/5] Stopping service..."
+            systemctl --user stop antigravity-manager || true
+            
+            # Step 4: Copy binary
+            echo "📋 [4/5] Installing binary..."
+            cp target/release/antigravity-server ~/.local/bin/
+            
+            # Step 5: Start service
+            echo "▶️  [5/5] Starting service..."
+            systemctl --user start antigravity-manager
+            
+            # Verify
+            sleep 2
+            if systemctl --user is-active antigravity-manager > /dev/null 2>&1; then
+              VERSION=$(curl -s http://localhost:8046/api/resilience/health 2>/dev/null && echo "")
+              echo "✅ Deployed successfully!"
+              echo "🌐 WebUI: http://localhost:8046"
+              echo "📊 Health: $VERSION"
+            else
+              echo "❌ Service failed to start!"
+              systemctl --user status antigravity-manager --no-pager
+              exit 1
+            fi
+          '';
           
           help = mkScript "help" ''
             echo "🦀 Antigravity Manager Nix Commands:"
@@ -119,6 +158,7 @@
             echo "  test-suite      - Run tests"
             echo "  clean           - Clean artifacts"
             echo "  check           - Check compilation"
+            echo "  deploy-local    - Full deploy: build frontend + backend, restart service"
             echo "  build-image     - Build the Podman container image (nix build .#antigravity-server-image)"
             echo "  generate-quadlet - Generate systemd quadlet file (nix build .#antigravity-manager-quadlet)"
           '';
