@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# 关闭已集成到 v3.3.41 的 PR 脚本
+# 关闭已集成到 v3.3.42 的 PR 脚本
 # 使用前请确保已安装并登录 GitHub CLI: brew install gh && gh auth login
 
 REPO="lbjlaq/Antigravity-Manager"
-VERSION="v3.3.41"
+VERSION="v3.3.42"
 
 # 感谢消息模板
 THANK_YOU_MESSAGE="感谢您的贡献！🎉
