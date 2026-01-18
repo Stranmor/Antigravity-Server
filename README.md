@@ -6,7 +6,7 @@
 
 <img src="public/icon.png" alt="Antigravity Logo" width="140" height="140" style="border-radius: 24px;">
 
-[![Version](https://img.shields.io/badge/Version-3.3.43-10B981?style=for-the-badge&logo=semver)](https://github.com/Stranmor/Antigravity-Manager/releases)
+[![Upstream](https://img.shields.io/badge/Upstream-v3.3.43-888?style=for-the-badge&logo=github)](https://github.com/lbjlaq/Antigravity-Manager)
 [![Rust](https://img.shields.io/badge/100%25_Rust-dea584?style=for-the-badge&logo=rust&logoColor=black)](https://www.rust-lang.org/)
 [![Leptos](https://img.shields.io/badge/Leptos-WASM-8B5CF6?style=for-the-badge)](https://leptos.dev/)
 [![Axum](https://img.shields.io/badge/Axum-Server-3B82F6?style=for-the-badge)](https://github.com/tokio-rs/axum)
@@ -193,9 +193,22 @@ vendor/antigravity-upstream/ # Upstream reference (Git Submodule)
 
 ---
 
+## 🔀 Upstream Sync Strategy
+
+This fork uses **Semantic Porting** — we don't blindly copy upstream changes. Instead, we:
+
+- ✅ **Always Port**: Bug fixes, new model support, security patches, JSON schema improvements
+- ❌ **Never Port**: React/Tauri code (we use Leptos/Axum), changes conflicting with our resilience layer
+
+**Current Sync**: We track upstream v3.3.43 while maintaining our custom additions (AIMD, Circuit Breakers, Prometheus, WARP support).
+
+See [AGENTS.md](AGENTS.md) for detailed architecture documentation and sync workflow.
+
+---
+
 ## 📄 License & Attribution
 
-This project is a fork of [lbjlaq/Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager). We selectively port useful upstream features while maintaining our focus on headless resilience.
+This project is a fork of [lbjlaq/Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager). Full credit to the original authors for the core concept. We selectively port useful upstream features while maintaining our focus on headless resilience.
 
 **License**: [CC BY-NC-SA 4.0](LICENSE) — Non-commercial use only.
 
