@@ -308,3 +308,44 @@ Tested by asking models "What model are you?":
 - Free tier attracts developers → converts to paid Vertex AI enterprise
 - Market share now, monetization later
 - Rate limits are their protection (Antigravity Manager rotates accounts to bypass)
+
+---
+
+## ⚠️ UNDOCUMENTED OUTPUT TOKEN LIMIT [2026-01-19]
+
+### The Problem
+
+Google Antigravity API has an **undocumented output limit of ~4K tokens** (~150-200 lines of code).
+
+**Symptoms:**
+- Stream cuts mid-response without `finish_reason: "max_tokens"`
+- Tool call JSON left incomplete/invalid
+- Client receives garbage, cannot parse response
+- No error message — just silent truncation
+
+**Empirical evidence:** Max observed output in 24h of logs = 3901 tokens.
+
+### What This Means
+
+| Operation | Risk |
+|-----------|------|
+| Edit tool (small diffs) | ✅ Safe |
+| Write tool (<100 lines) | ✅ Safe |
+| Write tool (>150 lines) | ❌ Will be truncated |
+| README generation | ❌ High risk |
+| Full file creation | ❌ High risk |
+
+### Workaround
+
+For large files, use incremental approach:
+1. Write skeleton with TODO markers
+2. Fill each section with separate Edit calls
+3. Each operation <100 lines
+
+### Future Fix Ideas
+
+1. **Auto-continue in proxy** — detect truncated stream (no valid stop_reason), auto-send "continue" request, splice responses
+2. **Output size estimation** — before sending request, estimate expected output size, warn if >4K tokens
+3. **Paid API fallback** — route large-output requests to OpenRouter/direct Anthropic API
+
+**Status:** No fix implemented. Using system prompt workaround (see global AGENTS.md rule 20).

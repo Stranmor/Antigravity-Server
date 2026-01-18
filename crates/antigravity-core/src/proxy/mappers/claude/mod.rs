@@ -213,14 +213,15 @@ fn process_sse_line(
             };
 
             tracing::info!(
-                "[{}] ✓ Stream completed | Account: {} | In: {} tokens | Out: {} tokens{}",
+                "[{}] ✓ Stream completed | Account: {} | In: {} tokens | Out: {} tokens{} | Reason: {}",
                 trace_id,
                 email,
                 u.prompt_token_count
                     .unwrap_or(0)
                     .saturating_sub(cached_tokens),
                 u.candidates_token_count.unwrap_or(0),
-                cache_info
+                cache_info,
+                finish_reason
             );
         }
 

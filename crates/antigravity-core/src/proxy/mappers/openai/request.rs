@@ -298,7 +298,7 @@ pub fn transform_openai_request(
 
     // 3. Build request body
     let mut gen_config = json!({
-        "maxOutputTokens": request.max_tokens.unwrap_or(16384),
+        "maxOutputTokens": request.max_tokens.unwrap_or(65536),
         "temperature": request.temperature.unwrap_or(1.0),
         "topP": request.top_p.unwrap_or(1.0),
     });
