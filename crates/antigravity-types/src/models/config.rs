@@ -230,6 +230,52 @@ pub enum UpstreamProxyMode {
     Custom,
 }
 
+/// Quota protection configuration.
+/// Prevents account exhaustion by monitoring quota thresholds.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, Validate)]
+pub struct QuotaProtectionConfig {
+    /// Enable quota protection
+    #[serde(default)]
+    pub enabled: bool,
+    /// Threshold percentage (1-99) - accounts below this are considered low
+    #[validate(range(min = 1, max = 99))]
+    #[serde(default = "default_quota_threshold")]
+    pub threshold_percentage: u8,
+    /// Models to monitor for quota protection
+    #[serde(default)]
+    pub monitored_models: Vec<String>,
+    /// Auto-restore accounts when quota resets
+    #[serde(default = "default_true")]
+    pub auto_restore: bool,
+}
+
+fn default_quota_threshold() -> u8 {
+    20
+}
+
+/// Smart warmup configuration.
+/// Pre-warms accounts to maintain active sessions and quotas.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, Validate)]
+pub struct SmartWarmupConfig {
+    /// Enable smart warmup
+    #[serde(default)]
+    pub enabled: bool,
+    /// Models to warmup
+    #[serde(default)]
+    pub models: Vec<String>,
+    /// Warmup interval in minutes
+    #[validate(range(min = 5, max = 1440))]
+    #[serde(default = "default_warmup_interval")]
+    pub interval_minutes: u32,
+    /// Only warmup accounts below quota threshold
+    #[serde(default)]
+    pub only_low_quota: bool,
+}
+
+fn default_warmup_interval() -> u32 {
+    60
+}
+
 /// Upstream proxy configuration for outbound requests.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
 pub struct UpstreamProxyConfig {
@@ -369,6 +415,12 @@ pub struct AppConfig {
     /// Enable auto-launch on system startup
     #[serde(default)]
     pub auto_launch: bool,
+    /// Quota protection configuration
+    #[serde(default)]
+    pub quota_protection: QuotaProtectionConfig,
+    /// Smart warmup configuration
+    #[serde(default)]
+    pub smart_warmup: SmartWarmupConfig,
 }
 
 impl AppConfig {
@@ -386,6 +438,8 @@ impl AppConfig {
             antigravity_executable: None,
             antigravity_args: None,
             auto_launch: false,
+            quota_protection: QuotaProtectionConfig::default(),
+            smart_warmup: SmartWarmupConfig::default(),
         }
     }
 }

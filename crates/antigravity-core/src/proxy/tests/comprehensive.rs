@@ -39,7 +39,7 @@ mod tests {
 
         // 2. 执行转换
         // 如果修复生效，这里应该成功返回，且 thinkingConfig 被保留
-        let result = transform_claude_request_in(&req, "test-project");
+        let result = transform_claude_request_in(&req, "test-project", false);
         assert!(result.is_ok(), "First thinking request should be allowed");
 
         let body = result.unwrap();

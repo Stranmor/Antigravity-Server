@@ -38,6 +38,7 @@ fn flatten_refs(map: &mut serde_json::Map<String, Value>, defs: &serde_json::Map
         let ref_name = ref_path.split('/').next_back().unwrap_or(&ref_path);
 
         if let Some(Value::Object(def_map)) = defs.get(ref_name) {
+            // 将定义的内容合并到当前 map
             for (k, v) in def_map {
                 // 仅当当前 map 没有该 key 时才插入 (避免覆盖)
                 // 但通常 $ref 节点不应该有其他属性
@@ -64,246 +65,258 @@ fn flatten_refs(map: &mut serde_json::Map<String, Value>, defs: &serde_json::Map
     }
 }
 
+#[allow(clippy::single_match)]
 fn clean_json_schema_recursive(value: &mut Value) -> bool {
     let mut is_effectively_nullable = false;
 
-    if let Value::Object(map) = value {
-        // 0. [NEW] 合并 allOf
-        merge_all_of(map);
+    match value {
+        Value::Object(map) => {
+            // 0. [NEW] 合并 allOf
+            merge_all_of(map);
 
-        // 1. [CRITICAL] 深度递归处理子项
-        if let Some(Value::Object(props)) = map.get_mut("properties") {
-            let mut nullable_keys = std::collections::HashSet::new();
-            for (k, v) in props {
-                if clean_json_schema_recursive(v) {
-                    nullable_keys.insert(k.clone());
+            // 1. [CRITICAL] 深度递归处理子项
+            if let Some(Value::Object(props)) = map.get_mut("properties") {
+                let mut nullable_keys = std::collections::HashSet::new();
+                for (k, v) in props {
+                    if clean_json_schema_recursive(v) {
+                        nullable_keys.insert(k.clone());
+                    }
+                }
+
+                if !nullable_keys.is_empty() {
+                    if let Some(Value::Array(req_arr)) = map.get_mut("required") {
+                        req_arr.retain(|r| {
+                            r.as_str()
+                                .map(|s| !nullable_keys.contains(s))
+                                .unwrap_or(true)
+                        });
+                        if req_arr.is_empty() {
+                            map.remove("required");
+                        }
+                    }
+                }
+            } else if let Some(items) = map.get_mut("items") {
+                clean_json_schema_recursive(items);
+            } else {
+                for v in map.values_mut() {
+                    clean_json_schema_recursive(v);
                 }
             }
 
-            if !nullable_keys.is_empty() {
-                if let Some(Value::Array(req_arr)) = map.get_mut("required") {
-                    req_arr.retain(|r| {
-                        r.as_str()
-                            .map(|s| !nullable_keys.contains(s))
-                            .unwrap_or(true)
-                    });
-                    if req_arr.is_empty() {
-                        map.remove("required");
+            // 2. [FIX #815] 处理 anyOf/oneOf 联合类型: 合并属性而非直接删除
+            let mut union_to_merge = None;
+            if map.get("type").is_none()
+                || map.get("type").and_then(|t| t.as_str()) == Some("object")
+            {
+                if let Some(Value::Array(any_of)) = map.get("anyOf") {
+                    union_to_merge = Some(any_of.clone());
+                } else if let Some(Value::Array(one_of)) = map.get("oneOf") {
+                    union_to_merge = Some(one_of.clone());
+                }
+            }
+
+            if let Some(union_array) = union_to_merge {
+                if let Some(Value::Object(branch_obj)) =
+                    extract_best_schema_from_union(&union_array)
+                {
+                    for (k, v) in branch_obj {
+                        if k == "properties" {
+                            if let Some(target_props) = map
+                                .entry("properties".to_string())
+                                .or_insert_with(|| Value::Object(serde_json::Map::new()))
+                                .as_object_mut()
+                            {
+                                if let Some(source_props) = v.as_object() {
+                                    for (pk, pv) in source_props {
+                                        target_props
+                                            .entry(pk.clone())
+                                            .or_insert_with(|| pv.clone());
+                                    }
+                                }
+                            }
+                        } else if k == "required" {
+                            if let Some(target_req) = map
+                                .entry("required".to_string())
+                                .or_insert_with(|| Value::Array(Vec::new()))
+                                .as_array_mut()
+                            {
+                                if let Some(source_req) = v.as_array() {
+                                    for rv in source_req {
+                                        if !target_req.contains(rv) {
+                                            target_req.push(rv.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        } else if !map.contains_key(&k) {
+                            map.insert(k, v);
+                        }
                     }
                 }
             }
-        } else if let Some(items) = map.get_mut("items") {
-            clean_json_schema_recursive(items);
-        } else {
-            for v in map.values_mut() {
-                clean_json_schema_recursive(v);
-            }
-        }
 
-        // 2. [FIX #815] 处理 anyOf/oneOf 联合类型: 合并属性而非直接删除
-        let mut union_to_merge = None;
-        if map.get("type").is_none() || map.get("type").and_then(|t| t.as_str()) == Some("object") {
-            if let Some(Value::Array(any_of)) = map.get("anyOf") {
-                union_to_merge = Some(any_of.clone());
-            } else if let Some(Value::Array(one_of)) = map.get("oneOf") {
-                union_to_merge = Some(one_of.clone());
-            }
-        }
+            // 3. [SAFETY] 检查当前对象是否为 JSON Schema 节点
+            // 只有当对象看起来像 Schema (包含 type, properties, items, enum, anyOf 等) 时，才执行白名单过滤。
+            // 否则，如果它是一个普通的 Value (如 request.rs 中的 functionCall 对象)，直接应用激进过滤会破坏结构。
+            let looks_like_schema = map.contains_key("type")
+                || map.contains_key("properties")
+                || map.contains_key("items")
+                || map.contains_key("enum")
+                || map.contains_key("anyOf")
+                || map.contains_key("oneOf")
+                || map.contains_key("allOf");
 
-        if let Some(union_array) = union_to_merge {
-            if let Some(Value::Object(branch_obj)) = extract_best_schema_from_union(&union_array) {
-                for (k, v) in branch_obj {
-                    if k == "properties" {
-                        if let Some(target_props) = map
-                            .entry("properties".to_string())
-                            .or_insert_with(|| Value::Object(serde_json::Map::new()))
-                            .as_object_mut()
-                        {
-                            if let Some(source_props) = v.as_object() {
-                                for (pk, pv) in source_props {
-                                    target_props.entry(pk.clone()).or_insert_with(|| pv.clone());
-                                }
+            if looks_like_schema {
+                // 4. [ROBUST] 约束迁移：在被白名单过滤前，将校验项转为描述 Hint
+                let mut hints = Vec::new();
+                let constraints = [
+                    ("minLength", "minLen"),
+                    ("maxLength", "maxLen"),
+                    ("pattern", "pattern"),
+                    ("minimum", "min"),
+                    ("maximum", "max"),
+                    ("multipleOf", "multipleOf"),
+                    ("exclusiveMinimum", "exclMin"),
+                    ("exclusiveMaximum", "exclMax"),
+                    ("minItems", "minItems"),
+                    ("maxItems", "maxItems"),
+                    ("propertyNames", "propertyNames"),
+                    ("format", "format"),
+                ];
+                for (field, label) in constraints {
+                    if let Some(val) = map.get(field) {
+                        if !val.is_null() {
+                            let val_str = if let Some(s) = val.as_str() {
+                                s.to_string()
+                            } else {
+                                val.to_string()
+                            };
+                            hints.push(format!("{}: {}", label, val_str));
+                        }
+                    }
+                }
+                if !hints.is_empty() {
+                    let suffix = format!(" [Constraint: {}]", hints.join(", "));
+                    let desc_val = map
+                        .entry("description".to_string())
+                        .or_insert_with(|| Value::String("".to_string()));
+                    if let Value::String(s) = desc_val {
+                        if !s.contains(&suffix) {
+                            s.push_str(&suffix);
+                        }
+                    }
+                }
+
+                // 5. [CRITICAL] 白名单过滤：彻底物理移除 Gemini 不支持的内容，防止 400 错误
+                let allowed_fields = std::collections::HashSet::from([
+                    "type",
+                    "description",
+                    "properties",
+                    "required",
+                    "items",
+                    "enum",
+                    "title",
+                ]);
+                let keys_to_remove: Vec<String> = map
+                    .keys()
+                    .filter(|k| !allowed_fields.contains(k.as_str()))
+                    .cloned()
+                    .collect();
+                for k in keys_to_remove {
+                    map.remove(&k);
+                }
+
+                // 6. [SAFETY] 处理空 Object
+                if map.get("type").and_then(|t| t.as_str()) == Some("object") {
+                    let has_props = map
+                        .get("properties")
+                        .and_then(|p| p.as_object())
+                        .map(|o| !o.is_empty())
+                        .unwrap_or(false);
+                    if !has_props {
+                        map.insert("properties".to_string(), serde_json::json!({
+                            "reason": { "type": "string", "description": "Reason for calling this tool" }
+                        }));
+                        map.insert("required".to_string(), serde_json::json!(["reason"]));
+                    }
+                }
+
+                // 7. [SAFETY] Required 字段对齐
+                let valid_prop_keys: Option<std::collections::HashSet<String>> = map
+                    .get("properties")
+                    .and_then(|p| p.as_object())
+                    .map(|obj| obj.keys().cloned().collect());
+
+                if let Some(required_val) = map.get_mut("required") {
+                    if let Some(req_arr) = required_val.as_array_mut() {
+                        if let Some(keys) = &valid_prop_keys {
+                            req_arr
+                                .retain(|k| k.as_str().map(|s| keys.contains(s)).unwrap_or(false));
+                        } else {
+                            req_arr.clear();
+                        }
+                    }
+                }
+
+                // 8. 处理 type 字段
+                if let Some(type_val) = map.get_mut("type") {
+                    let mut selected_type = None;
+                    match type_val {
+                        Value::String(s) => {
+                            let lower = s.to_lowercase();
+                            if lower == "null" {
+                                is_effectively_nullable = true;
+                            } else {
+                                selected_type = Some(lower);
                             }
                         }
-                    } else if k == "required" {
-                        if let Some(target_req) = map
-                            .entry("required".to_string())
-                            .or_insert_with(|| Value::Array(Vec::new()))
-                            .as_array_mut()
-                        {
-                            if let Some(source_req) = v.as_array() {
-                                for rv in source_req {
-                                    if !target_req.contains(rv) {
-                                        target_req.push(rv.clone());
+                        Value::Array(arr) => {
+                            for item in arr {
+                                if let Value::String(s) = item {
+                                    let lower = s.to_lowercase();
+                                    if lower == "null" {
+                                        is_effectively_nullable = true;
+                                    } else if selected_type.is_none() {
+                                        selected_type = Some(lower);
                                     }
                                 }
                             }
                         }
-                    } else if !map.contains_key(&k) {
-                        map.insert(k, v);
+                        _ => {}
                     }
+                    *type_val =
+                        Value::String(selected_type.unwrap_or_else(|| "string".to_string()));
                 }
-            }
-        }
 
-        // 3. [SAFETY] 检查当前对象是否为 JSON Schema 节点
-        // 只有当对象看起来像 Schema (包含 type, properties, items, enum, anyOf 等) 时，才执行白名单过滤。
-        // 否则，如果它是一个普通的 Value (如 request.rs 中的 functionCall 对象)，直接应用激进过滤会破坏结构。
-        let looks_like_schema = map.contains_key("type")
-            || map.contains_key("properties")
-            || map.contains_key("items")
-            || map.contains_key("enum")
-            || map.contains_key("anyOf")
-            || map.contains_key("oneOf")
-            || map.contains_key("allOf");
-
-        if looks_like_schema {
-            // 4. [ROBUST] 约束迁移：在被白名单过滤前，将校验项转为描述 Hint
-            let mut hints = Vec::new();
-            let constraints = [
-                ("minLength", "minLen"),
-                ("maxLength", "maxLen"),
-                ("pattern", "pattern"),
-                ("minimum", "min"),
-                ("maximum", "max"),
-                ("multipleOf", "multipleOf"),
-                ("exclusiveMinimum", "exclMin"),
-                ("exclusiveMaximum", "exclMax"),
-                ("minItems", "minItems"),
-                ("maxItems", "maxItems"),
-                ("propertyNames", "propertyNames"),
-                ("format", "format"),
-            ];
-            for (field, label) in constraints {
-                if let Some(val) = map.get(field) {
-                    if !val.is_null() {
-                        let val_str = if let Some(s) = val.as_str() {
-                            s.to_string()
-                        } else {
-                            val.to_string()
-                        };
-                        hints.push(format!("{}: {}", label, val_str));
-                    }
-                }
-            }
-            if !hints.is_empty() {
-                let suffix = format!(" [Constraint: {}]", hints.join(", "));
-                let desc_val = map
-                    .entry("description".to_string())
-                    .or_insert_with(|| Value::String("".to_string()));
-                if let Value::String(s) = desc_val {
-                    if !s.contains(&suffix) {
-                        s.push_str(&suffix);
-                    }
-                }
-            }
-
-            // 5. [CRITICAL] 白名单过滤：彻底物理移除 Gemini 不支持的内容，防止 400 错误
-            let allowed_fields = std::collections::HashSet::from([
-                "type",
-                "description",
-                "properties",
-                "required",
-                "items",
-                "enum",
-                "title",
-            ]);
-            let keys_to_remove: Vec<String> = map
-                .keys()
-                .filter(|k| !allowed_fields.contains(k.as_str()))
-                .cloned()
-                .collect();
-            for k in keys_to_remove {
-                map.remove(&k);
-            }
-
-            // 6. [SAFETY] 处理空 Object
-            if map.get("type").and_then(|t| t.as_str()) == Some("object") {
-                let has_props = map
-                    .get("properties")
-                    .and_then(|p| p.as_object())
-                    .map(|o| !o.is_empty())
-                    .unwrap_or(false);
-                if !has_props {
-                    map.insert("properties".to_string(), serde_json::json!({
-                        "reason": { "type": "string", "description": "Reason for calling this tool" }
-                    }));
-                    map.insert("required".to_string(), serde_json::json!(["reason"]));
-                }
-            }
-
-            // 7. [SAFETY] Required 字段对齐
-            let valid_prop_keys: Option<std::collections::HashSet<String>> = map
-                .get("properties")
-                .and_then(|p| p.as_object())
-                .map(|obj| obj.keys().cloned().collect());
-
-            if let Some(required_val) = map.get_mut("required") {
-                if let Some(req_arr) = required_val.as_array_mut() {
-                    if let Some(keys) = &valid_prop_keys {
-                        req_arr.retain(|k| k.as_str().map(|s| keys.contains(s)).unwrap_or(false));
-                    } else {
-                        req_arr.clear();
-                    }
-                }
-            }
-
-            // 8. 处理 type 字段
-            if let Some(type_val) = map.get_mut("type") {
-                let mut selected_type = None;
-                match type_val {
-                    Value::String(s) => {
-                        let lower = s.to_lowercase();
-                        if lower == "null" {
-                            is_effectively_nullable = true;
-                        } else {
-                            selected_type = Some(lower);
-                        }
-                    }
-                    Value::Array(arr) => {
-                        for item in arr {
-                            if let Value::String(s) = item {
-                                let lower = s.to_lowercase();
-                                if lower == "null" {
-                                    is_effectively_nullable = true;
-                                } else if selected_type.is_none() {
-                                    selected_type = Some(lower);
-                                }
+                if is_effectively_nullable {
+                    let desc_val = map
+                        .entry("description".to_string())
+                        .or_insert_with(|| Value::String("".to_string()));
+                    if let Value::String(s) = desc_val {
+                        if !s.contains("nullable") {
+                            if !s.is_empty() {
+                                s.push(' ');
                             }
+                            s.push_str("(nullable)");
                         }
                     }
-                    _ => {}
                 }
-                *type_val = Value::String(selected_type.unwrap_or_else(|| "string".to_string()));
-            }
 
-            if is_effectively_nullable {
-                let desc_val = map
-                    .entry("description".to_string())
-                    .or_insert_with(|| Value::String("".to_string()));
-                if let Value::String(s) = desc_val {
-                    if !s.contains("nullable") {
-                        if !s.is_empty() {
-                            s.push(' ');
+                // 9. Enum 值强制转字符串
+                if let Some(Value::Array(arr)) = map.get_mut("enum") {
+                    for item in arr {
+                        if !item.is_string() {
+                            *item = Value::String(if item.is_null() {
+                                "null".to_string()
+                            } else {
+                                item.to_string()
+                            });
                         }
-                        s.push_str("(nullable)");
-                    }
-                }
-            }
-
-            // 9. Enum 值强制转字符串
-            if let Some(Value::Array(arr)) = map.get_mut("enum") {
-                for item in arr {
-                    if !item.is_string() {
-                        *item = Value::String(if item.is_null() {
-                            "null".to_string()
-                        } else {
-                            item.to_string()
-                        });
                     }
                 }
             }
         }
+        _ => {}
     }
 
     is_effectively_nullable

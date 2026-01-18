@@ -110,6 +110,7 @@ pub async fn handle_warmup(
         match crate::proxy::mappers::claude::transform_claude_request_in(
             &claude_request,
             &project_id,
+            false,
         ) {
             Ok(transformed) => transformed,
             Err(e) => {

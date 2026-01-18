@@ -11,10 +11,15 @@ pub mod utils;
 
 pub use collector::collect_stream_to_json;
 pub use models::*;
-pub use request::{clean_cache_control_from_messages, transform_claude_request_in};
+pub use request::{
+    clean_cache_control_from_messages, merge_consecutive_messages, transform_claude_request_in,
+};
 pub use response::transform_response;
 pub use streaming::{PartProcessor, StreamingState};
-pub use thinking_utils::close_tool_loop_for_thinking;
+pub use thinking_utils::{
+    close_tool_loop_for_thinking, filter_invalid_thinking_blocks_with_family, has_valid_signature,
+    remove_trailing_unsigned_thinking,
+};
 
 use bytes::Bytes;
 use futures::Stream;

@@ -3,6 +3,8 @@
 use leptos::prelude::*;
 use leptos_router::hooks::use_location;
 
+const VERSION: &str = env!("GIT_VERSION");
+
 #[component]
 pub fn Sidebar() -> impl IntoView {
     let location = use_location();
@@ -21,7 +23,7 @@ pub fn Sidebar() -> impl IntoView {
                     <span class="logo-icon">"🚀"</span>
                     <span class="logo-text">"Antigravity"</span>
                 </div>
-                <span class="version">"v3.3.20"</span>
+                <span class="version">{format!("v{}", VERSION)}</span>
             </div>
 
             <nav class="sidebar-nav">

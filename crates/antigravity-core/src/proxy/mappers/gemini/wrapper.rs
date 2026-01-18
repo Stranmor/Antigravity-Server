@@ -44,7 +44,11 @@ pub fn wrap_request(
                                 {
                                     if let Some(obj) = part.as_object_mut() {
                                         obj.insert("thoughtSignature".to_string(), json!(sig));
-                                        tracing::debug!("[Gemini-Wrap] Injected signature (len: {}) for session: {}", sig.len(), s_id);
+                                        tracing::debug!(
+                                            "[Gemini-Wrap] Injected signature (len: {}) for session: {}",
+                                            sig.len(),
+                                            s_id
+                                        );
                                     }
                                 }
                             }

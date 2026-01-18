@@ -3,9 +3,11 @@
 
 use super::models::*;
 use super::utils::to_claude_usage;
+use serde_json::json;
 
 /// [FIX #547] Helper function to coerce string values to boolean
 /// Gemini sometimes sends boolean parameters as strings (e.g., "true", "-n", "false")
+#[allow(dead_code)]
 fn coerce_to_bool(value: &serde_json::Value) -> Option<serde_json::Value> {
     match value {
         serde_json::Value::Bool(_) => Some(value.clone()), // Already boolean
@@ -37,9 +39,10 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
 
     if let Some(obj) = args.as_object_mut() {
         // [IMPROVED] Case-insensitive matching for tool names
+        // [IMPROVED] Case-insensitive matching for tool names
         match tool_name.to_lowercase().as_str() {
-            "grep" => {
-                // [FIX #546] Gemini hallucination: maps parameter description to "description" field
+            "grep" | "search" | "search_code_definitions" | "search_code_snippets" => {
+                // [FIX] Gemini hallucination: maps parameter description to "description" field
                 if let Some(desc) = obj.remove("description") {
                     if !obj.contains_key("pattern") {
                         obj.insert("pattern".to_string(), desc);
@@ -71,81 +74,16 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
                         obj.insert("path".to_string(), serde_json::json!(path_str));
                         tracing::debug!("[Response] Remapped Grep: paths → path(\"{}\")", path_str);
                     } else {
-                        obj.insert("path".to_string(), serde_json::json!("."));
-                        tracing::debug!("[Response] Remapped Grep: default path → \".\"");
+                        // Default to current directory if missing
+                        obj.insert("path".to_string(), json!("."));
+                        tracing::debug!("[Response] Added default path: \".\"");
                     }
                 }
 
-                // [FIX] Remap "includes" (array) -> "include" (string)
-                if let Some(includes) = obj.remove("includes") {
-                    if !obj.contains_key("include") {
-                        let include_str = if let Some(arr) = includes.as_array() {
-                            // Join with comma? Or take first? Claude Code expects a single glob string.
-                            // Trying comma separation which is common for multi-glob
-                            arr.iter()
-                                .filter_map(|v| v.as_str())
-                                .collect::<Vec<_>>()
-                                .join(",")
-                        } else if let Some(s) = includes.as_str() {
-                            s.to_string()
-                        } else {
-                            String::new()
-                        };
-
-                        if !include_str.is_empty() {
-                            obj.insert("include".to_string(), serde_json::json!(include_str));
-                            tracing::debug!(
-                                "[Response] Remapped Grep: includes → include(\"{}\")",
-                                include_str
-                            );
-                        }
-                    }
-                }
-
-                // [FIX] Remap "ignore_case" -> "ignoreCase"
-                if let Some(ignore_case) = obj.remove("ignore_case") {
-                    if !obj.contains_key("ignoreCase") {
-                        obj.insert("ignoreCase".to_string(), ignore_case);
-                        tracing::debug!("[Response] Remapped Grep: ignore_case → ignoreCase");
-                    }
-                }
-
-                // [FIX #547] Handle "-n" parameter sent as string instead of boolean
-                // Gemini sometimes sends Unix-style flags as parameter names
-                if let Some(n_val) = obj.remove("-n") {
-                    if let Some(bool_val) = coerce_to_bool(&n_val) {
-                        // "-n" in grep usually means "line numbers" - map to appropriate param
-                        if !obj.contains_key("lineNumbers") {
-                            obj.insert("lineNumbers".to_string(), bool_val);
-                            tracing::debug!("[Response] Remapped Grep: -n → lineNumbers");
-                        }
-                    }
-                }
-
-                // [FIX #547] Coerce all known boolean parameters from string to bool
-                let bool_params = [
-                    "ignoreCase",
-                    "lineNumbers",
-                    "caseSensitive",
-                    "regex",
-                    "wholeWord",
-                ];
-                for param in bool_params {
-                    if let Some(val) = obj.get(param).cloned() {
-                        if val.is_string() {
-                            if let Some(bool_val) = coerce_to_bool(&val) {
-                                obj.insert(param.to_string(), bool_val);
-                                tracing::debug!(
-                                    "[Response] Coerced Grep param '{}' from string to bool",
-                                    param
-                                );
-                            }
-                        }
-                    }
-                }
+                // Note: We keep "-n" and "output_mode" if present as they are valid in Grep schema
             }
             "glob" => {
-                // [FIX #546] Gemini hallucination: maps parameter description to "description" field
+                // [FIX] Gemini hallucination: maps parameter description to "description" field
                 if let Some(desc) = obj.remove("description") {
                     if !obj.contains_key("pattern") {
                         obj.insert("pattern".to_string(), desc);
@@ -177,8 +115,9 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
                         obj.insert("path".to_string(), serde_json::json!(path_str));
                         tracing::debug!("[Response] Remapped Glob: paths → path(\"{}\")", path_str);
                     } else {
-                        obj.insert("path".to_string(), serde_json::json!("."));
-                        tracing::debug!("[Response] Remapped Glob: default path → \".\"");
+                        // Default to current directory if missing
+                        obj.insert("path".to_string(), json!("."));
+                        tracing::debug!("[Response] Added default path: \".\"");
                     }
                 }
             }
@@ -199,8 +138,29 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
                 }
             }
             other => {
+                // [NEW] [Issue #785] Generic Property Mapping for all tools
+                // If a tool has "paths" (array of 1) but no "path", convert it.
+                let mut path_to_inject = None;
+                if !obj.contains_key("path") {
+                    if let Some(paths) = obj.get("paths").and_then(|v| v.as_array()) {
+                        if paths.len() == 1 {
+                            if let Some(p) = paths[0].as_str() {
+                                path_to_inject = Some(p.to_string());
+                            }
+                        }
+                    }
+                }
+
+                if let Some(path) = path_to_inject {
+                    obj.insert("path".to_string(), serde_json::json!(path));
+                    tracing::debug!(
+                        "[Response] Probabilistic fix for tool '{}': paths[0] → path(\"{}\")",
+                        other,
+                        path
+                    );
+                }
                 tracing::debug!(
-                    "[Response] Unmapped tool call: {} (args: {:?})",
+                    "[Response] Unmapped tool call processed via generic rules: {} (keys: {:?})",
                     other,
                     obj.keys()
                 );
@@ -349,14 +309,21 @@ impl NonStreamingProcessor {
                 )
             });
 
+            let mut tool_name = fc.name.clone();
+            // [OPTIMIZED] Only rename if it's "search" which is a known hallucination.
+            // Avoid renaming "grep" to "Grep" if possible to protect signature.
+            if tool_name.to_lowercase() == "search" {
+                tool_name = "Grep".to_string();
+            }
+
             // [FIX] Remap args for Gemini → Claude compatibility
             let mut args = fc.args.clone().unwrap_or(serde_json::json!({}));
-            remap_function_call_args(&fc.name, &mut args);
+            remap_function_call_args(&tool_name, &mut args);
 
             let mut tool_use = ContentBlock::ToolUse {
                 id: tool_id,
-                name: fc.name.clone(),
-                input: args,
+                name: tool_name,
+                input: args.clone(),
                 signature: None,
                 cache_control: None,
             };

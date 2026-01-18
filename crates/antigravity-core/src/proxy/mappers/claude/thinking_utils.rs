@@ -1,10 +1,13 @@
 use super::models::{ContentBlock, Message, MessageContent};
-use tracing::info;
+use crate::proxy::SignatureCache;
+use tracing::{debug, info, warn};
+
+pub const MIN_SIGNATURE_LENGTH: usize = 50;
+pub const GEMINI_SKIP_SIGNATURE: &str = "skip_thought_signature_validator";
 
 #[derive(Debug, Default)]
 pub struct ConversationState {
     pub in_tool_loop: bool,
-    #[allow(dead_code)] // Prepared for future interrupted tool detection
     pub interrupted_tool: bool,
     pub last_assistant_idx: Option<usize>,
 }
@@ -25,19 +28,51 @@ pub fn analyze_conversation_state(messages: &[Message]) -> ConversationState {
         }
     }
 
-    // Check if the very last message is a Tool Result (User role with ToolResult block)
+    // A tool loop starts if the assistant message has tool use blocks
+    let has_tool_use = if let Some(idx) = state.last_assistant_idx {
+        if let Some(msg) = messages.get(idx) {
+            if let MessageContent::Array(blocks) = &msg.content {
+                blocks
+                    .iter()
+                    .any(|b| matches!(b, ContentBlock::ToolUse { .. }))
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    if !has_tool_use {
+        return state;
+    }
+
+    // Check what follows the assistant's tool use
     if let Some(last_msg) = messages.last() {
         if last_msg.role == "user" {
             if let MessageContent::Array(blocks) = &last_msg.content {
+                // Case 1: Final message is ToolResult -> Active Tool Loop
                 if blocks
                     .iter()
                     .any(|b| matches!(b, ContentBlock::ToolResult { .. }))
                 {
                     state.in_tool_loop = true;
-                    tracing::debug!(
-                        "[Thinking-Recovery] Detected ToolResult at the end of conversation."
+                    debug!(
+                        "[Thinking-Recovery] Active tool loop detected (last msg is ToolResult)."
+                    );
+                } else {
+                    // Case 2: Final message is Text (User) -> Interrupted Tool
+                    state.interrupted_tool = true;
+                    debug!(
+                        "[Thinking-Recovery] Interrupted tool detected (last msg is Text user)."
                     );
                 }
+            } else if let MessageContent::String(_) = &last_msg.content {
+                // Case 2: Final message is String (User) -> Interrupted Tool
+                state.interrupted_tool = true;
+                debug!("[Thinking-Recovery] Interrupted tool detected (last msg is String user).");
             }
         }
     }
@@ -57,59 +92,219 @@ pub fn analyze_conversation_state(messages: &[Message]) -> ConversationState {
     state
 }
 
-/// Recover from broken tool loops by injecting synthetic messages
-///
-/// When client strips valid thinking blocks (leaving only ToolUse), and we are in a tool loop,
-/// the API will reject the request because "Assistant message must start with thinking".
-/// We cannot fake the signature.
-/// Solution: Close the loop artificially so the model starts fresh.
+/// Recover from broken tool loops or interrupted tool calls by injecting synthetic messages
 pub fn close_tool_loop_for_thinking(messages: &mut Vec<Message>) {
     let state = analyze_conversation_state(messages);
 
-    if !state.in_tool_loop {
+    if !state.in_tool_loop && !state.interrupted_tool {
         return;
     }
 
-    // Check if the last assistant message has a thinking block
-    let mut has_thinking = false;
+    // Check if the last assistant message has a valid thinking block
+    let mut has_valid_thinking = false;
     if let Some(idx) = state.last_assistant_idx {
         if let Some(msg) = messages.get(idx) {
             if let MessageContent::Array(blocks) = &msg.content {
-                has_thinking = blocks
-                    .iter()
-                    .any(|b| matches!(b, ContentBlock::Thinking { .. }));
+                for block in blocks {
+                    if let ContentBlock::Thinking {
+                        thinking,
+                        signature,
+                        ..
+                    } = block
+                    {
+                        if !thinking.is_empty()
+                            && signature
+                                .as_ref()
+                                .map(|s| s.len() >= MIN_SIGNATURE_LENGTH)
+                                .unwrap_or(false)
+                        {
+                            has_valid_thinking = true;
+                            break;
+                        }
+                    }
+                }
             }
         }
     }
 
-    // If we are in a tool loop BUT the assistant message has no thinking block (it was stripped or missing),
-    // we must break the loop.
-    // Exception: If thinking is NOT enabled for this request, we don't need to do this (handled by other logic).
-    // But here we assume we are called because thinking IS enabled.
-    if !has_thinking {
-        info!("[Thinking-Recovery] Detected broken tool loop (ToolResult without preceding Thinking). Injecting synthetic messages.");
+    if !has_valid_thinking {
+        if state.in_tool_loop {
+            info!(
+                "[Thinking-Recovery] Broken tool loop (ToolResult without preceding Thinking). Recovery triggered."
+            );
 
-        // Strategy:
-        // 1. Inject a "fake" Assistant message saying "Tool execution completed."
-        // 2. Inject a "fake" User message saying "[Continue]"
-        // This pushes the problematic ToolUse/ToolResult pair into history that is "closed"
-        // and forces the model to generate a NEW turn, which will start with a fresh Thinking block.
+            // Insert acknowledging message to "close" the history turn
+            messages.push(Message {
+                role: "assistant".to_string(),
+                content: MessageContent::Array(vec![ContentBlock::Text {
+                    text: "[System: Tool execution completed. Proceeding to final response.]"
+                        .to_string(),
+                }]),
+            });
+            messages.push(Message {
+                role: "user".to_string(),
+                content: MessageContent::Array(vec![ContentBlock::Text {
+                    text: "Please provide the final result based on the tool output above."
+                        .to_string(),
+                }]),
+            });
+        } else if state.interrupted_tool {
+            info!(
+                "[Thinking-Recovery] Interrupted tool call detected. Injecting synthetic closure."
+            );
 
-        // Wait, simply appending messages might not work if the API expects strict alternation.
-        // If the last message IS ToolResult (User), we can append Assistant -> User.
+            // For interrupted tool, we need to insert the closure AFTER the assistant's tool use
+            // but BEFORE the user's latest message.
+            if let Some(idx) = state.last_assistant_idx {
+                messages.insert(
+                    idx + 1,
+                    Message {
+                        role: "assistant".to_string(),
+                        content: MessageContent::Array(vec![ContentBlock::Text {
+                            text: "[Tool call was interrupted by user.]".to_string(),
+                        }]),
+                    },
+                );
+            }
+        }
+    }
+}
 
-        messages.push(Message {
-            role: "assistant".to_string(),
-            content: MessageContent::Array(vec![ContentBlock::Text {
-                text: "[System: Tool loop recovered. Previous tool execution accepted.]"
-                    .to_string(),
-            }]),
-        });
-        messages.push(Message {
-            role: "user".to_string(),
-            content: MessageContent::Array(vec![ContentBlock::Text {
-                text: "Please continue with the next step.".to_string(),
-            }]),
-        });
+/// Cache the relationship between a signature and its model family
+pub fn cache_signature_family(signature: &str, family: &str) {
+    SignatureCache::global().cache_thinking_family(signature.to_string(), family.to_string());
+}
+
+/// Get the model family origin of a signature
+pub fn get_signature_family(signature: &str) -> Option<String> {
+    SignatureCache::global().get_signature_family(signature)
+}
+
+/// [CRITICAL] Sanitize thinking blocks and check cross-model compatibility
+pub fn filter_invalid_thinking_blocks_with_family(
+    messages: &mut [Message],
+    target_family: Option<&str>,
+) {
+    let mut stripped_count = 0;
+
+    for msg in messages.iter_mut() {
+        if msg.role != "assistant" {
+            continue;
+        }
+
+        if let MessageContent::Array(blocks) = &mut msg.content {
+            let original_len = blocks.len();
+            blocks.retain(|block| {
+                if let ContentBlock::Thinking { signature, .. } = block {
+                    // 1. Basic length check
+                    let sig = match signature {
+                        Some(s) if s.len() >= MIN_SIGNATURE_LENGTH => s,
+                        _ => {
+                            stripped_count += 1;
+                            return false;
+                        }
+                    };
+
+                    // 2. Family compatibility check (Prevents SONNET-Thinking sig being sent to OPUS-Thinking)
+                    if let Some(target) = target_family {
+                        if let Some(origin_family) = get_signature_family(sig) {
+                            if origin_family != target {
+                                warn!("[Thinking-Sanitizer] Dropping signature from family '{}' for target '{}'", origin_family, target);
+                                stripped_count += 1;
+                                return false;
+                            }
+                        }
+                    }
+                }
+                true
+            });
+
+            // SAFETY: Claude API requires at least one block
+            if blocks.is_empty() && original_len > 0 {
+                blocks.push(ContentBlock::Text {
+                    text: ".".to_string(),
+                });
+            }
+        }
+    }
+
+    if stripped_count > 0 {
+        info!(
+            "[Thinking-Sanitizer] Stripped {} invalid or incompatible thinking blocks",
+            stripped_count
+        );
+    }
+}
+
+/// Check if a thinking block has a valid signature
+pub fn has_valid_signature(block: &ContentBlock) -> bool {
+    match block {
+        ContentBlock::Thinking {
+            signature,
+            thinking,
+            ..
+        } => {
+            // Empty thinking + any signature = valid (trailing signature case)
+            if thinking.is_empty() && signature.is_some() {
+                return true;
+            }
+
+            // Strict validation: signature must be in cache
+            if let Some(sig) = signature {
+                // Check length
+                if sig.len() < MIN_SIGNATURE_LENGTH {
+                    debug!(
+                        "[Signature-Validation] Signature too short: {} chars",
+                        sig.len()
+                    );
+                    return false;
+                }
+
+                // Check if in cache
+                let cached_family = SignatureCache::global().get_signature_family(sig);
+                if cached_family.is_none() {
+                    warn!(
+                        "[Signature-Validation] Unknown signature origin (len: {}). Rejecting.",
+                        sig.len()
+                    );
+                    return false;
+                }
+
+                // Signature valid
+                true
+            } else {
+                // No signature
+                false
+            }
+        }
+        _ => true, // Non-thinking blocks are valid by default
+    }
+}
+
+/// Remove trailing unsigned thinking blocks from a message
+pub fn remove_trailing_unsigned_thinking(blocks: &mut Vec<ContentBlock>) {
+    if blocks.is_empty() {
+        return;
+    }
+
+    // Scan backwards
+    let mut end_index = blocks.len();
+    for i in (0..blocks.len()).rev() {
+        match &blocks[i] {
+            ContentBlock::Thinking { .. } => {
+                if !has_valid_signature(&blocks[i]) {
+                    end_index = i;
+                } else {
+                    break; // Found valid signed thinking block, stop
+                }
+            }
+            _ => break, // Non-thinking block, stop
+        }
+    }
+
+    if end_index < blocks.len() {
+        let removed = blocks.len() - end_index;
+        blocks.truncate(end_index);
+        debug!("Removed {} trailing unsigned thinking block(s)", removed);
     }
 }

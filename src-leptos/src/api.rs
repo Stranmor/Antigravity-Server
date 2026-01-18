@@ -234,6 +234,48 @@ pub mod commands {
         Ok(())
     }
 
+    pub async fn toggle_proxy_status(
+        account_id: &str,
+        enable: bool,
+        reason: Option<&str>,
+    ) -> Result<(), String> {
+        let _: bool = api_post(
+            "/accounts/toggle-proxy",
+            &serde_json::json!({
+                "account_id": account_id,
+                "enable": enable,
+                "reason": reason
+            }),
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub async fn warmup_account(account_id: &str) -> Result<String, String> {
+        #[derive(serde::Deserialize)]
+        struct WarmupResponse {
+            message: String,
+        }
+        let response: WarmupResponse = api_post(
+            "/accounts/warmup",
+            &serde_json::json!({
+                "account_id": account_id
+            }),
+        )
+        .await?;
+        Ok(response.message)
+    }
+
+    pub async fn warmup_all_accounts() -> Result<String, String> {
+        #[derive(serde::Deserialize)]
+        struct WarmupResponse {
+            message: String,
+        }
+        let response: WarmupResponse =
+            api_post("/accounts/warmup-all", &serde_json::json!({})).await?;
+        Ok(response.message)
+    }
+
     // ========== OAuth ==========
 
     #[derive(serde::Deserialize)]

@@ -30,8 +30,10 @@ pub use antigravity_types::models::{
     ProxyStats,
     ProxyStatus,
     QuotaData,
+    QuotaProtectionConfig,
     RefreshStats,
     SchedulingMode,
+    SmartWarmupConfig,
     StickySessionConfig,
     // Token types
     TokenData,

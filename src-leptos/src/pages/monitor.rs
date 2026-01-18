@@ -1,4 +1,4 @@
-//! Monitor page - Real-time request logging
+//! Monitor page - Real-time request logging with detailed view
 
 use crate::api::commands;
 use crate::app::AppState;
@@ -17,6 +17,9 @@ pub fn Monitor() -> impl IntoView {
     let filter = RwSignal::new(String::new());
     let logging_enabled = RwSignal::new(true);
     let loading = RwSignal::new(false);
+
+    // Selected log for detail view
+    let selected_log = RwSignal::new(Option::<ProxyRequestLog>::None);
 
     // Load logs and stats
     let load_data = move || {
@@ -211,7 +214,8 @@ pub fn Monitor() -> impl IntoView {
                         <For
                             each=move || filtered_logs.get()
                             key=|log| log.id.clone()
-                            children=|log| {
+                            children=move |log| {
+                                let log_for_click = log.clone();
                                 let status_class = if log.status >= 200 && log.status < 400 { "success" }
                                     else if log.status >= 400 && log.status < 500 { "warning" }
                                     else { "error" };
@@ -224,9 +228,20 @@ pub fn Monitor() -> impl IntoView {
                                 let tokens_out = log.output_tokens.unwrap_or(0);
                                 let time = format_timestamp(log.timestamp);
                                 let has_error = log.error.is_some();
+                                let has_details = log.request_body.is_some() || log.response_body.is_some() || log.error.is_some();
 
                                 view! {
-                                    <tr class=format!("log-row {}", if has_error { "has-error" } else { "" })>
+                                    <tr
+                                        class=format!("log-row {} {}",
+                                            if has_error { "has-error" } else { "" },
+                                            if has_details { "clickable" } else { "" }
+                                        )
+                                        on:click=move |_| {
+                                            if has_details {
+                                                selected_log.set(Some(log_for_click.clone()));
+                                            }
+                                        }
+                                    >
                                         <td class="col-time">{time}</td>
                                         <td class="col-status">
                                             <span class=format!("status-badge status-badge--{}", status_class)>
@@ -269,6 +284,147 @@ pub fn Monitor() -> impl IntoView {
                     </div>
                 </Show>
             </div>
+
+            // Detail Modal
+            <Show when=move || selected_log.get().is_some()>
+                <LogDetailModal
+                    log=selected_log.get().unwrap()
+                    on_close=move || selected_log.set(None)
+                />
+            </Show>
+        </div>
+    }
+}
+
+/// Modal component for displaying request/response details
+#[component]
+fn LogDetailModal(log: ProxyRequestLog, on_close: impl Fn() + 'static + Clone) -> impl IntoView {
+    let on_close_backdrop = on_close.clone();
+    let on_close_button = on_close.clone();
+
+    let status_class = if log.status >= 200 && log.status < 400 {
+        "success"
+    } else if log.status >= 400 && log.status < 500 {
+        "warning"
+    } else {
+        "error"
+    };
+
+    // Pretty-print JSON if possible
+    let format_json = |s: &str| -> String {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s) {
+            serde_json::to_string_pretty(&parsed).unwrap_or_else(|_| s.to_string())
+        } else {
+            s.to_string()
+        }
+    };
+
+    let request_body = log.request_body.clone().map(|b| format_json(&b));
+    let response_body = log.response_body.clone().map(|b| format_json(&b));
+    let error_msg = log.error.clone();
+
+    view! {
+        <div class="modal-backdrop" on:click=move |_| on_close_backdrop()>
+            <div class="modal log-detail-modal" on:click=|e| e.stop_propagation()>
+                <header class="modal-header">
+                    <div class="modal-title">
+                        <span class=format!("status-badge status-badge--{}", status_class)>
+                            {log.status}
+                        </span>
+                        <span class="method">{log.method.clone()}</span>
+                        <code class="path">{log.url.clone()}</code>
+                    </div>
+                    <button class="modal-close" on:click=move |_| on_close_button()>"×"</button>
+                </header>
+
+                <div class="modal-body">
+                    // Metadata section
+                    <section class="detail-section">
+                        <h3>"Request Info"</h3>
+                        <div class="detail-grid">
+                            <div class="detail-item">
+                                <span class="label">"ID"</span>
+                                <code class="value">{log.id.clone()}</code>
+                            </div>
+                            <div class="detail-item">
+                                <span class="label">"Time"</span>
+                                <span class="value">{format_timestamp_full(log.timestamp)}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="label">"Duration"</span>
+                                <span class="value">{log.duration}" ms"</span>
+                            </div>
+                            {log.model.clone().map(|m| view! {
+                                <div class="detail-item">
+                                    <span class="label">"Model"</span>
+                                    <span class="value">{m}</span>
+                                </div>
+                            })}
+                            {log.mapped_model.clone().map(|m| view! {
+                                <div class="detail-item">
+                                    <span class="label">"Mapped Model"</span>
+                                    <span class="value">{m}</span>
+                                </div>
+                            })}
+                            {log.mapping_reason.clone().map(|r| view! {
+                                <div class="detail-item">
+                                    <span class="label">"Mapping Reason"</span>
+                                    <span class="value">{r}</span>
+                                </div>
+                            })}
+                            {log.account_email.clone().map(|e| view! {
+                                <div class="detail-item">
+                                    <span class="label">"Account"</span>
+                                    <span class="value">{e}</span>
+                                </div>
+                            })}
+                            {log.input_tokens.map(|t| view! {
+                                <div class="detail-item">
+                                    <span class="label">"Input Tokens"</span>
+                                    <span class="value">{t}</span>
+                                </div>
+                            })}
+                            {log.output_tokens.map(|t| view! {
+                                <div class="detail-item">
+                                    <span class="label">"Output Tokens"</span>
+                                    <span class="value">{t}</span>
+                                </div>
+                            })}
+                        </div>
+                    </section>
+
+                    // Error section (if present)
+                    {error_msg.map(|err| view! {
+                        <section class="detail-section error-section">
+                            <h3>"❌ Error"</h3>
+                            <pre class="code-block error-block">{err}</pre>
+                        </section>
+                    })}
+
+                    // Request body section
+                    {request_body.map(|body| view! {
+                        <section class="detail-section">
+                            <h3>"📤 Request Body"</h3>
+                            <pre class="code-block">{body}</pre>
+                        </section>
+                    })}
+
+                    // Response body section
+                    {response_body.map(|body| view! {
+                        <section class="detail-section">
+                            <h3>"📥 Response Body"</h3>
+                            <pre class="code-block">{body}</pre>
+                        </section>
+                    })}
+
+                    // No data message
+                    <Show when=move || log.request_body.is_none() && log.response_body.is_none() && log.error.is_none()>
+                        <div class="empty-detail">
+                            <p>"No request/response data available for this log entry."</p>
+                        </div>
+                    </Show>
+                </div>
+            </div>
         </div>
     }
 }
@@ -280,6 +436,26 @@ fn format_timestamp(ts: i64) -> String {
     let mins = (secs % 3600) / 60;
     let s = secs % 60;
     format!("{:02}:{:02}:{:02}", hours, mins, s)
+}
+
+fn format_timestamp_full(ts: i64) -> String {
+    // Full timestamp with date (basic formatting)
+    let days_since_epoch = ts / 86400;
+    let secs = ts % 86400;
+    let hours = secs / 3600;
+    let mins = (secs % 3600) / 60;
+    let s = secs % 60;
+
+    // Simple date calculation (approximate, good enough for display)
+    let year = 1970 + (days_since_epoch / 365);
+    let day_of_year = days_since_epoch % 365;
+    let month = day_of_year / 30 + 1;
+    let day = day_of_year % 30 + 1;
+
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        year, month, day, hours, mins, s
+    )
 }
 
 fn format_tokens(tokens: u64) -> String {

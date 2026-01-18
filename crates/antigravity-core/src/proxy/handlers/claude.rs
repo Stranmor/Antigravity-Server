@@ -2,7 +2,9 @@
 
 use crate::proxy::mappers::claude::{
     clean_cache_control_from_messages, close_tool_loop_for_thinking, create_claude_sse_stream,
-    transform_claude_request_in, transform_response, ClaudeRequest,
+    filter_invalid_thinking_blocks_with_family, merge_consecutive_messages,
+    remove_trailing_unsigned_thinking, transform_claude_request_in, transform_response,
+    ClaudeRequest,
 };
 use crate::proxy::server::AppState;
 use axum::http::HeaderMap;
@@ -20,7 +22,6 @@ use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info};
 
 const MAX_RETRY_ATTEMPTS: usize = 3;
-const MIN_SIGNATURE_LENGTH: usize = 10; // 最小有效签名长度
 
 // ===== Model Constants for Background Tasks =====
 // These can be adjusted for performance/cost optimization
@@ -30,179 +31,6 @@ const BACKGROUND_MODEL_STANDARD: &str = "gemini-2.5-flash"; // For complex backg
 // ===== Jitter Configuration (REMOVED) =====
 // Jitter was causing connection instability, reverted to fixed delays
 // const JITTER_FACTOR: f64 = 0.2;
-
-// ===== Thinking 块处理辅助函数 =====
-
-use crate::proxy::mappers::claude::models::{ContentBlock, Message, MessageContent};
-
-/// 检查 thinking 块是否有有效签名
-fn has_valid_signature(block: &ContentBlock) -> bool {
-    match block {
-        ContentBlock::Thinking {
-            signature,
-            thinking,
-            ..
-        } => {
-            // 空 thinking + 任意 signature = 有效 (trailing signature case)
-            if thinking.is_empty() && signature.is_some() {
-                return true;
-            }
-
-            // [FIX #752] 严格验证：签名必须在缓存中
-            if let Some(sig) = signature {
-                // 检查长度
-                if sig.len() < MIN_SIGNATURE_LENGTH {
-                    tracing::debug!(
-                        "[Signature-Validation] Signature too short: {} chars",
-                        sig.len()
-                    );
-                    return false;
-                }
-
-                // 检查是否在缓存中
-                let cached_family =
-                    crate::proxy::SignatureCache::global().get_signature_family(sig);
-                if cached_family.is_none() {
-                    tracing::warn!(
-                        "[Signature-Validation] Unknown signature origin (len: {}). Rejecting.",
-                        sig.len()
-                    );
-                    return false;
-                }
-
-                // 签名有效
-                true
-            } else {
-                // 无签名
-                false
-            }
-        }
-        _ => true, // 非 thinking 块默认有效
-    }
-}
-
-/// 清理 thinking 块,只保留必要字段(移除 cache_control 等)
-fn sanitize_thinking_block(block: ContentBlock) -> ContentBlock {
-    match block {
-        ContentBlock::Thinking {
-            thinking,
-            signature,
-            ..
-        } => {
-            // 重建块,移除 cache_control 等额外字段
-            ContentBlock::Thinking {
-                thinking,
-                signature,
-                cache_control: None,
-            }
-        }
-        _ => block,
-    }
-}
-
-/// 过滤消息中的无效 thinking 块
-fn filter_invalid_thinking_blocks(messages: &mut [Message]) {
-    let mut total_filtered = 0;
-
-    for msg in messages.iter_mut() {
-        // 只处理 assistant 消息
-        // [CRITICAL FIX] Handle 'model' role too (Google history usage)
-        if msg.role != "assistant" && msg.role != "model" {
-            continue;
-        }
-        tracing::error!("[DEBUG-FILTER] Inspecting msg with role: {}", msg.role);
-
-        if let MessageContent::Array(blocks) = &mut msg.content {
-            let original_len = blocks.len();
-
-            // 过滤并清理
-            let mut new_blocks = Vec::new();
-            for block in blocks.drain(..) {
-                if matches!(block, ContentBlock::Thinking { .. }) {
-                    // [DEBUG] 强制输出日志
-                    if let ContentBlock::Thinking { ref signature, .. } = block {
-                        tracing::error!(
-                            "[DEBUG-FILTER] Found thinking block. Sig len: {:?}",
-                            signature.as_ref().map(|s| s.len())
-                        );
-                    }
-
-                    // [CRITICAL FIX] Vertex AI 不认可 skip_thought_signature_validator
-                    // 必须直接删除无效的 thinking 块
-                    if has_valid_signature(&block) {
-                        new_blocks.push(sanitize_thinking_block(block));
-                    } else {
-                        // [IMPROVED] 保留内容转换为 text，而不是直接丢弃
-                        if let ContentBlock::Thinking { thinking, .. } = &block {
-                            if !thinking.is_empty() {
-                                tracing::info!(
-                                    "[Claude-Handler] Converting thinking block with invalid signature to text. \
-                                     Content length: {} chars",
-                                    thinking.len()
-                                );
-                                new_blocks.push(ContentBlock::Text {
-                                    text: thinking.clone(),
-                                });
-                            } else {
-                                tracing::debug!(
-                                    "[Claude-Handler] Dropping empty thinking block with invalid signature"
-                                );
-                            }
-                        }
-                    }
-                } else {
-                    new_blocks.push(block);
-                }
-            }
-
-            *blocks = new_blocks;
-            let filtered_count = original_len - blocks.len();
-            total_filtered += filtered_count;
-
-            // 如果过滤后为空,添加一个空文本块以保持消息有效
-            if blocks.is_empty() {
-                blocks.push(ContentBlock::Text {
-                    text: String::new(),
-                });
-            }
-        }
-    }
-
-    if total_filtered > 0 {
-        debug!(
-            "Filtered {} invalid thinking block(s) from history",
-            total_filtered
-        );
-    }
-}
-
-/// 移除尾部的无签名 thinking 块
-fn remove_trailing_unsigned_thinking(blocks: &mut Vec<ContentBlock>) {
-    if blocks.is_empty() {
-        return;
-    }
-
-    // 从后向前扫描
-    let mut end_index = blocks.len();
-    for i in (0..blocks.len()).rev() {
-        match &blocks[i] {
-            ContentBlock::Thinking { .. } => {
-                if !has_valid_signature(&blocks[i]) {
-                    end_index = i;
-                } else {
-                    break; // 遇到有效签名的 thinking 块,停止
-                }
-            }
-            _ => break, // 遇到非 thinking 块,停止
-        }
-    }
-
-    if end_index < blocks.len() {
-        let removed = blocks.len() - end_index;
-        blocks.truncate(end_index);
-        debug!("Removed {} trailing unsigned thinking block(s)", removed);
-    }
-}
 
 // ===== 统一退避策略模块 =====
 
@@ -443,8 +271,11 @@ pub async fn handle_messages(
     // 必须在序列化之前处理，以确保 z.ai 和 Google Flow 都不受历史消息缓存标记干扰
     clean_cache_control_from_messages(&mut request.messages);
 
-    // [CRITICAL FIX] 过滤并修复 Thinking 块签名
-    filter_invalid_thinking_blocks(&mut request.messages);
+    // [FIX #813] 合并连续的同角色消息
+    merge_consecutive_messages(&mut request.messages);
+
+    // [CRITICAL FIX] 过滤并修复 Thinking 块签名 (with family compatibility check)
+    filter_invalid_thinking_blocks_with_family(&mut request.messages, None);
 
     // [New] Recover from broken tool loops (where signatures were stripped)
     // This prevents "Assistant message must start with thinking" errors by closing the loop with synthetic messages
@@ -746,7 +577,11 @@ pub async fn handle_messages(
         // 生成 Trace ID (简单用时间戳后缀)
         // let _trace_id = format!("req_{}", chrono::Utc::now().timestamp_subsec_millis());
 
-        let gemini_body = match transform_claude_request_in(&request_with_mapped, &project_id) {
+        let gemini_body = match transform_claude_request_in(
+            &request_with_mapped,
+            &project_id,
+            retried_without_thinking,
+        ) {
             Ok(b) => {
                 debug!(
                     "[{}] Transformed Gemini Body: {}",
@@ -1152,6 +987,11 @@ pub async fn handle_messages(
                     *blocks = new_blocks;
                 }
             }
+
+            // [NEW] Heal session after stripping thinking blocks to prevent "naked ToolResult" rejection
+            // This ensures that any ToolResult in history is properly "closed" with synthetic messages
+            // if its preceding Thinking block was just converted to Text.
+            close_tool_loop_for_thinking(&mut request_for_body.messages);
 
             // 清理模型名中的 -thinking 后缀
             if request_for_body.model.contains("claude-") {

@@ -6,10 +6,11 @@ use super::utils::to_claude_usage;
 // use crate::proxy::mappers::signature_store::store_thought_signature; // Deprecated
 use crate::proxy::SignatureCache;
 use bytes::Bytes;
-use serde_json::json;
+use serde_json::{json, Value};
 
 /// [FIX #547] Helper function to coerce string values to boolean
 /// Gemini sometimes sends boolean parameters as strings (e.g., "true", "-n", "false")
+#[allow(dead_code)]
 fn coerce_to_bool(value: &serde_json::Value) -> Option<serde_json::Value> {
     match value {
         serde_json::Value::Bool(_) => Some(value.clone()), // Already boolean
@@ -30,17 +31,26 @@ fn coerce_to_bool(value: &serde_json::Value) -> Option<serde_json::Value> {
 
 /// Known parameter remappings for Gemini → Claude compatibility
 /// [FIX] Gemini sometimes uses different parameter names than specified in tool schema
-fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
+pub fn remap_function_call_args(name: &str, args: &mut Value) {
     // [DEBUG] Always log incoming tool usage for diagnosis
     if let Some(obj) = args.as_object() {
-        tracing::debug!("[Streaming] Tool Call: '{}' Args: {:?}", tool_name, obj);
+        tracing::debug!("[Streaming] Tool Call: '{}' Args: {:?}", name, obj);
+    }
+
+    // [IMPORTANT] Claude Code CLI 的 EnterPlanMode 工具禁止携带任何参数
+    // 代理层注入的 reason 参数会导致 InputValidationError
+    if name == "EnterPlanMode" {
+        if let Some(obj) = args.as_object_mut() {
+            obj.clear();
+        }
+        return;
     }
 
     if let Some(obj) = args.as_object_mut() {
         // [IMPROVED] Case-insensitive matching for tool names
-        match tool_name.to_lowercase().as_str() {
-            "grep" => {
-                // [FIX #546] Gemini hallucination: maps parameter description to "description" field
+        match name.to_lowercase().as_str() {
+            "grep" | "search" | "search_code_definitions" | "search_code_snippets" => {
+                // [FIX] Gemini hallucination: maps parameter description to "description" field
                 if let Some(desc) = obj.remove("description") {
                     if !obj.contains_key("pattern") {
                         obj.insert("pattern".to_string(), desc);
@@ -58,16 +68,13 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
 
                 // [CRITICAL FIX] Claude Code uses "path" (string), NOT "paths" (array)!
                 if !obj.contains_key("path") {
-                    // Check if Gemini sent "paths" (array) - convert to string
                     if let Some(paths) = obj.remove("paths") {
                         let path_str = if let Some(arr) = paths.as_array() {
-                            // Take first element if array
                             arr.first()
                                 .and_then(|v| v.as_str())
                                 .unwrap_or(".")
                                 .to_string()
                         } else if let Some(s) = paths.as_str() {
-                            // Already a string
                             s.to_string()
                         } else {
                             ".".to_string()
@@ -78,48 +85,16 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
                             path_str
                         );
                     } else {
-                        // No path provided at all - default to current directory
-                        obj.insert("path".to_string(), serde_json::json!("."));
-                        tracing::debug!("[Streaming] Remapped Grep: default path → \".\"");
+                        // Default to current directory if missing
+                        obj.insert("path".to_string(), json!("."));
+                        tracing::debug!("[Streaming] Added default path: \".\"");
                     }
                 }
 
-                // [FIX #547] Handle "-n" parameter sent as string instead of boolean
-                // Gemini sometimes sends Unix-style flags as parameter names
-                if let Some(n_val) = obj.remove("-n") {
-                    if let Some(bool_val) = coerce_to_bool(&n_val) {
-                        // "-n" in grep usually means "line numbers" - map to appropriate param
-                        if !obj.contains_key("lineNumbers") {
-                            obj.insert("lineNumbers".to_string(), bool_val);
-                            tracing::debug!("[Streaming] Remapped Grep: -n → lineNumbers");
-                        }
-                    }
-                }
-
-                // [FIX #547] Coerce all known boolean parameters from string to bool
-                let bool_params = [
-                    "ignoreCase",
-                    "lineNumbers",
-                    "caseSensitive",
-                    "regex",
-                    "wholeWord",
-                ];
-                for param in bool_params {
-                    if let Some(val) = obj.get(param).cloned() {
-                        if val.is_string() {
-                            if let Some(bool_val) = coerce_to_bool(&val) {
-                                obj.insert(param.to_string(), bool_val);
-                                tracing::debug!(
-                                    "[Streaming] Coerced Grep param '{}' from string to bool",
-                                    param
-                                );
-                            }
-                        }
-                    }
-                }
+                // Note: We keep "-n" and "output_mode" if present as they are valid in Grep schema
             }
             "glob" => {
-                // [FIX #546] Gemini hallucination: maps parameter description to "description" field
+                // [FIX] Gemini hallucination: maps parameter description to "description" field
                 if let Some(desc) = obj.remove("description") {
                     if !obj.contains_key("pattern") {
                         obj.insert("pattern".to_string(), desc);
@@ -154,8 +129,9 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
                             path_str
                         );
                     } else {
-                        obj.insert("path".to_string(), serde_json::json!("."));
-                        tracing::debug!("[Streaming] Remapped Glob: default path → \".\"");
+                        // Default to current directory if missing
+                        obj.insert("path".to_string(), json!("."));
+                        tracing::debug!("[Streaming] Added default path: \".\"");
                     }
                 }
             }
@@ -176,8 +152,29 @@ fn remap_function_call_args(tool_name: &str, args: &mut serde_json::Value) {
                 }
             }
             other => {
+                // [NEW] [Issue #785] Generic Property Mapping for all tools
+                // If a tool has "paths" (array of 1) but no "path", convert it.
+                let mut path_to_inject = None;
+                if !obj.contains_key("path") {
+                    if let Some(paths) = obj.get("paths").and_then(|v| v.as_array()) {
+                        if paths.len() == 1 {
+                            if let Some(p) = paths[0].as_str() {
+                                path_to_inject = Some(p.to_string());
+                            }
+                        }
+                    }
+                }
+
+                if let Some(path) = path_to_inject {
+                    obj.insert("path".to_string(), json!(path));
+                    tracing::debug!(
+                        "[Streaming] Probabilistic fix for tool '{}': paths[0] → path(\"{}\")",
+                        other,
+                        path
+                    );
+                }
                 tracing::debug!(
-                    "[Streaming] Unmapped tool call: {} (args: {:?})",
+                    "[Streaming] Unmapped tool call processed via generic rules: {} (keys: {:?})",
                     other,
                     obj.keys()
                 );
@@ -424,26 +421,18 @@ impl StreamingState {
         // 关闭最后一个块
         chunks.extend(self.end_block());
 
-        // 处理 trailingSignature (PDF 776-778)
+        // 处理 trailingSignature (B4/C3 场景)
+        // [FIX] 只有当还没有发送过任何块时, 才能以 thinking 块结束(作为消息的开头)
+        // 实际上, 对于 Claude 协议, 如果已经发送过 Text, 就不能在此追加 Thinking。
+        // 这里的解决方案是: 只存储签名, 不再发送非法的末尾 Thinking 块。
+        // 签名会通过 SignatureCache 在下一轮请求中自动恢复。
         if let Some(signature) = self.trailing_signature.take() {
-            chunks.push(self.emit(
-                "content_block_start",
-                json!({
-                    "type": "content_block_start",
-                    "index": self.block_index,
-                    "content_block": { "type": "thinking", "thinking": "" }
-                }),
-            ));
-            chunks.push(self.emit_delta("thinking_delta", json!({ "thinking": "" })));
-            chunks.push(self.emit_delta("signature_delta", json!({ "signature": signature })));
-            chunks.push(self.emit(
-                "content_block_stop",
-                json!({
-                    "type": "content_block_stop",
-                    "index": self.block_index
-                }),
-            ));
-            self.block_index += 1;
+            tracing::info!(
+                "[Streaming] Captured trailing signature (len: {}), caching for session.",
+                signature.len()
+            );
+            self.signatures.store(Some(signature));
+            // 不再追加 chunks.push(self.emit("content_block_start", ...))
         }
 
         // 处理 grounding(web search) -> 转换为 Markdown 文本块
@@ -842,32 +831,17 @@ impl<'a> PartProcessor<'a> {
         }
 
         // 非空 text 带签名 - 立即处理
-        if let Some(sig) = signature {
-            // 2. 开始新 text 块并发送内容
+        if signature.is_some() {
+            // [FIX] 为保护签名, 签名所在的 Text 块直接发送
+            // 注意: 不得在此开启 thinking 块, 因为之前可能已有非 thinking 内容。
+            // 这种情况下, 我们只需确签被缓存在状态中。
+            self.state.store_signature(signature);
+
             chunks.extend(
                 self.state
                     .start_block(BlockType::Text, json!({ "type": "text", "text": "" })),
             );
             chunks.push(self.state.emit_delta("text_delta", json!({ "text": text })));
-            chunks.extend(self.state.end_block());
-
-            // 输出空 thinking 块承载签名
-            chunks.push(self.state.emit(
-                "content_block_start",
-                json!({
-                    "type": "content_block_start",
-                    "index": self.state.current_block_index(),
-                    "content_block": { "type": "thinking", "thinking": "" }
-                }),
-            ));
-            chunks.push(
-                self.state
-                    .emit_delta("thinking_delta", json!({ "thinking": "" })),
-            );
-            chunks.push(
-                self.state
-                    .emit_delta("signature_delta", json!({ "signature": sig })),
-            );
             chunks.extend(self.state.end_block());
 
             return chunks;
@@ -974,11 +948,17 @@ impl<'a> PartProcessor<'a> {
             )
         });
 
+        let mut tool_name = fc.name.clone();
+        if tool_name.to_lowercase() == "search" {
+            tool_name = "grep".to_string();
+            tracing::debug!("[Streaming] Normalizing tool name: Search → grep");
+        }
+
         // 1. 发送 content_block_start (input 为空对象)
         let mut tool_use = json!({
             "type": "tool_use",
             "id": tool_id,
-            "name": fc.name,
+            "name": tool_name,
             "input": {} // 必须为空，参数通过 delta 发送
         });
 
@@ -1005,7 +985,17 @@ impl<'a> PartProcessor<'a> {
         // [FIX] Remap args before serialization for Gemini → Claude compatibility
         if let Some(args) = &fc.args {
             let mut remapped_args = args.clone();
-            remap_function_call_args(&fc.name, &mut remapped_args);
+
+            let tool_name_title = fc.name.clone();
+            // [OPTIMIZED] Only rename if it's "search" which is a known hallucination.
+            // Avoid renaming "grep" to "Grep" if possible to protect signature,
+            // unless we're sure Grep is the standard.
+            let mut final_tool_name = tool_name_title;
+            if final_tool_name.to_lowercase() == "search" {
+                final_tool_name = "Grep".to_string();
+            }
+            remap_function_call_args(&final_tool_name, &mut remapped_args);
+
             let json_str =
                 serde_json::to_string(&remapped_args).unwrap_or_else(|_| "{}".to_string());
             chunks.push(

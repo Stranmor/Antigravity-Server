@@ -7,6 +7,8 @@ use crate::types::UpdateInfo;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
+const VERSION: &str = env!("GIT_VERSION");
+
 #[component]
 pub fn Settings() -> impl IntoView {
     let state = expect_context::<AppState>();
@@ -231,6 +233,146 @@ pub fn Settings() -> impl IntoView {
                 </div>
             </section>
 
+            // Quota Protection
+            <section class="settings-section">
+                <h2>"Quota Protection"</h2>
+                <p class="section-desc">"Protect accounts from exhaustion by monitoring quota thresholds"</p>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <label>"Enable quota protection"</label>
+                        <p class="setting-desc">"Automatically disable accounts when quota falls below threshold"</p>
+                    </div>
+                    <input
+                        type="checkbox"
+                        class="toggle"
+                        checked=move || state.config.get().map(|c| c.quota_protection.enabled).unwrap_or(false)
+                        on:change=move |ev| {
+                            let checked = event_target_checked(&ev);
+                            state.config.update(|c| {
+                                if let Some(config) = c.as_mut() {
+                                    config.quota_protection.enabled = checked;
+                                }
+                            });
+                        }
+                    />
+                </div>
+
+                <Show when=move || state.config.get().map(|c| c.quota_protection.enabled).unwrap_or(false)>
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <label>"Threshold percentage"</label>
+                            <p class="setting-desc">"Accounts below this percentage will be protected (1-99)"</p>
+                        </div>
+                        <input
+                            type="number"
+                            min="1"
+                            max="99"
+                            prop:value=move || state.config.get().map(|c| c.quota_protection.threshold_percentage.to_string()).unwrap_or("20".to_string())
+                            on:change=move |ev| {
+                                if let Ok(value) = event_target_value(&ev).parse::<u8>() {
+                                    state.config.update(|c| {
+                                        if let Some(config) = c.as_mut() {
+                                            config.quota_protection.threshold_percentage = value.clamp(1, 99);
+                                        }
+                                    });
+                                }
+                            }
+                        />
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <label>"Auto-restore"</label>
+                            <p class="setting-desc">"Automatically re-enable accounts when quota resets"</p>
+                        </div>
+                        <input
+                            type="checkbox"
+                            class="toggle"
+                            checked=move || state.config.get().map(|c| c.quota_protection.auto_restore).unwrap_or(true)
+                            on:change=move |ev| {
+                                let checked = event_target_checked(&ev);
+                                state.config.update(|c| {
+                                    if let Some(config) = c.as_mut() {
+                                        config.quota_protection.auto_restore = checked;
+                                    }
+                                });
+                            }
+                        />
+                    </div>
+                </Show>
+            </section>
+
+            // Smart Warmup
+            <section class="settings-section">
+                <h2>"Smart Warmup"</h2>
+                <p class="section-desc">"Pre-warm accounts to maintain active sessions and optimize quotas"</p>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <label>"Enable smart warmup"</label>
+                        <p class="setting-desc">"Periodically send warmup requests to keep accounts active"</p>
+                    </div>
+                    <input
+                        type="checkbox"
+                        class="toggle"
+                        checked=move || state.config.get().map(|c| c.smart_warmup.enabled).unwrap_or(false)
+                        on:change=move |ev| {
+                            let checked = event_target_checked(&ev);
+                            state.config.update(|c| {
+                                if let Some(config) = c.as_mut() {
+                                    config.smart_warmup.enabled = checked;
+                                }
+                            });
+                        }
+                    />
+                </div>
+
+                <Show when=move || state.config.get().map(|c| c.smart_warmup.enabled).unwrap_or(false)>
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <label>"Warmup interval"</label>
+                            <p class="setting-desc">"Minutes between warmup cycles (5-1440)"</p>
+                        </div>
+                        <input
+                            type="number"
+                            min="5"
+                            max="1440"
+                            prop:value=move || state.config.get().map(|c| c.smart_warmup.interval_minutes.to_string()).unwrap_or("60".to_string())
+                            on:change=move |ev| {
+                                if let Ok(value) = event_target_value(&ev).parse::<u32>() {
+                                    state.config.update(|c| {
+                                        if let Some(config) = c.as_mut() {
+                                            config.smart_warmup.interval_minutes = value.clamp(5, 1440);
+                                        }
+                                    });
+                                }
+                            }
+                        />
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <label>"Only low quota accounts"</label>
+                            <p class="setting-desc">"Only warmup accounts below quota threshold"</p>
+                        </div>
+                        <input
+                            type="checkbox"
+                            class="toggle"
+                            checked=move || state.config.get().map(|c| c.smart_warmup.only_low_quota).unwrap_or(false)
+                            on:change=move |ev| {
+                                let checked = event_target_checked(&ev);
+                                state.config.update(|c| {
+                                    if let Some(config) = c.as_mut() {
+                                        config.smart_warmup.only_low_quota = checked;
+                                    }
+                                });
+                            }
+                        />
+                    </div>
+                </Show>
+            </section>
+
             // Upstream Proxy
             <section class="settings-section">
                 <h2>"Upstream Proxy"</h2>
@@ -347,7 +489,7 @@ pub fn Settings() -> impl IntoView {
                     <div class="app-icon">"🚀"</div>
                     <div class="app-details">
                         <h3>"Antigravity Manager"</h3>
-                        <p class="version-text">"Version 3.3.20"</p>
+                        <p class="version-text">{format!("Version {}", VERSION)}</p>
                         <p class="links">
                             <a href="https://github.com/nicepkg/gpt-runner" target="_blank">"GitHub"</a>
                         </p>

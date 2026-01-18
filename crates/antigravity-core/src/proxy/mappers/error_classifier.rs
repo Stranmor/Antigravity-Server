@@ -24,7 +24,7 @@ pub fn classify_stream_error(error: &Error) -> (&'static str, &'static str, &'st
         (
             "decode_error",
             "Network unstable, data transmission interrupted. Try: 1) Check network 2) Switch proxy 3) Retry",
-            "errors.stream.decode_error"
+            "errors.stream.decode_error",
         )
     } else if error.is_body() {
         (

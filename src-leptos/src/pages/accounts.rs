@@ -3,8 +3,10 @@
 use crate::api::commands;
 use crate::app::AppState;
 use crate::components::{
-    AccountCard, AddAccountModal, Button, ButtonVariant, Modal, ModalType, Pagination,
+    AccountCard, AccountDetailsModal, AddAccountModal, Button, ButtonVariant, Modal, ModalType,
+    Pagination,
 };
+use crate::types::Account;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use std::collections::HashSet;
@@ -46,12 +48,15 @@ pub fn Accounts() -> impl IntoView {
     let oauth_pending = RwSignal::new(false);
     let sync_pending = RwSignal::new(false);
     let refreshing_ids = RwSignal::new(HashSet::<String>::new());
+    let warmup_pending = RwSignal::new(false);
 
     // Modal states
     let delete_confirm = RwSignal::new(Option::<String>::None);
     let batch_delete_confirm = RwSignal::new(false);
     let add_account_modal_open = RwSignal::new(false);
     let toggle_proxy_confirm = RwSignal::new(Option::<(String, bool)>::None);
+    let details_account = RwSignal::new(Option::<Account>::None);
+    let warmup_confirm = RwSignal::new(false);
 
     // Messages
     let message = RwSignal::new(Option::<(String, bool)>::None);
@@ -312,21 +317,86 @@ pub fn Accounts() -> impl IntoView {
         toggle_proxy_confirm.set(Some((account_id, !current_disabled)));
     };
 
+    let state_toggle_proxy = state.clone();
     let execute_toggle_proxy = move || {
-        if let Some((_id, enable)) = toggle_proxy_confirm.get() {
+        if let Some((account_id, enable)) = toggle_proxy_confirm.get() {
             toggle_proxy_confirm.set(None);
+            let s = state_toggle_proxy.clone();
             spawn_local(async move {
-                // This would need a toggle_proxy_status command
-                // For now we'll just refresh the list
-                show_message(
-                    format!(
-                        "Proxy {} (TODO: implement)",
-                        if enable { "enabled" } else { "disabled" }
-                    ),
-                    false,
-                );
+                let reason = if enable {
+                    None
+                } else {
+                    Some("Manually disabled")
+                };
+                match commands::toggle_proxy_status(&account_id, enable, reason).await {
+                    Ok(()) => {
+                        if let Ok(accounts) = commands::list_accounts().await {
+                            s.accounts.set(accounts);
+                        }
+                        show_message(
+                            format!("Proxy {}", if enable { "enabled" } else { "disabled" }),
+                            false,
+                        );
+                    }
+                    Err(e) => show_message(format!("Failed: {}", e), true),
+                }
             });
         }
+    };
+
+    let state_view = state.clone();
+
+    let on_view_details = {
+        let s = state_view.clone();
+        move |account_id: String| {
+            let accounts = s.accounts.get();
+            if let Some(account) = accounts.iter().find(|a| a.id == account_id) {
+                details_account.set(Some(account.clone()));
+            }
+        }
+    };
+
+    let state_warmup = state.clone();
+    let on_warmup_account = Callback::new({
+        let s = state_warmup.clone();
+        move |account_id: String| {
+            let aid = account_id.clone();
+            refreshing_ids.update(|ids| {
+                ids.insert(aid);
+            });
+            let s = s.clone();
+            spawn_local(async move {
+                match commands::warmup_account(&account_id).await {
+                    Ok(msg) => show_message(msg, false),
+                    Err(e) => show_message(format!("Warmup failed: {}", e), true),
+                }
+                refreshing_ids.update(|ids| {
+                    ids.remove(&account_id);
+                });
+                // Refresh accounts to get updated quota
+                if let Ok(accounts) = commands::list_accounts().await {
+                    s.accounts.set(accounts);
+                }
+            });
+        }
+    });
+
+    let state_warmup_all = state.clone();
+    let on_warmup_all = move || {
+        warmup_confirm.set(false);
+        warmup_pending.set(true);
+        let s = state_warmup_all.clone();
+        spawn_local(async move {
+            match commands::warmup_all_accounts().await {
+                Ok(msg) => show_message(msg, false),
+                Err(e) => show_message(format!("Warmup failed: {}", e), true),
+            }
+            warmup_pending.set(false);
+            // Refresh accounts
+            if let Ok(accounts) = commands::list_accounts().await {
+                s.accounts.set(accounts);
+            }
+        });
     };
 
     let on_toggle_select = move |account_id: String| {
@@ -388,6 +458,12 @@ pub fn Accounts() -> impl IntoView {
                         variant=ButtonVariant::Secondary
                         on_click=on_refresh_all_quotas
                         loading=refresh_pending.get()
+                    />
+                    <Button
+                        text="✨ Warmup All".to_string()
+                        variant=ButtonVariant::Secondary
+                        on_click=move || warmup_confirm.set(true)
+                        loading=warmup_pending.get()
                     />
                     <Button
                         text="➕ Add".to_string()
@@ -561,7 +637,9 @@ pub fn Accounts() -> impl IntoView {
                                     let account_id2 = account.id.clone();
                                     let account_id3 = account.id.clone();
                                     let account_id4 = account.id.clone();
-                                    let _account_id5 = account.id.clone();
+                                    let account_id5 = account.id.clone();
+                                    let account_id6 = account.id.clone();
+                                    let account_id7 = account.id.clone();
                                     let account_id_select = account.id.clone();
                                     let account_id_switch = account.id.clone();
                                     let _account_id_refresh = account.id.clone();
@@ -673,6 +751,14 @@ pub fn Accounts() -> impl IntoView {
                                             <td class="col-actions">
                                                 <button
                                                     class="btn btn--icon"
+                                                    title="View Details"
+                                                    on:click={
+                                                        let id = account_id.clone();
+                                                        move |_| on_view_details(id.clone())
+                                                    }
+                                                >"📊"</button>
+                                                <button
+                                                    class="btn btn--icon"
                                                     title="Switch"
                                                     on:click={
                                           let cb = on_switch_account;
@@ -693,6 +779,19 @@ pub fn Accounts() -> impl IntoView {
                                                         move |_| cb.run(id.clone())
                                                     }
                                                 >"🔄"</button>
+                                                <button
+                                                    class={
+                                                        let id = account_id5.clone();
+                                                        move || format!("btn btn--icon {}", if refreshing_ids.get().contains(&id.clone()) { "loading" } else { "" })
+                                                    }
+                                                    title="Warmup"
+                                                    disabled=move || refreshing_ids.get().contains(&account_id6.clone())
+                                                    on:click={
+                                          let cb = on_warmup_account;
+                                                        let id = account_id7.clone();
+                                                        move |_| cb.run(id.clone())
+                                                    }
+                                                >"✨"</button>
                                                 <button
                                                     class="btn btn--icon btn--danger"
                                                     title="Delete"
@@ -775,6 +874,23 @@ pub fn Accounts() -> impl IntoView {
                         });
                     }
                 })
+            />
+
+            // Warmup confirmation modal
+            <Modal
+                is_open=Signal::derive(move || warmup_confirm.get())
+                title="Warmup All Accounts".to_string()
+                message="This will send warmup requests for all accounts. Continue?".to_string()
+                modal_type=ModalType::Confirm
+                confirm_text="Warmup".to_string()
+                on_confirm=Callback::new(move |_| on_warmup_all())
+                on_cancel=Callback::new(move |_| warmup_confirm.set(false))
+            />
+
+            // Account Details Modal
+            <AccountDetailsModal
+                account=Signal::derive(move || details_account.get())
+                on_close=Callback::new(move |_| details_account.set(None))
             />
         </div>
     }

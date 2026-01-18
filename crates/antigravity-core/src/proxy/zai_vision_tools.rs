@@ -307,10 +307,16 @@ pub async fn call_tool(
                 .ok_or("Missing prompt")?;
 
             let system_prompt = match output_type {
-                "code" => "You are a frontend engineer. Generate clean, accessible, responsive frontend code from the UI screenshot.",
+                "code" => {
+                    "You are a frontend engineer. Generate clean, accessible, responsive frontend code from the UI screenshot."
+                }
                 "prompt" => "You generate precise prompts to recreate UI screenshots.",
-                "spec" => "You are a design systems architect. Produce a detailed UI specification from the screenshot.",
-                "description" => "You describe UI screenshots clearly and completely in natural language.",
+                "spec" => {
+                    "You are a design systems architect. Produce a detailed UI specification from the screenshot."
+                }
+                "description" => {
+                    "You describe UI screenshots clearly and completely in natural language."
+                }
                 _ => return Err("Invalid output_type".to_string()),
             };
 

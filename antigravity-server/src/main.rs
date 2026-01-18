@@ -63,6 +63,8 @@ async fn main() -> Result<()> {
         }
     }
 
+    token_manager.start_auto_cleanup();
+
     // Initialize WARP IP isolation (per-account SOCKS5 proxies)
     let warp_mapping_path = std::env::var("WARP_MAPPING_FILE").unwrap_or_else(|_| {
         antigravity_core::proxy::warp_isolation::DEFAULT_WARP_MAPPING_PATH.to_string()

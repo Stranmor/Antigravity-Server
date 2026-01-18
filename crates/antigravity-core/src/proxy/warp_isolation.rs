@@ -153,15 +153,14 @@ impl WarpIsolationManager {
     }
 
     /// Get SOCKS5 proxy URL for an account by email.
-    pub async fn get_proxy_for_email(&self, email: &str) -> Option<String> {
-        if !self.is_enabled().await {
-            return None;
-        }
-
-        let email_map = self.email_to_account.read().await;
-        let account_id = email_map.get(email)?;
-
-        self.account_to_proxy.read().await.get(account_id).cloned()
+    ///
+    /// [DISABLED 2026-01-17] WARP proxy causes artificial 429 errors from Google.
+    /// Google detects Cloudflare WARP IPs and applies stricter rate limits.
+    /// Requests should go directly like upstream does.
+    /// TODO: Re-enable when proper IP rotation strategy is implemented.
+    pub async fn get_proxy_for_email(&self, _email: &str) -> Option<String> {
+        // WARP disabled - always return None to use direct connection
+        None
     }
 
     /// Get all account IDs with WARP proxies.

@@ -30,6 +30,9 @@ pub fn router() -> Router<AppState> {
         .route("/accounts/add-by-token", post(add_account_by_token))
         .route("/accounts/refresh-quota", post(refresh_account_quota))
         .route("/accounts/refresh-all-quotas", post(refresh_all_quotas))
+        .route("/accounts/toggle-proxy", post(toggle_proxy_status))
+        .route("/accounts/warmup", post(warmup_account))
+        .route("/accounts/warmup-all", post(warmup_all_accounts))
         // OAuth (headless flow)
         .route("/oauth/url", get(get_oauth_url))
         .route("/oauth/callback", get(handle_oauth_callback))
@@ -343,6 +346,128 @@ async fn refresh_all_quotas(
         success,
         failed,
         total,
+    }))
+}
+
+// ============ Toggle Proxy Status ============
+
+#[derive(Deserialize)]
+struct ToggleProxyRequest {
+    account_id: String,
+    enable: bool,
+    #[allow(dead_code)]
+    reason: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ToggleProxyResponse {
+    success: bool,
+    account_id: String,
+    proxy_disabled: bool,
+}
+
+async fn toggle_proxy_status(
+    State(state): State<AppState>,
+    Json(payload): Json<ToggleProxyRequest>,
+) -> Result<Json<ToggleProxyResponse>, (StatusCode, String)> {
+    // Load account
+    let mut acc = match account::load_account(&payload.account_id) {
+        Ok(a) => a,
+        Err(e) => return Err((StatusCode::NOT_FOUND, e)),
+    };
+
+    // Toggle proxy_disabled (enable=true means proxy is NOT disabled)
+    acc.proxy_disabled = !payload.enable;
+
+    // Save account
+    match account::save_account(&acc) {
+        Ok(_) => {
+            // Reload token manager
+            let _ = state.reload_accounts().await;
+
+            Ok(Json(ToggleProxyResponse {
+                success: true,
+                account_id: payload.account_id,
+                proxy_disabled: acc.proxy_disabled,
+            }))
+        }
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
+    }
+}
+
+// ============ Warmup ============
+
+#[derive(Deserialize)]
+struct WarmupAccountRequest {
+    account_id: String,
+}
+
+#[derive(Serialize)]
+struct WarmupResponse {
+    success: bool,
+    message: String,
+}
+
+async fn warmup_account(
+    State(state): State<AppState>,
+    Json(payload): Json<WarmupAccountRequest>,
+) -> Result<Json<WarmupResponse>, (StatusCode, String)> {
+    // Load account
+    let mut acc = match account::load_account(&payload.account_id) {
+        Ok(a) => a,
+        Err(e) => return Err((StatusCode::NOT_FOUND, e)),
+    };
+
+    // Warmup by refreshing quota (this makes an API call which "warms up" the session)
+    match account::fetch_quota_with_retry(&mut acc).await {
+        Ok(_) => {
+            let _ = account::save_account(&acc);
+            let _ = state.reload_accounts().await;
+
+            Ok(Json(WarmupResponse {
+                success: true,
+                message: format!("Account {} warmed up successfully", acc.email),
+            }))
+        }
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+async fn warmup_all_accounts(
+    State(state): State<AppState>,
+) -> Result<Json<WarmupResponse>, (StatusCode, String)> {
+    let accounts = match account::list_accounts() {
+        Ok(a) => a,
+        Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
+    };
+
+    let total = accounts.len();
+    let mut success = 0;
+    let mut failed = 0;
+
+    for mut acc in accounts {
+        if acc.disabled || acc.proxy_disabled {
+            continue;
+        }
+
+        match account::fetch_quota_with_retry(&mut acc).await {
+            Ok(_) => {
+                let _ = account::save_account(&acc);
+                success += 1;
+            }
+            Err(_) => failed += 1,
+        }
+    }
+
+    // Reload token manager
+    let _ = state.reload_accounts().await;
+
+    Ok(Json(WarmupResponse {
+        success: true,
+        message: format!(
+            "Warmup complete: {}/{} accounts warmed up ({} failed)",
+            success, total, failed
+        ),
     }))
 }
 

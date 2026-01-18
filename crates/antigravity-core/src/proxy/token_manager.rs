@@ -22,6 +22,7 @@ pub struct ProxyToken {
     pub account_path: PathBuf, // 账号文件路径，用于更新
     pub project_id: Option<String>,
     pub subscription_tier: Option<String>, // "FREE" | "PRO" | "ULTRA"
+    pub remaining_quota: Option<i32>, // [FIX #563] Remaining quota percentage for priority sorting
 }
 
 pub struct TokenManager {
@@ -54,6 +55,24 @@ impl TokenManager {
     pub async fn set_adaptive_limits(&self, tracker: Arc<AdaptiveLimitManager>) {
         let mut guard = self.adaptive_limits.write().await;
         *guard = Some(tracker);
+    }
+
+    pub fn start_auto_cleanup(&self) {
+        let tracker = self.rate_limit_tracker.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                interval.tick().await;
+                let cleaned = tracker.cleanup_expired();
+                if cleaned > 0 {
+                    tracing::info!(
+                        "🧹 Auto-cleanup: Removed {} expired rate limit record(s)",
+                        cleaned
+                    );
+                }
+            }
+        });
+        tracing::info!("✅ Rate limit auto-cleanup task started (interval: 60s)");
     }
 
     /// 从主应用账号目录加载所有账号
@@ -102,6 +121,29 @@ impl TokenManager {
         }
 
         Ok(count)
+    }
+
+    pub async fn reload_account(&self, account_id: &str) -> Result<(), String> {
+        let path = self
+            .data_dir
+            .join("accounts")
+            .join(format!("{}.json", account_id));
+        if !path.exists() {
+            return Err(format!("账号文件不存在: {:?}", path));
+        }
+
+        match self.load_single_account(&path).await {
+            Ok(Some(token)) => {
+                self.tokens.insert(account_id.to_string(), token);
+                Ok(())
+            }
+            Ok(None) => Err("账号加载失败".to_string()),
+            Err(e) => Err(format!("同步账号失败: {}", e)),
+        }
+    }
+
+    pub async fn reload_all_accounts(&self) -> Result<usize, String> {
+        self.load_accounts().await
     }
 
     /// 加载单个账号
@@ -182,6 +224,11 @@ impl TokenManager {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
+        // [FIX #563] 提取最大剩余配额百分比用于优先级排序
+        let remaining_quota = account
+            .get("quota")
+            .and_then(Self::calculate_max_quota_percentage);
+
         Ok(Some(ProxyToken {
             account_id,
             access_token,
@@ -192,7 +239,30 @@ impl TokenManager {
             account_path: path.clone(),
             project_id,
             subscription_tier,
+            remaining_quota,
         }))
+    }
+
+    fn calculate_max_quota_percentage(quota: &serde_json::Value) -> Option<i32> {
+        let models = quota.get("models")?.as_array()?;
+        let mut max_percentage = 0;
+        let mut has_data = false;
+
+        for model in models {
+            if let Some(pct) = model.get("percentage").and_then(|v| v.as_i64()) {
+                let pct_i32 = pct as i32;
+                if pct_i32 > max_percentage {
+                    max_percentage = pct_i32;
+                }
+                has_data = true;
+            }
+        }
+
+        if has_data {
+            Some(max_percentage)
+        } else {
+            None
+        }
     }
 
     /// 获取当前可用的 Token（支持粘性会话与智能调度）
@@ -302,8 +372,10 @@ impl TokenManager {
             return Err("Token pool is empty".to_string());
         }
 
-        // ===== 【优化】根据订阅等级排序 (优先级: ULTRA > PRO > FREE) =====
+        // ===== 【优化】根据订阅等级和剩余配额排序 =====
+        // [FIX #563] 优先级: ULTRA > PRO > FREE, 同tier内优先高配额账号
         // 理由: ULTRA/PRO 重置快，优先消耗；FREE 重置慢，用于兜底
+        //       高配额账号优先使用，避免低配额账号被用光
         tokens_snapshot.sort_by(|a, b| {
             let tier_priority = |tier: &Option<String>| match tier.as_deref() {
                 Some("ULTRA") => 0,
@@ -311,7 +383,20 @@ impl TokenManager {
                 Some("FREE") => 2,
                 _ => 3,
             };
-            tier_priority(&a.subscription_tier).cmp(&tier_priority(&b.subscription_tier))
+
+            // First: compare by subscription tier
+            let tier_cmp =
+                tier_priority(&a.subscription_tier).cmp(&tier_priority(&b.subscription_tier));
+
+            if tier_cmp != std::cmp::Ordering::Equal {
+                return tier_cmp;
+            }
+
+            // [FIX #563] Second: compare by remaining quota percentage (higher is better)
+            // Accounts with unknown/zero percentage go last within their tier
+            let quota_a = a.remaining_quota.unwrap_or(0);
+            let quota_b = b.remaining_quota.unwrap_or(0);
+            quota_b.cmp(&quota_a) // Descending: higher percentage first
         });
 
         // 0. 读取当前调度配置
@@ -320,12 +405,15 @@ impl TokenManager {
 
         // 【优化 Issue #284】将锁操作移到循环外，避免重复获取锁
         // 预先获取 last_used_account 的快照，避免在循环中多次加锁
-        let last_used_account_id = if quota_group != "image_gen" {
+        // 【FIX TOCTOU】保存原始快照用于 Compare-And-Swap 验证
+        let last_used_account_snapshot = if quota_group != "image_gen" {
             let last_used = self.last_used_account.lock().await;
             last_used.clone()
         } else {
             None
         };
+        // Clone for loop usage (immutable reference)
+        let last_used_account_id = last_used_account_snapshot.clone();
 
         let mut attempted: HashSet<String> = HashSet::new();
         let mut last_error: Option<String> = None;
