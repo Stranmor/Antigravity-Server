@@ -2,11 +2,11 @@
 
 # Antigravity Manager — Stranmor Fork
 
-### 🚀 **Pure Rust** AI Gateway with Headless Server & Leptos UI
+### 🚀 **Pure Rust** AI Gateway: Headless, Resilient, High-Performance
 
 <img src="public/icon.png" alt="Antigravity Logo" width="140" height="140" style="border-radius: 24px;">
 
-[![Version](https://img.shields.io/badge/Version-3.3.20-10B981?style=for-the-badge&logo=semver)](https://github.com/Stranmor/Antigravity-Manager/releases)
+[![Version](https://img.shields.io/badge/Version-3.3.43-10B981?style=for-the-badge&logo=semver)](https://github.com/Stranmor/Antigravity-Manager/releases)
 [![Rust](https://img.shields.io/badge/100%25_Rust-dea584?style=for-the-badge&logo=rust&logoColor=black)](https://www.rust-lang.org/)
 [![Leptos](https://img.shields.io/badge/Leptos-WASM-8B5CF6?style=for-the-badge)](https://leptos.dev/)
 [![Axum](https://img.shields.io/badge/Axum-Server-3B82F6?style=for-the-badge)](https://github.com/tokio-rs/axum)
@@ -16,8 +16,9 @@
 
 ---
 
-**Enterprise-grade local AI proxy** that transforms Google/Anthropic Web Sessions into standardized OpenAI-compatible APIs.  
-Deploy anywhere: Desktop (Tauri) • Headless Server (VPS) • Edge
+**Antigravity Manager** is a high-performance AI gateway that transforms Google and Anthropic web sessions into standardized, OpenAI-compatible APIs. 
+
+This fork is re-engineered for **headless server deployment** and **maximum resilience**, moving away from desktop-only limitations to provide a robust, production-ready AI backbone.
 
 </div>
 
@@ -25,121 +26,87 @@ Deploy anywhere: Desktop (Tauri) • Headless Server (VPS) • Edge
 
 ## 🎯 Why This Fork?
 
-This fork extends the excellent [lbjlaq/Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager) with **production-hardened architecture** and **headless deployment capabilities**:
+While the [upstream project](https://github.com/lbjlaq/Antigravity-Manager) provides an excellent desktop experience, this fork is built for developers who need a **headless daemon** that can run on a VPS, in Docker, or as a background service with enterprise-grade stability.
 
-| Feature | Upstream | This Fork |
-|---------|----------|-----------|
+### Key Differentiators
+
+| Feature | Upstream | Stranmor Fork |
+|---------|----------|---------------|
+| **Primary Target** | Desktop (Tauri + GUI) | **Headless Server (Axum Daemon)** |
 | **Frontend** | React + TypeScript | **Leptos (Pure Rust → WASM)** |
-| **Headless Server** | ❌ Desktop-only | ✅ **`antigravity-server`** daemon |
-| **Architecture** | Monolith | **Modular Crate Workspace** |
-| **Rate Limiting** | Reactive retry | **AIMD Predictive Algorithm** |
-| **Model Fallback** | Silent substitution | **Strict Routing (No Fallback)** |
-| **VPS CLI** | ❌ | ✅ **`antigravity-vps-cli`** |
-| **Code Reuse** | Tauri-coupled | **`antigravity-core`** library |
+| **Architecture** | Monolithic | **Modular Crate Workspace** |
+| **Rate Limiting** | Reactive (Retry on 429) | **AIMD Predictive Algorithm** |
+| **Reliability** | Basic Failover | **Circuit Breakers per Account** |
+| **Routing** | Silent Model Substitution | **Strict Routing (Explicit Errors)** |
+| **Isolation** | Shared IP | **WARP Proxy Support (Per-Account IP)** |
+| **Observability**| Local UI | **Resilience API & Prometheus Metrics** |
 
 ---
 
-## ✨ Key Features
+## ✨ Killer Features
 
-### 🔌 Universal Protocol Adapter
-Transform any AI client into a unified gateway:
+### 🖥️ Headless Server (Killer Feature #1)
+No X server, no GUI required. Deploy `antigravity-server` as a lightweight daemon on any Linux VPS. It comes with a built-in Leptos-based Web UI for remote management.
+
+### 📊 AIMD Predictive Rate Limiting (Killer Feature #2)
+Using the **Additive Increase / Multiplicative Decrease** algorithm (similar to TCP congestion control), the gateway learns the optimal request rate for each account. It predicts quota exhaustion *before* it happens, ensuring zero wasted requests and smoother failover.
+
+### 🛡️ Circuit Breakers & Resilience
+Each account is protected by an independent circuit breaker. If an account starts failing, it's automatically isolated to prevent cascading failures. Monitor everything via the **Resilience API**:
+- `GET /api/resilience/health` — Real-time account availability.
+- `GET /api/resilience/circuits` — Circuit breaker states.
+- `GET /api/resilience/aimd` — Rate limiting telemetry.
+- `GET /api/metrics` — Prometheus-compatible metrics.
+
+### 🌐 WARP Proxy Support
+Avoid account correlation by assigning unique IPs to each account via Cloudflare WARP. Perfect for maintaining high reputation scores and avoiding broad IP-based rate limits.
+
+---
+
+## 🔌 Universal Protocol Adapter
+
+Connect any OpenAI-compatible tool to Claude and Gemini:
 
 ```
 ┌─────────────────┐     ┌─────────────────────┐     ┌──────────────────┐
 │   Claude Code   │     │                     │     │  Google Gemini   │
 │   OpenAI SDK    │ ──▶ │  Antigravity Proxy  │ ──▶ │  Anthropic API   │
-│   Kilo Code     │     │   (localhost:8045)  │     │  (via OAuth)     │
-│   Any Client    │     │                     │     │                  │
+│   Cursor / IDE  │     │   (localhost:8045)  │     │  (via OAuth)     │
+│   Custom Bots   │     │                     │     │                  │
 └─────────────────┘     └─────────────────────┘     └──────────────────┘
 ```
 
-- **`/v1/chat/completions`** — OpenAI-compatible (works with 99% of AI tools)
-- **`/v1/messages`** — Native Anthropic/Claude protocol
-- **`/v1/models`** — Dynamic model discovery
-- **`/v1/images/generations`** — Imagen 3 via OpenAI DALL-E interface
-
-### 🧠 Intelligent Account Management
-- **OAuth 2.0 Authorization** — One-click Google/Anthropic account linking
-- **Smart Rotation** — Automatic failover on 429/401/403 errors
-- **Quota Monitoring** — Real-time usage tracking per account
-- **Tiered Routing** — Priority dispatch based on subscription tier (Ultra > Pro > Free)
-
-### 📊 AIMD Predictive Rate Limiting
-Proactive rate limit avoidance using **Additive Increase / Multiplicative Decrease** algorithm:
-- Learns optimal request rates per account
-- Predicts quota exhaustion before hitting limits  
-- Zero wasted requests on already-exhausted accounts
-
-### 🎯 Strict Model Routing (No Fallback)
-**Anti-pattern eliminated**: Unknown models return explicit errors instead of silently falling back.
-- Prevents unexpected token consumption
-- Guarantees model isolation
-- Full transparency in model mapping
-
----
-
-## 📦 Architecture
-
-```
-antigravity-manager/
-├── crates/
-│   ├── antigravity-core/      # 🧩 Shared business logic
-│   │   ├── proxy/             #    Protocol handlers, mappers, routing
-│   │   ├── modules/           #    Account, OAuth, quota management
-│   │   └── models/            #    Domain types, validation
-│   └── antigravity-shared/    # 📋 Common types & DTOs
-│
-├── antigravity-server/        # 🖥️ Headless daemon (PRODUCTION TARGET)
-├── antigravity-vps-cli/       # 🔧 Remote management CLI
-├── src-leptos/                # 🌐 Leptos WASM UI (browser)
-└── src-tauri/                 # 📚 Upstream reference (read-only)
-```
-
-### Crate Dependency Graph
-```mermaid
-graph TD
-    CLI[antigravity-vps-cli] --> CORE
-    SERVER[antigravity-server] --> CORE
-    CORE[antigravity-core] --> SHARED[antigravity-shared]
-    LEPTOS[src-leptos] --> SHARED
-```
+- **Standardized API**: Implements `/v1/chat/completions` and `/v1/messages`.
+- **Dynamic Discovery**: Supports `/v1/models` for seamless integration with IDEs.
+- **Image Support**: Imagen 3 via OpenAI DALL-E interface compatibility.
 
 ---
 
 ## 🚀 Installation
 
-### Option A: Headless Server (Recommended)
+### Using Nix (Recommended)
+
+The easiest way to build and run the server with all dependencies pinned:
 
 ```bash
-# Clone & build
 git clone https://github.com/Stranmor/Antigravity-Manager.git
 cd Antigravity-Manager
 
-# Build frontend + server
+# Build and run the headless server
 nix run .#build-server
-
-# Or enter dev shell and run
-# nix develop
-# build-server
-
-# Run daemon
 ./target/release/antigravity-server
-# → API: http://localhost:8045/v1
-# → WebUI: http://localhost:8045
 ```
 
-### Option B: Development Mode
+### Manual Build
+
+Requires Rust toolchain and [Trunk](https://trunkrs.dev/) for the frontend:
 
 ```bash
-# Prerequisites: Nix (highly recommended) or Rust + Trunk
-nix run .#run-server
-```
+# Build the server (automatically builds the Leptos UI via build.rs)
+cargo build --release -p antigravity-server
 
-### Option C: Homebrew (macOS/Linux)
-
-```bash
-brew tap lbjlaq/antigravity-manager
-brew install --cask antigravity-tools
+# Run
+./target/release/antigravity-server
 ```
 
 ---
@@ -163,10 +130,9 @@ client = openai.OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="gemini-2.5-pro",
+    model="gemini-2.0-pro", # Automatically routed to best account
     messages=[{"role": "user", "content": "Hello!"}]
 )
-print(response.choices[0].message.content)
 ```
 
 ### cURL
@@ -174,27 +140,17 @@ print(response.choices[0].message.content)
 curl http://127.0.0.1:8045/v1/chat/completions \
   -H "Authorization: Bearer sk-antigravity" \
   -H "Content-Type: application/json" \
-  -d '{
-    "model": "gemini-2.5-flash",
-    "messages": [{"role": "user", "content": "Explain quantum computing"}],
-    "stream": true
-  }'
+  -d '{"model": "gemini-2.5-flash", "messages": [{"role": "user", "content": "Hi"}]}'
 ```
 
 ---
 
-## 🔧 Configuration
+## 🔧 Deployment
 
-### Environment Variables
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ANTIGRAVITY_PORT` | `8045` | HTTP server port |
-| `ANTIGRAVITY_DATA_DIR` | `~/.antigravity` | Database & logs location |
-| `RUST_LOG` | `info` | Log level (trace, debug, info, warn, error) |
+### Systemd Service (Linux VPS)
+Create `~/.config/systemd/user/antigravity.service`:
 
-### Systemd Service (Linux)
 ```ini
-# ~/.config/systemd/user/antigravity.service
 [Unit]
 Description=Antigravity AI Gateway
 After=network.target
@@ -203,6 +159,7 @@ After=network.target
 ExecStart=%h/.cargo/bin/antigravity-server
 Restart=always
 Environment=RUST_LOG=info
+Environment=ANTIGRAVITY_PORT=8045
 
 [Install]
 WantedBy=default.target
@@ -212,56 +169,41 @@ WantedBy=default.target
 systemctl --user enable --now antigravity
 ```
 
----
-
-## 📸 Screenshots
-
-> **Leptos UI** — Our Pure Rust WASM frontend
-
-| Dashboard | Accounts |
-|-----------|----------|
-| ![Dashboard](docs/images/dashboard-leptos.png) | ![Accounts](docs/images/accounts-leptos.png) |
-
-| API Proxy | Request Monitor |
-|-----------|-----------------|
-| ![Proxy](docs/images/proxy-leptos.png) | ![Monitor](docs/images/monitor-leptos.png) |
+### Environment Variables
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ANTIGRAVITY_PORT` | `8045` | Port the gateway listens on |
+| `ANTIGRAVITY_DATA_DIR` | `~/.antigravity` | Path for database and configuration |
+| `RUST_LOG` | `info` | Logging verbosity (debug, info, warn) |
 
 ---
 
-## 🛠️ Development
+## 📦 Project Structure
 
-### Setup Git Hooks
-```bash
-# First-time setup (enables cargo fmt & clippy checks on commit)
-./scripts/install-hooks.sh
+```
+crates/
+├── antigravity-types/      # Foundation types & error hierarchy
+├── antigravity-shared/     # Re-export layer for external crates
+├── antigravity-core/       # Business logic (Proxy, AIMD, Circuits)
+└── antigravity-server/     # Axum HTTP Entry Point
+
+src-leptos/                 # Pure Rust WASM Frontend
+vendor/antigravity-upstream/ # Upstream reference (Git Submodule)
 ```
 
-The pre-commit hook enforces:
-- **`cargo fmt --check`** — Code formatting
-- **`cargo clippy -- -D warnings`** — Zero warnings policy
-
 ---
 
-## 🔗 Upstream
+## 📄 License & Attribution
 
-This project is a fork of [lbjlaq/Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager). Full credit to the original authors for the core concept and initial implementation.
+This project is a fork of [lbjlaq/Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager). We selectively port useful upstream features while maintaining our focus on headless resilience.
 
-**What we contribute back:**
-- Bug fixes and stability improvements
-- Documentation enhancements
-- Test coverage
-
----
-
-## 📄 License
-
-**CC BY-NC-SA 4.0** — Non-commercial use only. See [LICENSE](LICENSE) for details.
+**License**: [CC BY-NC-SA 4.0](LICENSE) — Non-commercial use only.
 
 ---
 
 <div align="center">
 
-**Built with ❤️ in Rust**
+**Built with ❤️ in 100% Rust**
 
 [![GitHub Stars](https://img.shields.io/github/stars/Stranmor/Antigravity-Manager?style=social)](https://github.com/Stranmor/Antigravity-Manager)
 
