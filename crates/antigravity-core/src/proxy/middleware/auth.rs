@@ -54,6 +54,12 @@ pub async fn auth_middleware(
                 .headers()
                 .get("x-api-key")
                 .and_then(|h| h.to_str().ok())
+        })
+        .or_else(|| {
+            request
+                .headers()
+                .get("x-goog-api-key")
+                .and_then(|h| h.to_str().ok())
         });
 
     if security.api_key.is_empty() {

@@ -1,6 +1,7 @@
 // OpenAI → Gemini 请求转换
 use super::models::*;
 use super::streaming::get_thought_signature;
+use crate::proxy::mappers::tool_result_compressor;
 use serde_json::{json, Value};
 
 pub fn transform_openai_request(
@@ -11,12 +12,22 @@ pub fn transform_openai_request(
     // 将 OpenAI 工具转为 Value 数组以便探测
     let tools_val = request.tools.as_ref().map(|list| list.to_vec());
 
+    let mapped_model_lower = mapped_model.to_lowercase();
+
     // Resolve grounding config
     let config = crate::proxy::mappers::common_utils::resolve_request_config(
         &request.model,
-        mapped_model,
+        &mapped_model_lower,
         &tools_val,
     );
+
+    // Detect thinking models early (needed for signature handling)
+    let is_gemini_3_thinking = mapped_model_lower.contains("gemini-3")
+        && (mapped_model_lower.ends_with("-high")
+            || mapped_model_lower.ends_with("-low")
+            || mapped_model_lower.contains("-pro"));
+    let is_claude_thinking = mapped_model_lower.ends_with("-thinking");
+    let is_thinking_model = is_gemini_3_thinking || is_claude_thinking;
 
     tracing::debug!(
         "[Debug] OpenAI Request: original='{}', mapped='{}', type='{}', has_image_config={}",
@@ -192,15 +203,18 @@ pub fn transform_openai_request(
             // Handle tool calls (assistant message)
             if let Some(tool_calls) = &msg.tool_calls {
                 for tc in tool_calls.iter() {
-                    /* 暂时移除：防止 Codex CLI 界面碎片化
-                    if index == 0 && parts.is_empty() {
-                         if mapped_model.contains("gemini-3") {
-                              parts.push(json!({"text": "Thinking Process: Determining necessary tool actions."}));
-                         }
-                    }
-                    */
+                    let mut args = serde_json::from_str::<Value>(&tc.function.arguments).unwrap_or(json!({}));
 
-                    let args = serde_json::from_str::<Value>(&tc.function.arguments).unwrap_or(json!({}));
+                    // Shell tool command must be an array of strings
+                    if tc.function.name == "local_shell_call" {
+                        if let Some(command) = args.get_mut("command") {
+                            if let Value::String(s) = command {
+                                tracing::info!("[OpenAI-Request] Converting shell command string to array: {}", s);
+                                *command = json!([s.clone()]);
+                            }
+                        }
+                    }
+
                     let mut func_call_part = json!({
                         "functionCall": {
                             "name": if tc.function.name == "local_shell_call" { "shell" } else { &tc.function.name },
@@ -209,9 +223,14 @@ pub fn transform_openai_request(
                         }
                     });
 
-                    // [修复] 为该消息内的所有工具调用注入 thoughtSignature (PR #114 优化)
+                    // Clean schema for function call args
+                    crate::proxy::common::json_schema::clean_json_schema(&mut func_call_part);
+
                     if let Some(ref sig) = global_thought_sig {
                         func_call_part["thoughtSignature"] = json!(sig);
+                    } else if is_thinking_model && !mapped_model.starts_with("projects/") {
+                        tracing::debug!("[OpenAI-Signature] Adding GEMINI_SKIP_SIGNATURE for tool_use: {}", tc.id);
+                        func_call_part["thoughtSignature"] = json!("skip_thought_signature_validator");
                     }
 
                     parts.push(func_call_part);
@@ -225,11 +244,25 @@ pub fn transform_openai_request(
                                 else if let Some(id) = &msg.tool_call_id { tool_id_to_name.get(id).map(|s| s.as_str()).unwrap_or(name) }
                                 else { name };
 
-                let content_val = match &msg.content {
+                // [FIX] Extract raw content first
+                let raw_content = match &msg.content {
                     Some(OpenAIContent::String(s)) => s.clone(),
                     Some(OpenAIContent::Array(blocks)) => blocks.iter().filter_map(|b| if let OpenAIContentBlock::Text { text } = b { Some(text.clone()) } else { None }).collect::<Vec<_>>().join("\n"),
                     None => "".to_string()
                 };
+
+                // [FIX #593] Tool output compression: handle oversized tool outputs
+                // Apply same compression as Claude mapper (200,000 char limit + smart compression)
+                const MAX_TOOL_RESULT_CHARS: usize = 200_000;
+                let content_val = tool_result_compressor::compact_tool_result_text(&raw_content, MAX_TOOL_RESULT_CHARS);
+
+                if content_val.len() < raw_content.len() {
+                    tracing::debug!(
+                        "[OpenAI-Request] Compressed tool result from {} to {} chars",
+                        raw_content.len(),
+                        content_val.len()
+                    );
+                }
 
                 parts.push(json!({
                     "functionResponse": {
@@ -263,28 +296,17 @@ pub fn transform_openai_request(
     }
     let contents = merged_contents;
 
-    // 3. 构建请求体
-    // [FIX PR #368] 检测 Gemini 3 Pro thinking 模型，注入 thinkingBudget 配置
-    // 加入 Claude thinking 模型支援
-    let is_gemini_3_thinking = mapped_model.contains("gemini-3")
-        && (mapped_model.ends_with("-high")
-            || mapped_model.ends_with("-low")
-            || mapped_model.contains("-pro"));
-    let is_claude_thinking = mapped_model.ends_with("-thinking");
-    let is_thinking_model = is_gemini_3_thinking || is_claude_thinking;
-
+    // 3. Build request body
     let mut gen_config = json!({
-        "maxOutputTokens": request.max_tokens.unwrap_or(64000),
+        "maxOutputTokens": request.max_tokens.unwrap_or(16384),
         "temperature": request.temperature.unwrap_or(1.0),
         "topP": request.top_p.unwrap_or(1.0),
     });
 
-    // [NEW] 支持多候选结果数量 (n -> candidateCount)
     if let Some(n) = request.n {
         gen_config["candidateCount"] = json!(n);
     }
 
-    // [FIX PR #368] 为 thinking 模型注入 thinkingConfig (使用 thinkingBudget 而非 thinkingLevel)
     if is_thinking_model {
         gen_config["thinkingConfig"] = json!({
             "includeThoughts": true,
@@ -507,6 +529,78 @@ mod tests {
         assert_eq!(
             parts[1]["inlineData"]["mimeType"].as_str().unwrap(),
             "image/png"
+        );
+    }
+
+    #[test]
+    fn test_tool_response_compression() {
+        let large_content = "x".repeat(250_000);
+        let req = OpenAIRequest {
+            model: "gpt-4".to_string(),
+            messages: vec![
+                OpenAIMessage {
+                    role: "assistant".to_string(),
+                    content: None,
+                    reasoning_content: None,
+                    tool_calls: Some(vec![ToolCall {
+                        id: "call_123".to_string(),
+                        r#type: "function".to_string(),
+                        function: ToolFunction {
+                            name: "read_file".to_string(),
+                            arguments: "{}".to_string(),
+                        },
+                    }]),
+                    tool_call_id: None,
+                    name: None,
+                },
+                OpenAIMessage {
+                    role: "tool".to_string(),
+                    content: Some(OpenAIContent::String(large_content.clone())),
+                    reasoning_content: None,
+                    tool_calls: None,
+                    tool_call_id: Some("call_123".to_string()),
+                    name: Some("read_file".to_string()),
+                },
+            ],
+            stream: false,
+            n: None,
+            max_tokens: None,
+            temperature: None,
+            top_p: None,
+            stop: None,
+            response_format: None,
+            tools: None,
+            tool_choice: None,
+            parallel_tool_calls: None,
+            instructions: None,
+            input: None,
+            prompt: None,
+        };
+
+        let result = transform_openai_request(&req, "test-v", "gemini-1.5-flash");
+
+        let contents = result["request"]["contents"].as_array().unwrap();
+        let tool_response_msg = contents
+            .iter()
+            .find(|c| {
+                c["parts"]
+                    .as_array()
+                    .map(|p| p.iter().any(|part| part.get("functionResponse").is_some()))
+                    .unwrap_or(false)
+            })
+            .expect("Should have tool response message");
+
+        let func_response = &tool_response_msg["parts"][0]["functionResponse"];
+        let result_text = func_response["response"]["result"].as_str().unwrap();
+
+        assert!(
+            result_text.len() <= 200_100,
+            "Tool result should be compressed to approximately 200k chars (got {})",
+            result_text.len()
+        );
+        assert!(
+            result_text.len() < large_content.len(),
+            "Compressed result should be smaller than original"
         );
     }
 }

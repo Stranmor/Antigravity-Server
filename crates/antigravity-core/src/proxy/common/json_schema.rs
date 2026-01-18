@@ -38,7 +38,6 @@ fn flatten_refs(map: &mut serde_json::Map<String, Value>, defs: &serde_json::Map
         let ref_name = ref_path.split('/').next_back().unwrap_or(&ref_path);
 
         if let Some(Value::Object(def_map)) = defs.get(ref_name) {
-            // 将定义的内容合并到当前 map
             for (k, v) in def_map {
                 // 仅当当前 map 没有该 key 时才插入 (避免覆盖)
                 // 但通常 $ref 节点不应该有其他属性
@@ -65,120 +64,175 @@ fn flatten_refs(map: &mut serde_json::Map<String, Value>, defs: &serde_json::Map
     }
 }
 
-fn clean_json_schema_recursive(value: &mut Value) {
-    match value {
-        Value::Object(map) => {
-            // 1. [CRITICAL] 深度递归处理：必须遍历当前对象的所有字段名对应的 Value
-            // 解决 properties/items 之外的 definitions、anyOf、allOf 等结构的清理
+fn clean_json_schema_recursive(value: &mut Value) -> bool {
+    let mut is_effectively_nullable = false;
+
+    if let Value::Object(map) = value {
+        // 0. [NEW] 合并 allOf
+        merge_all_of(map);
+
+        // 1. [CRITICAL] 深度递归处理子项
+        if let Some(Value::Object(props)) = map.get_mut("properties") {
+            let mut nullable_keys = std::collections::HashSet::new();
+            for (k, v) in props {
+                if clean_json_schema_recursive(v) {
+                    nullable_keys.insert(k.clone());
+                }
+            }
+
+            if !nullable_keys.is_empty() {
+                if let Some(Value::Array(req_arr)) = map.get_mut("required") {
+                    req_arr.retain(|r| {
+                        r.as_str()
+                            .map(|s| !nullable_keys.contains(s))
+                            .unwrap_or(true)
+                    });
+                    if req_arr.is_empty() {
+                        map.remove("required");
+                    }
+                }
+            }
+        } else if let Some(items) = map.get_mut("items") {
+            clean_json_schema_recursive(items);
+        } else {
             for v in map.values_mut() {
                 clean_json_schema_recursive(v);
             }
+        }
 
-            // 2. 收集并处理校验字段 (Migration logic: 将约束降级为描述中的 Hint)
-            let mut constraints = Vec::new();
+        // 2. [FIX #815] 处理 anyOf/oneOf 联合类型: 合并属性而非直接删除
+        let mut union_to_merge = None;
+        if map.get("type").is_none() || map.get("type").and_then(|t| t.as_str()) == Some("object") {
+            if let Some(Value::Array(any_of)) = map.get("anyOf") {
+                union_to_merge = Some(any_of.clone());
+            } else if let Some(Value::Array(one_of)) = map.get("oneOf") {
+                union_to_merge = Some(one_of.clone());
+            }
+        }
 
-            // 待迁移的约束黑名单
-            let validation_fields = [
-                ("pattern", "pattern"),
+        if let Some(union_array) = union_to_merge {
+            if let Some(Value::Object(branch_obj)) = extract_best_schema_from_union(&union_array) {
+                for (k, v) in branch_obj {
+                    if k == "properties" {
+                        if let Some(target_props) = map
+                            .entry("properties".to_string())
+                            .or_insert_with(|| Value::Object(serde_json::Map::new()))
+                            .as_object_mut()
+                        {
+                            if let Some(source_props) = v.as_object() {
+                                for (pk, pv) in source_props {
+                                    target_props.entry(pk.clone()).or_insert_with(|| pv.clone());
+                                }
+                            }
+                        }
+                    } else if k == "required" {
+                        if let Some(target_req) = map
+                            .entry("required".to_string())
+                            .or_insert_with(|| Value::Array(Vec::new()))
+                            .as_array_mut()
+                        {
+                            if let Some(source_req) = v.as_array() {
+                                for rv in source_req {
+                                    if !target_req.contains(rv) {
+                                        target_req.push(rv.clone());
+                                    }
+                                }
+                            }
+                        }
+                    } else if !map.contains_key(&k) {
+                        map.insert(k, v);
+                    }
+                }
+            }
+        }
+
+        // 3. [SAFETY] 检查当前对象是否为 JSON Schema 节点
+        // 只有当对象看起来像 Schema (包含 type, properties, items, enum, anyOf 等) 时，才执行白名单过滤。
+        // 否则，如果它是一个普通的 Value (如 request.rs 中的 functionCall 对象)，直接应用激进过滤会破坏结构。
+        let looks_like_schema = map.contains_key("type")
+            || map.contains_key("properties")
+            || map.contains_key("items")
+            || map.contains_key("enum")
+            || map.contains_key("anyOf")
+            || map.contains_key("oneOf")
+            || map.contains_key("allOf");
+
+        if looks_like_schema {
+            // 4. [ROBUST] 约束迁移：在被白名单过滤前，将校验项转为描述 Hint
+            let mut hints = Vec::new();
+            let constraints = [
                 ("minLength", "minLen"),
                 ("maxLength", "maxLen"),
+                ("pattern", "pattern"),
                 ("minimum", "min"),
                 ("maximum", "max"),
-                ("minItems", "minItems"),
-                ("maxItems", "maxItems"),
+                ("multipleOf", "multipleOf"),
                 ("exclusiveMinimum", "exclMin"),
                 ("exclusiveMaximum", "exclMax"),
-                ("multipleOf", "multipleOf"),
+                ("minItems", "minItems"),
+                ("maxItems", "maxItems"),
+                ("propertyNames", "propertyNames"),
                 ("format", "format"),
             ];
-
-            for (field, label) in validation_fields {
-                if let Some(val) = map.remove(field) {
-                    // 仅当值是简单类型时才迁移
-                    if val.is_string() || val.is_number() || val.is_boolean() {
+            for (field, label) in constraints {
+                if let Some(val) = map.get(field) {
+                    if !val.is_null() {
                         let val_str = if let Some(s) = val.as_str() {
                             s.to_string()
                         } else {
                             val.to_string()
                         };
-                        constraints.push(format!("{}: {}", label, val_str));
-                    } else {
-                        // [CRITICAL FIX] 如果不是简单类型（例如是 Object），说明它可能是一个属性名碰巧叫 "pattern"
-                        // 必须放回去，否则误删属性！
-                        map.insert(field.to_string(), val);
+                        hints.push(format!("{}: {}", label, val_str));
                     }
                 }
             }
-
-            // 3. 将约束信息追加到描述
-            if !constraints.is_empty() {
-                let suffix = format!(" [Constraint: {}]", constraints.join(", "));
+            if !hints.is_empty() {
+                let suffix = format!(" [Constraint: {}]", hints.join(", "));
                 let desc_val = map
                     .entry("description".to_string())
                     .or_insert_with(|| Value::String("".to_string()));
                 if let Value::String(s) = desc_val {
-                    s.push_str(&suffix);
-                }
-            }
-
-            // 4. [NEW FIX] 处理 anyOf/oneOf 联合类型 - 在移除前提取 type
-            // FastMCP 和其他工具生成 anyOf: [{"type": "string"}, {"type": "null"}] 表示 Optional 类型
-            // Gemini 不支持 anyOf，但我们需要保留类型信息
-            //
-            // 策略：如果当前对象没有 "type" 字段，从 anyOf/oneOf 中提取第一个非 null 类型
-            if map.get("type").is_none() {
-                // 尝试从 anyOf 提取
-                if let Some(Value::Array(any_of)) = map.get("anyOf") {
-                    if let Some(extracted_type) = extract_type_from_union(any_of) {
-                        map.insert("type".to_string(), Value::String(extracted_type));
-                    }
-                }
-                // 如果 anyOf 没有提取到，尝试从 oneOf 提取
-                if map.get("type").is_none() {
-                    if let Some(Value::Array(one_of)) = map.get("oneOf") {
-                        if let Some(extracted_type) = extract_type_from_union(one_of) {
-                            map.insert("type".to_string(), Value::String(extracted_type));
-                        }
+                    if !s.contains(&suffix) {
+                        s.push_str(&suffix);
                     }
                 }
             }
 
-            // 5. 彻底物理移除干扰生成的"硬项"黑色名单 (Hard Blacklist)
-            let hard_remove_fields = [
-                "$schema",
-                "$id", // [NEW] JSON Schema identifier
-                "additionalProperties",
-                "enumCaseInsensitive",
-                "enumNormalizeWhitespace",
-                "uniqueItems",
-                "default",
-                "const",
-                "examples",
-                "propertyNames",
-                "anyOf",
-                "oneOf",
-                "allOf",
-                "not",
-                "if",
-                "then",
-                "else",
-                "dependencies",
-                "dependentSchemas",
-                "dependentRequired",
-                "cache_control",
-                "contentEncoding",  // [NEW] base64 encoding hint
-                "contentMediaType", // [NEW] MIME type hint
-                "deprecated",       // [NEW] Gemini doesn't understand this
-                "readOnly",         // [NEW]
-                "writeOnly",        // [NEW]
-            ];
-            for field in hard_remove_fields {
-                map.remove(field);
+            // 5. [CRITICAL] 白名单过滤：彻底物理移除 Gemini 不支持的内容，防止 400 错误
+            let allowed_fields = std::collections::HashSet::from([
+                "type",
+                "description",
+                "properties",
+                "required",
+                "items",
+                "enum",
+                "title",
+            ]);
+            let keys_to_remove: Vec<String> = map
+                .keys()
+                .filter(|k| !allowed_fields.contains(k.as_str()))
+                .cloned()
+                .collect();
+            for k in keys_to_remove {
+                map.remove(&k);
             }
 
-            // [NEW FIX] 确保 required 中的字段一定在 properties 中存在
-            // Gemini 严格校验：required 中的字段如果不在 properties 中定义，会报 INVALID_ARGUMENT
-            // Refactored to avoid double borrow (mutable map vs immutable get("properties"))
+            // 6. [SAFETY] 处理空 Object
+            if map.get("type").and_then(|t| t.as_str()) == Some("object") {
+                let has_props = map
+                    .get("properties")
+                    .and_then(|p| p.as_object())
+                    .map(|o| !o.is_empty())
+                    .unwrap_or(false);
+                if !has_props {
+                    map.insert("properties".to_string(), serde_json::json!({
+                        "reason": { "type": "string", "description": "Reason for calling this tool" }
+                    }));
+                    map.insert("required".to_string(), serde_json::json!(["reason"]));
+                }
+            }
+
+            // 7. [SAFETY] Required 字段对齐
             let valid_prop_keys: Option<std::collections::HashSet<String>> = map
                 .get("properties")
                 .and_then(|p| p.as_object())
@@ -187,94 +241,184 @@ fn clean_json_schema_recursive(value: &mut Value) {
             if let Some(required_val) = map.get_mut("required") {
                 if let Some(req_arr) = required_val.as_array_mut() {
                     if let Some(keys) = &valid_prop_keys {
-                        req_arr.retain(|k| {
-                            if let Some(k_str) = k.as_str() {
-                                keys.contains(k_str)
-                            } else {
-                                false
-                            }
-                        });
+                        req_arr.retain(|k| k.as_str().map(|s| keys.contains(s)).unwrap_or(false));
                     } else {
-                        // 如果没有 properties，required 应该是空的
                         req_arr.clear();
                     }
                 }
             }
 
-            // 6. 处理 type 字段 (Gemini 要求单字符串且小写)
+            // 8. 处理 type 字段
             if let Some(type_val) = map.get_mut("type") {
+                let mut selected_type = None;
                 match type_val {
                     Value::String(s) => {
-                        *type_val = Value::String(s.to_lowercase());
+                        let lower = s.to_lowercase();
+                        if lower == "null" {
+                            is_effectively_nullable = true;
+                        } else {
+                            selected_type = Some(lower);
+                        }
                     }
                     Value::Array(arr) => {
-                        let mut selected_type = "string".to_string();
                         for item in arr {
                             if let Value::String(s) = item {
-                                if s != "null" {
-                                    selected_type = s.to_lowercase();
-                                    break;
+                                let lower = s.to_lowercase();
+                                if lower == "null" {
+                                    is_effectively_nullable = true;
+                                } else if selected_type.is_none() {
+                                    selected_type = Some(lower);
                                 }
                             }
                         }
-                        *type_val = Value::String(selected_type);
                     }
                     _ => {}
                 }
+                *type_val = Value::String(selected_type.unwrap_or_else(|| "string".to_string()));
             }
 
-            // 7. [FIX #374] 确保 enum 值全部为字符串
-            // Gemini v1internal 严格要求 enum 数组中的所有元素必须是 TYPE_STRING
-            // MCP 工具定义可能包含数字或布尔值的 enum，需要转换
+            if is_effectively_nullable {
+                let desc_val = map
+                    .entry("description".to_string())
+                    .or_insert_with(|| Value::String("".to_string()));
+                if let Value::String(s) = desc_val {
+                    if !s.contains("nullable") {
+                        if !s.is_empty() {
+                            s.push(' ');
+                        }
+                        s.push_str("(nullable)");
+                    }
+                }
+            }
+
+            // 9. Enum 值强制转字符串
             if let Some(Value::Array(arr)) = map.get_mut("enum") {
-                for item in arr.iter_mut() {
-                    match item {
-                        Value::String(_) => {} // 已经是字符串，保持不变
-                        Value::Number(n) => {
-                            *item = Value::String(n.to_string());
-                        }
-                        Value::Bool(b) => {
-                            *item = Value::String(b.to_string());
-                        }
-                        Value::Null => {
-                            *item = Value::String("null".to_string());
-                        }
-                        _ => {
-                            // 复杂类型转为 JSON 字符串
-                            *item = Value::String(item.to_string());
-                        }
+                for item in arr {
+                    if !item.is_string() {
+                        *item = Value::String(if item.is_null() {
+                            "null".to_string()
+                        } else {
+                            item.to_string()
+                        });
                     }
                 }
             }
         }
-        Value::Array(arr) => {
-            for v in arr.iter_mut() {
-                clean_json_schema_recursive(v);
-            }
-        }
-        _ => {}
     }
+
+    is_effectively_nullable
 }
 
-/// [NEW] 从 anyOf/oneOf 联合类型数组中提取第一个非 null 类型
-///
-/// 例如：anyOf: [{"type": "string"}, {"type": "null"}] -> Some("string")
-/// 例如：anyOf: [{"type": "integer"}, {"type": "null"}] -> Some("integer")
-/// 例如：anyOf: [{"type": "null"}] -> None (只有 null)
-fn extract_type_from_union(union_array: &Vec<Value>) -> Option<String> {
-    for item in union_array {
-        if let Value::Object(obj) = item {
-            if let Some(Value::String(type_str)) = obj.get("type") {
-                // 跳过 null 类型，取第一个非 null 类型
-                if type_str != "null" {
-                    return Some(type_str.to_lowercase());
+/// [NEW] 合并 allOf 数组中的所有子 Schema
+fn merge_all_of(map: &mut serde_json::Map<String, Value>) {
+    if let Some(Value::Array(all_of)) = map.remove("allOf") {
+        let mut merged_properties = serde_json::Map::new();
+        let mut merged_required = std::collections::HashSet::new();
+        let mut other_fields = serde_json::Map::new();
+
+        for sub_schema in all_of {
+            if let Value::Object(sub_map) = sub_schema {
+                // 合并属性
+                if let Some(Value::Object(props)) = sub_map.get("properties") {
+                    for (k, v) in props {
+                        merged_properties.insert(k.clone(), v.clone());
+                    }
+                }
+
+                // 合并 required
+                if let Some(Value::Array(reqs)) = sub_map.get("required") {
+                    for req in reqs {
+                        if let Some(s) = req.as_str() {
+                            merged_required.insert(s.to_string());
+                        }
+                    }
+                }
+
+                // 合并其余字段 (第一个出现的胜出)
+                for (k, v) in sub_map {
+                    if k != "properties"
+                        && k != "required"
+                        && k != "allOf"
+                        && !other_fields.contains_key(&k)
+                    {
+                        other_fields.insert(k, v);
+                    }
+                }
+            }
+        }
+
+        // 应用合并后的字段
+        for (k, v) in other_fields {
+            if !map.contains_key(&k) {
+                map.insert(k, v);
+            }
+        }
+
+        if !merged_properties.is_empty() {
+            let existing_props = map
+                .entry("properties".to_string())
+                .or_insert_with(|| Value::Object(serde_json::Map::new()));
+            if let Value::Object(existing_map) = existing_props {
+                for (k, v) in merged_properties {
+                    existing_map.entry(k).or_insert(v);
+                }
+            }
+        }
+
+        if !merged_required.is_empty() {
+            let existing_reqs = map
+                .entry("required".to_string())
+                .or_insert_with(|| Value::Array(Vec::new()));
+            if let Value::Array(req_arr) = existing_reqs {
+                let mut current_reqs: std::collections::HashSet<String> = req_arr
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect();
+                for req in merged_required {
+                    if current_reqs.insert(req.clone()) {
+                        req_arr.push(Value::String(req));
+                    }
                 }
             }
         }
     }
-    // 如果所有都是 null 或无法提取，返回 None
-    // 调用者可以决定是否设置默认类型
-    None
+}
+
+/// [NEW] 计算 Schema 分支的复杂度得分 (用于 anyOf/oneOf 择优)
+/// 评分标准: Object (3) > Array (2) > Scalar (1) > Null (0)
+fn score_schema_option(val: &Value) -> i32 {
+    if let Value::Object(obj) = val {
+        if obj.contains_key("properties")
+            || obj.get("type").and_then(|t| t.as_str()) == Some("object")
+        {
+            return 3;
+        }
+        if obj.contains_key("items") || obj.get("type").and_then(|t| t.as_str()) == Some("array") {
+            return 2;
+        }
+        if let Some(type_str) = obj.get("type").and_then(|t| t.as_str()) {
+            if type_str != "null" {
+                return 1;
+            }
+        }
+    }
+    0
+}
+
+/// [NEW] 从 anyOf/oneOf 联合类型数组中选取最佳非 null Schema 分支
+fn extract_best_schema_from_union(union_array: &Vec<Value>) -> Option<Value> {
+    let mut best_option: Option<&Value> = None;
+    let mut best_score = -1;
+
+    for item in union_array {
+        let score = score_schema_option(item);
+        if score > best_score {
+            best_score = score;
+            best_option = Some(item);
+        }
+    }
+
+    best_option.cloned()
 }
 
 #[cfg(test)]
@@ -314,18 +458,19 @@ mod tests {
         assert_eq!(schema["type"], "object");
         assert_eq!(schema["properties"]["location"]["type"], "string");
 
-        // 2. 验证标准字段被转换并移动到描述 (Advanced Soft-Remove)
+        // 2. 验证标准字段被移除并转为描述 (Robust Constraint Migration)
         assert!(schema["properties"]["location"].get("minLength").is_none());
+        assert!(schema["properties"]["location"].get("format").is_none());
         assert!(schema["properties"]["location"]["description"]
             .as_str()
             .unwrap()
-            .contains("minLen: 1"));
+            .contains("[Constraint: minLen: 1, format: city]"));
 
         // 3. 验证名为 "pattern" 的属性未被误删
         assert!(schema["properties"].get("pattern").is_some());
         assert_eq!(schema["properties"]["pattern"]["type"], "object");
 
-        // 4. 验证内部的 pattern 校验字段被正确移除并转为描述
+        // 4. 验证内部的 pattern 校验字段被移除并转为描述
         assert!(schema["properties"]["pattern"]["properties"]["regex"]
             .get("pattern")
             .is_none());
@@ -333,7 +478,7 @@ mod tests {
             schema["properties"]["pattern"]["properties"]["regex"]["description"]
                 .as_str()
                 .unwrap()
-                .contains("pattern: ^[a-z]+$")
+                .contains("[Constraint: pattern: ^[a-z]+$]")
         );
 
         // 5. 验证联合类型被降级为单一类型 (Protobuf 兼容性)
@@ -441,7 +586,7 @@ mod tests {
         assert_eq!(schema["properties"]["importo"]["type"], "number");
         assert_eq!(schema["properties"]["attivo"]["type"], "boolean");
 
-        // 验证 default 被移除
+        // 验证 default 被移除 (白名单之外)
         assert!(schema["properties"]["testo"].get("default").is_none());
     }
 
@@ -484,5 +629,94 @@ mod tests {
         // type 已存在，不应被 anyOf 中的类型覆盖
         assert_eq!(schema["properties"]["name"]["type"], "string");
         assert!(schema["properties"]["name"].get("anyOf").is_none());
+    }
+
+    // [NEW TEST] 验证 Issue #815: anyOf 内部属性不丢失
+    #[test]
+    fn test_issue_815_anyof_properties_preserved() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "config": {
+                    "anyOf": [
+                        {
+                            "type": "object",
+                            "properties": {
+                                "path": { "type": "string" },
+                                "recursive": { "type": "boolean" }
+                            },
+                            "required": ["path"]
+                        },
+                        { "type": "null" }
+                    ]
+                }
+            }
+        });
+
+        clean_json_schema(&mut schema);
+
+        let config = &schema["properties"]["config"];
+
+        // 1. 验证类型被提取
+        assert_eq!(config["type"], "object");
+
+        // 2. 验证 anyOf 内部的 properties 被合并上来了
+        assert!(config.get("properties").is_some());
+        assert_eq!(config["properties"]["path"]["type"], "string");
+        assert_eq!(config["properties"]["recursive"]["type"], "boolean");
+
+        // 3. 验证 required 被合并上来了
+        let req = config["required"].as_array().unwrap();
+        assert!(req.iter().any(|v| v == "path"));
+
+        // 4. 验证 anyOf 字段本身被移除
+        assert!(config.get("anyOf").is_none());
+
+        // 5. 验证没有因为“空”而注入 reason (因为我们保留了属性)
+        assert!(config["properties"].get("reason").is_none());
+    }
+
+    // [NEW TEST] 验证安全检查：不应处理非 Schema 对象（保护工具调用）
+    #[test]
+    fn test_clean_json_schema_on_non_schema_object() {
+        // 模拟 request.rs 中转换了一半的 functionCall 对象
+        let mut tool_call = json!({
+            "functionCall": {
+                "name": "local_shell_call",
+                "args": { "command": ["ls"] },
+                "id": "call_123"
+            }
+        });
+
+        // 调用清洗逻辑
+        clean_json_schema(&mut tool_call);
+
+        // 验证：这些非 Schema 字段不应被移除（因为不符合 looks_like_schema 判定）
+        let fc = &tool_call["functionCall"];
+        assert_eq!(fc["name"], "local_shell_call");
+        assert_eq!(fc["args"]["command"][0], "ls");
+        assert_eq!(fc["id"], "call_123");
+    }
+
+    // [NEW TEST] 验证 Nullable 处理
+    #[test]
+    fn test_nullable_handling_with_description() {
+        let mut schema = json!({
+            "type": ["string", "null"],
+            "description": "User name"
+        });
+
+        clean_json_schema(&mut schema);
+
+        // 验证 type 被降级，且描述被追加 (nullable)
+        assert_eq!(schema["type"], "string");
+        assert!(schema["description"]
+            .as_str()
+            .unwrap()
+            .contains("User name"));
+        assert!(schema["description"]
+            .as_str()
+            .unwrap()
+            .contains("(nullable)"));
     }
 }

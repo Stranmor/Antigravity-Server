@@ -126,3 +126,77 @@ cargo build --release -p antigravity-server    # ✅ builds (2m 38s, 10.4MB)
 - `monitor`, `project_resolver`, `prometheus`, `providers`, `rate_limit`, `security`
 - `server`, `session_manager`, `signature_cache`, `smart_prober`, `sticky_config`
 - `token_manager`, `upstream`, `warp_isolation`, `zai_vision_mcp`, `zai_vision_tools`
+
+---
+
+## 🔀 UPSTREAM SYNC ARCHITECTURE [2026-01-18]
+
+### Fork Strategy
+
+This fork uses **SEMANTIC PORTING** — we don't blindly copy upstream files, we selectively integrate useful changes while maintaining our own improvements.
+
+### Upstream Reference
+
+- **Location:** `vendor/antigravity-upstream/` (git submodule)
+- **Upstream repo:** https://github.com/lbjlaq/Antigravity-Manager
+- **Current upstream:** v3.3.43
+- **Our version:** v3.3.20 (with custom improvements)
+
+### Intentional Divergences
+
+| File | Lines Diff | Reason |
+|------|------------|--------|
+| `handlers/claude.rs` | ~1500 | **OUR ADDITIONS:** AIMD rate limiting, resilience patterns, Axum-specific handlers, circuit breakers |
+| `mappers/claude/*.rs` | ~200 | Format differences + our clippy fixes (Rust 1.92 compliance) |
+| `mappers/openai/request.rs` | ~100 | **OUR ADDITION:** `tool_result_compressor` for OpenAI endpoint (upstream only has it for Claude) |
+| `common/json_schema.rs` | ~20 | Clippy fixes (collapsible_match, etc.) |
+
+### What We Port From Upstream
+
+✅ **ALWAYS PORT:**
+- Bug fixes in protocol transformation logic
+- New model support (thinking models, signatures)
+- JSON Schema improvements (flatten_refs, merge_all_of)
+- Security fixes (auth headers, validation)
+
+❌ **NEVER PORT:**
+- UI/React code (we use Leptos)
+- Tauri-specific code (we use headless Axum)
+- Changes that conflict with our resilience layer
+
+### Sync Workflow
+
+```bash
+# 1. Update submodule
+cd vendor/antigravity-upstream
+git fetch origin && git checkout origin/main
+cd ../..
+
+# 2. Check what changed in proxy/
+git diff HEAD@{1}..HEAD -- vendor/antigravity-upstream/src-tauri/src/proxy/
+
+# 3. Manually port useful changes to our crates/antigravity-core/src/proxy/
+# 4. Run clippy + tests
+cargo clippy --workspace -- -D warnings
+cargo test -p antigravity-core --lib
+
+# 5. Commit
+git add . && git commit -m "chore: sync upstream v3.3.XX changes"
+```
+
+### Last Sync: 2026-01-18
+
+**Ported from v3.3.43:**
+- Shell command array fix (`local_shell_call` command → array)
+- Thinking model signature handling (`skip_thought_signature_validator`)
+- `clean_json_schema` for function call args
+- `x-goog-api-key` header support in auth middleware
+- Full `json_schema.rs` update (flatten_refs, merge_all_of, score_schema_option)
+- `maxOutputTokens` default 64000 → 16384
+
+**Our additions (not in upstream):**
+- `tool_result_compressor` in OpenAI mapper (upstream only has it for Claude)
+- AIMD predictive rate limiting
+- Circuit breakers per account
+- Prometheus metrics endpoint
+- Resilience API endpoints

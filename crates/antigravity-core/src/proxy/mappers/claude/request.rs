@@ -251,6 +251,54 @@ fn sort_thinking_blocks_first(messages: &mut [Message]) {
     }
 }
 
+/// [FIX #813] 合并 ClaudeRequest 中连续的同角色消息
+///
+/// 场景: 当从 Spec/Plan 模式切换回编码模式时，可能出现连续两条 "user" 消息
+/// (一条是 ToolResult，一条是 <system-reminder>)。
+/// 这会违反角色交替规则，导致 400 报错。
+pub fn merge_consecutive_messages(messages: &mut Vec<Message>) {
+    if messages.len() <= 1 {
+        return;
+    }
+
+    let mut merged: Vec<Message> = Vec::with_capacity(messages.len());
+    let old_messages = std::mem::take(messages);
+    let mut messages_iter = old_messages.into_iter();
+
+    if let Some(mut current) = messages_iter.next() {
+        for next in messages_iter {
+            if current.role == next.role {
+                // 合并内容
+                match (&mut current.content, next.content) {
+                    (MessageContent::Array(current_blocks), MessageContent::Array(next_blocks)) => {
+                        current_blocks.extend(next_blocks);
+                    }
+                    (MessageContent::Array(current_blocks), MessageContent::String(next_text)) => {
+                        current_blocks.push(ContentBlock::Text { text: next_text });
+                    }
+                    (MessageContent::String(current_text), MessageContent::String(next_text)) => {
+                        *current_text = format!("{}\n\n{}", current_text, next_text);
+                    }
+                    (MessageContent::String(current_text), MessageContent::Array(next_blocks)) => {
+                        let mut new_blocks = vec![ContentBlock::Text {
+                            text: current_text.clone(),
+                        }];
+                        new_blocks.extend(next_blocks);
+                        current.content = MessageContent::Array(new_blocks);
+                    }
+                }
+                tracing::debug!("[FIX #813] Merged consecutive {:?} messages", current.role);
+            } else {
+                merged.push(current);
+                current = next;
+            }
+        }
+        merged.push(current);
+    }
+
+    *messages = merged;
+}
+
 /// 转换 Claude 请求为 Gemini v1internal 格式
 /// [FIX #709] Reorder serialized Gemini parts to ensure thinking blocks are first
 fn reorder_gemini_parts(parts: &mut Vec<Value>) {
@@ -292,6 +340,11 @@ pub fn transform_claude_request_in(
     // 这解决了 VS Code 插件等客户端在多轮对话中将历史消息的 cache_control 字段
     // 原封不动发回导致的 "Extra inputs are not permitted" 错误
     let mut cleaned_req = claude_req.clone();
+
+    // [FIX #813] 合并连续的同角色消息 (Consecutive User Messages)
+    // 确保请求符合 Anthropic 和 Gemini 的角色交替协议
+    merge_consecutive_messages(&mut cleaned_req.messages);
+
     clean_cache_control_from_messages(&mut cleaned_req.messages);
 
     // [FIX #564] Pre-sort thinking blocks to be first in assistant messages
@@ -403,7 +456,9 @@ pub fn transform_claude_request_in(
     if is_thinking_enabled {
         let should_disable = should_disable_thinking_due_to_history(&claude_req.messages);
         if should_disable {
-            tracing::warn!("[Thinking-Mode] Automatically disabling thinking checks due to incompatible tool-use history (mixed application)");
+            tracing::warn!(
+                "[Thinking-Mode] Automatically disabling thinking checks due to incompatible tool-use history (mixed application)"
+            );
             is_thinking_enabled = false;
         }
     }
@@ -579,7 +634,9 @@ fn should_disable_thinking_due_to_history(messages: &[Message]) -> bool {
 
                 // 如果有工具调用，但没有 Thinking 块 -> 不兼容
                 if has_tool_use && !has_thinking {
-                    tracing::info!("[Thinking-Mode] Detected ToolUse without Thinking in history. Requesting disable.");
+                    tracing::info!(
+                        "[Thinking-Mode] Detected ToolUse without Thinking in history. Requesting disable."
+                    );
                     return true;
                 }
             }
@@ -701,10 +758,16 @@ fn build_system_instruction(
                     // 提取用户自定义指令部分
                     if let Some(idx) = text.find("Instructions from:") {
                         let custom_part = &text[idx..];
-                        tracing::info!("[Claude-Request] Extracted custom instructions (len: {}), filtered default prompt", custom_part.len());
+                        tracing::info!(
+                            "[Claude-Request] Extracted custom instructions (len: {}), filtered default prompt",
+                            custom_part.len()
+                        );
                         parts.push(json!({"text": custom_part}));
                     } else {
-                        tracing::info!("[Claude-Request] Filtering out OpenCode default system instruction (len: {})", text.len());
+                        tracing::info!(
+                            "[Claude-Request] Filtering out OpenCode default system instruction (len: {})",
+                            text.len()
+                        );
                     }
                 } else {
                     parts.push(json!({"text": text}));
@@ -717,10 +780,16 @@ fn build_system_instruction(
                         if block.text.contains("You are an interactive CLI tool") {
                             if let Some(idx) = block.text.find("Instructions from:") {
                                 let custom_part = &block.text[idx..];
-                                tracing::info!("[Claude-Request] Extracted custom instructions from block (len: {})", custom_part.len());
+                                tracing::info!(
+                                    "[Claude-Request] Extracted custom instructions from block (len: {})",
+                                    custom_part.len()
+                                );
                                 parts.push(json!({"text": custom_part}));
                             } else {
-                                tracing::info!("[Claude-Request] Filtering out OpenCode default system block (len: {})", block.text.len());
+                                tracing::info!(
+                                    "[Claude-Request] Filtering out OpenCode default system block (len: {})",
+                                    block.text.len()
+                                );
                             }
                         } else {
                             parts.push(json!({"text": block.text}));
@@ -795,7 +864,10 @@ fn build_contents(
             // it means the previous turn was interrupted or the user ignored the tool.
             // We MUST inject a synthetic User message with error results to close the loop.
             if !pending_tool_use_ids.is_empty() {
-                tracing::warn!("[Elastic-Recovery] Detected interrupted tool chain (Assistant -> Assistant). Injecting synthetic User message for IDs: {:?}", pending_tool_use_ids);
+                tracing::warn!(
+                    "[Elastic-Recovery] Detected interrupted tool chain (Assistant -> Assistant). Injecting synthetic User message for IDs: {:?}",
+                    pending_tool_use_ids
+                );
 
                 let synthetic_parts: Vec<serde_json::Value> = pending_tool_use_ids
                     .iter()
@@ -857,7 +929,10 @@ fn build_contents(
                                         if !current_normalized.is_empty()
                                             && current_normalized == *last_task
                                         {
-                                            tracing::info!("[Claude-Request] Dropping duplicated task text echo (len: {})", text.len());
+                                            tracing::info!(
+                                                "[Claude-Request] Dropping duplicated task text echo (len: {})",
+                                                text.len()
+                                            );
                                             continue;
                                         }
                                     }
@@ -887,7 +962,10 @@ fn build_contents(
                             // [HOTFIX] Gemini Protocol Enforcement: Thinking block MUST be the first block.
                             // If we already have content (like Text), we must downgrade this thinking block to Text.
                             if saw_non_thinking || !parts.is_empty() {
-                                tracing::warn!("[Claude-Request] Thinking block found at non-zero index (prev parts: {}). Downgrading to Text.", parts.len());
+                                tracing::warn!(
+                                    "[Claude-Request] Thinking block found at non-zero index (prev parts: {}). Downgrading to Text.",
+                                    parts.len()
+                                );
                                 if !thinking.is_empty() {
                                     parts.push(json!({
                                         "text": thinking
@@ -900,7 +978,9 @@ fn build_contents(
                             // [FIX] If thinking is disabled (smart downgrade), convert ALL thinking blocks to text
                             // to avoid "thinking is disabled but message contains thinking" error
                             if !is_thinking_enabled {
-                                tracing::warn!("[Claude-Request] Thinking disabled. Downgrading thinking block to text.");
+                                tracing::warn!(
+                                    "[Claude-Request] Thinking disabled. Downgrading thinking block to text."
+                                );
                                 if !thinking.is_empty() {
                                     parts.push(json!({
                                         "text": thinking
@@ -912,7 +992,9 @@ fn build_contents(
                             // [FIX] Empty thinking blocks cause "Field required" errors.
                             // We downgrade them to Text to avoid structural errors and signature mismatch.
                             if thinking.is_empty() {
-                                tracing::warn!("[Claude-Request] Empty thinking block detected. Downgrading to Text.");
+                                tracing::warn!(
+                                    "[Claude-Request] Empty thinking block detected. Downgrading to Text."
+                                );
                                 parts.push(json!({
                                     "text": "..."
                                 }));
@@ -931,7 +1013,8 @@ fn build_contents(
                                         if !is_model_compatible(&family, mapped_model) {
                                             tracing::warn!(
                                                 "[Thinking-Signature] Incompatible signature (Family: {}, Target: {}). Downgrading to text.",
-                                                family, mapped_model
+                                                family,
+                                                mapped_model
                                             );
                                             parts.push(json!({"text": thinking}));
                                             saw_non_thinking = true;
@@ -962,7 +1045,9 @@ fn build_contents(
                                 }
                             } else {
                                 // No signature: downgrade to text
-                                tracing::warn!("[Thinking-Signature] No signature provided. Downgrading to text.");
+                                tracing::warn!(
+                                    "[Thinking-Signature] No signature provided. Downgrading to text."
+                                );
                                 parts.push(json!({"text": thinking}));
                                 saw_non_thinking = true;
                             }
@@ -1079,7 +1164,9 @@ fn build_contents(
                                             } else {
                                                 tracing::warn!(
                                                     "[Tool-Signature] Incompatible signature for tool_use: {} (Family: {}, Target: {})",
-                                                    id, family, mapped_model
+                                                    id,
+                                                    family,
+                                                    mapped_model
                                                 );
                                                 false
                                             }
@@ -1089,7 +1176,8 @@ fn build_contents(
                                             if is_thinking_enabled {
                                                 tracing::warn!(
                                                     "[Tool-Signature] Unknown signature origin for tool_use: {} (len: {}). Dropping in thinking mode.",
-                                                    id, sig.len()
+                                                    id,
+                                                    sig.len()
                                                 );
                                                 false
                                             } else {
@@ -1105,7 +1193,8 @@ fn build_contents(
                                 } else {
                                     tracing::warn!(
                                         "[Tool-Signature] Signature too short for tool_use: {} (len: {})",
-                                        id, sig.len()
+                                        id,
+                                        sig.len()
                                     );
                                 }
                             }
@@ -1226,7 +1315,11 @@ fn build_contents(
                 .collect();
 
             if !missing_ids.is_empty() {
-                tracing::warn!("[Elastic-Recovery] Injecting {} missing tool results into User message (IDs: {:?})", missing_ids.len(), missing_ids);
+                tracing::warn!(
+                    "[Elastic-Recovery] Injecting {} missing tool results into User message (IDs: {:?})",
+                    missing_ids.len(),
+                    missing_ids
+                );
                 for id in missing_ids.iter().rev() {
                     // Insert in reverse order to maintain order at index 0? No, just insert at 0.
                     let name = tool_id_to_name.get(id).cloned().unwrap_or(id.clone());
@@ -1287,7 +1380,10 @@ fn build_contents(
                             "thought": true
                         }),
                     );
-                    tracing::debug!("First part of model message at {} is not a valid thought block. Prepending dummy.", contents.len());
+                    tracing::debug!(
+                        "First part of model message at {} is not a valid thought block. Prepending dummy.",
+                        contents.len()
+                    );
                 } else {
                     // 确保首项包含了 thought: true (防止只有 signature 的情况)
                     if let Some(p0) = parts.get_mut(0) {
