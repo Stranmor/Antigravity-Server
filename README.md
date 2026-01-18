@@ -12,7 +12,7 @@
 [![Axum](https://img.shields.io/badge/Axum-Server-3B82F6?style=for-the-badge)](https://github.com/tokio-rs/axum)
 [![License](https://img.shields.io/badge/License-CC--BY--NC--SA--4.0-gray?style=for-the-badge)](LICENSE)
 
-**English** | [Upstream 中文](https://github.com/lbjlaq/Antigravity-Manager)
+**English** | [Русский](README_RU.md) | [Upstream 中文](https://github.com/lbjlaq/Antigravity-Manager)
 
 ---
 
