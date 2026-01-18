@@ -23,7 +23,7 @@ pub fn Sidebar() -> impl IntoView {
                     <span class="logo-icon">"🚀"</span>
                     <span class="logo-text">"Antigravity"</span>
                 </div>
-                <span class="version">{format!("v{}", VERSION)}</span>
+                <span class="version">{VERSION}</span>
             </div>
 
             <nav class="sidebar-nav">
