@@ -704,21 +704,77 @@ pub async fn handle_messages(
                     context_limit,
                 );
 
-                // [FIX #530/#529] Peek first chunk to detect empty response and allow retry
-                // If the stream is empty or fails immediately, we should retry instead of sending 200 OK + empty body
-                let first_chunk = claude_stream.next().await;
+                // [FIX #530/#529/#859] Enhanced Peek logic to handle heartbeats and slow start
+                // We must pre-read until we find a MEANINGFUL content block (like message_start).
+                // If we only get heartbeats (ping) and then the stream dies, we should rotate account.
+                let mut first_data_chunk = None;
+                let mut retry_this_account = false;
 
-                match first_chunk {
-                    Some(Ok(bytes)) => {
-                        if bytes.is_empty() {
+                // Loop to skip heartbeats during peek
+                loop {
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(60),
+                        claude_stream.next(),
+                    )
+                    .await
+                    {
+                        Ok(Some(Ok(bytes))) => {
+                            if bytes.is_empty() {
+                                continue;
+                            }
+
+                            let text = String::from_utf8_lossy(&bytes);
+                            // Skip SSE comments/pings (heartbeats start with ":")
+                            if text.trim().starts_with(':') {
+                                tracing::debug!(
+                                    "[{}] Skipping peek heartbeat: {}",
+                                    trace_id,
+                                    text.trim()
+                                );
+                                continue;
+                            }
+
+                            // We found real data!
+                            first_data_chunk = Some(bytes);
+                            break;
+                        }
+                        Ok(Some(Err(e))) => {
                             tracing::warn!(
-                                "[{}] Empty first chunk received, treating as Empty Response and retrying...",
+                                "[{}] Stream error during peek: {}, retrying...",
+                                trace_id,
+                                e
+                            );
+                            last_error = format!("Stream error during peek: {}", e);
+                            retry_this_account = true;
+                            break;
+                        }
+                        Ok(None) => {
+                            tracing::warn!(
+                                "[{}] Stream ended during peek (Empty Response), retrying...",
                                 trace_id
                             );
-                            last_error = "Empty response stream (0 bytes)".to_string();
-                            continue;
+                            last_error = "Empty response stream during peek".to_string();
+                            retry_this_account = true;
+                            break;
                         }
+                        Err(_) => {
+                            tracing::warn!(
+                                "[{}] Timeout waiting for first data (60s), retrying...",
+                                trace_id
+                            );
+                            last_error = "Timeout waiting for first data".to_string();
+                            retry_this_account = true;
+                            break;
+                        }
+                    }
+                }
 
+                if retry_this_account {
+                    continue;
+                }
+
+                match first_data_chunk {
+                    Some(bytes) => {
                         // We have data! Construct the combined stream
                         let stream_rest = claude_stream;
                         let combined_stream =
@@ -784,21 +840,13 @@ pub async fn handle_messages(
                             }
                         }
                     }
-                    Some(Err(e)) => {
-                        tracing::warn!(
-                            "[{}] Stream error on first chunk: {}, retrying...",
-                            trace_id,
-                            e
-                        );
-                        last_error = format!("Stream error: {}", e);
-                        continue;
-                    }
                     None => {
+                        // This shouldn't happen as peek loop handles it, but keep for safety
                         tracing::warn!(
-                            "[{}] Stream ended immediately (Empty Response), retrying...",
+                            "[{}] No data after peek loop (should not happen), retrying...",
                             trace_id
                         );
-                        last_error = "Empty response stream (None)".to_string();
+                        last_error = "Empty response after peek".to_string();
                         continue;
                     }
                 }
