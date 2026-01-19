@@ -1,0 +1,22 @@
+[package]
+name = "antigravity-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Rust SDK for Antigravity Manager API with auto-discovery and retry logic"
+
+[dependencies]
+tokio.workspace = true
+tokio-stream.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+futures.workspace = true
+async-stream.workspace = true
+bytes.workspace = true
+pin-project.workspace = true
+
+dirs = "5.0"

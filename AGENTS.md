@@ -46,6 +46,11 @@ crates/
 │       ├── models/mod.rs       # re-exports from types
 │       ├── proxy/config.rs     # re-exports from types
 │       └── utils/              # HTTP utilities (re-export UpstreamProxyConfig)
+├── antigravity-client/         # 🟣 RUST SDK (auto-discovery, retry, streaming)
+│   └── src/
+│       ├── client.rs           # AntigravityClient with auto_discover()
+│       ├── error.rs            # ClientError enum
+│       └── types.rs            # ChatRequest, ChatResponse, StreamChunk
 ├── antigravity-core/           # 🟢 BUSINESS LOGIC (all clippy-clean!)
 │   └── src/proxy/
 │       └── 23 modules          # ALL modules now clippy-clean
@@ -71,6 +76,8 @@ vendor/
 - [ ] **Phase 4:** VPS deployment (optional)
 - [ ] **Phase 5:** Extract `antigravity-proxy` crate (optional cleanup)
 - [x] **Phase 6:** CLI Management — full headless control without Web UI ✅ [2026-01-19]
+- [x] **Phase 7:** Rust SDK (`antigravity-client`) — auto-discovery, retry, streaming ✅ [2026-01-19]
+- [x] **Phase 7b:** Account auto-sync (60s interval) ✅ [2026-01-19]
 
 ---
 
@@ -185,7 +192,17 @@ cargo test -p antigravity-core --lib
 git add . && git commit -m "chore: sync upstream v3.3.XX changes"
 ```
 
-### Last Sync: 2026-01-18
+### Last Sync: 2026-01-19
+
+**Ported from v3.3.45:**
+- **ContextManager module** — Dynamic Thinking Stripping to prevent "Prompt is too long" and "Invalid signature" errors
+  - `PurificationStrategy::None | Soft | Aggressive`
+  - Token estimation based on 3.5 chars/token
+  - Purifies history by removing old thinking blocks
+- **SSE Peek Fix (Issue #859)** — Enhanced peek logic with:
+  - Loop to skip heartbeat SSE comments (`:` prefix)
+  - 60s timeout for first meaningful data
+  - Retry on empty response or timeout during peek phase
 
 **Ported from v3.3.43:**
 - Shell command array fix (`local_shell_call` command → array)
