@@ -213,6 +213,64 @@ git add . && git commit -m "chore: sync upstream v3.3.XX changes"
 - Prometheus metrics endpoint
 - Resilience API endpoints
 - WARP proxy support for per-account IP isolation (`call_v1_internal_with_warp`)
+- **Sticky session rebind on 429** — preserves prompt cache after rate limit failover (see below)
+
+---
+
+## ✅ FIX: Sticky Session Rebind on 429 [2026-01-19]
+
+### The Problem (Both Upstream & Fork Had This Bug)
+
+When a 429 rate limit triggers account switch, the session was NOT rebound to the new account:
+
+```
+1. Session X → Account A (bound via session_accounts map)
+2. Request fails with 429 → token_manager switches to Account B
+3. Session X still bound to Account A (BUG!)
+4. Next request → system might return to Account A (if recovered)
+5. Result: Prompt cache broken on BOTH accounts
+```
+
+Google caches prompts per `project_id`. Each account has unique project (e.g., `optimum-cell-kvmxc`, `original-diagram-4l9f4`). Switching back and forth destroys cache continuity.
+
+### The Fix
+
+Added central rebind logic in `token_manager.rs` (lines 651-671) after token selection:
+
+```rust
+// After token is selected, ensure session is bound to it
+if let Some(sid) = session_id {
+    if scheduling.mode != SchedulingMode::PerformanceFirst {
+        let current_binding = self.session_accounts.get(sid).map(|v| v.clone());
+        if current_binding.as_ref() != Some(&token.account_id) {
+            self.session_accounts.insert(sid.to_string(), token.account_id.clone());
+            tracing::debug!(
+                "[Session Rebind] {} rebound: {:?} → {}",
+                sid, current_binding, token.account_id
+            );
+        }
+    }
+}
+```
+
+This covers ALL token selection paths:
+- **Mode A (Cache First):** Existing binding → fallback on 429 → rebind
+- **Mode B (Balance):** Least-used selection → rebind if different
+- **Mode C (Rotation):** Round-robin → rebind on each request
+- **60s optimistic reset:** When rate limit expires → rebind to recovered account
+
+### Why This Matters
+
+- **Prompt cache preserved:** Session stays on new account, cache builds there
+- **No ping-pong:** Session doesn't return to original account after 429
+- **Upstream still has this bug:** They don't rebind after failover
+
+### Verification
+
+```bash
+# Watch for rebind logs
+journalctl --user -u antigravity-manager -f | grep "Session Rebind"
+```
 
 ---
 
