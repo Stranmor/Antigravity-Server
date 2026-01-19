@@ -4,6 +4,7 @@ use crate::api::commands;
 use crate::app::AppState;
 use crate::components::{Button, ButtonVariant, StatsCard};
 use crate::types::DashboardStats;
+use crate::utils::{format_time_remaining, get_time_remaining_color};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
@@ -290,12 +291,14 @@ pub fn Dashboard() -> impl IntoView {
                                     state.current_account_id.get() == Some(account_id.clone())
                                 });
 
-                                let max_quota = account.quota.as_ref().map(|q| {
+                                let best_model = account.quota.as_ref().and_then(|q| {
                                     q.models.iter()
-                                        .map(|m| m.percentage)
-                                        .max()
-                                        .unwrap_or(0)
-                                }).unwrap_or(0);
+                                        .max_by_key(|m| m.percentage)
+                                });
+                                let max_quota = best_model.map(|m| m.percentage).unwrap_or(0);
+                                let reset_time = best_model
+                                    .map(|m| m.reset_time.clone())
+                                    .unwrap_or_default();
 
                                 let tier = account.quota.as_ref()
                                     .and_then(|q| q.subscription_tier.clone())
@@ -314,6 +317,17 @@ pub fn Dashboard() -> impl IntoView {
                                         </div>
                                         <div class="quota-info">
                                             <span class="quota-value">{max_quota}"%"</span>
+                                            {if !reset_time.is_empty() {
+                                                let color_class = format!("reset-time--{}", get_time_remaining_color(&reset_time));
+                                                let formatted = format_time_remaining(&reset_time);
+                                                Some(view! {
+                                                    <span class=format!("quota-reset {}", color_class)>
+                                                        "⏱ "{formatted}
+                                                    </span>
+                                                })
+                                            } else {
+                                                None
+                                            }}
                                             <button
                                                 class="btn btn--icon btn--sm"
                                                 title="Switch"
