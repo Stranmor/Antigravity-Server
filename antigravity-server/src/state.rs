@@ -129,6 +129,10 @@ impl AppState {
         self.inner.proxy_config.read().await.port
     }
 
+    pub async fn get_proxy_bind_address(&self) -> String {
+        self.inner.proxy_config.read().await.get_bind_address()
+    }
+
     pub async fn get_proxy_stats(&self) -> antigravity_shared::models::ProxyStats {
         self.inner.monitor.get_stats().await
     }

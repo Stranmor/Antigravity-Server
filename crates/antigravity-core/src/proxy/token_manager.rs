@@ -639,6 +639,26 @@ impl TokenManager {
                 }
             };
 
+            // 【FIX】Ensure session is always bound to the selected account
+            // This covers all selection paths: rotation, fallback, optimistic reset
+            if let Some(sid) = session_id {
+                if scheduling.mode != SchedulingMode::PerformanceFirst {
+                    let current_binding = self.session_accounts.get(sid).map(|v| v.clone());
+                    if current_binding.as_ref() != Some(&token.account_id) {
+                        self.session_accounts
+                            .insert(sid.to_string(), token.account_id.clone());
+                        if current_binding.is_some() {
+                            tracing::info!(
+                                "Sticky Session: Rebound session {} from {} to {} (cache continuity)",
+                                sid,
+                                current_binding.unwrap_or_default(),
+                                token.email
+                            );
+                        }
+                    }
+                }
+            }
+
             // 3. 检查 token 是否过期（提前5分钟刷新）
             let now = chrono::Utc::now().timestamp();
             if now >= token.timestamp - 300 {

@@ -146,6 +146,7 @@ pub mod commands {
         /// Convert to full Account type for UI compatibility
         pub fn into_account(self) -> Account {
             use antigravity_shared::models::TokenData;
+            use std::collections::HashSet;
 
             Account {
                 id: self.id,
@@ -159,6 +160,7 @@ pub mod commands {
                 proxy_disabled: self.proxy_disabled,
                 proxy_disabled_reason: None,
                 proxy_disabled_at: None,
+                protected_models: HashSet::new(),
                 created_at: 0,
                 last_used: 0,
             }

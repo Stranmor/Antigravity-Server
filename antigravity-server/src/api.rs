@@ -494,11 +494,12 @@ struct ProxyStatusResponse {
 
 async fn get_proxy_status(State(state): State<AppState>) -> Json<ProxyStatusResponse> {
     let port = state.get_proxy_port().await;
+    let bind_addr = state.get_proxy_bind_address().await;
 
     Json(ProxyStatusResponse {
         running: true, // Always running on same port
         port,
-        base_url: format!("http://127.0.0.1:{}", port),
+        base_url: format!("http://{}:{}", bind_addr, port),
         active_accounts: state.get_token_manager_count(),
     })
 }

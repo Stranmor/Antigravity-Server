@@ -2,6 +2,7 @@
 
 use super::{QuotaData, TokenData};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// Account data structure representing a user's API account.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -34,6 +35,9 @@ pub struct Account {
     /// Timestamp when proxy was disabled
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_disabled_at: Option<i64>,
+    /// Models protected by quota protection (disabled for this account due to low quota)
+    #[serde(default, skip_serializing_if = "HashSet::is_empty")]
+    pub protected_models: HashSet<String>,
     /// Timestamp when account was created
     pub created_at: i64,
     /// Timestamp when account was last used
@@ -56,6 +60,7 @@ impl Account {
             proxy_disabled: false,
             proxy_disabled_reason: None,
             proxy_disabled_at: None,
+            protected_models: HashSet::new(),
             created_at: now,
             last_used: now,
         }
@@ -88,6 +93,36 @@ impl Account {
         self.proxy_disabled = false;
         self.proxy_disabled_reason = None;
         self.proxy_disabled_at = None;
+    }
+
+    /// Check if a specific model is protected (disabled due to low quota).
+    pub fn is_model_protected(&self, model: &str) -> bool {
+        self.protected_models.contains(model)
+    }
+
+    /// Add a model to the protected set (disable it for this account due to low quota).
+    pub fn protect_model(&mut self, model: &str) {
+        self.protected_models.insert(model.to_string());
+    }
+
+    /// Remove a model from the protected set (re-enable it for this account).
+    pub fn unprotect_model(&mut self, model: &str) {
+        self.protected_models.remove(model);
+    }
+
+    /// Check if any models are currently protected.
+    pub fn has_protected_models(&self) -> bool {
+        !self.protected_models.is_empty()
+    }
+
+    /// Get the set of protected models.
+    pub fn protected_models(&self) -> &HashSet<String> {
+        &self.protected_models
+    }
+
+    /// Clear all protected models.
+    pub fn clear_protected_models(&mut self) {
+        self.protected_models.clear();
     }
 }
 
