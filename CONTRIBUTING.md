@@ -1,19 +1,19 @@
-# Contributing to Antigravity Manager (Stranmor Fork)
+# Contributing to Antigravity Server
 
 Thank you for your interest in contributing!
 
 ## 🏗️ Project Architecture
 
-This is a **fork** of [lbjlaq/Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager) with significant architectural changes. Before contributing, please understand the key differences:
+**Antigravity Server** is a complete architectural reimagining of [Antigravity Manager](https://github.com/lbjlaq/Antigravity-Manager), built for headless server deployment. Before contributing, please understand the key differences:
 
-| Component | Upstream | This Fork |
-|-----------|----------|-----------|
+| Component | Antigravity Manager | Antigravity Server |
+|-----------|---------------------|-------------------|
 | Backend | Tauri (desktop) | **Axum (headless server)** |
 | Frontend | React + TypeScript | **Leptos (Rust → WASM)** |
 | Rate Limiting | Reactive | **AIMD Predictive** |
 | Reliability | Basic | **Circuit Breakers** |
 
-**Important**: We don't blindly merge upstream. We use **Semantic Porting** — selectively integrating useful changes while maintaining our architecture.
+**Important**: We selectively port useful changes from upstream while maintaining our unique architecture.
 
 ## 🛠️ Development Setup
 

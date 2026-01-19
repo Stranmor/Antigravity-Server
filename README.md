@@ -1,6 +1,6 @@
 <div align="center">
 
-# Antigravity Manager — Stranmor Fork
+# Antigravity Server
 
 ### 🚀 **Pure Rust** AI Gateway: Headless, Resilient, High-Performance
 
@@ -16,22 +16,22 @@
 
 ---
 
-**Antigravity Manager** is a high-performance AI gateway that transforms Google and Anthropic web sessions into standardized, OpenAI-compatible APIs. 
+**Antigravity Server** is a high-performance AI gateway that transforms Google and Anthropic web sessions into standardized, OpenAI-compatible APIs. 
 
-This fork is re-engineered for **headless server deployment** and **maximum resilience**, moving away from desktop-only limitations to provide a robust, production-ready AI backbone.
+Built from the ground up for **headless server deployment** and **maximum resilience**, it's a complete architectural reimagining of the original [Antigravity Manager](https://github.com/lbjlaq/Antigravity-Manager) — not just a fork, but a production-ready server designed for VPS and Docker environments.
 
 </div>
 
 ---
 
-## 🎯 Why This Fork?
+## 🎯 Why Antigravity Server?
 
-While the [upstream project](https://github.com/lbjlaq/Antigravity-Manager) provides an excellent desktop experience, this fork is built for developers who need a **headless daemon** that can run on a VPS, in Docker, or as a background service with enterprise-grade stability.
+While [Antigravity Manager](https://github.com/lbjlaq/Antigravity-Manager) provides an excellent desktop experience, Antigravity Server is built for developers who need a **headless daemon** that can run on a VPS, in Docker, or as a background service with enterprise-grade stability.
 
 ### Key Differentiators
 
-| Feature | Upstream | Stranmor Fork |
-|---------|----------|---------------|
+| Feature | Antigravity Manager | Antigravity Server |
+|---------|---------------------|-------------------|
 | **Primary Target** | Desktop (Tauri + GUI) | **Headless Server (Axum Daemon)** |
 | **Frontend** | React + TypeScript | **Leptos (Pure Rust → WASM)** |
 | **Architecture** | Monolithic | **Modular Crate Workspace** |
@@ -208,7 +208,7 @@ See [AGENTS.md](AGENTS.md) for detailed architecture documentation and sync work
 
 ## 📄 License & Attribution
 
-This project is a fork of [lbjlaq/Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager). Full credit to the original authors for the core concept. We selectively port useful upstream features while maintaining our focus on headless resilience.
+This project is based on [lbjlaq/Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager). Full credit to the original authors for the core proxy concept. Antigravity Server is a complete architectural reimagining focused on headless deployment and resilience.
 
 **License**: [CC BY-NC-SA 4.0](LICENSE) — Non-commercial use only.
 

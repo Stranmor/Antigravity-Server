@@ -394,7 +394,12 @@ pub mod commands {
     }
 
     pub async fn generate_api_key() -> Result<String, String> {
-        Err("Not implemented".to_string())
+        #[derive(serde::Deserialize)]
+        struct Response {
+            api_key: String,
+        }
+        let response: Response = api_post("/proxy/generate-key", &serde_json::json!({})).await?;
+        Ok(response.api_key)
     }
 
     pub async fn get_proxy_stats() -> Result<ProxyStats, String> {
@@ -415,6 +420,7 @@ pub mod commands {
     }
 
     pub async fn clear_proxy_session_bindings() -> Result<(), String> {
+        let _: bool = api_post("/proxy/clear-bindings", &serde_json::json!({})).await?;
         Ok(())
     }
 
@@ -424,7 +430,12 @@ pub mod commands {
     }
 
     pub async fn reload_proxy_accounts() -> Result<usize, String> {
-        Ok(0)
+        #[derive(serde::Deserialize)]
+        struct Response {
+            count: usize,
+        }
+        let response: Response = api_post("/accounts/reload", &serde_json::json!({})).await?;
+        Ok(response.count)
     }
 
     // ========== Models ==========

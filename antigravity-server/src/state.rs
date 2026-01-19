@@ -199,6 +199,11 @@ impl AppState {
         }
     }
 
+    pub fn clear_session_bindings(&self) {
+        self.inner.token_manager.clear_all_sessions();
+        tracing::info!("🔄 Cleared all session bindings");
+    }
+
     // AIMD accessors (used by /api/resilience/* endpoints)
     pub fn adaptive_limits(&self) -> &Arc<AdaptiveLimitManager> {
         &self.inner.adaptive_limits

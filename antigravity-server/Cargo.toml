@@ -36,3 +36,4 @@ thiserror = "2"
 
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }
+rand.workspace = true
