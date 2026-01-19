@@ -11,6 +11,7 @@ use anyhow::Result;
 use axum::{
     extract::DefaultBodyLimit, http::StatusCode, response::IntoResponse, routing::get, Router,
 };
+use listenfd::ListenFd;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::{
@@ -134,14 +135,33 @@ async fn main() -> Result<()> {
 
     let app = build_router(state, axum_server).await;
 
-    // Start server
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    // Try to get listener from systemd socket activation (zero-downtime restarts)
+    let mut listenfd = ListenFd::from_env();
+    let listener = if let Some(listener) = listenfd.take_tcp_listener(0)? {
+        info!("🔌 Using systemd socket activation (fd=3)");
+        listener.set_nonblocking(true)?;
+        tokio::net::TcpListener::from_std(listener)?
+    } else {
+        // Fallback: bind ourselves (for local development)
+        let addr = SocketAddr::from(([127, 0, 0, 1], port));
+        info!("🔌 Binding socket ourselves (no systemd activation)");
+        tokio::net::TcpListener::bind(addr).await?
+    };
 
-    info!("🌐 Server listening on http://{}", addr);
-    info!("📊 WebUI available at http://localhost:{}/", port);
-    info!("🔌 API available at http://localhost:{}/api/", port);
-    info!("🔀 Proxy endpoints at http://localhost:{}/v1/", port);
+    let local_addr = listener.local_addr()?;
+    info!("🌐 Server listening on http://{}", local_addr);
+    info!(
+        "📊 WebUI available at http://localhost:{}/",
+        local_addr.port()
+    );
+    info!(
+        "🔌 API available at http://localhost:{}/api/",
+        local_addr.port()
+    );
+    info!(
+        "🔀 Proxy endpoints at http://localhost:{}/v1/",
+        local_addr.port()
+    );
 
     axum::serve(listener, app).await?;
 

@@ -42,3 +42,6 @@ colored = "3"
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }
 rand.workspace = true
+
+# Socket activation (systemd fd handoff)
+listenfd = "1"
