@@ -116,7 +116,7 @@ async fn run_server(port: u16) -> Result<()> {
 
     // Create AxumServer for hot reload capabilities (without starting listener)
     let server_config = antigravity_core::proxy::server::ServerStartConfig {
-        host: "127.0.0.1".to_string(),
+        host: initial_proxy_config.get_bind_address(),
         port,
         token_manager: token_manager.clone(),
         custom_mapping: initial_proxy_config.custom_mapping.clone(),
@@ -152,7 +152,7 @@ async fn run_server(port: u16) -> Result<()> {
 
     let app = build_router(state, axum_server).await;
 
-    let listener = create_listener(port).await?;
+    let listener = create_listener(port, &initial_proxy_config).await?;
 
     let local_addr = listener.local_addr()?;
     info!("🌐 Server listening on http://{}", local_addr);
@@ -177,7 +177,10 @@ async fn run_server(port: u16) -> Result<()> {
     Ok(())
 }
 
-async fn create_listener(port: u16) -> Result<tokio::net::TcpListener> {
+async fn create_listener(
+    port: u16,
+    proxy_config: &antigravity_shared::proxy::config::ProxyConfig,
+) -> Result<tokio::net::TcpListener> {
     let mut listenfd = ListenFd::from_env();
 
     if let Some(listener) = listenfd.take_tcp_listener(0)? {
@@ -186,7 +189,11 @@ async fn create_listener(port: u16) -> Result<tokio::net::TcpListener> {
         return Ok(tokio::net::TcpListener::from_std(listener)?);
     }
 
-    let addr: SocketAddr = ([127, 0, 0, 1], port).into();
+    // Use config-based binding (127.0.0.1 by default, 0.0.0.0 if allow_lan_access=true)
+    let bind_addr = proxy_config.get_bind_address();
+    let addr: SocketAddr = format!("{}:{}", bind_addr, port)
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Invalid bind address '{}:{}': {}", bind_addr, port, e))?;
     let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
 
     socket.set_reuse_address(true)?;
@@ -195,7 +202,10 @@ async fn create_listener(port: u16) -> Result<tokio::net::TcpListener> {
     socket.bind(&addr.into())?;
     socket.listen(4096)?;
 
-    info!("🔌 Binding with SO_REUSEPORT (zero-downtime capable)");
+    info!(
+        "🔌 Binding with SO_REUSEPORT to {} (zero-downtime capable)",
+        addr
+    );
 
     Ok(tokio::net::TcpListener::from_std(socket.into())?)
 }

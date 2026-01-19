@@ -132,52 +132,31 @@ pub mod commands {
         pub email: String,
         pub name: Option<String>,
         pub disabled: bool,
+        #[serde(default)]
+        pub proxy_disabled: bool,
         pub is_current: bool,
         pub gemini_quota: Option<i32>,
         pub claude_quota: Option<i32>,
         pub image_quota: Option<i32>,
         pub subscription_tier: Option<String>,
+        pub quota: Option<antigravity_shared::models::QuotaData>,
     }
 
     impl ApiAccount {
         /// Convert to full Account type for UI compatibility
         pub fn into_account(self) -> Account {
-            use antigravity_shared::models::{ModelQuota, QuotaData, TokenData};
-
-            let mut quota = QuotaData::default();
-            if let Some(g) = self.gemini_quota {
-                quota.models.push(ModelQuota {
-                    name: "gemini-pro".to_string(),
-                    percentage: g,
-                    reset_time: "".to_string(),
-                });
-            }
-            if let Some(c) = self.claude_quota {
-                quota.models.push(ModelQuota {
-                    name: "claude".to_string(),
-                    percentage: c,
-                    reset_time: "".to_string(),
-                });
-            }
-            if let Some(i) = self.image_quota {
-                quota.models.push(ModelQuota {
-                    name: "image".to_string(),
-                    percentage: i,
-                    reset_time: "".to_string(),
-                });
-            }
-            quota.subscription_tier = self.subscription_tier;
+            use antigravity_shared::models::TokenData;
 
             Account {
                 id: self.id,
                 email: self.email,
                 name: self.name,
                 token: TokenData::new(String::new(), String::new(), 0, None, None, None),
-                quota: Some(quota),
+                quota: self.quota,
                 disabled: self.disabled,
                 disabled_reason: None,
                 disabled_at: None,
-                proxy_disabled: false,
+                proxy_disabled: self.proxy_disabled,
                 proxy_disabled_reason: None,
                 proxy_disabled_at: None,
                 created_at: 0,

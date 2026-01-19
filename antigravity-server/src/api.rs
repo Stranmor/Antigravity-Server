@@ -86,10 +86,12 @@ struct AccountInfo {
     email: String,
     name: Option<String>,
     disabled: bool,
+    proxy_disabled: bool,
     is_current: bool,
     gemini_quota: Option<i32>,
     claude_quota: Option<i32>,
     subscription_tier: Option<String>,
+    quota: Option<antigravity_shared::models::QuotaData>,
 }
 
 async fn list_accounts(
@@ -106,10 +108,12 @@ async fn list_accounts(
                     email: a.email.clone(),
                     name: a.name.clone(),
                     disabled: a.disabled,
+                    proxy_disabled: a.proxy_disabled,
                     is_current: current_id.as_ref() == Some(&a.id),
                     gemini_quota: get_model_quota(&a, "gemini"),
                     claude_quota: get_model_quota(&a, "claude"),
                     subscription_tier: a.quota.as_ref().and_then(|q| q.subscription_tier.clone()),
+                    quota: a.quota.clone(),
                 })
                 .collect();
             Ok(Json(infos))
@@ -127,10 +131,12 @@ async fn get_current_account(
             email: a.email.clone(),
             name: a.name.clone(),
             disabled: a.disabled,
+            proxy_disabled: a.proxy_disabled,
             is_current: true,
             gemini_quota: get_model_quota(&a, "gemini"),
             claude_quota: get_model_quota(&a, "claude"),
             subscription_tier: a.quota.as_ref().and_then(|q| q.subscription_tier.clone()),
+            quota: a.quota.clone(),
         }))),
         Ok(None) => Ok(Json(None)),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
@@ -242,6 +248,7 @@ async fn add_account_by_token(
                                     email: acc.email.clone(),
                                     name: acc.name.clone(),
                                     disabled: acc.disabled,
+                                    proxy_disabled: acc.proxy_disabled,
                                     is_current: false,
                                     gemini_quota: get_model_quota(&acc, "gemini"),
                                     claude_quota: get_model_quota(&acc, "claude"),
@@ -249,6 +256,7 @@ async fn add_account_by_token(
                                         .quota
                                         .as_ref()
                                         .and_then(|q| q.subscription_tier.clone()),
+                                    quota: acc.quota.clone(),
                                 });
                             }
                             Err(_) => fail_count += 1,
