@@ -34,6 +34,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
 thiserror = "2"
 
+# CLI
+clap = { version = "4", features = ["derive", "env", "wrap_help"] }
+comfy-table = "7"
+colored = "3"
+
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }
 rand.workspace = true

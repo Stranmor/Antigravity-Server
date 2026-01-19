@@ -140,7 +140,13 @@ pub fn start(state: AppState) {
 
             // Check if enough time has passed since last warmup
             let now = Utc::now().timestamp();
-            let interval_secs = (warmup_config.interval_minutes as i64) * 60;
+            // Ensure minimum 5 minutes, default 60 if invalid
+            let interval_minutes = if warmup_config.interval_minutes < 5 {
+                60
+            } else {
+                warmup_config.interval_minutes
+            };
+            let interval_secs = (interval_minutes as i64) * 60;
 
             if let Some(last) = last_warmup_check {
                 if now - last < interval_secs {
@@ -258,20 +264,17 @@ pub fn start(state: AppState) {
 
                     for (task_idx, (email, model)) in batch.iter().enumerate() {
                         let global_idx = batch_idx * 3 + task_idx + 1;
-                        let email = email.clone();
-                        let model = model.clone();
+                        let email_for_spawn = email.clone();
                         let email_for_handle = email.clone();
                         let model_for_handle = model.clone();
 
                         tracing::info!("[Warmup {}/{}] {} @ {}", global_idx, total, model, email);
 
-                        // Spawn warmup task
                         let handle = tokio::spawn(async move {
-                            // Find the account and refresh its quota (this triggers warmup)
                             let accounts = account::list_accounts().ok()?;
-                            let mut acc = accounts.into_iter().find(|a| a.email == email)?;
+                            let mut acc =
+                                accounts.into_iter().find(|a| a.email == email_for_spawn)?;
 
-                            // Refresh quota - this makes an API call which "warms up" the account
                             match account::fetch_quota_with_retry(&mut acc).await {
                                 Ok(_) => {
                                     let _ = account::save_account(&acc);
