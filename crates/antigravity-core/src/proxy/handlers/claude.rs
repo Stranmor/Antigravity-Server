@@ -57,11 +57,18 @@ fn determine_retry_strategy(
     retried_without_thinking: bool,
 ) -> RetryStrategy {
     match status_code {
-        // 400 错误：Thinking 签名失败
+        // 400 错误：Thinking 签名失败或块顺序错误
         400 if !retried_without_thinking
             && (error_text.contains("Invalid `signature`")
                 || error_text.contains("thinking.signature")
-                || error_text.contains("thinking.thinking")) =>
+                || error_text.contains("thinking.thinking")
+                || error_text.contains("INVALID_ARGUMENT")
+                || error_text.contains("Invalid signature")
+                || error_text.contains("thinking block")
+                || error_text.contains("Found `text`")
+                || error_text.contains("Found 'text'")
+                || error_text.contains("must be `thinking`")
+                || error_text.contains("must be 'thinking'")) =>
         {
             // 固定 200ms 延迟后重试
             RetryStrategy::FixedDelay(Duration::from_millis(200))
@@ -942,8 +949,14 @@ pub async fn handle_messages(
                 || error_text.contains("thinking.thinking")
                 || error_text.contains("INVALID_ARGUMENT")  // [New] Catch generic Google 400s
                 || error_text.contains("Corrupted thought signature") // [New] Explicit signature corruption
-                || error_text.contains("failed to deserialise")
-                // [New] JSON structure issues
+                || error_text.contains("failed to deserialise") // [New] JSON structure issues
+                || error_text.contains("Invalid signature") // [v3.3.40] Universal signature error
+                || error_text.contains("thinking block") // [v3.3.40] Thinking block context
+                || error_text.contains("Found `text`") // [v3.3.40] Block order violation
+                || error_text.contains("Found 'text'") // [v3.3.40] Block order violation (alt quotes)
+                || error_text.contains("must be `thinking`") // [v3.3.40] Block type requirement
+                || error_text.contains("must be 'thinking'")
+                // [v3.3.40] Block type requirement (alt quotes)
             )
         {
             // Existing logic for thinking signature...
