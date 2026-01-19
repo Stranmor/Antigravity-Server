@@ -1718,9 +1718,12 @@ fn build_generation_config(
     }*/
 
     // max_tokens 映射为 maxOutputTokens
-    // [FIX] Use client's max_tokens if provided, otherwise use high default (65536)
-    // Gemini supports up to 65536 output tokens for most models
-    let mut final_max_tokens: i64 = claude_req.max_tokens.map(|t| t as i64).unwrap_or(65536);
+    // [FORK] Hard limit to prevent silent stream truncation at ~4K tokens
+    const MAX_OUTPUT_TOKENS_LIMIT: i64 = 4096;
+    let mut final_max_tokens: i64 = claude_req
+        .max_tokens
+        .map(|t| (t as i64).min(MAX_OUTPUT_TOKENS_LIMIT))
+        .unwrap_or(MAX_OUTPUT_TOKENS_LIMIT);
 
     // [NEW] 确保 maxOutputTokens 大于 thinkingBudget (API 强约束)
     if let Some(thinking_config) = config.get("thinkingConfig") {
@@ -1738,6 +1741,7 @@ fn build_generation_config(
             }
         }
     }
+    final_max_tokens = final_max_tokens.min(MAX_OUTPUT_TOKENS_LIMIT);
 
     config["maxOutputTokens"] = json!(final_max_tokens);
 
