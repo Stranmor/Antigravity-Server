@@ -45,3 +45,6 @@ rand.workspace = true
 
 # Socket activation (systemd fd handoff)
 listenfd = "1"
+
+# Zero-downtime restarts (SO_REUSEPORT)
+socket2 = { version = "0.5", features = ["all"] }

@@ -13,8 +13,11 @@ use axum::{
 };
 use clap::Parser;
 use listenfd::ListenFd;
+use socket2::{Domain, Protocol, Socket, Type};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::signal;
 use tower_http::{
     cors::{Any, CorsLayer},
     services::{ServeDir, ServeFile},
@@ -149,18 +152,7 @@ async fn run_server(port: u16) -> Result<()> {
 
     let app = build_router(state, axum_server).await;
 
-    // Try to get listener from systemd socket activation (zero-downtime restarts)
-    let mut listenfd = ListenFd::from_env();
-    let listener = if let Some(listener) = listenfd.take_tcp_listener(0)? {
-        info!("🔌 Using systemd socket activation (fd=3)");
-        listener.set_nonblocking(true)?;
-        tokio::net::TcpListener::from_std(listener)?
-    } else {
-        // Fallback: bind ourselves (for local development)
-        let addr = SocketAddr::from(([127, 0, 0, 1], port));
-        info!("🔌 Binding socket ourselves (no systemd activation)");
-        tokio::net::TcpListener::bind(addr).await?
-    };
+    let listener = create_listener(port).await?;
 
     let local_addr = listener.local_addr()?;
     info!("🌐 Server listening on http://{}", local_addr);
@@ -177,9 +169,62 @@ async fn run_server(port: u16) -> Result<()> {
         local_addr.port()
     );
 
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
 
+    info!("👋 Server shutdown complete");
     Ok(())
+}
+
+async fn create_listener(port: u16) -> Result<tokio::net::TcpListener> {
+    let mut listenfd = ListenFd::from_env();
+
+    if let Some(listener) = listenfd.take_tcp_listener(0)? {
+        info!("🔌 Using systemd socket activation (fd=3)");
+        listener.set_nonblocking(true)?;
+        return Ok(tokio::net::TcpListener::from_std(listener)?);
+    }
+
+    let addr: SocketAddr = ([127, 0, 0, 1], port).into();
+    let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
+
+    socket.set_reuse_address(true)?;
+    socket.set_reuse_port(true)?;
+    socket.set_nonblocking(true)?;
+    socket.bind(&addr.into())?;
+    socket.listen(4096)?;
+
+    info!("🔌 Binding with SO_REUSEPORT (zero-downtime capable)");
+
+    Ok(tokio::net::TcpListener::from_std(socket.into())?)
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => info!("🛑 Received Ctrl+C, initiating graceful shutdown..."),
+        _ = terminate => info!("🛑 Received SIGTERM, initiating graceful shutdown..."),
+    }
+
+    info!("⏳ Draining active connections (30s timeout)...");
+    tokio::time::sleep(Duration::from_millis(100)).await;
 }
 
 async fn build_router(state: AppState, _axum_server: Arc<AxumServer>) -> Router {

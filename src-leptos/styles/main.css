@@ -1301,6 +1301,28 @@ select:focus {
     margin-bottom: 12px;
 }
 
+.account-card-quotas.model-quota-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+.account-card-quotas.model-quota-grid .quota-item {
+    padding: 6px;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+}
+
+.account-card-quotas.model-quota-grid .quota-bar {
+    width: 100%;
+    margin-right: 0;
+}
+
+.account-card-quotas.model-quota-grid .quota-value {
+    font-size: 11px;
+    font-weight: 600;
+}
+
 .quota-item {
     display: flex;
     flex-direction: column;

@@ -26,33 +26,62 @@ pub fn AccountCard(
     let is_disabled = account.disabled;
     let proxy_disabled = account.proxy_disabled;
 
-    // Compute quotas and reset times
-    let gemini_model = account.quota.as_ref().and_then(|q| {
+    // Find 4 specific models by exact name (matching upstream)
+    let g3_pro = account.quota.as_ref().and_then(|q| {
         q.models
             .iter()
-            .find(|m| m.name.contains("gemini") || m.name.contains("flash"))
+            .find(|m| m.name.to_lowercase() == "gemini-3-pro-high")
             .cloned()
     });
-    let gemini_quota = gemini_model.as_ref().map(|m| m.percentage).unwrap_or(0);
-    let gemini_reset = gemini_model
+    let g3_flash = account.quota.as_ref().and_then(|q| {
+        q.models
+            .iter()
+            .find(|m| m.name.to_lowercase() == "gemini-3-flash")
+            .cloned()
+    });
+    let g3_image = account.quota.as_ref().and_then(|q| {
+        q.models
+            .iter()
+            .find(|m| m.name.to_lowercase() == "gemini-3-pro-image")
+            .cloned()
+    });
+    let claude = account.quota.as_ref().and_then(|q| {
+        q.models
+            .iter()
+            .find(|m| m.name.to_lowercase() == "claude-sonnet-4-5-thinking")
+            .cloned()
+    });
+
+    let quota_g3_pro = g3_pro.as_ref().map(|m| m.percentage).unwrap_or(0);
+    let reset_g3_pro = g3_pro
+        .as_ref()
+        .map(|m| m.reset_time.clone())
+        .unwrap_or_default();
+    let quota_g3_flash = g3_flash.as_ref().map(|m| m.percentage).unwrap_or(0);
+    let reset_g3_flash = g3_flash
+        .as_ref()
+        .map(|m| m.reset_time.clone())
+        .unwrap_or_default();
+    let quota_g3_image = g3_image.as_ref().map(|m| m.percentage).unwrap_or(0);
+    let reset_g3_image = g3_image
+        .as_ref()
+        .map(|m| m.reset_time.clone())
+        .unwrap_or_default();
+    let quota_claude = claude.as_ref().map(|m| m.percentage).unwrap_or(0);
+    let reset_claude = claude
         .as_ref()
         .map(|m| m.reset_time.clone())
         .unwrap_or_default();
 
-    let claude_model = account
-        .quota
-        .as_ref()
-        .and_then(|q| q.models.iter().find(|m| m.name.contains("claude")).cloned());
-    let claude_quota = claude_model.as_ref().map(|m| m.percentage).unwrap_or(0);
-    let claude_reset = claude_model
-        .as_ref()
-        .map(|m| m.reset_time.clone())
-        .unwrap_or_default();
+    let g3_pro_reset_formatted = format_time_remaining(&reset_g3_pro);
+    let g3_flash_reset_formatted = format_time_remaining(&reset_g3_flash);
+    let g3_image_reset_formatted = format_time_remaining(&reset_g3_image);
+    let claude_reset_formatted = format_time_remaining(&reset_claude);
 
-    let gemini_reset_formatted = format_time_remaining(&gemini_reset);
-    let claude_reset_formatted = format_time_remaining(&claude_reset);
-    let gemini_reset_color = reset_time_class(get_time_remaining_color(&gemini_reset));
-    let claude_reset_color = reset_time_class(get_time_remaining_color(&claude_reset));
+    let g3_pro_reset_color = reset_time_class(get_time_remaining_color(&reset_g3_pro));
+    let g3_flash_reset_color = reset_time_class(get_time_remaining_color(&reset_g3_flash));
+    let g3_image_reset_color = reset_time_class(get_time_remaining_color(&reset_g3_image));
+    let claude_reset_color = reset_time_class(get_time_remaining_color(&reset_claude));
 
     let tier = account
         .quota
@@ -68,8 +97,10 @@ pub fn AccountCard(
         "tier-free"
     };
 
-    let gemini_class = quota_class(gemini_quota);
-    let claude_class = quota_class(claude_quota);
+    let g3_pro_class = quota_class(quota_g3_pro);
+    let g3_flash_class = quota_class(quota_g3_flash);
+    let g3_image_class = quota_class(quota_g3_image);
+    let claude_class = quota_class(quota_claude);
     let tier_display = tier.clone();
 
     view! {
@@ -102,23 +133,57 @@ pub fn AccountCard(
                 <span class="email-domain">"@"{email_domain.clone()}</span>
             </div>
 
-            // Quotas
-            <div class="account-card-quotas">
+            // Quotas - 2x2 grid matching upstream
+            <div class="account-card-quotas model-quota-grid">
+                // G3 Pro
                 <div class="quota-item">
                     <div class="quota-header">
-                        <span class="quota-label">"Gemini"</span>
-                        <span class=format!("quota-reset {}", gemini_reset_color)>
-                            "⏱ "{gemini_reset_formatted.clone()}
+                        <span class="quota-label">"G3 Pro"</span>
+                        <span class=format!("quota-reset {}", g3_pro_reset_color)>
+                            "⏱ "{g3_pro_reset_formatted.clone()}
                         </span>
                     </div>
                     <div class="quota-bar">
                         <div
-                            class=format!("quota-fill {}", gemini_class)
-                            style=format!("width: {}%", gemini_quota)
+                            class=format!("quota-fill {}", g3_pro_class)
+                            style=format!("width: {}%", quota_g3_pro)
                         ></div>
                     </div>
-                    <span class="quota-value">{gemini_quota}"%"</span>
+                    <span class="quota-value">{quota_g3_pro}"%"</span>
                 </div>
+                // G3 Flash
+                <div class="quota-item">
+                    <div class="quota-header">
+                        <span class="quota-label">"G3 Flash"</span>
+                        <span class=format!("quota-reset {}", g3_flash_reset_color)>
+                            "⏱ "{g3_flash_reset_formatted.clone()}
+                        </span>
+                    </div>
+                    <div class="quota-bar">
+                        <div
+                            class=format!("quota-fill {}", g3_flash_class)
+                            style=format!("width: {}%", quota_g3_flash)
+                        ></div>
+                    </div>
+                    <span class="quota-value">{quota_g3_flash}"%"</span>
+                </div>
+                // G3 Image
+                <div class="quota-item">
+                    <div class="quota-header">
+                        <span class="quota-label">"G3 Image"</span>
+                        <span class=format!("quota-reset {}", g3_image_reset_color)>
+                            "⏱ "{g3_image_reset_formatted.clone()}
+                        </span>
+                    </div>
+                    <div class="quota-bar">
+                        <div
+                            class=format!("quota-fill {}", g3_image_class)
+                            style=format!("width: {}%", quota_g3_image)
+                        ></div>
+                    </div>
+                    <span class="quota-value">{quota_g3_image}"%"</span>
+                </div>
+                // Claude
                 <div class="quota-item">
                     <div class="quota-header">
                         <span class="quota-label">"Claude"</span>
@@ -129,10 +194,10 @@ pub fn AccountCard(
                     <div class="quota-bar">
                         <div
                             class=format!("quota-fill {}", claude_class)
-                            style=format!("width: {}%", claude_quota)
+                            style=format!("width: {}%", quota_claude)
                         ></div>
                     </div>
-                    <span class="quota-value">{claude_quota}"%"</span>
+                    <span class="quota-value">{quota_claude}"%"</span>
                 </div>
             </div>
 

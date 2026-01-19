@@ -623,8 +623,7 @@ pub fn Accounts() -> impl IntoView {
                                 <th class="col-status"></th>
                                 <th class="col-email">"Email"</th>
                                 <th class="col-tier">"Tier"</th>
-                                <th class="col-quota">"Gemini"</th>
-                                <th class="col-quota">"Claude"</th>
+                                <th class="col-model-quota">"MODEL QUOTA"</th>
                                 <th class="col-proxy">"Proxy"</th>
                                 <th class="col-actions">"Actions"</th>
                             </tr>
@@ -662,23 +661,33 @@ pub fn Accounts() -> impl IntoView {
                                         "tier-free"
                                     };
 
-                                    let gemini_model = account.quota.as_ref().and_then(|q| {
+                                    // Find 4 specific models by exact name (matching upstream)
+                                    let g3_pro = account.quota.as_ref().and_then(|q| {
                                         q.models.iter()
-                                            .find(|m| m.name.contains("gemini") || m.name.contains("flash"))
+                                            .find(|m| m.name.to_lowercase() == "gemini-3-pro-high")
                                     });
-                                    let quota_gemini = gemini_model.map(|m| m.percentage).unwrap_or(0);
-                                    let reset_gemini = gemini_model
-                                        .map(|m| m.reset_time.clone())
-                                        .unwrap_or_default();
+                                    let g3_flash = account.quota.as_ref().and_then(|q| {
+                                        q.models.iter()
+                                            .find(|m| m.name.to_lowercase() == "gemini-3-flash")
+                                    });
+                                    let g3_image = account.quota.as_ref().and_then(|q| {
+                                        q.models.iter()
+                                            .find(|m| m.name.to_lowercase() == "gemini-3-pro-image")
+                                    });
+                                    let claude = account.quota.as_ref().and_then(|q| {
+                                        q.models.iter()
+                                            .find(|m| m.name.to_lowercase() == "claude-sonnet-4-5-thinking")
+                                    });
 
-                                    let claude_model = account.quota.as_ref().and_then(|q| {
-                                        q.models.iter()
-                                            .find(|m| m.name.contains("claude"))
-                                    });
-                                    let quota_claude = claude_model.map(|m| m.percentage).unwrap_or(0);
-                                    let reset_claude = claude_model
-                                        .map(|m| m.reset_time.clone())
-                                        .unwrap_or_default();
+                                    // Extract percentages and reset times
+                                    let quota_g3_pro = g3_pro.map(|m| m.percentage).unwrap_or(0);
+                                    let reset_g3_pro = g3_pro.map(|m| m.reset_time.clone()).unwrap_or_default();
+                                    let quota_g3_flash = g3_flash.map(|m| m.percentage).unwrap_or(0);
+                                    let reset_g3_flash = g3_flash.map(|m| m.reset_time.clone()).unwrap_or_default();
+                                    let quota_g3_image = g3_image.map(|m| m.percentage).unwrap_or(0);
+                                    let reset_g3_image = g3_image.map(|m| m.reset_time.clone()).unwrap_or_default();
+                                    let quota_claude = claude.map(|m| m.percentage).unwrap_or(0);
+                                    let reset_claude = claude.map(|m| m.reset_time.clone()).unwrap_or_default();
 
                                     // Clone account_id for each closure
                                     let account_id_class = account_id.clone();
@@ -724,48 +733,96 @@ pub fn Accounts() -> impl IntoView {
                                             <td class="col-tier">
                                                 <span class=format!("tier-badge {}", tier_class)>{tier}</span>
                                             </td>
-                                            <td class="col-quota">
-                                                <div class="quota-cell">
-                                                    <div class="quota-bar">
-                                                        <div
-                                                            class=format!("quota-fill {}", quota_class(quota_gemini))
-                                                            style=format!("width: {}%", quota_gemini)
-                                                        ></div>
+                                            <td class="col-model-quota">
+                                                <div class="model-quota-grid">
+                                                    // G3 Pro
+                                                    <div class="quota-cell">
+                                                        <span class="quota-label">"G3 Pro"</span>
+                                                        <div class="quota-bar">
+                                                            <div
+                                                                class=format!("quota-fill {}", quota_class(quota_g3_pro))
+                                                                style=format!("width: {}%", quota_g3_pro)
+                                                            ></div>
+                                                        </div>
+                                                        {if !reset_g3_pro.is_empty() {
+                                                            let color_class = format!("reset-time--{}", get_time_remaining_color(&reset_g3_pro));
+                                                            let formatted = format_time_remaining(&reset_g3_pro);
+                                                            Some(view! {
+                                                                <span class=format!("quota-reset {}", color_class)>
+                                                                    "⏱ "{formatted}
+                                                                </span>
+                                                            })
+                                                        } else {
+                                                            None
+                                                        }}
+                                                        <span class="quota-text">{quota_g3_pro}"%"</span>
                                                     </div>
-                                                    <span class="quota-text">{quota_gemini}"%"</span>
-                                                    {if !reset_gemini.is_empty() {
-                                                        let color_class = format!("reset-time--{}", get_time_remaining_color(&reset_gemini));
-                                                        let formatted = format_time_remaining(&reset_gemini);
-                                                        Some(view! {
-                                                            <span class=format!("quota-reset {}", color_class)>
-                                                                "⏱ "{formatted}
-                                                            </span>
-                                                        })
-                                                    } else {
-                                                        None
-                                                    }}
-                                                </div>
-                                            </td>
-                                            <td class="col-quota">
-                                                <div class="quota-cell">
-                                                    <div class="quota-bar">
-                                                        <div
-                                                            class=format!("quota-fill {}", quota_class(quota_claude))
-                                                            style=format!("width: {}%", quota_claude)
-                                                        ></div>
+                                                    // G3 Flash
+                                                    <div class="quota-cell">
+                                                        <span class="quota-label">"G3 Flash"</span>
+                                                        <div class="quota-bar">
+                                                            <div
+                                                                class=format!("quota-fill {}", quota_class(quota_g3_flash))
+                                                                style=format!("width: {}%", quota_g3_flash)
+                                                            ></div>
+                                                        </div>
+                                                        {if !reset_g3_flash.is_empty() {
+                                                            let color_class = format!("reset-time--{}", get_time_remaining_color(&reset_g3_flash));
+                                                            let formatted = format_time_remaining(&reset_g3_flash);
+                                                            Some(view! {
+                                                                <span class=format!("quota-reset {}", color_class)>
+                                                                    "⏱ "{formatted}
+                                                                </span>
+                                                            })
+                                                        } else {
+                                                            None
+                                                        }}
+                                                        <span class="quota-text">{quota_g3_flash}"%"</span>
                                                     </div>
-                                                    <span class="quota-text">{quota_claude}"%"</span>
-                                                    {if !reset_claude.is_empty() {
-                                                        let color_class = format!("reset-time--{}", get_time_remaining_color(&reset_claude));
-                                                        let formatted = format_time_remaining(&reset_claude);
-                                                        Some(view! {
-                                                            <span class=format!("quota-reset {}", color_class)>
-                                                                "⏱ "{formatted}
-                                                            </span>
-                                                        })
-                                                    } else {
-                                                        None
-                                                    }}
+                                                    // G3 Image
+                                                    <div class="quota-cell">
+                                                        <span class="quota-label">"G3 Image"</span>
+                                                        <div class="quota-bar">
+                                                            <div
+                                                                class=format!("quota-fill {}", quota_class(quota_g3_image))
+                                                                style=format!("width: {}%", quota_g3_image)
+                                                            ></div>
+                                                        </div>
+                                                        {if !reset_g3_image.is_empty() {
+                                                            let color_class = format!("reset-time--{}", get_time_remaining_color(&reset_g3_image));
+                                                            let formatted = format_time_remaining(&reset_g3_image);
+                                                            Some(view! {
+                                                                <span class=format!("quota-reset {}", color_class)>
+                                                                    "⏱ "{formatted}
+                                                                </span>
+                                                            })
+                                                        } else {
+                                                            None
+                                                        }}
+                                                        <span class="quota-text">{quota_g3_image}"%"</span>
+                                                    </div>
+                                                    // Claude
+                                                    <div class="quota-cell">
+                                                        <span class="quota-label">"Claude"</span>
+                                                        <div class="quota-bar">
+                                                            <div
+                                                                class=format!("quota-fill {}", quota_class(quota_claude))
+                                                                style=format!("width: {}%", quota_claude)
+                                                            ></div>
+                                                        </div>
+                                                        {if !reset_claude.is_empty() {
+                                                            let color_class = format!("reset-time--{}", get_time_remaining_color(&reset_claude));
+                                                            let formatted = format_time_remaining(&reset_claude);
+                                                            Some(view! {
+                                                                <span class=format!("quota-reset {}", color_class)>
+                                                                    "⏱ "{formatted}
+                                                                </span>
+                                                            })
+                                                        } else {
+                                                            None
+                                                        }}
+                                                        <span class="quota-text">{quota_claude}"%"</span>
+                                                    </div>
                                                 </div>
                                             </td>
                                             <td class="col-proxy">
