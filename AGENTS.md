@@ -70,13 +70,7 @@ vendor/
 
 - [ ] **Phase 4:** VPS deployment (optional)
 - [ ] **Phase 5:** Extract `antigravity-proxy` crate (optional cleanup)
-- [ ] **Phase 6:** CLI Management — full headless control without Web UI
-  - `antigravity account add` — add account from JSON/OAuth flow
-  - `antigravity account list` — list accounts with quota status
-  - `antigravity account remove <email>` — remove account
-  - `antigravity config set <key> <value>` — modify configuration
-  - `antigravity proxy start/stop/status` — control proxy daemon
-  - `antigravity warmup [--all | <email>]` — trigger model warmup
+- [x] **Phase 6:** CLI Management — full headless control without Web UI ✅ [2026-01-19]
 
 ---
 

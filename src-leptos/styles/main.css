@@ -1303,14 +1303,41 @@ select:focus {
 
 .quota-item {
     display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.quota-header {
+    display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 8px;
 }
 
 .quota-label {
-    width: 60px;
     font-size: 12px;
     color: var(--text-secondary);
+}
+
+.quota-reset {
+    font-size: 10px;
+    font-family: monospace;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.quota-reset.reset-time--success {
+    color: var(--accent-success);
+}
+
+.quota-reset.reset-time--warning {
+    color: var(--accent-warning);
+}
+
+.quota-reset.reset-time--neutral {
+    color: var(--text-muted);
+    opacity: 0.7;
 }
 
 .account-card-proxy {
@@ -2578,6 +2605,22 @@ select:focus {
 
 .reset-icon {
     font-size: 12px;
+}
+
+.reset-text {
+    font-family: monospace;
+}
+
+.reset-text.reset-time--success {
+    color: var(--accent-success);
+}
+
+.reset-text.reset-time--warning {
+    color: var(--accent-warning);
+}
+
+.reset-text.reset-time--neutral {
+    color: var(--text-tertiary);
 }
 
 .empty-hint {

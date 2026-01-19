@@ -3,6 +3,7 @@
 //! Displays detailed quota information for an account with model-by-model breakdown.
 
 use crate::types::Account;
+use crate::utils::{format_time_remaining, get_time_remaining_color};
 use leptos::prelude::*;
 
 #[component]
@@ -12,19 +13,19 @@ pub fn AccountDetailsModal(
     /// Callback to close the modal
     on_close: Callback<()>,
 ) -> impl IntoView {
-    let format_reset_time = |reset_time: &str| -> String {
-        if reset_time.is_empty() || reset_time == "Unknown" {
-            "Unknown".to_string()
-        } else {
-            reset_time.to_string()
-        }
-    };
-
     let quota_progress_class = |percentage: i32| -> &'static str {
         match percentage {
             0..=20 => "quota-fill--critical",
             21..=50 => "quota-fill--warning",
             _ => "quota-fill--good",
+        }
+    };
+
+    let reset_time_class = |color: &str| -> &'static str {
+        match color {
+            "success" => "reset-time--success",
+            "warning" => "reset-time--warning",
+            _ => "reset-time--neutral",
         }
     };
 
@@ -68,7 +69,8 @@ pub fn AccountDetailsModal(
                                             {models.iter().map(|model| {
                                                 let percentage = model.percentage;
                                                 let name = model.name.clone();
-                                                let reset = format_reset_time(&model.reset_time);
+                                                let reset_formatted = format_time_remaining(&model.reset_time);
+                                                let reset_color = reset_time_class(get_time_remaining_color(&model.reset_time));
                                                 let progress_class = quota_progress_class(percentage);
 
                                                 view! {
@@ -87,7 +89,7 @@ pub fn AccountDetailsModal(
                                                         </div>
                                                         <div class="model-reset">
                                                             <span class="reset-icon">"⏱"</span>
-                                                            <span class="reset-text">"Reset: "{reset}</span>
+                                                            <span class=format!("reset-text {}", reset_color)>{reset_formatted}</span>
                                                         </div>
                                                     </div>
                                                 }

@@ -1,6 +1,7 @@
 //! Account card component for grid view
 
 use crate::types::Account;
+use crate::utils::{format_time_remaining, get_time_remaining_color};
 use leptos::prelude::*;
 
 #[component]
@@ -25,30 +26,33 @@ pub fn AccountCard(
     let is_disabled = account.disabled;
     let proxy_disabled = account.proxy_disabled;
 
-    // Compute quotas
-    let gemini_quota = account
-        .quota
+    // Compute quotas and reset times
+    let gemini_model = account.quota.as_ref().and_then(|q| {
+        q.models
+            .iter()
+            .find(|m| m.name.contains("gemini") || m.name.contains("flash"))
+            .cloned()
+    });
+    let gemini_quota = gemini_model.as_ref().map(|m| m.percentage).unwrap_or(0);
+    let gemini_reset = gemini_model
         .as_ref()
-        .map(|q| {
-            q.models
-                .iter()
-                .find(|m| m.name.contains("gemini") || m.name.contains("flash"))
-                .map(|m| m.percentage)
-                .unwrap_or(0)
-        })
-        .unwrap_or(0);
+        .map(|m| m.reset_time.clone())
+        .unwrap_or_default();
 
-    let claude_quota = account
+    let claude_model = account
         .quota
         .as_ref()
-        .map(|q| {
-            q.models
-                .iter()
-                .find(|m| m.name.contains("claude"))
-                .map(|m| m.percentage)
-                .unwrap_or(0)
-        })
-        .unwrap_or(0);
+        .and_then(|q| q.models.iter().find(|m| m.name.contains("claude")).cloned());
+    let claude_quota = claude_model.as_ref().map(|m| m.percentage).unwrap_or(0);
+    let claude_reset = claude_model
+        .as_ref()
+        .map(|m| m.reset_time.clone())
+        .unwrap_or_default();
+
+    let gemini_reset_formatted = format_time_remaining(&gemini_reset);
+    let claude_reset_formatted = format_time_remaining(&claude_reset);
+    let gemini_reset_color = reset_time_class(get_time_remaining_color(&gemini_reset));
+    let claude_reset_color = reset_time_class(get_time_remaining_color(&claude_reset));
 
     let tier = account
         .quota
@@ -101,7 +105,12 @@ pub fn AccountCard(
             // Quotas
             <div class="account-card-quotas">
                 <div class="quota-item">
-                    <span class="quota-label">"Gemini"</span>
+                    <div class="quota-header">
+                        <span class="quota-label">"Gemini"</span>
+                        <span class=format!("quota-reset {}", gemini_reset_color)>
+                            "⏱ "{gemini_reset_formatted.clone()}
+                        </span>
+                    </div>
                     <div class="quota-bar">
                         <div
                             class=format!("quota-fill {}", gemini_class)
@@ -111,7 +120,12 @@ pub fn AccountCard(
                     <span class="quota-value">{gemini_quota}"%"</span>
                 </div>
                 <div class="quota-item">
-                    <span class="quota-label">"Claude"</span>
+                    <div class="quota-header">
+                        <span class="quota-label">"Claude"</span>
+                        <span class=format!("quota-reset {}", claude_reset_color)>
+                            "⏱ "{claude_reset_formatted.clone()}
+                        </span>
+                    </div>
                     <div class="quota-bar">
                         <div
                             class=format!("quota-fill {}", claude_class)
@@ -179,5 +193,13 @@ fn quota_class(percent: i32) -> &'static str {
         0..=20 => "quota-fill--critical",
         21..=50 => "quota-fill--warning",
         _ => "quota-fill--good",
+    }
+}
+
+fn reset_time_class(color: &str) -> &'static str {
+    match color {
+        "success" => "reset-time--success",
+        "warning" => "reset-time--warning",
+        _ => "reset-time--neutral",
     }
 }

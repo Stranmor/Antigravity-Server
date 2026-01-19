@@ -11,6 +11,7 @@ use anyhow::Result;
 use axum::{
     extract::DefaultBodyLimit, http::StatusCode, response::IntoResponse, routing::get, Router,
 };
+use clap::Parser;
 use listenfd::ListenFd;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -23,30 +24,43 @@ use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 mod api;
+mod cli;
+mod commands;
 mod scheduler;
 mod state;
 
 use antigravity_core::proxy::server::AxumServer;
+use cli::{Cli, Commands};
 use state::AppState;
-
-const DEFAULT_PORT: u16 = 8045;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::INFO)
-        .finish();
+    let cli = Cli::parse();
+
+    let log_level = match cli.log_level.as_str() {
+        "debug" => Level::DEBUG,
+        "warn" => Level::WARN,
+        "error" => Level::ERROR,
+        _ => Level::INFO,
+    };
+
+    let subscriber = FmtSubscriber::builder().with_max_level(log_level).finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
-    // Determine port from env or use default
-    let port: u16 = std::env::var("ANTIGRAVITY_PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(DEFAULT_PORT);
+    match cli.command {
+        Some(Commands::Account(cmd)) => commands::handle_account_command(cmd).await,
+        Some(Commands::Config(cmd)) => commands::handle_config_command(cmd).await,
+        Some(Commands::Warmup { all, email }) => commands::handle_warmup(all, email).await,
+        Some(Commands::Status) => commands::handle_status().await,
+        Some(Commands::GenerateKey) => commands::handle_generate_key().await,
+        Some(Commands::Serve { port }) => run_server(port).await,
+        None => run_server(cli.port).await,
+    }
+}
 
+async fn run_server(port: u16) -> Result<()> {
     info!("🚀 Antigravity Server starting on port {}...", port);
 
-    // Initialize Prometheus metrics
     let _ = antigravity_core::proxy::prometheus::init_metrics();
     info!("📊 Prometheus metrics initialized");
 

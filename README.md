@@ -178,6 +178,64 @@ systemctl --user enable --now antigravity
 
 ---
 
+## 🖥️ CLI Management
+
+Full headless control without Web UI. Perfect for scripts, automation, and remote management.
+
+```bash
+antigravity-server [OPTIONS] [COMMAND]
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `serve` | Start the proxy server (default if no command) |
+| `account list` | List all accounts with quota status |
+| `account add --file <path>` | Add account from JSON file |
+| `account add --token <json>` | Add account from inline JSON |
+| `account remove <email>` | Remove an account |
+| `account toggle <email> --enable/--disable` | Enable or disable account |
+| `account refresh <email\|all>` | Refresh quota for account(s) |
+| `config show` | Show current configuration |
+| `config get <key>` | Get specific config value |
+| `config set <key> <value>` | Set configuration value |
+| `warmup --all` | Warmup all accounts |
+| `warmup <email>` | Warmup specific account |
+| `status` | Show proxy status and statistics |
+| `generate-key` | Generate new API key |
+
+### Examples
+
+```bash
+# List accounts with quota percentages
+antigravity-server account list
+┌──────────────────────────┬──────────────┬────────┬────────┬────────┐
+│ Email                    ┆ Name         ┆ Gemini ┆ Claude ┆ Status │
+╞══════════════════════════╪══════════════╪════════╪════════╪════════╡
+│ user@gmail.com           ┆ John Doe     ┆ 100%   ┆ 80%    ┆ Active │
+└──────────────────────────┴──────────────┴────────┴────────┴────────┘
+
+# Add account from file
+antigravity-server account add --file ~/.antigravity_tools/accounts/new.json
+
+# Check proxy status
+antigravity-server status
+
+# JSON output for scripting
+antigravity-server account list --json
+antigravity-server config show --json
+```
+
+### Global Options
+
+| Option | Environment | Default | Description |
+|--------|-------------|---------|-------------|
+| `-p, --port` | `ANTIGRAVITY_PORT` | `8045` | Server port |
+| `-l, --log-level` | `RUST_LOG` | `info` | Log verbosity |
+
+---
+
 ## 📦 Project Structure
 
 ```
