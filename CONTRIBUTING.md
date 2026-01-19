@@ -19,7 +19,7 @@ Thank you for your interest in contributing!
 
 ```bash
 # Clone with submodules
-git clone --recurse-submodules https://github.com/Stranmor/Antigravity-Manager.git
+git clone --recurse-submodules https://github.com/Stranmor/Antigravity-Server.git
 cd Antigravity-Manager
 
 # Using Nix (recommended)

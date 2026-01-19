@@ -79,7 +79,7 @@
 ### Через Nix (Рекомендуется)
 
 ```bash
-git clone https://github.com/Stranmor/Antigravity-Manager.git
+git clone https://github.com/Stranmor/Antigravity-Server.git
 cd Antigravity-Manager
 
 nix run .#build-server
@@ -191,6 +191,6 @@ vendor/antigravity-upstream/ # Upstream (Git Submodule)
 
 **Сделано с ❤️ на 100% Rust**
 
-[![GitHub Stars](https://img.shields.io/github/stars/Stranmor/Antigravity-Manager?style=social)](https://github.com/Stranmor/Antigravity-Manager)
+[![GitHub Stars](https://img.shields.io/github/stars/Stranmor/Antigravity-Server?style=social)](https://github.com/Stranmor/Antigravity-Server)
 
 </div>

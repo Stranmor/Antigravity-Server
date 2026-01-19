@@ -89,7 +89,7 @@ Connect any OpenAI-compatible tool to Claude and Gemini:
 The easiest way to build and run the server with all dependencies pinned:
 
 ```bash
-git clone https://github.com/Stranmor/Antigravity-Manager.git
+git clone https://github.com/Stranmor/Antigravity-Server.git
 cd Antigravity-Manager
 
 # Build and run the headless server
@@ -218,6 +218,6 @@ This project is based on [lbjlaq/Antigravity-Manager](https://github.com/lbjlaq/
 
 **Built with ❤️ in 100% Rust**
 
-[![GitHub Stars](https://img.shields.io/github/stars/Stranmor/Antigravity-Manager?style=social)](https://github.com/Stranmor/Antigravity-Manager)
+[![GitHub Stars](https://img.shields.io/github/stars/Stranmor/Antigravity-Server?style=social)](https://github.com/Stranmor/Antigravity-Server)
 
 </div>

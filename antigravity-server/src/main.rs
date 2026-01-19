@@ -22,6 +22,7 @@ use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 mod api;
+mod scheduler;
 mod state;
 
 use antigravity_core::proxy::server::AxumServer;
@@ -128,6 +129,8 @@ async fn main() -> Result<()> {
 
     info!("✅ Application state initialized");
     info!("📊 {} accounts loaded", state.get_account_count());
+
+    scheduler::start(state.clone());
 
     let app = build_router(state, axum_server).await;
 
