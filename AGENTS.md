@@ -350,3 +350,117 @@ For large files, use incremental approach:
 3. **Paid API fallback** — route large-output requests to OpenRouter/direct Anthropic API
 
 **Status:** No fix implemented. Using system prompt workaround (see global AGENTS.md rule 20).
+
+---
+
+## 🚀 ZERO-DOWNTIME DEPLOYMENT [2026-01-19]
+
+### Architecture
+
+Server uses **SO_REUSEPORT** + **Graceful Shutdown** for zero-downtime binary replacement:
+
+```
+[OLD process] ← handles requests
+      ↓ (deploy trigger)
+[OLD] + [NEW] ← BOTH listen on port 8046 via SO_REUSEPORT
+      ↓ (SIGTERM → OLD)
+[OLD draining] + [NEW accepts new connections]
+      ↓ (OLD finishes active requests, exits)
+[NEW] ← sole owner of port
+```
+
+### Key Components
+
+1. **SO_REUSEPORT** (`socket2` crate) — allows two processes to bind same port
+2. **Graceful shutdown** — SIGTERM triggers 30s drain timeout for active connections
+3. **systemd service** — `TimeoutStopSec=35` gives time for drain
+
+### Deployment Workflow
+
+```bash
+# 1. Build new binary (includes frontend via build.rs)
+cargo build --release -p antigravity-server
+
+# 2. Start new instance (binds alongside old via SO_REUSEPORT)
+ANTIGRAVITY_STATIC_DIR=... ~/.local/bin/antigravity-server.new &
+sleep 3  # Wait for initialization
+
+# 3. Stop old instance (graceful drain)
+systemctl --user stop antigravity-manager
+
+# 4. Replace binary
+mv ~/.local/bin/antigravity-server.new ~/.local/bin/antigravity-server
+
+# 5. Start via systemd
+systemctl --user start antigravity-manager
+```
+
+Or use: `./scripts/zero-downtime-deploy.sh`
+
+### Important: Unified Build
+
+**Backend and frontend are built together** via `build.rs`:
+
+```rust
+// antigravity-server/build.rs
+// Automatically runs `trunk build` when compiling server
+```
+
+This means `cargo build -p antigravity-server` builds BOTH:
+- Rust backend binary
+- Leptos WASM frontend (via trunk)
+
+**DO NOT deploy backend without rebuilding frontend** — they share the same release cycle.
+
+### Systemd Configuration
+
+```ini
+# ~/.config/systemd/user/antigravity-manager.service
+[Service]
+ExecStart=/home/stranmor/.local/bin/antigravity-server
+TimeoutStopSec=35  # Allow graceful drain
+Restart=always
+```
+
+Socket activation (`antigravity-manager.socket`) is **disabled** — SO_REUSEPORT replaces it.
+
+---
+
+## 📦 BUILD SYSTEM [2026-01-19]
+
+### Unified Build Architecture
+
+```
+cargo build -p antigravity-server
+    ↓
+build.rs executes
+    ↓
+trunk build (compiles Leptos → WASM)
+    ↓
+WASM artifacts → src-leptos/dist/
+    ↓
+Server binary embeds path to dist/
+```
+
+### Why Unified Build Matters
+
+1. **Atomic deploys** — frontend and backend always match
+2. **No forgotten rebuilds** — one command builds everything
+3. **Version consistency** — both use same git commit
+
+### Build Commands
+
+| Command | What it builds |
+|---------|---------------|
+| `cargo build -p antigravity-server` | Backend + Frontend (via build.rs) |
+| `trunk build` (in src-leptos/) | Frontend only |
+| `cargo build -p antigravity-leptos` | Frontend crate only (no WASM) |
+
+### Environment Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ANTIGRAVITY_STATIC_DIR` | `./src-leptos/dist` | Path to frontend assets |
+| `ANTIGRAVITY_PORT` | `8045` | Server port |
+| `SKIP_TRUNK_BUILD` | unset | Skip frontend build in CI |
+
