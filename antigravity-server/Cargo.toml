@@ -48,3 +48,6 @@ listenfd = "1"
 
 # Zero-downtime restarts (SO_REUSEPORT)
 socket2 = { version = "0.5", features = ["all"] }
+
+[build-dependencies]
+chrono = "0.4"

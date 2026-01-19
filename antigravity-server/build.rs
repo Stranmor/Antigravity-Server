@@ -3,6 +3,25 @@ use std::path::Path;
 use std::process::Command;
 
 fn main() {
+    // Git version for runtime display
+    println!("cargo:rerun-if-changed=../.git/HEAD");
+    println!("cargo:rerun-if-changed=../.git/refs/tags");
+
+    let version = Command::new("git")
+        .args(["describe", "--tags", "--always", "--dirty"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
+
+    println!("cargo:rustc-env=GIT_VERSION={}", version);
+
+    // Build timestamp
+    let build_time = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    println!("cargo:rustc-env=BUILD_TIME={}", build_time);
+
     println!("cargo:rerun-if-changed=../src-leptos/src");
     println!("cargo:rerun-if-changed=../src-leptos/styles");
     println!("cargo:rerun-if-changed=../src-leptos/index.html");

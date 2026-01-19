@@ -297,8 +297,21 @@ pub fn transform_openai_request(
     let contents = merged_contents;
 
     // 3. Build request body
+    let thinking_budget: u32 = 16000;
+    let min_output_for_thinking = thinking_budget + 4000; // Claude requires max_tokens > budget_tokens
+
+    let max_output_tokens = if is_thinking_model {
+        // For thinking models, ensure max_tokens > thinking_budget
+        request
+            .max_tokens
+            .map(|t| t.max(min_output_for_thinking))
+            .unwrap_or(min_output_for_thinking)
+    } else {
+        request.max_tokens.unwrap_or(16384)
+    };
+
     let mut gen_config = json!({
-        "maxOutputTokens": request.max_tokens.unwrap_or(65536),
+        "maxOutputTokens": max_output_tokens,
         "temperature": request.temperature.unwrap_or(1.0),
         "topP": request.top_p.unwrap_or(1.0),
     });
@@ -310,11 +323,13 @@ pub fn transform_openai_request(
     if is_thinking_model {
         gen_config["thinkingConfig"] = json!({
             "includeThoughts": true,
-            "thinkingBudget": 16000
+            "thinkingBudget": thinking_budget
         });
         tracing::debug!(
-            "[OpenAI-Request] Injected thinkingConfig for model {}: thinkingBudget=16000",
-            mapped_model
+            "[OpenAI-Request] Injected thinkingConfig for model {}: thinkingBudget={}, maxOutputTokens={}",
+            mapped_model,
+            thinking_budget,
+            max_output_tokens
         );
     }
 

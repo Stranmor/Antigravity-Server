@@ -251,6 +251,7 @@ async fn build_router(state: AppState, _axum_server: Arc<AxumServer>) -> Router 
         .nest("/api", api::router())
         .route("/health", get(health_check))
         .route("/healthz", get(health_check))
+        .route("/version", get(version_info))
         .with_state(state);
 
     // SPA fallback: when a file is not found, serve index.html
@@ -280,5 +281,16 @@ async fn health_check() -> impl IntoResponse {
     (
         StatusCode::OK,
         axum::Json(serde_json::json!({"status": "ok"})),
+    )
+}
+
+async fn version_info() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        axum::Json(serde_json::json!({
+            "version": env!("GIT_VERSION"),
+            "build_time": env!("BUILD_TIME"),
+            "cargo_version": env!("CARGO_PKG_VERSION"),
+        })),
     )
 }
