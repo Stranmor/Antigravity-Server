@@ -73,7 +73,7 @@ vendor/
 
 ### ⏭️ Remaining Tasks
 
-- [ ] **Phase 4:** VPS deployment (optional)
+- [x] **Phase 4:** VPS deployment ✅ [2026-01-19] — `https://antigravity.quantumind.ru`
 - [ ] **Phase 5:** Extract `antigravity-proxy` crate (optional cleanup)
 - [x] **Phase 6:** CLI Management — full headless control without Web UI ✅ [2026-01-19]
 - [x] **Phase 7:** Rust SDK (`antigravity-client`) — auto-discovery, retry, streaming ✅ [2026-01-19]
