@@ -75,6 +75,30 @@ impl TokenManager {
         tracing::info!("✅ Rate limit auto-cleanup task started (interval: 60s)");
     }
 
+    /// Start periodic account sync task (reloads accounts from disk every 60s)
+    /// This ensures accounts added/modified externally are picked up automatically.
+    pub fn start_auto_account_sync(self: &Arc<Self>) {
+        let manager = Arc::clone(self);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+            // Skip first tick (accounts already loaded at startup)
+            interval.tick().await;
+
+            loop {
+                interval.tick().await;
+                match manager.reload_all_accounts().await {
+                    Ok(count) => {
+                        tracing::debug!("🔄 Auto-sync: Reloaded {} account(s) from disk", count);
+                    }
+                    Err(e) => {
+                        tracing::warn!("⚠️ Auto-sync: Failed to reload accounts: {}", e);
+                    }
+                }
+            }
+        });
+        tracing::info!("✅ Account auto-sync task started (interval: 60s)");
+    }
+
     /// 从主应用账号目录加载所有账号
     pub async fn load_accounts(&self) -> Result<usize, String> {
         let accounts_dir = self.data_dir.join("accounts");

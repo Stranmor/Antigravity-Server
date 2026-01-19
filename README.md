@@ -24,6 +24,19 @@ Built from the ground up for **headless server deployment** and **maximum resili
 
 ---
 
+## 📸 Screenshots
+
+<div align="center">
+
+| Dashboard | Account Management |
+|:---------:|:------------------:|
+| ![Dashboard](public/screenshot-dashboard.png) | ![Accounts](public/screenshot-accounts.png) |
+| Real-time quota monitoring across all accounts | Per-model quota tracking with tier classification |
+
+</div>
+
+---
+
 ## 🎯 Why Antigravity Server?
 
 While [Antigravity Manager](https://github.com/lbjlaq/Antigravity-Manager) provides an excellent desktop experience, Antigravity Server is built for developers who need a **headless daemon** that can run on a VPS, in Docker, or as a background service with enterprise-grade stability.

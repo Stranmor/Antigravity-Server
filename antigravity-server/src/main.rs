@@ -83,6 +83,7 @@ async fn run_server(port: u16) -> Result<()> {
     }
 
     token_manager.start_auto_cleanup();
+    token_manager.start_auto_account_sync();
 
     // Initialize WARP IP isolation (per-account SOCKS5 proxies)
     let warp_mapping_path = std::env::var("WARP_MAPPING_FILE").unwrap_or_else(|_| {
