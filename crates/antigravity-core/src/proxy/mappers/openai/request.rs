@@ -300,22 +300,13 @@ pub fn transform_openai_request(
     let thinking_budget: u32 = 16000;
     let min_output_for_thinking = thinking_budget + 4000; // Claude requires max_tokens > budget_tokens
 
-    // [FORK] Hard limit on output tokens to prevent stream truncation.
-    // Antigravity API silently cuts output at ~4K tokens without proper finish_reason.
-    // This ensures clients receive "length" stop reason instead of broken stream.
-    const MAX_OUTPUT_TOKENS_LIMIT: u32 = 4096;
-
     let max_output_tokens = if is_thinking_model {
-        // Thinking models require max_tokens > thinking_budget (API constraint)
         request
             .max_tokens
-            .map(|t| t.max(min_output_for_thinking).min(MAX_OUTPUT_TOKENS_LIMIT))
-            .unwrap_or(min_output_for_thinking.min(MAX_OUTPUT_TOKENS_LIMIT))
+            .map(|t| t.max(min_output_for_thinking))
+            .unwrap_or(min_output_for_thinking)
     } else {
-        request
-            .max_tokens
-            .unwrap_or(MAX_OUTPUT_TOKENS_LIMIT)
-            .min(MAX_OUTPUT_TOKENS_LIMIT)
+        request.max_tokens.unwrap_or(16384)
     };
 
     let mut gen_config = json!({

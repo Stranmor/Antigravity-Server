@@ -1718,12 +1718,19 @@ fn build_generation_config(
     }*/
 
     // max_tokens 映射为 maxOutputTokens
-    // [FORK] Hard limit to prevent silent stream truncation at ~4K tokens
-    const MAX_OUTPUT_TOKENS_LIMIT: i64 = 4096;
-    let mut final_max_tokens: i64 = claude_req
-        .max_tokens
-        .map(|t| (t as i64).min(MAX_OUTPUT_TOKENS_LIMIT))
-        .unwrap_or(MAX_OUTPUT_TOKENS_LIMIT);
+    // [FORK] Hard limit for Claude non-thinking models — Vertex AI truncates at ~4K tokens
+    const CLAUDE_MAX_OUTPUT_TOKENS: i64 = 4096;
+    let is_claude_model = claude_req.model.to_lowercase().contains("claude");
+    let has_thinking = config.get("thinkingConfig").is_some();
+
+    let mut final_max_tokens: i64 = if is_claude_model && !has_thinking {
+        claude_req
+            .max_tokens
+            .map(|t| (t as i64).min(CLAUDE_MAX_OUTPUT_TOKENS))
+            .unwrap_or(CLAUDE_MAX_OUTPUT_TOKENS)
+    } else {
+        claude_req.max_tokens.map(|t| t as i64).unwrap_or(65536)
+    };
 
     // [NEW] 确保 maxOutputTokens 大于 thinkingBudget (API 强约束)
     if let Some(thinking_config) = config.get("thinkingConfig") {
@@ -1741,7 +1748,6 @@ fn build_generation_config(
             }
         }
     }
-    final_max_tokens = final_max_tokens.min(MAX_OUTPUT_TOKENS_LIMIT);
 
     config["maxOutputTokens"] = json!(final_max_tokens);
 
