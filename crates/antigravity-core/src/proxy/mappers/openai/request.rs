@@ -301,6 +301,7 @@ pub fn transform_openai_request(
     let min_output_for_thinking = thinking_budget + 4000; // Claude requires max_tokens > budget_tokens
 
     let max_output_tokens = if is_thinking_model {
+        // For thinking models, ensure max_tokens > thinking_budget
         request
             .max_tokens
             .map(|t| t.max(min_output_for_thinking))

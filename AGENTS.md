@@ -393,8 +393,6 @@ Tested by asking models "What model are you?":
 
 Google Antigravity API has an **undocumented output limit of ~4K tokens** (~150-200 lines of code).
 
-**Affected:** Claude models via Vertex AI only. Gemini models appear unaffected.
-
 **Symptoms:**
 - Stream cuts mid-response without `finish_reason: "max_tokens"`
 - Tool call JSON left incomplete/invalid
@@ -402,28 +400,6 @@ Google Antigravity API has an **undocumented output limit of ~4K tokens** (~150-
 - No error message — just silent truncation
 
 **Empirical evidence:** Max observed output in 24h of logs = 3901 tokens.
-
-### Current Fix [2026-01-20] — TEMPORARY FOR TESTING
-
-Hardcoded limits in `claude/request.rs` → `build_generation_config()`:
-
-```rust
-const CLAUDE_MAX_OUTPUT_TOKENS: u32 = 4096;
-const CLAUDE_MAX_THINKING_BUDGET: u32 = 2048;
-```
-
-**Logic:**
-- `is_claude_model` = model name contains "claude" (case-insensitive)
-- Non-thinking Claude: `max_tokens` capped at 4096
-- Thinking Claude: `thinking_budget` capped at 2048, `max_tokens` capped at 4096
-- Gemini models: no limit applied
-
-**Trade-off:** Thinking models get only 2048 tokens for reasoning + 2048 for output. This may degrade quality for complex tasks but prevents stream truncation.
-
-**TODO:** This is temporary. May need:
-- Make limits configurable via env/config
-- Revert if Google fixes the issue
-- Increase limits if empirical testing shows higher values work
 
 ### What This Means
 
@@ -447,6 +423,8 @@ For large files, use incremental approach:
 1. **Auto-continue in proxy** — detect truncated stream (no valid stop_reason), auto-send "continue" request, splice responses
 2. **Output size estimation** — before sending request, estimate expected output size, warn if >4K tokens
 3. **Paid API fallback** — route large-output requests to OpenRouter/direct Anthropic API
+
+**Status:** No fix implemented. Using system prompt workaround (see global AGENTS.md rule 20).
 
 ---
 

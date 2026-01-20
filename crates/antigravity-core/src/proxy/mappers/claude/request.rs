@@ -1662,11 +1662,6 @@ fn build_generation_config(
 ) -> Value {
     let mut config = json!({});
 
-    // [FORK TEMP] Claude models: hard limit due to Vertex AI ~4K output truncation
-    const CLAUDE_MAX_OUTPUT_TOKENS: u32 = 4096;
-    const CLAUDE_MAX_THINKING_BUDGET: u32 = 2048;
-    let is_claude_model = claude_req.model.to_lowercase().contains("claude");
-
     // Thinking 配置
     if let Some(thinking) = &claude_req.thinking {
         // [New Check] 必须 is_thinking_enabled 为真才生成 thinkingConfig
@@ -1681,12 +1676,7 @@ fn build_generation_config(
                 if is_flash_model {
                     budget = budget.min(24576);
                 }
-                if is_claude_model {
-                    budget = budget.min(CLAUDE_MAX_THINKING_BUDGET);
-                }
                 thinking_config["thinkingBudget"] = json!(budget);
-            } else if is_claude_model {
-                thinking_config["thinkingBudget"] = json!(CLAUDE_MAX_THINKING_BUDGET);
             }
 
             config["thinkingConfig"] = thinking_config;
@@ -1728,26 +1718,23 @@ fn build_generation_config(
     }*/
 
     // max_tokens 映射为 maxOutputTokens
-    let mut final_max_tokens: i64 = if is_claude_model {
-        claude_req
-            .max_tokens
-            .map(|t| (t as i64).min(CLAUDE_MAX_OUTPUT_TOKENS as i64))
-            .unwrap_or(CLAUDE_MAX_OUTPUT_TOKENS as i64)
-    } else {
-        claude_req.max_tokens.map(|t| t as i64).unwrap_or(65536)
-    };
+    // [FIX] Use client's max_tokens if provided, otherwise use high default (65536)
+    // Gemini supports up to 65536 output tokens for most models
+    let mut final_max_tokens: i64 = claude_req.max_tokens.map(|t| t as i64).unwrap_or(65536);
 
-    // 确保 maxOutputTokens 大于 thinkingBudget (API 强约束)
+    // [NEW] 确保 maxOutputTokens 大于 thinkingBudget (API 强约束)
     if let Some(thinking_config) = config.get("thinkingConfig") {
         if let Some(budget) = thinking_config
             .get("thinkingBudget")
             .and_then(|t| t.as_u64())
         {
             if final_max_tokens <= budget as i64 {
-                final_max_tokens = (budget + 1024) as i64;
-            }
-            if is_claude_model {
-                final_max_tokens = final_max_tokens.min(CLAUDE_MAX_OUTPUT_TOKENS as i64);
+                final_max_tokens = (budget + 8192) as i64;
+                tracing::info!(
+                    "[Generation-Config] Bumping maxOutputTokens to {} due to thinking budget of {}",
+                    final_max_tokens,
+                    budget
+                );
             }
         }
     }
