@@ -334,7 +334,7 @@ pub async fn handle_chat_completions(
                                 .header("X-Mapped-Model", &mapped_model)
                                 .header("X-Mapping-Reason", &reason)
                                 .body(body)
-                                .unwrap()
+                                .expect("valid streaming response")
                                 .into_response());
                         } else {
                             // 客户端要非 Stream，需要收集完整响应并转换为 JSON
@@ -724,7 +724,7 @@ pub async fn handle_completions(
                         let output = item.get("output");
                         let output_str = if let Some(o) = output {
                             if o.is_string() {
-                                o.as_str().unwrap().to_string()
+                                o.as_str().unwrap_or("").to_string()
                             } else if let Some(content) = o.get("content").and_then(|v| v.as_str())
                             {
                                 content.to_string()
@@ -1023,7 +1023,7 @@ pub async fn handle_completions(
                             .header("X-Account-Email", &email)
                             .header("X-Mapped-Model", &mapped_model)
                             .body(body)
-                            .unwrap()
+                            .expect("valid streaming response")
                             .into_response());
                     }
                     None => {

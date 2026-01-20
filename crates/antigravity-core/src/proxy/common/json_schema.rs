@@ -103,6 +103,19 @@ fn clean_json_schema_recursive(value: &mut Value) -> bool {
                 }
             }
 
+            // 1.5. [FIX] 递归清理 anyOf/oneOf 数组中的每个分支
+            // 必须在合并逻辑之前执行，确保合并的分支已经被清洗
+            if let Some(Value::Array(any_of)) = map.get_mut("anyOf") {
+                for branch in any_of.iter_mut() {
+                    clean_json_schema_recursive(branch);
+                }
+            }
+            if let Some(Value::Array(one_of)) = map.get_mut("oneOf") {
+                for branch in one_of.iter_mut() {
+                    clean_json_schema_recursive(branch);
+                }
+            }
+
             // 2. [FIX #815] 处理 anyOf/oneOf 联合类型: 合并属性而非直接删除
             let mut union_to_merge = None;
             if map.get("type").is_none()
@@ -314,6 +327,12 @@ fn clean_json_schema_recursive(value: &mut Value) -> bool {
                         }
                     }
                 }
+            }
+        }
+        Value::Array(arr) => {
+            // [FIX] 递归清理数组中的每个元素
+            for item in arr.iter_mut() {
+                clean_json_schema_recursive(item);
             }
         }
         _ => {}

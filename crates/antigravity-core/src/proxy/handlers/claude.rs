@@ -771,9 +771,10 @@ pub async fn handle_messages(
                                         .header("X-Mapped-Model", &mapped_model)
                                         .header("X-Mapping-Reason", &reason)
                                         .body(Body::from(
-                                            serde_json::to_string(&full_response).unwrap(),
+                                            serde_json::to_string(&full_response)
+                                                .expect("ClaudeResponse is always serializable"),
                                         ))
-                                        .unwrap();
+                                        .expect("valid JSON response");
                                 }
                                 Err(e) => {
                                     return (

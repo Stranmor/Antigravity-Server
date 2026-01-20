@@ -45,7 +45,9 @@ pub fn load_config() -> Result<AppConfig, String> {
                 }
             }
             // 移除旧字段
-            proxy.as_object_mut().unwrap().remove("anthropic_mapping");
+            if let Some(obj) = proxy.as_object_mut() {
+                obj.remove("anthropic_mapping");
+            }
             modified = true;
         }
 
@@ -60,15 +62,19 @@ pub fn load_config() -> Result<AppConfig, String> {
                 }
             }
             // 移除旧字段
-            proxy.as_object_mut().unwrap().remove("openai_mapping");
+            if let Some(obj) = proxy.as_object_mut() {
+                obj.remove("openai_mapping");
+            }
             modified = true;
         }
 
         if modified {
-            proxy.as_object_mut().unwrap().insert(
-                "custom_mapping".to_string(),
-                serde_json::Value::Object(custom_mapping),
-            );
+            if let Some(obj) = proxy.as_object_mut() {
+                obj.insert(
+                    "custom_mapping".to_string(),
+                    serde_json::Value::Object(custom_mapping),
+                );
+            }
         }
     }
 

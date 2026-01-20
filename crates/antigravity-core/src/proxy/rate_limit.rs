@@ -656,4 +656,87 @@ mod tests {
         // 应该被识别为 RateLimitExceeded，而不是 QuotaExhausted
         assert_eq!(reason, RateLimitReason::RateLimitExceeded);
     }
+
+    #[test]
+    fn test_mark_success_clears_rate_limit() {
+        let tracker = RateLimitTracker::new();
+        tracker.parse_from_error("acc1", 429, Some("60"), "", None);
+        assert!(tracker.is_rate_limited("acc1"));
+        tracker.mark_success("acc1");
+        assert!(!tracker.is_rate_limited("acc1"));
+    }
+
+    #[test]
+    fn test_set_lockout_until_iso() {
+        let tracker = RateLimitTracker::new();
+        let future = chrono::Utc::now() + chrono::Duration::seconds(120);
+        let iso_str = future.to_rfc3339();
+        let result =
+            tracker.set_lockout_until_iso("acc1", &iso_str, RateLimitReason::QuotaExhausted, None);
+        assert!(result);
+        assert!(tracker.is_rate_limited("acc1"));
+        let remaining = tracker.get_remaining_wait("acc1");
+        assert!((115..=125).contains(&remaining));
+    }
+
+    #[test]
+    fn test_parse_duration_string_variants() {
+        let tracker = RateLimitTracker::new();
+        assert_eq!(tracker.parse_duration_string("1h30m"), Some(5400));
+        assert_eq!(tracker.parse_duration_string("2h1m1s"), Some(7261));
+        assert_eq!(tracker.parse_duration_string("5m"), Some(300));
+        assert_eq!(tracker.parse_duration_string("30s"), Some(30));
+        assert_eq!(tracker.parse_duration_string("1h"), Some(3600));
+    }
+
+    #[test]
+    fn test_cleanup_expired_removes_old_records() {
+        let tracker = RateLimitTracker::new();
+        let past = SystemTime::now() - Duration::from_secs(10);
+        tracker.limits.insert(
+            "expired".to_string(),
+            RateLimitInfo {
+                reset_time: past,
+                retry_after_sec: 60,
+                detected_at: past,
+                reason: RateLimitReason::Unknown,
+                model: None,
+            },
+        );
+        let future = SystemTime::now() + Duration::from_secs(60);
+        tracker.limits.insert(
+            "active".to_string(),
+            RateLimitInfo {
+                reset_time: future,
+                retry_after_sec: 60,
+                detected_at: SystemTime::now(),
+                reason: RateLimitReason::Unknown,
+                model: None,
+            },
+        );
+        let cleaned = tracker.cleanup_expired();
+        assert_eq!(cleaned, 1);
+        assert!(!tracker.is_rate_limited("expired"));
+        assert!(tracker.is_rate_limited("active"));
+    }
+
+    #[test]
+    fn test_clear_all_removes_everything() {
+        let tracker = RateLimitTracker::new();
+        tracker.parse_from_error("acc1", 429, Some("60"), "", None);
+        tracker.parse_from_error("acc2", 429, Some("60"), "", None);
+        assert!(tracker.is_rate_limited("acc1"));
+        assert!(tracker.is_rate_limited("acc2"));
+        tracker.clear_all();
+        assert!(!tracker.is_rate_limited("acc1"));
+        assert!(!tracker.is_rate_limited("acc2"));
+    }
+
+    #[test]
+    fn test_model_level_rate_limit() {
+        let tracker = RateLimitTracker::new();
+        tracker.parse_from_error("acc1", 429, Some("60"), "", Some("gemini-pro".to_string()));
+        let info = tracker.get("acc1").expect("should have rate limit");
+        assert_eq!(info.model, Some("gemini-pro".to_string()));
+    }
 }

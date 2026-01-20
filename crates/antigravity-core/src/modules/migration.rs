@@ -88,7 +88,8 @@ pub async fn import_from_v1() -> Result<Vec<Account>, String> {
                 continue;
             }
 
-            let mut backup_path = PathBuf::from(target_file.unwrap());
+            // target_file is guaranteed to be Some here (checked above)
+            let mut backup_path = PathBuf::from(target_file.expect("checked is_none above"));
 
             // 如果是相对路径，尝试拼接
             if !backup_path.exists() {

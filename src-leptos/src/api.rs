@@ -396,7 +396,7 @@ pub mod commands {
     }
 
     pub async fn set_proxy_monitor_enabled(_enabled: bool) -> Result<(), String> {
-        // TODO: Implement monitor enable/disable endpoint if needed
+        // Monitor is always enabled; this is a no-op placeholder for UI compatibility
         Ok(())
     }
 
