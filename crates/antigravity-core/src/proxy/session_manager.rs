@@ -28,22 +28,8 @@ impl SessionManager {
             }
         }
 
-        // 2. 备选方案：基于 system prompt + 第一条用户消息的 SHA256 哈希
-        //    [OUR FIX] 添加 system prompt 到哈希中，减少不同项目间的 session 冲突
+        // 2. 备选方案：基于第一条用户消息的 SHA256 哈希
         let mut hasher = Sha256::new();
-
-        // 2a. 先哈希 system prompt (如果存在)
-        if let Some(system) = &request.system {
-            let system_text = match system {
-                crate::proxy::mappers::claude::models::SystemPrompt::String(s) => s.clone(),
-                crate::proxy::mappers::claude::models::SystemPrompt::Array(blocks) => blocks
-                    .iter()
-                    .map(|b| b.text.as_str())
-                    .collect::<Vec<_>>()
-                    .join(" "),
-            };
-            hasher.update(system_text.as_bytes());
-        }
 
         let mut content_found = false;
         for msg in &request.messages {
@@ -96,31 +82,6 @@ impl SessionManager {
     /// 根据 OpenAI 请求生成稳定的会话指纹
     pub fn extract_openai_session_id(request: &OpenAIRequest) -> String {
         let mut hasher = Sha256::new();
-
-        // [OUR FIX] Hash system message first to differentiate projects
-        for msg in &request.messages {
-            if msg.role == "system" {
-                if let Some(content) = &msg.content {
-                    let text = match content {
-                        OpenAIContent::String(s) => s.clone(),
-                        OpenAIContent::Array(blocks) => blocks
-                            .iter()
-                            .filter_map(|block| {
-                                match block {
-                                crate::proxy::mappers::openai::models::OpenAIContentBlock::Text {
-                                    text,
-                                } => Some(text.as_str()),
-                                _ => None,
-                            }
-                            })
-                            .collect::<Vec<_>>()
-                            .join(" "),
-                    };
-                    hasher.update(text.as_bytes());
-                }
-                break;
-            }
-        }
 
         let mut content_found = false;
         for msg in &request.messages {
