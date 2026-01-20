@@ -205,8 +205,9 @@ git add . && git commit -m "chore: sync upstream v3.3.XX changes"
   - Purifies history by removing old thinking blocks
 - **SSE Peek Fix (Issue #859)** — Enhanced peek logic with:
   - Loop to skip heartbeat SSE comments (`:` prefix)
-  - 60s timeout for first meaningful data
+  - 60s timeout for first meaningful data (Claude), 30s for OpenAI
   - Retry on empty response or timeout during peek phase
+  - **Applied to both `claude.rs` AND `openai.rs` handlers** (upstream only has it in claude.rs)
 
 **Ported from v3.3.43:**
 - Shell command array fix (`local_shell_call` command → array)
