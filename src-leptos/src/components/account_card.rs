@@ -48,7 +48,7 @@ pub fn AccountCard(
     let claude = account.quota.as_ref().and_then(|q| {
         q.models
             .iter()
-            .find(|m| m.name.to_lowercase() == "claude-sonnet-4-5-thinking")
+            .find(|m| m.name.to_lowercase() == "claude-sonnet-4-5")
             .cloned()
     });
 
