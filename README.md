@@ -6,7 +6,7 @@
 
 <img src="public/icon.png" alt="Antigravity Logo" width="140" height="140" style="border-radius: 24px;">
 
-[![Upstream](https://img.shields.io/badge/Upstream-v3.3.43-888?style=for-the-badge&logo=github)](https://github.com/lbjlaq/Antigravity-Manager)
+[![Upstream](https://img.shields.io/badge/Upstream-v3.3.45-888?style=for-the-badge&logo=github)](https://github.com/lbjlaq/Antigravity-Manager)
 [![Rust](https://img.shields.io/badge/100%25_Rust-dea584?style=for-the-badge&logo=rust&logoColor=black)](https://www.rust-lang.org/)
 [![Leptos](https://img.shields.io/badge/Leptos-WASM-8B5CF6?style=for-the-badge)](https://leptos.dev/)
 [![Axum](https://img.shields.io/badge/Axum-Server-3B82F6?style=for-the-badge)](https://github.com/tokio-rs/axum)
@@ -143,7 +143,7 @@ client = openai.OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="gemini-2.0-pro", # Automatically routed to best account
+    model="gemini-3-pro-high", # Automatically routed to best account
     messages=[{"role": "user", "content": "Hello!"}]
 )
 ```
@@ -153,7 +153,7 @@ response = client.chat.completions.create(
 curl http://127.0.0.1:8045/v1/chat/completions \
   -H "Authorization: Bearer sk-antigravity" \
   -H "Content-Type: application/json" \
-  -d '{"model": "gemini-2.5-flash", "messages": [{"role": "user", "content": "Hi"}]}'
+  -d '{"model": "gemini-3-flash", "messages": [{"role": "user", "content": "Hi"}]}'
 ```
 
 ---
@@ -271,7 +271,7 @@ This fork uses **Semantic Porting** — we don't blindly copy upstream changes. 
 - ✅ **Always Port**: Bug fixes, new model support, security patches, JSON schema improvements
 - ❌ **Never Port**: React/Tauri code (we use Leptos/Axum), changes conflicting with our resilience layer
 
-**Current Sync**: We track upstream v3.3.43 while maintaining our custom additions (AIMD, Circuit Breakers, Prometheus, WARP support).
+**Current Sync**: We track upstream v3.3.45 while maintaining our custom additions (AIMD, Circuit Breakers, Prometheus, WARP support, Grace Retry).
 
 See [AGENTS.md](AGENTS.md) for detailed architecture documentation and sync workflow.
 

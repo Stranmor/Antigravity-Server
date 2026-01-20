@@ -6,7 +6,7 @@
 
 <img src="public/icon.png" alt="Antigravity Logo" width="140" height="140" style="border-radius: 24px;">
 
-[![Upstream](https://img.shields.io/badge/Upstream-v3.3.43-888?style=for-the-badge&logo=github)](https://github.com/lbjlaq/Antigravity-Manager)
+[![Upstream](https://img.shields.io/badge/Upstream-v3.3.45-888?style=for-the-badge&logo=github)](https://github.com/lbjlaq/Antigravity-Manager)
 [![Rust](https://img.shields.io/badge/100%25_Rust-dea584?style=for-the-badge&logo=rust&logoColor=black)](https://www.rust-lang.org/)
 [![Leptos](https://img.shields.io/badge/Leptos-WASM-8B5CF6?style=for-the-badge)](https://leptos.dev/)
 [![Axum](https://img.shields.io/badge/Axum-Server-3B82F6?style=for-the-badge)](https://github.com/tokio-rs/axum)
@@ -114,7 +114,7 @@ client = openai.OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="gemini-2.0-pro",
+    model="gemini-3-pro-high",
     messages=[{"role": "user", "content": "Привет!"}]
 )
 ```
@@ -124,7 +124,7 @@ response = client.chat.completions.create(
 curl http://127.0.0.1:8045/v1/chat/completions \
   -H "Authorization: Bearer sk-antigravity" \
   -H "Content-Type: application/json" \
-  -d '{"model": "gemini-2.5-flash", "messages": [{"role": "user", "content": "Привет"}]}'
+  -d '{"model": "gemini-3-flash", "messages": [{"role": "user", "content": "Привет"}]}'
 ```
 
 ## 🔧 Деплой
@@ -177,7 +177,7 @@ vendor/antigravity-upstream/ # Upstream (Git Submodule)
 - ✅ **Всегда портируем**: баг-фиксы, поддержка новых моделей, security-патчи
 - ❌ **Никогда не портируем**: React/Tauri код, изменения конфликтующие с нашим resilience-слоем
 
-**Текущий статус**: Отслеживаем upstream v3.3.43, сохраняя наши добавления (AIMD, Circuit Breakers, Prometheus, WARP).
+**Текущий статус**: Отслеживаем upstream v3.3.45, сохраняя наши добавления (AIMD, Circuit Breakers, Prometheus, WARP, Grace Retry).
 
 Подробная документация архитектуры: [AGENTS.md](AGENTS.md)
 
