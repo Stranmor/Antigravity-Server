@@ -121,7 +121,25 @@ pub async fn handle_generate(
         let status = response.status();
         if status.is_success() {
             if is_stream {
-                return handle_stream_response(response, session_id, email, mapped_model).await;
+                let mut response_stream = response.bytes_stream();
+
+                let first_chunk = match peek_first_chunk(&mut response_stream).await {
+                    Ok(chunk) => chunk,
+                    Err(peek_err) => {
+                        warn!("[Gemini] Peek failed: {}, rotating account", peek_err);
+                        last_error = peek_err;
+                        continue;
+                    }
+                };
+
+                return build_stream_response(
+                    response_stream,
+                    first_chunk,
+                    session_id,
+                    email,
+                    mapped_model,
+                )
+                .await;
             }
 
             let resp: Value = response
@@ -228,6 +246,83 @@ pub async fn handle_count_tokens(
     Ok(Json(json!({"totalTokens": 0})))
 }
 
+/// Peek first SSE chunk with retry logic (Issue #859)
+/// Returns the first meaningful data chunk, skipping heartbeats.
+/// On timeout/empty/error, returns Err for account rotation.
+async fn peek_first_chunk<S>(stream: &mut S) -> Result<Bytes, String>
+where
+    S: futures::Stream<Item = Result<Bytes, reqwest::Error>> + Unpin,
+{
+    const PEEK_TIMEOUT_SECS: u64 = 30;
+    const MAX_HEARTBEATS: usize = 20;
+    const MAX_PEEK_DURATION_SECS: u64 = 90;
+
+    let peek_start = std::time::Instant::now();
+    let mut heartbeat_count = 0;
+
+    loop {
+        // Total peek phase limit
+        if peek_start.elapsed().as_secs() > MAX_PEEK_DURATION_SECS {
+            return Err(format!(
+                "Peek phase exceeded {}s limit ({} heartbeats seen)",
+                MAX_PEEK_DURATION_SECS, heartbeat_count
+            ));
+        }
+
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(PEEK_TIMEOUT_SECS),
+            stream.next(),
+        )
+        .await
+        {
+            Ok(Some(Ok(bytes))) => {
+                if bytes.is_empty() {
+                    warn!("[Gemini] Empty chunk received, retrying peek...");
+                    heartbeat_count += 1;
+                    if heartbeat_count > MAX_HEARTBEATS {
+                        return Err(format!(
+                            "Too many empty chunks ({}), rotating account",
+                            heartbeat_count
+                        ));
+                    }
+                    continue;
+                }
+
+                // Check for SSE heartbeat (lines starting with ':')
+                if let Ok(text) = std::str::from_utf8(&bytes) {
+                    let trimmed = text.trim();
+                    if trimmed.starts_with(':') || trimmed.is_empty() {
+                        debug!("[Gemini] Skipping SSE heartbeat: {:?}", trimmed);
+                        heartbeat_count += 1;
+                        if heartbeat_count > MAX_HEARTBEATS {
+                            return Err(format!(
+                                "Too many heartbeats ({}), rotating account",
+                                heartbeat_count
+                            ));
+                        }
+                        continue;
+                    }
+                }
+
+                // Valid data chunk
+                return Ok(bytes);
+            }
+            Ok(Some(Err(e))) => {
+                return Err(format!("Stream error during peek: {}", e));
+            }
+            Ok(None) => {
+                return Err("Stream ended immediately (empty response)".to_string());
+            }
+            Err(_) => {
+                return Err(format!(
+                    "Timeout ({}s) waiting for first chunk",
+                    PEEK_TIMEOUT_SECS
+                ));
+            }
+        }
+    }
+}
+
 fn extract_signature(resp: &Value, session_id: &str) {
     let inner = resp.get("response").unwrap_or(resp);
     if let Some(candidates) = inner.get("candidates").and_then(|c| c.as_array()) {
@@ -249,27 +344,17 @@ fn extract_signature(resp: &Value, session_id: &str) {
     }
 }
 
-async fn handle_stream_response(
-    response: reqwest::Response,
+async fn build_stream_response<S>(
+    mut response_stream: S,
+    first_chunk: Bytes,
     session_id: String,
     email: String,
     mapped_model: String,
-) -> Result<Response<Body>, (StatusCode, String)> {
-    let mut response_stream = response.bytes_stream();
-    let s_id = session_id.clone();
-
-    let first_chunk = match tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        response_stream.next(),
-    )
-    .await
-    {
-        Ok(Some(Ok(bytes))) if !bytes.is_empty() => bytes,
-        Ok(Some(Ok(_))) => return Err((StatusCode::BAD_GATEWAY, "Empty chunk".to_string())),
-        Ok(Some(Err(e))) => return Err((StatusCode::BAD_GATEWAY, format!("Stream error: {}", e))),
-        Ok(None) => return Err((StatusCode::BAD_GATEWAY, "Empty response".to_string())),
-        Err(_) => return Err((StatusCode::GATEWAY_TIMEOUT, "Timeout".to_string())),
-    };
+) -> Result<Response<Body>, (StatusCode, String)>
+where
+    S: futures::Stream<Item = Result<Bytes, reqwest::Error>> + Unpin + Send + 'static,
+{
+    let s_id = session_id;
 
     let stream = async_stream::stream! {
         const MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10MB limit
