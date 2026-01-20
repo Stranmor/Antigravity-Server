@@ -624,4 +624,63 @@ mod tests {
         assert_eq!(ErrorType::from_status_code(200), None);
         assert_eq!(ErrorType::from_status_code(400), None);
     }
+
+    #[test]
+    fn test_account_health_counters() {
+        let health = AccountHealth::new("acc1".to_string(), "test@example.com".to_string());
+        assert_eq!(health.consecutive_errors(), 0);
+        assert_eq!(health.total_successes(), 0);
+        assert_eq!(health.total_errors(), 0);
+        assert!(!health.is_disabled());
+    }
+
+    #[test]
+    fn test_register_and_unregister() {
+        let monitor = HealthMonitor::new();
+        monitor.register_account("acc1".to_string(), "email@test.com".to_string());
+        assert_eq!(monitor.healthy_count(), 1);
+
+        monitor.unregister_account("acc1");
+        assert_eq!(monitor.healthy_count(), 0);
+    }
+
+    #[test]
+    fn test_disabled_count() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let config = HealthConfig {
+                error_threshold: 1,
+                ..Default::default()
+            };
+            let monitor = HealthMonitor::with_config(config);
+
+            monitor.register_account("acc1".to_string(), "a@test.com".to_string());
+            monitor.register_account("acc2".to_string(), "b@test.com".to_string());
+
+            assert_eq!(monitor.disabled_count(), 0);
+            assert_eq!(monitor.healthy_count(), 2);
+
+            monitor.record_error("acc1", 500, "error").await;
+
+            assert_eq!(monitor.disabled_count(), 1);
+            assert_eq!(monitor.healthy_count(), 1);
+        });
+    }
+
+    #[test]
+    fn test_clear() {
+        let monitor = HealthMonitor::new();
+        monitor.register_account("acc1".to_string(), "a@test.com".to_string());
+        monitor.register_account("acc2".to_string(), "b@test.com".to_string());
+        assert_eq!(monitor.healthy_count(), 2);
+
+        monitor.clear();
+        assert_eq!(monitor.healthy_count(), 0);
+    }
+
+    #[test]
+    fn test_truncate_string() {
+        assert_eq!(truncate_string("short", 10), "short");
+        assert_eq!(truncate_string("longer text here", 10), "longer tex…");
+    }
 }

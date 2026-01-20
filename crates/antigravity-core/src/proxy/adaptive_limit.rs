@@ -599,4 +599,61 @@ mod tests {
         let _ = manager.get_or_create("account2");
         assert_eq!(manager.len(), 2);
     }
+
+    #[test]
+    fn test_probe_strategy_needs_secondary() {
+        assert!(!ProbeStrategy::None.needs_secondary());
+        assert!(!ProbeStrategy::CheapProbe.needs_secondary());
+        assert!(ProbeStrategy::DelayedHedge.needs_secondary());
+        assert!(ProbeStrategy::ImmediateHedge.needs_secondary());
+    }
+
+    #[test]
+    fn test_probe_strategy_is_fire_and_forget() {
+        assert!(!ProbeStrategy::None.is_fire_and_forget());
+        assert!(ProbeStrategy::CheapProbe.is_fire_and_forget());
+        assert!(!ProbeStrategy::DelayedHedge.is_fire_and_forget());
+        assert!(!ProbeStrategy::ImmediateHedge.is_fire_and_forget());
+    }
+
+    #[test]
+    fn test_manager_record_success_creates_tracker() {
+        let manager = AdaptiveLimitManager::default();
+        assert!(manager.is_empty());
+
+        manager.record_success("new_account");
+        assert_eq!(manager.len(), 1);
+    }
+
+    #[test]
+    fn test_manager_record_429_contracts() {
+        let manager = AdaptiveLimitManager::default();
+        let _ = manager.get_or_create("account");
+        let initial = manager.get("account").unwrap().confirmed_limit();
+
+        manager.record_429("account");
+        let after = manager.get("account").unwrap().confirmed_limit();
+
+        assert!(after < initial);
+    }
+
+    #[test]
+    fn test_manager_should_allow() {
+        let manager = AdaptiveLimitManager::default();
+        assert!(manager.should_allow("account"));
+    }
+
+    #[test]
+    fn test_aimd_custom_params() {
+        let aimd = AIMDController {
+            additive_increase: 0.10,
+            multiplicative_decrease: 0.5,
+            min_limit: 5,
+            max_limit: 500,
+        };
+        assert_eq!(aimd.reward(100), 111); // 100 * 1.10 = 110.0, ceil = 111
+        assert_eq!(aimd.penalize(100), 50);
+        assert_eq!(aimd.penalize(8), 5);
+        assert_eq!(aimd.reward(500), 500);
+    }
 }
