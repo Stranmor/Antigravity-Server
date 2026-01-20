@@ -11,6 +11,10 @@ use crate::proxy::AdaptiveLimitManager;
 use antigravity_shared::proxy::config::StickySessionConfig;
 use antigravity_shared::proxy::SchedulingMode; // Use shared version to avoid type conflict
 
+/// Token representing an authenticated account with OAuth credentials.
+///
+/// Contains access/refresh tokens, account metadata, and quota information
+/// for routing requests to the appropriate Google/Anthropic backend.
 #[derive(Debug, Clone)]
 pub struct ProxyToken {
     pub account_id: String,
@@ -25,6 +29,14 @@ pub struct ProxyToken {
     pub remaining_quota: Option<i32>, // [FIX #563] Remaining quota percentage for priority sorting
 }
 
+/// Manages OAuth tokens for multiple accounts with rate limiting and session affinity.
+///
+/// Key responsibilities:
+/// - Load/reload accounts from disk
+/// - Token selection based on scheduling mode (CacheFirst, Balance, PerformanceFirst)
+/// - Rate limit tracking per account
+/// - Session-to-account binding for cache optimization
+/// - AIMD predictive rate limiting integration
 pub struct TokenManager {
     tokens: Arc<DashMap<String, ProxyToken>>, // account_id -> ProxyToken
     current_index: Arc<AtomicUsize>,
@@ -1319,4 +1331,137 @@ fn truncate_reason(reason: &str, max_len: usize) -> String {
     let mut s: String = reason.chars().take(max_len).collect();
     s.push('…');
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn create_test_manager() -> TokenManager {
+        TokenManager::new(PathBuf::from("/tmp/test_antigravity"))
+    }
+
+    #[test]
+    fn test_new_manager_is_empty() {
+        let manager = create_test_manager();
+        assert!(manager.is_empty());
+        assert_eq!(manager.len(), 0);
+    }
+
+    #[test]
+    fn test_rate_limit_integration() {
+        let manager = create_test_manager();
+        let account_id = "test_account_123";
+
+        assert!(!manager.is_rate_limited(account_id));
+
+        manager.mark_rate_limited(account_id, 429, Some("60"), "");
+        assert!(manager.is_rate_limited(account_id));
+
+        manager.mark_account_success(account_id);
+        assert!(!manager.is_rate_limited(account_id));
+    }
+
+    #[test]
+    fn test_rate_limit_with_model() {
+        let manager = create_test_manager();
+        let account_id = "test_account_456";
+
+        manager.mark_rate_limited_with_model(
+            account_id,
+            429,
+            Some("30"),
+            "",
+            Some("gemini-pro".to_string()),
+        );
+
+        assert!(manager.is_rate_limited(account_id));
+        let info = manager.rate_limit_tracker().get(account_id);
+        assert!(info.is_some());
+        assert_eq!(info.unwrap().model, Some("gemini-pro".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_preferred_account_mode() {
+        let manager = create_test_manager();
+
+        assert!(manager.get_preferred_account().await.is_none());
+
+        manager
+            .set_preferred_account(Some("fixed_account".to_string()))
+            .await;
+        assert_eq!(
+            manager.get_preferred_account().await,
+            Some("fixed_account".to_string())
+        );
+
+        manager.set_preferred_account(None).await;
+        assert!(manager.get_preferred_account().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_sticky_config_update() {
+        let manager = create_test_manager();
+
+        let initial = manager.get_sticky_config().await;
+        assert_eq!(initial.mode, SchedulingMode::Balance);
+
+        let new_config = StickySessionConfig {
+            mode: SchedulingMode::PerformanceFirst,
+            ..Default::default()
+        };
+        manager.update_sticky_config(new_config).await;
+
+        let updated = manager.get_sticky_config().await;
+        assert_eq!(updated.mode, SchedulingMode::PerformanceFirst);
+    }
+
+    #[test]
+    fn test_session_bindings() {
+        let manager = create_test_manager();
+
+        manager
+            .session_accounts
+            .insert("session_1".to_string(), "account_a".to_string());
+        manager
+            .session_accounts
+            .insert("session_2".to_string(), "account_b".to_string());
+
+        assert_eq!(manager.session_accounts.len(), 2);
+
+        manager.clear_session_binding("session_1");
+        assert_eq!(manager.session_accounts.len(), 1);
+
+        manager.clear_all_sessions();
+        assert_eq!(manager.session_accounts.len(), 0);
+    }
+
+    #[test]
+    fn test_truncate_reason() {
+        assert_eq!(truncate_reason("short", 10), "short");
+        assert_eq!(
+            truncate_reason("this is a very long reason", 10),
+            "this is a …"
+        );
+        assert_eq!(truncate_reason("exact10chr", 10), "exact10chr");
+    }
+
+    #[tokio::test]
+    async fn test_adaptive_limits_injection() {
+        let manager = create_test_manager();
+
+        {
+            let guard = manager.adaptive_limits.read().await;
+            assert!(guard.is_none());
+        }
+
+        let limits = Arc::new(AdaptiveLimitManager::new(0.8, Default::default()));
+        manager.set_adaptive_limits(limits).await;
+
+        {
+            let guard = manager.adaptive_limits.read().await;
+            assert!(guard.is_some());
+        }
+    }
 }
