@@ -250,8 +250,6 @@ pub struct StreamingState {
     // [NEW] MCP XML Bridge 缓冲区
     pub mcp_xml_buffer: String,
     pub in_mcp_xml: bool,
-    // [NEW] Truncation detection: tracks if we received proper finish_reason from upstream
-    pub received_finish_reason: bool,
 }
 
 impl Default for StreamingState {
@@ -281,7 +279,6 @@ impl StreamingState {
             context_limit: 1_048_576, // Default to 1M
             mcp_xml_buffer: String::new(),
             in_mcp_xml: false,
-            received_finish_reason: false,
         }
     }
 
