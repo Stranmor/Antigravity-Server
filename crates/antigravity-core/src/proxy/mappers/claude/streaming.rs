@@ -250,6 +250,8 @@ pub struct StreamingState {
     // [NEW] MCP XML Bridge 缓冲区
     pub mcp_xml_buffer: String,
     pub in_mcp_xml: bool,
+    // [NEW] Truncation detection: tracks if we received proper finish_reason from upstream
+    pub received_finish_reason: bool,
 }
 
 impl Default for StreamingState {
@@ -279,6 +281,7 @@ impl StreamingState {
             context_limit: 1_048_576, // Default to 1M
             mcp_xml_buffer: String::new(),
             in_mcp_xml: false,
+            received_finish_reason: false,
         }
     }
 
@@ -487,9 +490,17 @@ impl StreamingState {
         }
 
         // 确定 stop_reason
+        // [FIX] Detect silent truncation: if stream ends without finish_reason AND we're still inside a block,
+        // assume the response was truncated by upstream's undocumented output limit (~4K tokens)
         let stop_reason = if self.used_tool {
             "tool_use"
         } else if finish_reason == Some("MAX_TOKENS") {
+            "max_tokens"
+        } else if finish_reason.is_none() && self.block_type != BlockType::None {
+            tracing::warn!(
+                "[Truncation Detected] Stream ended without finish_reason while inside {:?} block",
+                self.block_type
+            );
             "max_tokens"
         } else {
             "end_turn"
