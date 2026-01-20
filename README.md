@@ -271,7 +271,7 @@ This fork uses **Semantic Porting** — we don't blindly copy upstream changes. 
 - ✅ **Always Port**: Bug fixes, new model support, security patches, JSON schema improvements
 - ❌ **Never Port**: React/Tauri code (we use Leptos/Axum), changes conflicting with our resilience layer
 
-**Current Sync**: We track upstream v3.3.45 while maintaining our custom additions (AIMD, Circuit Breakers, Prometheus, WARP support, Grace Retry).
+**🔄 Active Sync**: We actively port all upstream changes within 24-48 hours of release. Currently synced with v3.3.45, plus our exclusive additions: AIMD predictive rate limiting, Circuit Breakers, Prometheus metrics, WARP proxy isolation, Grace Retry, and sticky session rebind on 429.
 
 See [AGENTS.md](AGENTS.md) for detailed architecture documentation and sync workflow.
 
