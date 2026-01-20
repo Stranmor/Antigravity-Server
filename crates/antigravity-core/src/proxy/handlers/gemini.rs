@@ -194,8 +194,8 @@ pub async fn handle_list_models(
                 "name": format!("models/{}", id),
                 "version": "001",
                 "displayName": id.clone(),
-                "inputTokenLimit": 128000,
-                "outputTokenLimit": 8192,
+                "inputTokenLimit": 1048576,
+                "outputTokenLimit": 65536,
                 "supportedGenerationMethods": ["generateContent", "countTokens"]
             })
         })
@@ -207,6 +207,9 @@ pub async fn handle_get_model(Path(model_name): Path<String>) -> impl IntoRespon
     Json(json!({ "name": format!("models/{}", model_name), "displayName": model_name }))
 }
 
+/// Token counting stub - returns 0 tokens.
+/// Note: Actual token counting requires upstream API support which is not implemented.
+/// Clients should use their own tokenization if precise counts are needed.
 pub async fn handle_count_tokens(
     State(state): State<AppState>,
     Path(_model_name): Path<String>,
@@ -269,6 +272,7 @@ async fn handle_stream_response(
     };
 
     let stream = async_stream::stream! {
+        const MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10MB limit
         let mut buffer = BytesMut::new();
         let mut first_data = Some(first_chunk);
 
@@ -285,6 +289,12 @@ async fn handle_stream_response(
             };
 
             buffer.extend_from_slice(&bytes);
+
+            if buffer.len() > MAX_BUFFER_SIZE {
+                error!("[Gemini-SSE] Buffer overflow, dropping connection");
+                yield Err("Buffer overflow".to_string());
+                break;
+            }
 
             while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
                 let line_raw = buffer.split_to(pos + 1);

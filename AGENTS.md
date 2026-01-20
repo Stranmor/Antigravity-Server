@@ -155,6 +155,7 @@ This fork uses **SEMANTIC PORTING** — we don't blindly copy upstream files, we
 | File | Lines Diff | Reason |
 |------|------------|--------|
 | `handlers/claude.rs` | ~1500 | **OUR ADDITIONS:** AIMD rate limiting, resilience patterns, Axum-specific handlers, circuit breakers |
+| `handlers/gemini.rs` | ~330 | **COMPLETE REWRITE:** Full Gemini Native API handler with streaming SSE, retry logic, buffer overflow protection |
 | `mappers/claude/*.rs` | ~200 | Format differences + our clippy fixes (Rust 1.92 compliance) |
 | `mappers/openai/request.rs` | ~100 | **OUR ADDITION:** `tool_result_compressor` for OpenAI endpoint (upstream only has it for Claude) |
 | `common/json_schema.rs` | ~20 | Clippy fixes (collapsible_match, etc.) |
