@@ -127,6 +127,14 @@ pub fn init_metrics() -> PrometheusHandle {
             "antigravity_adaptive_limit_gauge",
             "Current working threshold per account"
         );
+        describe_counter!(
+            "antigravity_peek_retries_total",
+            "Total peek phase retries by reason (timeout, heartbeats, error)"
+        );
+        describe_counter!(
+            "antigravity_peek_heartbeats_total",
+            "Total heartbeats skipped during peek phase"
+        );
 
         handle
     });
@@ -257,6 +265,15 @@ pub fn record_truncation() {
 pub fn update_adaptive_limit_gauge(account_id: &str, working_threshold: u64) {
     let labels = [("account_id", account_id.to_string())];
     gauge!("antigravity_adaptive_limit_gauge", &labels).set(working_threshold as f64);
+}
+
+pub fn record_peek_retry(reason: &str) {
+    let labels = [("reason", reason.to_string())];
+    counter!("antigravity_peek_retries_total", &labels).increment(1);
+}
+
+pub fn record_peek_heartbeat() {
+    counter!("antigravity_peek_heartbeats_total").increment(1);
 }
 
 /// Render all metrics in Prometheus text format.

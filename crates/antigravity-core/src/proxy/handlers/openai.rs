@@ -1,4 +1,5 @@
 // OpenAI Handler
+use super::common::{peek_first_data_chunk, PeekConfig, PeekResult};
 use axum::{extract::Json, extract::State, http::StatusCode, response::IntoResponse};
 use base64::Engine as _;
 use bytes::Bytes;
@@ -286,112 +287,19 @@ pub async fn handle_chat_completions(
                 use futures::StreamExt;
 
                 let gemini_stream = response.bytes_stream();
-                let mut openai_stream =
+                let openai_stream =
                     create_openai_sse_stream(Box::pin(gemini_stream), openai_req.model.clone());
 
                 // [FIX #859] Enhanced Peek logic to handle heartbeats and slow start
-                // We must pre-read until we find a MEANINGFUL content block.
-                // If we only get heartbeats (ping) and then the stream dies, we should rotate account.
-                //
-                // [FIX] Added total peek timeout and heartbeat limit to prevent infinite waiting.
-                let mut first_data_chunk = None;
-                let mut retry_this_account = false;
-                let mut heartbeat_count = 0u32;
-                const MAX_HEARTBEATS: u32 = 20;
-                let peek_start = std::time::Instant::now();
-                const MAX_PEEK_DURATION: std::time::Duration = std::time::Duration::from_secs(90);
-
-                // Loop to skip heartbeats during peek (30s timeout for OpenAI format)
-                loop {
-                    if peek_start.elapsed() > MAX_PEEK_DURATION {
-                        tracing::warn!(
-                            "[{}] Peek phase exceeded {}s total timeout, retrying...",
-                            trace_id,
-                            MAX_PEEK_DURATION.as_secs()
-                        );
-                        last_error =
-                            format!("Peek phase timeout after {}s", MAX_PEEK_DURATION.as_secs());
-                        retry_this_account = true;
-                        break;
-                    }
-
-                    match tokio::time::timeout(
-                        std::time::Duration::from_secs(30),
-                        openai_stream.next(),
-                    )
-                    .await
-                    {
-                        Ok(Some(Ok(bytes))) => {
-                            if bytes.is_empty() {
-                                continue;
-                            }
-
-                            let text = String::from_utf8_lossy(&bytes);
-                            // Skip SSE comments/pings (heartbeats start with ":")
-                            if text.trim().starts_with(':') {
-                                heartbeat_count += 1;
-                                tracing::debug!(
-                                    "[{}] Skipping peek heartbeat {}/{}: {}",
-                                    trace_id,
-                                    heartbeat_count,
-                                    MAX_HEARTBEATS,
-                                    text.trim()
-                                );
-
-                                if heartbeat_count >= MAX_HEARTBEATS {
-                                    tracing::warn!(
-                                        "[{}] Exceeded {} heartbeats without real data, retrying...",
-                                        trace_id,
-                                        MAX_HEARTBEATS
-                                    );
-                                    last_error = format!(
-                                        "Too many heartbeats ({}) without data",
-                                        MAX_HEARTBEATS
-                                    );
-                                    retry_this_account = true;
-                                    break;
-                                }
-                                continue;
-                            }
-
-                            // We found real data!
-                            first_data_chunk = Some(bytes);
-                            break;
+                let peek_config = PeekConfig::openai();
+                let (first_data_chunk, openai_stream) =
+                    match peek_first_data_chunk(openai_stream, &peek_config, &trace_id).await {
+                        PeekResult::Data(bytes, stream) => (Some(bytes), stream),
+                        PeekResult::Retry(err) => {
+                            last_error = err;
+                            continue;
                         }
-                        Ok(Some(Err(e))) => {
-                            tracing::warn!(
-                                "[{}] Stream error during peek: {}, retrying...",
-                                trace_id,
-                                e
-                            );
-                            last_error = format!("Stream error during peek: {}", e);
-                            retry_this_account = true;
-                            break;
-                        }
-                        Ok(None) => {
-                            tracing::warn!(
-                                "[{}] Stream ended during peek (Empty Response), retrying...",
-                                trace_id
-                            );
-                            last_error = "Empty response stream during peek".to_string();
-                            retry_this_account = true;
-                            break;
-                        }
-                        Err(_) => {
-                            tracing::warn!(
-                                "[{}] Timeout waiting for first data (30s), retrying...",
-                                trace_id
-                            );
-                            last_error = "Timeout waiting for first data".to_string();
-                            retry_this_account = true;
-                            break;
-                        }
-                    }
-                }
-
-                if retry_this_account {
-                    continue;
-                }
+                    };
 
                 match first_data_chunk {
                     Some(bytes) => {
@@ -1044,7 +952,7 @@ pub async fn handle_completions(
                 use futures::StreamExt;
 
                 let gemini_stream = response.bytes_stream();
-                let mut sse_stream: std::pin::Pin<
+                let sse_stream: std::pin::Pin<
                     Box<dyn futures::Stream<Item = Result<Bytes, String>> + Send>,
                 > = if is_codex_style {
                     use crate::proxy::mappers::openai::streaming::create_codex_sse_stream;
@@ -1061,102 +969,15 @@ pub async fn handle_completions(
                 };
 
                 // [FIX #859] Enhanced Peek logic to handle heartbeats and slow start
-                // [FIX] Added total peek timeout and heartbeat limit to prevent infinite waiting.
-                let mut first_data_chunk = None;
-                let mut retry_this_account = false;
-                let mut heartbeat_count = 0u32;
-                const MAX_HEARTBEATS: u32 = 20;
-                let peek_start = std::time::Instant::now();
-                const MAX_PEEK_DURATION: std::time::Duration = std::time::Duration::from_secs(90);
-
-                loop {
-                    if peek_start.elapsed() > MAX_PEEK_DURATION {
-                        tracing::warn!(
-                            "[{}] Peek phase exceeded {}s total timeout, retrying...",
-                            trace_id,
-                            MAX_PEEK_DURATION.as_secs()
-                        );
-                        last_error =
-                            format!("Peek phase timeout after {}s", MAX_PEEK_DURATION.as_secs());
-                        retry_this_account = true;
-                        break;
-                    }
-
-                    match tokio::time::timeout(
-                        std::time::Duration::from_secs(30),
-                        sse_stream.next(),
-                    )
-                    .await
-                    {
-                        Ok(Some(Ok(bytes))) => {
-                            if bytes.is_empty() {
-                                continue;
-                            }
-
-                            let text = String::from_utf8_lossy(&bytes);
-                            if text.trim().starts_with(':') {
-                                heartbeat_count += 1;
-                                tracing::debug!(
-                                    "[{}] Skipping peek heartbeat {}/{}: {}",
-                                    trace_id,
-                                    heartbeat_count,
-                                    MAX_HEARTBEATS,
-                                    text.trim()
-                                );
-
-                                if heartbeat_count >= MAX_HEARTBEATS {
-                                    tracing::warn!(
-                                        "[{}] Exceeded {} heartbeats without real data, retrying...",
-                                        trace_id,
-                                        MAX_HEARTBEATS
-                                    );
-                                    last_error = format!(
-                                        "Too many heartbeats ({}) without data",
-                                        MAX_HEARTBEATS
-                                    );
-                                    retry_this_account = true;
-                                    break;
-                                }
-                                continue;
-                            }
-
-                            first_data_chunk = Some(bytes);
-                            break;
+                let peek_config = PeekConfig::openai();
+                let (first_data_chunk, sse_stream) =
+                    match peek_first_data_chunk(sse_stream, &peek_config, &trace_id).await {
+                        PeekResult::Data(bytes, stream) => (Some(bytes), stream),
+                        PeekResult::Retry(err) => {
+                            last_error = err;
+                            continue;
                         }
-                        Ok(Some(Err(e))) => {
-                            tracing::warn!(
-                                "[{}] Stream error during peek: {}, retrying...",
-                                trace_id,
-                                e
-                            );
-                            last_error = format!("Stream error during peek: {}", e);
-                            retry_this_account = true;
-                            break;
-                        }
-                        Ok(None) => {
-                            tracing::warn!(
-                                "[{}] Stream ended during peek (Empty Response), retrying...",
-                                trace_id
-                            );
-                            last_error = "Empty response stream during peek".to_string();
-                            retry_this_account = true;
-                            break;
-                        }
-                        Err(_) => {
-                            tracing::warn!(
-                                "[{}] Timeout waiting for first data (30s), retrying...",
-                                trace_id
-                            );
-                            last_error = "Timeout waiting for first data".to_string();
-                            retry_this_account = true;
-                            break;
-                        }
-                    }
-                }
-
-                if retry_this_account {
-                    continue;
-                }
+                    };
 
                 match first_data_chunk {
                     Some(bytes) => {

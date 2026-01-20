@@ -1,5 +1,6 @@
 // Claude 协议处理器
 
+use super::common::{peek_first_data_chunk, PeekConfig, PeekResult};
 use crate::proxy::mappers::claude::{
     clean_cache_control_from_messages, close_tool_loop_for_thinking, create_claude_sse_stream,
     filter_invalid_thinking_blocks_with_family, merge_consecutive_messages,
@@ -695,7 +696,7 @@ pub async fn handle_messages(
                 let stream = response.bytes_stream();
                 let gemini_stream = Box::pin(stream);
                 // [v3.3.17] Pass session_id for signature caching
-                let mut claude_stream = create_claude_sse_stream(
+                let claude_stream = create_claude_sse_stream(
                     gemini_stream,
                     trace_id.clone(),
                     email.clone(),
@@ -705,111 +706,15 @@ pub async fn handle_messages(
                 );
 
                 // [FIX #530/#529/#859] Enhanced Peek logic to handle heartbeats and slow start
-                // We must pre-read until we find a MEANINGFUL content block (like message_start).
-                // If we only get heartbeats (ping) and then the stream dies, we should rotate account.
-                //
-                // [FIX] Added total peek timeout (120s) and heartbeat limit (20) to prevent
-                // infinite waiting when model generates very large outputs and only sends heartbeats.
-                let mut first_data_chunk = None;
-                let mut retry_this_account = false;
-                let mut heartbeat_count = 0u32;
-                const MAX_HEARTBEATS: u32 = 20; // ~5-10 minutes of waiting with 15-30s heartbeat interval
-                let peek_start = std::time::Instant::now();
-                const MAX_PEEK_DURATION: std::time::Duration = std::time::Duration::from_secs(120);
-
-                // Loop to skip heartbeats during peek
-                loop {
-                    // Check total peek phase duration
-                    if peek_start.elapsed() > MAX_PEEK_DURATION {
-                        tracing::warn!(
-                            "[{}] Peek phase exceeded {}s total timeout, retrying...",
-                            trace_id,
-                            MAX_PEEK_DURATION.as_secs()
-                        );
-                        last_error =
-                            format!("Peek phase timeout after {}s", MAX_PEEK_DURATION.as_secs());
-                        retry_this_account = true;
-                        break;
-                    }
-
-                    match tokio::time::timeout(
-                        std::time::Duration::from_secs(60),
-                        claude_stream.next(),
-                    )
-                    .await
-                    {
-                        Ok(Some(Ok(bytes))) => {
-                            if bytes.is_empty() {
-                                continue;
-                            }
-
-                            let text = String::from_utf8_lossy(&bytes);
-                            // Skip SSE comments/pings (heartbeats start with ":")
-                            if text.trim().starts_with(':') {
-                                heartbeat_count += 1;
-                                tracing::debug!(
-                                    "[{}] Skipping peek heartbeat {}/{}: {}",
-                                    trace_id,
-                                    heartbeat_count,
-                                    MAX_HEARTBEATS,
-                                    text.trim()
-                                );
-
-                                // Limit heartbeats to prevent infinite loop
-                                if heartbeat_count >= MAX_HEARTBEATS {
-                                    tracing::warn!(
-                                        "[{}] Exceeded {} heartbeats without real data, retrying...",
-                                        trace_id,
-                                        MAX_HEARTBEATS
-                                    );
-                                    last_error = format!(
-                                        "Too many heartbeats ({}) without data",
-                                        MAX_HEARTBEATS
-                                    );
-                                    retry_this_account = true;
-                                    break;
-                                }
-                                continue;
-                            }
-
-                            // We found real data!
-                            first_data_chunk = Some(bytes);
-                            break;
+                let peek_config = PeekConfig::default();
+                let (first_data_chunk, claude_stream) =
+                    match peek_first_data_chunk(claude_stream, &peek_config, &trace_id).await {
+                        PeekResult::Data(bytes, stream) => (Some(bytes), stream),
+                        PeekResult::Retry(err) => {
+                            last_error = err;
+                            continue;
                         }
-                        Ok(Some(Err(e))) => {
-                            tracing::warn!(
-                                "[{}] Stream error during peek: {}, retrying...",
-                                trace_id,
-                                e
-                            );
-                            last_error = format!("Stream error during peek: {}", e);
-                            retry_this_account = true;
-                            break;
-                        }
-                        Ok(None) => {
-                            tracing::warn!(
-                                "[{}] Stream ended during peek (Empty Response), retrying...",
-                                trace_id
-                            );
-                            last_error = "Empty response stream during peek".to_string();
-                            retry_this_account = true;
-                            break;
-                        }
-                        Err(_) => {
-                            tracing::warn!(
-                                "[{}] Timeout waiting for first data (60s), retrying...",
-                                trace_id
-                            );
-                            last_error = "Timeout waiting for first data".to_string();
-                            retry_this_account = true;
-                            break;
-                        }
-                    }
-                }
-
-                if retry_this_account {
-                    continue;
-                }
+                    };
 
                 match first_data_chunk {
                     Some(bytes) => {
