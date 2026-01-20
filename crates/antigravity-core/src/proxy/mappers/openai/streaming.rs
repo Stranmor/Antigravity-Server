@@ -163,7 +163,63 @@ pub fn create_openai_sse_stream(
                                                         let mime_type = img.get("mimeType").and_then(|v| v.as_str()).unwrap_or("image/png");
                                                         let data = img.get("data").and_then(|v| v.as_str()).unwrap_or("");
                                                         if !data.is_empty() {
-                                                            content_out.push_str(&format!("![image](data:{};base64,{})", mime_type, data));
+                                                            // [FIX] Split large base64 images into smaller SSE chunks
+                                                            // to avoid "Chunk too big" errors in clients like Open WebUI
+                                                            const CHUNK_SIZE: usize = 32 * 1024; // 32KB per chunk
+                                                            let prefix = format!("![image](data:{};base64,", mime_type);
+                                                            let suffix = ")";
+
+                                                            // Send prefix as first chunk
+                                                            let prefix_chunk = json!({
+                                                                "id": &stream_id,
+                                                                "object": "chat.completion.chunk",
+                                                                "created": created_ts,
+                                                                "model": &model,
+                                                                "choices": [{
+                                                                    "index": idx as u32,
+                                                                    "delta": { "content": prefix },
+                                                                    "finish_reason": serde_json::Value::Null
+                                                                }]
+                                                            });
+                                                            let sse_out = format!("data: {}\n\n", serde_json::to_string(&prefix_chunk).unwrap_or_default());
+                                                            yield Ok::<Bytes, String>(Bytes::from(sse_out));
+
+                                                            // Send base64 data in chunks
+                                                            for chunk in data.as_bytes().chunks(CHUNK_SIZE) {
+                                                                if let Ok(chunk_str) = std::str::from_utf8(chunk) {
+                                                                    let data_chunk = json!({
+                                                                        "id": &stream_id,
+                                                                        "object": "chat.completion.chunk",
+                                                                        "created": created_ts,
+                                                                        "model": &model,
+                                                                        "choices": [{
+                                                                            "index": idx as u32,
+                                                                            "delta": { "content": chunk_str },
+                                                                            "finish_reason": serde_json::Value::Null
+                                                                        }]
+                                                                    });
+                                                                    let sse_out = format!("data: {}\n\n", serde_json::to_string(&data_chunk).unwrap_or_default());
+                                                                    yield Ok::<Bytes, String>(Bytes::from(sse_out));
+                                                                }
+                                                            }
+
+                                                            // Send suffix as final chunk
+                                                            let suffix_chunk = json!({
+                                                                "id": &stream_id,
+                                                                "object": "chat.completion.chunk",
+                                                                "created": created_ts,
+                                                                "model": &model,
+                                                                "choices": [{
+                                                                    "index": idx as u32,
+                                                                    "delta": { "content": suffix },
+                                                                    "finish_reason": serde_json::Value::Null
+                                                                }]
+                                                            });
+                                                            let sse_out = format!("data: {}\n\n", serde_json::to_string(&suffix_chunk).unwrap_or_default());
+                                                            yield Ok::<Bytes, String>(Bytes::from(sse_out));
+
+                                                            tracing::info!("[OpenAI-SSE] Sent image in {} chunks ({} bytes total)",
+                                                                (data.len() / CHUNK_SIZE) + 2, data.len());
                                                         }
                                                     }
 
@@ -291,26 +347,71 @@ pub fn create_openai_sse_stream(
                                                 yield Ok::<Bytes, String>(Bytes::from(sse_out));
                                             }
 
-                                            // 发送正常 content chunk
+                                            // 发送正常 content chunk (with chunking for large content like base64 images)
                                             if !content_out.is_empty() || finish_reason.is_some() {
-                                                let openai_chunk = json!({
-                                                    "id": &stream_id,
-                                                    "object": "chat.completion.chunk",
-                                                    "created": created_ts,
-                                                    "model": model,
-                                                    "choices": [
-                                                        {
-                                                            "index": idx as u32,
-                                                            "delta": {
-                                                                "content": content_out
-                                                            },
-                                                            "finish_reason": finish_reason
-                                                        }
-                                                    ]
-                                                });
+                                                // SSE chunk size limit: 32KB to avoid "Chunk too big" errors in clients like Open WebUI
+                                                const MAX_CHUNK_SIZE: usize = 32 * 1024;
 
-                                                let sse_out = format!("data: {}\n\n", serde_json::to_string(&openai_chunk).unwrap_or_default());
-                                                yield Ok::<Bytes, String>(Bytes::from(sse_out));
+                                                if content_out.len() > MAX_CHUNK_SIZE {
+                                                    // Large content (likely base64 image) - split into multiple SSE chunks
+                                                    let content_bytes = content_out.as_bytes();
+                                                    let total_chunks = content_bytes.len().div_ceil(MAX_CHUNK_SIZE);
+
+                                                    for (chunk_idx, chunk) in content_bytes.chunks(MAX_CHUNK_SIZE).enumerate() {
+                                                        let is_last_chunk = chunk_idx == total_chunks - 1;
+
+                                                        // UTF-8 safe chunking: find boundary that doesn't split multi-byte chars
+                                                        let chunk_str = if is_last_chunk {
+                                                            String::from_utf8_lossy(chunk).to_string()
+                                                        } else {
+                                                            let safe_len = (0..=chunk.len())
+                                                                .rev()
+                                                                .find(|&i| std::str::from_utf8(&chunk[..i]).is_ok())
+                                                                .unwrap_or(0);
+                                                            String::from_utf8_lossy(&chunk[..safe_len]).to_string()
+                                                        };
+
+                                                        let chunk_finish_reason = if is_last_chunk { finish_reason } else { None };
+
+                                                        let openai_chunk = json!({
+                                                            "id": &stream_id,
+                                                            "object": "chat.completion.chunk",
+                                                            "created": created_ts,
+                                                            "model": model,
+                                                            "choices": [
+                                                                {
+                                                                    "index": idx as u32,
+                                                                    "delta": {
+                                                                        "content": chunk_str
+                                                                    },
+                                                                    "finish_reason": chunk_finish_reason
+                                                                }
+                                                            ]
+                                                        });
+
+                                                        let sse_out = format!("data: {}\n\n", serde_json::to_string(&openai_chunk).unwrap_or_default());
+                                                        yield Ok::<Bytes, String>(Bytes::from(sse_out));
+                                                    }
+                                                } else {
+                                                    let openai_chunk = json!({
+                                                        "id": &stream_id,
+                                                        "object": "chat.completion.chunk",
+                                                        "created": created_ts,
+                                                        "model": model,
+                                                        "choices": [
+                                                            {
+                                                                "index": idx as u32,
+                                                                "delta": {
+                                                                    "content": content_out
+                                                                },
+                                                                "finish_reason": finish_reason
+                                                            }
+                                                        ]
+                                                    });
+
+                                                    let sse_out = format!("data: {}\n\n", serde_json::to_string(&openai_chunk).unwrap_or_default());
+                                                    yield Ok::<Bytes, String>(Bytes::from(sse_out));
+                                                }
                                             }
                                         }
                                     }
