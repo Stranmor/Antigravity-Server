@@ -179,6 +179,7 @@ pub async fn handle_chat_completions(
 
     let mut last_error = String::new();
     let mut last_email: Option<String> = None;
+    let trace_id = format!("oai_{}", chrono::Utc::now().timestamp_subsec_millis());
 
     for attempt in 0..max_attempts {
         // 2. 模型路由解析
@@ -282,58 +283,149 @@ pub async fn handle_chat_completions(
                 use crate::proxy::mappers::openai::streaming::create_openai_sse_stream;
                 use axum::body::Body;
                 use axum::response::Response;
+                use futures::StreamExt;
 
                 let gemini_stream = response.bytes_stream();
-                let openai_stream =
+                let mut openai_stream =
                     create_openai_sse_stream(Box::pin(gemini_stream), openai_req.model.clone());
 
-                // 判断客户端期望的格式
-                if client_wants_stream {
-                    // 客户端本就要 Stream，直接返回 SSE
-                    let body = Body::from_stream(openai_stream);
-                    return Ok(Response::builder()
-                        .header("Content-Type", "text/event-stream")
-                        .header("Cache-Control", "no-cache")
-                        .header("Connection", "keep-alive")
-                        .header("X-Account-Email", &email)
-                        .header("X-Mapped-Model", &mapped_model)
-                        .header("X-Mapping-Reason", &reason)
-                        .body(body)
-                        .unwrap()
-                        .into_response());
-                } else {
-                    // 客户端要非 Stream，需要收集完整响应并转换为 JSON
-                    use crate::proxy::mappers::openai::collect_openai_stream_to_json;
-                    use futures::StreamExt;
+                // [FIX #859] Enhanced Peek logic to handle heartbeats and slow start
+                // We must pre-read until we find a MEANINGFUL content block.
+                // If we only get heartbeats (ping) and then the stream dies, we should rotate account.
+                let mut first_data_chunk = None;
+                let mut retry_this_account = false;
 
-                    // 转换为 io::Error stream
-                    let sse_stream = openai_stream.map(|result| -> Result<Bytes, std::io::Error> {
-                        match result {
-                            Ok(bytes) => Ok(bytes),
-                            Err(e) => Err(std::io::Error::other(e)),
-                        }
-                    });
+                // Loop to skip heartbeats during peek (30s timeout for OpenAI format)
+                loop {
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(30),
+                        openai_stream.next(),
+                    )
+                    .await
+                    {
+                        Ok(Some(Ok(bytes))) => {
+                            if bytes.is_empty() {
+                                continue;
+                            }
 
-                    match collect_openai_stream_to_json(sse_stream).await {
-                        Ok(full_response) => {
-                            info!("[OpenAI] ✓ Stream collected and converted to JSON");
-                            return Ok((
-                                StatusCode::OK,
-                                [
-                                    ("X-Account-Email", email.as_str()),
-                                    ("X-Mapped-Model", mapped_model.as_str()),
-                                    ("X-Mapping-Reason", reason.as_str()),
-                                ],
-                                Json(full_response),
-                            )
-                                .into_response());
+                            let text = String::from_utf8_lossy(&bytes);
+                            // Skip SSE comments/pings (heartbeats start with ":")
+                            if text.trim().starts_with(':') {
+                                tracing::debug!(
+                                    "[{}] Skipping peek heartbeat: {}",
+                                    trace_id,
+                                    text.trim()
+                                );
+                                continue;
+                            }
+
+                            // We found real data!
+                            first_data_chunk = Some(bytes);
+                            break;
                         }
-                        Err(e) => {
-                            return Err((
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                format!("Stream collection error: {}", e),
+                        Ok(Some(Err(e))) => {
+                            tracing::warn!(
+                                "[{}] Stream error during peek: {}, retrying...",
+                                trace_id,
+                                e
+                            );
+                            last_error = format!("Stream error during peek: {}", e);
+                            retry_this_account = true;
+                            break;
+                        }
+                        Ok(None) => {
+                            tracing::warn!(
+                                "[{}] Stream ended during peek (Empty Response), retrying...",
+                                trace_id
+                            );
+                            last_error = "Empty response stream during peek".to_string();
+                            retry_this_account = true;
+                            break;
+                        }
+                        Err(_) => {
+                            tracing::warn!(
+                                "[{}] Timeout waiting for first data (30s), retrying...",
+                                trace_id
+                            );
+                            last_error = "Timeout waiting for first data".to_string();
+                            retry_this_account = true;
+                            break;
+                        }
+                    }
+                }
+
+                if retry_this_account {
+                    continue;
+                }
+
+                match first_data_chunk {
+                    Some(bytes) => {
+                        // We have data! Construct the combined stream
+                        let stream_rest = openai_stream;
+                        let combined_stream =
+                            Box::pin(futures::stream::once(async move { Ok(bytes) }).chain(
+                                stream_rest.map(|result| -> Result<Bytes, std::io::Error> {
+                                    match result {
+                                        Ok(b) => Ok(b),
+                                        Err(e) => {
+                                            tracing::warn!("Stream error during transmission: {}", e);
+                                            Ok(Bytes::from(format!(
+                                                "data: {{\"error\":{{\"message\":\"Stream interrupted: {}\",\"type\":\"server_error\"}}}}\n\n",
+                                                e.to_string().replace('"', "'").replace('\n', " ")
+                                            )))
+                                        }
+                                    }
+                                }),
                             ));
+
+                        // 判断客户端期望的格式
+                        if client_wants_stream {
+                            // 客户端本就要 Stream，直接返回 SSE
+                            let body = Body::from_stream(combined_stream);
+                            return Ok(Response::builder()
+                                .header("Content-Type", "text/event-stream")
+                                .header("Cache-Control", "no-cache")
+                                .header("Connection", "keep-alive")
+                                .header("X-Account-Email", &email)
+                                .header("X-Mapped-Model", &mapped_model)
+                                .header("X-Mapping-Reason", &reason)
+                                .body(body)
+                                .unwrap()
+                                .into_response());
+                        } else {
+                            // 客户端要非 Stream，需要收集完整响应并转换为 JSON
+                            use crate::proxy::mappers::openai::collect_openai_stream_to_json;
+
+                            match collect_openai_stream_to_json(combined_stream).await {
+                                Ok(full_response) => {
+                                    info!("[OpenAI] ✓ Stream collected and converted to JSON");
+                                    return Ok((
+                                        StatusCode::OK,
+                                        [
+                                            ("X-Account-Email", email.as_str()),
+                                            ("X-Mapped-Model", mapped_model.as_str()),
+                                            ("X-Mapping-Reason", reason.as_str()),
+                                        ],
+                                        Json(full_response),
+                                    )
+                                        .into_response());
+                                }
+                                Err(e) => {
+                                    return Err((
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        format!("Stream collection error: {}", e),
+                                    ));
+                                }
+                            }
                         }
+                    }
+                    None => {
+                        tracing::warn!(
+                            "[{}] Stream ended immediately (Empty Response), retrying...",
+                            trace_id
+                        );
+                        last_error = "Empty response stream (None)".to_string();
+                        continue;
                     }
                 }
             }
@@ -914,29 +1006,127 @@ pub async fn handle_completions(
             if list_response {
                 use axum::body::Body;
                 use axum::response::Response;
+                use futures::StreamExt;
 
                 let gemini_stream = response.bytes_stream();
-                let body = if is_codex_style {
+                let mut sse_stream: std::pin::Pin<
+                    Box<dyn futures::Stream<Item = Result<Bytes, String>> + Send>,
+                > = if is_codex_style {
                     use crate::proxy::mappers::openai::streaming::create_codex_sse_stream;
-                    let s =
-                        create_codex_sse_stream(Box::pin(gemini_stream), openai_req.model.clone());
-                    Body::from_stream(s)
+                    Box::pin(create_codex_sse_stream(
+                        Box::pin(gemini_stream),
+                        openai_req.model.clone(),
+                    ))
                 } else {
                     use crate::proxy::mappers::openai::streaming::create_legacy_sse_stream;
-                    let s =
-                        create_legacy_sse_stream(Box::pin(gemini_stream), openai_req.model.clone());
-                    Body::from_stream(s)
+                    Box::pin(create_legacy_sse_stream(
+                        Box::pin(gemini_stream),
+                        openai_req.model.clone(),
+                    ))
                 };
 
-                return Ok(Response::builder()
-                    .header("Content-Type", "text/event-stream")
-                    .header("Cache-Control", "no-cache")
-                    .header("Connection", "keep-alive")
-                    .header("X-Account-Email", &email)
-                    .header("X-Mapped-Model", &mapped_model)
-                    .body(body)
-                    .unwrap()
-                    .into_response());
+                // [FIX #859] Enhanced Peek logic to handle heartbeats and slow start
+                let mut first_data_chunk = None;
+                let mut retry_this_account = false;
+
+                loop {
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(30),
+                        sse_stream.next(),
+                    )
+                    .await
+                    {
+                        Ok(Some(Ok(bytes))) => {
+                            if bytes.is_empty() {
+                                continue;
+                            }
+
+                            let text = String::from_utf8_lossy(&bytes);
+                            if text.trim().starts_with(':') {
+                                tracing::debug!(
+                                    "[{}] Skipping peek heartbeat: {}",
+                                    trace_id,
+                                    text.trim()
+                                );
+                                continue;
+                            }
+
+                            first_data_chunk = Some(bytes);
+                            break;
+                        }
+                        Ok(Some(Err(e))) => {
+                            tracing::warn!(
+                                "[{}] Stream error during peek: {}, retrying...",
+                                trace_id,
+                                e
+                            );
+                            last_error = format!("Stream error during peek: {}", e);
+                            retry_this_account = true;
+                            break;
+                        }
+                        Ok(None) => {
+                            tracing::warn!(
+                                "[{}] Stream ended during peek (Empty Response), retrying...",
+                                trace_id
+                            );
+                            last_error = "Empty response stream during peek".to_string();
+                            retry_this_account = true;
+                            break;
+                        }
+                        Err(_) => {
+                            tracing::warn!(
+                                "[{}] Timeout waiting for first data (30s), retrying...",
+                                trace_id
+                            );
+                            last_error = "Timeout waiting for first data".to_string();
+                            retry_this_account = true;
+                            break;
+                        }
+                    }
+                }
+
+                if retry_this_account {
+                    continue;
+                }
+
+                match first_data_chunk {
+                    Some(bytes) => {
+                        let combined_stream =
+                            Box::pin(futures::stream::once(async move { Ok(bytes) }).chain(
+                                sse_stream.map(|result| -> Result<Bytes, std::io::Error> {
+                                    match result {
+                                        Ok(b) => Ok(b),
+                                        Err(e) => {
+                                            tracing::warn!("Stream error during transmission: {}", e);
+                                            Ok(Bytes::from(format!(
+                                                "data: {{\"error\":{{\"message\":\"Stream interrupted: {}\",\"type\":\"server_error\"}}}}\n\n",
+                                                e.replace('"', "'").replace('\n', " ")
+                                            )))
+                                        }
+                                    }
+                                }),
+                            ));
+
+                        let body = Body::from_stream(combined_stream);
+                        return Ok(Response::builder()
+                            .header("Content-Type", "text/event-stream")
+                            .header("Cache-Control", "no-cache")
+                            .header("Connection", "keep-alive")
+                            .header("X-Account-Email", &email)
+                            .header("X-Mapped-Model", &mapped_model)
+                            .body(body)
+                            .unwrap()
+                            .into_response());
+                    }
+                    None => {
+                        tracing::warn!(
+                            "[{}] Stream ended immediately (Empty Response), retrying...",
+                            trace_id
+                        );
+                        last_error = "Empty response stream (None)".to_string();
+                        continue;
+                    }
+                }
             }
 
             let gemini_resp: Value = response

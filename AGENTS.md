@@ -192,9 +192,13 @@ cargo test -p antigravity-core --lib
 git add . && git commit -m "chore: sync upstream v3.3.XX changes"
 ```
 
-### Last Sync: 2026-01-19
+### Last Sync: 2026-01-20
 
 **Ported from v3.3.45:**
+- **[FIX #820] Fixed Account Mode** — `preferred_account_id` in token_manager.rs
+  - `set_preferred_account(Some(account_id))` — pins all requests to specific account
+  - `set_preferred_account(None)` — returns to round-robin mode
+  - Falls back to round-robin if preferred account is rate-limited or not found
 - **ContextManager module** — Dynamic Thinking Stripping to prevent "Prompt is too long" and "Invalid signature" errors
   - `PurificationStrategy::None | Soft | Aggressive`
   - Token estimation based on 3.5 chars/token

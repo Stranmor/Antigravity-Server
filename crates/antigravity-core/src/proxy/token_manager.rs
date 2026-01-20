@@ -34,6 +34,7 @@ pub struct TokenManager {
     sticky_config: Arc<tokio::sync::RwLock<StickySessionConfig>>, // 新增：调度配置
     session_accounts: Arc<DashMap<String, String>>, // 新增：会话与账号映射 (SessionID -> AccountID)
     adaptive_limits: Arc<tokio::sync::RwLock<Option<Arc<AdaptiveLimitManager>>>>, // AIMD integration
+    preferred_account_id: Arc<tokio::sync::RwLock<Option<String>>>, // [FIX #820] Fixed account mode
 }
 
 impl TokenManager {
@@ -48,6 +49,7 @@ impl TokenManager {
             sticky_config: Arc::new(tokio::sync::RwLock::new(StickySessionConfig::default())),
             session_accounts: Arc::new(DashMap::new()),
             adaptive_limits: Arc::new(tokio::sync::RwLock::new(None)),
+            preferred_account_id: Arc::new(tokio::sync::RwLock::new(None)),
         }
     }
 
@@ -426,6 +428,83 @@ impl TokenManager {
         // 0. 读取当前调度配置
         let scheduling = self.sticky_config.read().await.clone();
         // SchedulingMode already imported at top from antigravity_shared
+
+        // ===== [FIX #820] Fixed Account Mode: prefer specified account =====
+        let preferred_id = self.preferred_account_id.read().await.clone();
+        if let Some(ref pref_id) = preferred_id {
+            if let Some(preferred_token) = tokens_snapshot.iter().find(|t| &t.account_id == pref_id)
+            {
+                let is_rate_limited = self.is_rate_limited(&preferred_token.account_id);
+
+                if !is_rate_limited {
+                    tracing::info!(
+                        "🔒 [FIX #820] Using preferred account: {} (fixed mode)",
+                        preferred_token.email
+                    );
+
+                    let mut token = preferred_token.clone();
+
+                    let now = chrono::Utc::now().timestamp();
+                    if now >= token.timestamp - 300 {
+                        tracing::debug!(
+                            "Preferred account {} token expiring, refreshing...",
+                            token.email
+                        );
+                        match crate::modules::oauth::refresh_access_token(&token.refresh_token)
+                            .await
+                        {
+                            Ok(token_response) => {
+                                token.access_token = token_response.access_token.clone();
+                                token.expires_in = token_response.expires_in;
+                                token.timestamp = now + token_response.expires_in;
+
+                                if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
+                                    entry.access_token = token.access_token.clone();
+                                    entry.expires_in = token.expires_in;
+                                    entry.timestamp = token.timestamp;
+                                }
+                                let _ = self
+                                    .save_refreshed_token(&token.account_id, &token_response)
+                                    .await;
+                            }
+                            Err(e) => {
+                                tracing::warn!("Preferred account token refresh failed: {}", e);
+                            }
+                        }
+                    }
+
+                    let project_id = if let Some(pid) = &token.project_id {
+                        pid.clone()
+                    } else {
+                        match crate::proxy::project_resolver::fetch_project_id(&token.access_token)
+                            .await
+                        {
+                            Ok(pid) => {
+                                if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
+                                    entry.project_id = Some(pid.clone());
+                                }
+                                let _ = self.save_project_id(&token.account_id, &pid).await;
+                                pid
+                            }
+                            Err(_) => "bamboo-precept-lgxtn".to_string(),
+                        }
+                    };
+
+                    return Ok((token.access_token, project_id, token.email));
+                } else {
+                    tracing::warn!(
+                        "🔒 [FIX #820] Preferred account {} is rate-limited, falling back to round-robin",
+                        preferred_token.email
+                    );
+                }
+            } else {
+                tracing::warn!(
+                    "🔒 [FIX #820] Preferred account {} not found in pool, falling back to round-robin",
+                    pref_id
+                );
+            }
+        }
+        // ===== [END FIX #820] =====
 
         // 【优化 Issue #284】将锁操作移到循环外，避免重复获取锁
         // 预先获取 last_used_account 的快照，避免在循环中多次加锁
@@ -1210,6 +1289,22 @@ impl TokenManager {
     /// 清除所有会话的粘性映射
     pub fn clear_all_sessions(&self) {
         self.session_accounts.clear();
+    }
+
+    // ===== [FIX #820] Fixed Account Mode =====
+
+    pub async fn set_preferred_account(&self, account_id: Option<String>) {
+        let mut preferred = self.preferred_account_id.write().await;
+        if let Some(ref id) = account_id {
+            tracing::info!("🔒 [FIX #820] Fixed account mode enabled: {}", id);
+        } else {
+            tracing::info!("🔄 [FIX #820] Round-robin mode enabled (no preferred account)");
+        }
+        *preferred = account_id;
+    }
+
+    pub async fn get_preferred_account(&self) -> Option<String> {
+        self.preferred_account_id.read().await.clone()
     }
 }
 
