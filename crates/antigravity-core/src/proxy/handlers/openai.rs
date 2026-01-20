@@ -292,11 +292,29 @@ pub async fn handle_chat_completions(
                 // [FIX #859] Enhanced Peek logic to handle heartbeats and slow start
                 // We must pre-read until we find a MEANINGFUL content block.
                 // If we only get heartbeats (ping) and then the stream dies, we should rotate account.
+                //
+                // [FIX] Added total peek timeout and heartbeat limit to prevent infinite waiting.
                 let mut first_data_chunk = None;
                 let mut retry_this_account = false;
+                let mut heartbeat_count = 0u32;
+                const MAX_HEARTBEATS: u32 = 20;
+                let peek_start = std::time::Instant::now();
+                const MAX_PEEK_DURATION: std::time::Duration = std::time::Duration::from_secs(90);
 
                 // Loop to skip heartbeats during peek (30s timeout for OpenAI format)
                 loop {
+                    if peek_start.elapsed() > MAX_PEEK_DURATION {
+                        tracing::warn!(
+                            "[{}] Peek phase exceeded {}s total timeout, retrying...",
+                            trace_id,
+                            MAX_PEEK_DURATION.as_secs()
+                        );
+                        last_error =
+                            format!("Peek phase timeout after {}s", MAX_PEEK_DURATION.as_secs());
+                        retry_this_account = true;
+                        break;
+                    }
+
                     match tokio::time::timeout(
                         std::time::Duration::from_secs(30),
                         openai_stream.next(),
@@ -311,11 +329,28 @@ pub async fn handle_chat_completions(
                             let text = String::from_utf8_lossy(&bytes);
                             // Skip SSE comments/pings (heartbeats start with ":")
                             if text.trim().starts_with(':') {
+                                heartbeat_count += 1;
                                 tracing::debug!(
-                                    "[{}] Skipping peek heartbeat: {}",
+                                    "[{}] Skipping peek heartbeat {}/{}: {}",
                                     trace_id,
+                                    heartbeat_count,
+                                    MAX_HEARTBEATS,
                                     text.trim()
                                 );
+
+                                if heartbeat_count >= MAX_HEARTBEATS {
+                                    tracing::warn!(
+                                        "[{}] Exceeded {} heartbeats without real data, retrying...",
+                                        trace_id,
+                                        MAX_HEARTBEATS
+                                    );
+                                    last_error = format!(
+                                        "Too many heartbeats ({}) without data",
+                                        MAX_HEARTBEATS
+                                    );
+                                    retry_this_account = true;
+                                    break;
+                                }
                                 continue;
                             }
 
@@ -1026,10 +1061,27 @@ pub async fn handle_completions(
                 };
 
                 // [FIX #859] Enhanced Peek logic to handle heartbeats and slow start
+                // [FIX] Added total peek timeout and heartbeat limit to prevent infinite waiting.
                 let mut first_data_chunk = None;
                 let mut retry_this_account = false;
+                let mut heartbeat_count = 0u32;
+                const MAX_HEARTBEATS: u32 = 20;
+                let peek_start = std::time::Instant::now();
+                const MAX_PEEK_DURATION: std::time::Duration = std::time::Duration::from_secs(90);
 
                 loop {
+                    if peek_start.elapsed() > MAX_PEEK_DURATION {
+                        tracing::warn!(
+                            "[{}] Peek phase exceeded {}s total timeout, retrying...",
+                            trace_id,
+                            MAX_PEEK_DURATION.as_secs()
+                        );
+                        last_error =
+                            format!("Peek phase timeout after {}s", MAX_PEEK_DURATION.as_secs());
+                        retry_this_account = true;
+                        break;
+                    }
+
                     match tokio::time::timeout(
                         std::time::Duration::from_secs(30),
                         sse_stream.next(),
@@ -1043,11 +1095,28 @@ pub async fn handle_completions(
 
                             let text = String::from_utf8_lossy(&bytes);
                             if text.trim().starts_with(':') {
+                                heartbeat_count += 1;
                                 tracing::debug!(
-                                    "[{}] Skipping peek heartbeat: {}",
+                                    "[{}] Skipping peek heartbeat {}/{}: {}",
                                     trace_id,
+                                    heartbeat_count,
+                                    MAX_HEARTBEATS,
                                     text.trim()
                                 );
+
+                                if heartbeat_count >= MAX_HEARTBEATS {
+                                    tracing::warn!(
+                                        "[{}] Exceeded {} heartbeats without real data, retrying...",
+                                        trace_id,
+                                        MAX_HEARTBEATS
+                                    );
+                                    last_error = format!(
+                                        "Too many heartbeats ({}) without data",
+                                        MAX_HEARTBEATS
+                                    );
+                                    retry_this_account = true;
+                                    break;
+                                }
                                 continue;
                             }
 
