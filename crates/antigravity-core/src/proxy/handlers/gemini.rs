@@ -1,90 +1,334 @@
-//! Gemini Protocol Handlers
-//!
-//! Stub handlers for Gemini API compatibility.
-//! Currently not implemented - Gemini requests should use OpenAI or Claude protocols.
+use axum::{
+    body::Body,
+    extract::{Path, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
+};
+use bytes::{Bytes, BytesMut};
+use futures::StreamExt;
+use serde_json::{json, Value};
+use tracing::{debug, error, info, warn};
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
-use serde_json::json;
-
+use crate::proxy::mappers::gemini::{unwrap_response, wrap_request};
 use crate::proxy::server::AppState;
+use crate::proxy::session_manager::SessionManager;
 
-/// Stub: List available Gemini models
-/// GET /v1beta/models
-pub async fn handle_list_models(State(_state): State<AppState>) -> impl IntoResponse {
-    // Return a minimal model list for compatibility
-    Json(json!({
-        "models": [
-            {
-                "name": "models/gemini-2.5-flash",
-                "displayName": "Gemini 2.5 Flash",
-                "description": "Fast and efficient model"
-            },
-            {
-                "name": "models/gemini-2.5-pro",
-                "displayName": "Gemini 2.5 Pro",
-                "description": "Most capable model"
-            },
-            {
-                "name": "models/gemini-3-flash",
-                "displayName": "Gemini 3 Flash",
-                "description": "Latest fast model"
-            },
-            {
-                "name": "models/gemini-3-pro-preview",
-                "displayName": "Gemini 3 Pro Preview",
-                "description": "Latest pro model"
-            }
-        ]
-    }))
-}
+const MAX_RETRY_ATTEMPTS: usize = 3;
 
-/// Stub: Get model details
-/// GET /v1beta/models/:model
-pub async fn handle_get_model(
-    State(_state): State<AppState>,
-    axum::extract::Path(model): axum::extract::Path<String>,
-) -> impl IntoResponse {
-    Json(json!({
-        "name": format!("models/{}", model),
-        "displayName": model,
-        "description": "Model available via Antigravity proxy"
-    }))
-}
-
-/// Stub: Generate content (not implemented - use OpenAI/Claude protocols)
-/// POST /v1beta/models/:model:generateContent
 pub async fn handle_generate(
-    State(_state): State<AppState>,
-    axum::extract::Path(_model): axum::extract::Path<String>,
-    Json(_body): Json<serde_json::Value>,
-) -> impl IntoResponse {
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        Json(json!({
-            "error": {
-                "code": 501,
-                "message": "Direct Gemini API not implemented. Use /v1/chat/completions (OpenAI) or /v1/messages (Claude) endpoints instead.",
-                "status": "UNIMPLEMENTED"
+    State(state): State<AppState>,
+    Path(model_action): Path<String>,
+    Json(body): Json<Value>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let (model_name, method) = match model_action.rsplit_once(':') {
+        Some((m, action)) => (m.to_string(), action.to_string()),
+        None => (model_action, "generateContent".to_string()),
+    };
+
+    info!("[Gemini] Request: {}/{}", model_name, method);
+
+    if method != "generateContent" && method != "streamGenerateContent" {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("Unsupported method: {}", method),
+        ));
+    }
+    let is_stream = method == "streamGenerateContent";
+
+    let token_manager = state.token_manager.clone();
+    let max_attempts = MAX_RETRY_ATTEMPTS.min(token_manager.len()).max(1);
+
+    let mut last_error = String::new();
+    let mut last_email: Option<String> = None;
+
+    for attempt in 0..max_attempts {
+        let (mapped_model, _reason) = crate::proxy::common::resolve_model_route(
+            &model_name,
+            &*state.custom_mapping.read().await,
+        );
+
+        let tools_val: Option<Vec<Value>> =
+            body.get("tools").and_then(|t| t.as_array()).map(|arr| {
+                arr.iter()
+                    .flat_map(|entry| {
+                        entry
+                            .get("functionDeclarations")
+                            .and_then(|v| v.as_array())
+                            .map(|decls| decls.to_vec())
+                            .unwrap_or_else(|| vec![entry.clone()])
+                    })
+                    .collect()
+            });
+
+        let config = crate::proxy::mappers::common_utils::resolve_request_config(
+            &model_name,
+            &mapped_model,
+            &tools_val,
+        );
+        let session_id = SessionManager::extract_gemini_session_id(&body, &model_name);
+
+        let (access_token, project_id, email) = match token_manager
+            .get_token(
+                &config.request_type,
+                attempt > 0,
+                Some(&session_id),
+                &config.final_model,
+            )
+            .await
+        {
+            Ok(t) => t,
+            Err(e) => {
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    format!("Token error: {}", e),
+                ))
             }
-        })),
-    )
+        };
+
+        last_email = Some(email.clone());
+        info!(
+            "[Gemini] Account: {} (type: {})",
+            email, config.request_type
+        );
+
+        let wrapped_body = wrap_request(&body, &project_id, &mapped_model, Some(&session_id));
+        let query_string = if is_stream { Some("alt=sse") } else { None };
+        let upstream_method = if is_stream {
+            "streamGenerateContent"
+        } else {
+            "generateContent"
+        };
+
+        let response = match state
+            .upstream
+            .call_v1_internal(upstream_method, &access_token, wrapped_body, query_string)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                last_error = e.clone();
+                debug!(
+                    "[Gemini] Attempt {}/{} failed: {}",
+                    attempt + 1,
+                    max_attempts,
+                    e
+                );
+                continue;
+            }
+        };
+
+        let status = response.status();
+        if status.is_success() {
+            if is_stream {
+                return handle_stream_response(response, session_id, email, mapped_model).await;
+            }
+
+            let resp: Value = response
+                .json()
+                .await
+                .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Parse error: {}", e)))?;
+
+            extract_signature(&resp, &session_id);
+            let unwrapped = unwrap_response(&resp);
+            return Ok((
+                StatusCode::OK,
+                [
+                    ("X-Account-Email", email.as_str()),
+                    ("X-Mapped-Model", mapped_model.as_str()),
+                ],
+                Json(unwrapped),
+            )
+                .into_response());
+        }
+
+        let code = status.as_u16();
+        let retry_after = response
+            .headers()
+            .get("Retry-After")
+            .and_then(|h| h.to_str().ok())
+            .map(|s| s.to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| format!("HTTP {}", code));
+        last_error = format!("HTTP {}: {}", code, error_text);
+
+        if matches!(code, 429 | 529 | 503 | 500 | 403 | 401) {
+            token_manager.mark_rate_limited(&email, code, retry_after.as_deref(), &error_text);
+            if code == 429 && error_text.contains("QUOTA_EXHAUSTED") {
+                error!("[Gemini] Quota exhausted on {}", email);
+                return Ok(
+                    (status, [("X-Account-Email", email.as_str())], error_text).into_response()
+                );
+            }
+            warn!("[Gemini] {} on {}, rotating", code, email);
+            continue;
+        }
+
+        error!("[Gemini] Non-retryable {}: {}", code, error_text);
+        return Ok((status, [("X-Account-Email", email.as_str())], error_text).into_response());
+    }
+
+    let msg = format!("All accounts exhausted. Last: {}", last_error);
+    match last_email {
+        Some(email) => Ok((
+            StatusCode::TOO_MANY_REQUESTS,
+            [("X-Account-Email", email)],
+            msg,
+        )
+            .into_response()),
+        None => Ok((StatusCode::TOO_MANY_REQUESTS, msg).into_response()),
+    }
 }
 
-/// Stub: Count tokens
-/// POST /v1beta/models/:model:countTokens
+pub async fn handle_list_models(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    use crate::proxy::common::model_mapping::get_all_dynamic_models;
+    let model_ids = get_all_dynamic_models(&state.custom_mapping).await;
+    let models: Vec<_> = model_ids
+        .into_iter()
+        .map(|id| {
+            json!({
+                "name": format!("models/{}", id),
+                "version": "001",
+                "displayName": id.clone(),
+                "inputTokenLimit": 128000,
+                "outputTokenLimit": 8192,
+                "supportedGenerationMethods": ["generateContent", "countTokens"]
+            })
+        })
+        .collect();
+    Ok(Json(json!({ "models": models })))
+}
+
+pub async fn handle_get_model(Path(model_name): Path<String>) -> impl IntoResponse {
+    Json(json!({ "name": format!("models/{}", model_name), "displayName": model_name }))
+}
+
 pub async fn handle_count_tokens(
-    State(_state): State<AppState>,
-    axum::extract::Path(_model): axum::extract::Path<String>,
-    Json(_body): Json<serde_json::Value>,
-) -> impl IntoResponse {
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        Json(json!({
-            "error": {
-                "code": 501,
-                "message": "Token counting not implemented for direct Gemini API.",
-                "status": "UNIMPLEMENTED"
+    State(state): State<AppState>,
+    Path(_model_name): Path<String>,
+    Json(_body): Json<Value>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let _ = state
+        .token_manager
+        .get_token("gemini", false, None, "gemini")
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("Token error: {}", e),
+            )
+        })?;
+    Ok(Json(json!({"totalTokens": 0})))
+}
+
+fn extract_signature(resp: &Value, session_id: &str) {
+    let inner = resp.get("response").unwrap_or(resp);
+    if let Some(candidates) = inner.get("candidates").and_then(|c| c.as_array()) {
+        for cand in candidates {
+            if let Some(parts) = cand
+                .get("content")
+                .and_then(|c| c.get("parts"))
+                .and_then(|p| p.as_array())
+            {
+                for part in parts {
+                    if let Some(sig) = part.get("thoughtSignature").and_then(|s| s.as_str()) {
+                        crate::proxy::SignatureCache::global()
+                            .cache_session_signature(session_id, sig.to_string());
+                        debug!("[Gemini] Cached signature for {}", session_id);
+                    }
+                }
             }
-        })),
+        }
+    }
+}
+
+async fn handle_stream_response(
+    response: reqwest::Response,
+    session_id: String,
+    email: String,
+    mapped_model: String,
+) -> Result<Response<Body>, (StatusCode, String)> {
+    let mut response_stream = response.bytes_stream();
+    let s_id = session_id.clone();
+
+    let first_chunk = match tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        response_stream.next(),
     )
+    .await
+    {
+        Ok(Some(Ok(bytes))) if !bytes.is_empty() => bytes,
+        Ok(Some(Ok(_))) => return Err((StatusCode::BAD_GATEWAY, "Empty chunk".to_string())),
+        Ok(Some(Err(e))) => return Err((StatusCode::BAD_GATEWAY, format!("Stream error: {}", e))),
+        Ok(None) => return Err((StatusCode::BAD_GATEWAY, "Empty response".to_string())),
+        Err(_) => return Err((StatusCode::GATEWAY_TIMEOUT, "Timeout".to_string())),
+    };
+
+    let stream = async_stream::stream! {
+        let mut buffer = BytesMut::new();
+        let mut first_data = Some(first_chunk);
+
+        loop {
+            let item = match first_data.take() {
+                Some(fd) => Some(Ok(fd)),
+                None => response_stream.next().await,
+            };
+
+            let bytes = match item {
+                Some(Ok(b)) => b,
+                Some(Err(e)) => { error!("[Gemini-SSE] {}", e); yield Err(format!("Stream error: {}", e)); break; }
+                None => break,
+            };
+
+            buffer.extend_from_slice(&bytes);
+
+            while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
+                let line_raw = buffer.split_to(pos + 1);
+                let Ok(line_str) = std::str::from_utf8(&line_raw) else {
+                    yield Ok::<Bytes, String>(line_raw.freeze());
+                    continue;
+                };
+
+                let line = line_str.trim();
+                if line.is_empty() { continue; }
+
+                if let Some(json_part) = line.strip_prefix("data: ") {
+                    let json_part = json_part.trim();
+                    if json_part.is_empty() { continue; }
+
+                    if let Ok(parsed) = serde_json::from_str::<Value>(json_part) {
+                        extract_signature(&parsed, &s_id);
+                        let unwrapped = unwrap_response(&parsed);
+                        let out = format!("data: {}\n\n", serde_json::to_string(&unwrapped).unwrap_or_default());
+                        yield Ok::<Bytes, String>(Bytes::from(out));
+                    } else {
+                        yield Ok::<Bytes, String>(Bytes::from(format!("{}\n", line_str)));
+                    }
+                } else {
+                    yield Ok::<Bytes, String>(Bytes::from(format!("{}\n", line_str)));
+                }
+            }
+        }
+    };
+
+    let body = Body::from_stream(stream);
+    let resp = Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "text/event-stream")
+        .header("Cache-Control", "no-cache")
+        .header("X-Account-Email", email)
+        .header("X-Mapped-Model", mapped_model)
+        .body(body)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Response build error: {}", e),
+            )
+        })?;
+
+    Ok(resp)
 }
