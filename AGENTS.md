@@ -208,6 +208,10 @@ git add . && git commit -m "chore: sync upstream v3.3.XX changes"
   - 60s timeout for first meaningful data (Claude), 30s for OpenAI
   - Retry on empty response or timeout during peek phase
   - **Applied to both `claude.rs` AND `openai.rs` handlers** (upstream only has it in claude.rs)
+  - **[2026-01-20] OUR ENHANCEMENT:** Added total peek phase limits to prevent infinite hanging:
+    - `MAX_PEEK_DURATION`: 120s (Claude) / 90s (OpenAI) — total time limit for peek phase
+    - `MAX_HEARTBEATS`: 20 — limit on consecutive heartbeats without real data
+    - If limits exceeded, request retries with account rotation (prevents client from hanging forever when model generates very large output)
 
 **Ported from v3.3.43:**
 - Shell command array fix (`local_shell_call` command → array)
