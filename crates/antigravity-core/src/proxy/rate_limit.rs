@@ -322,7 +322,7 @@ impl RateLimitTracker {
     }
 
     /// 解析限流原因类型
-    fn parse_rate_limit_reason(&self, body: &str) -> RateLimitReason {
+    pub fn parse_rate_limit_reason(&self, body: &str) -> RateLimitReason {
         // 尝试从 JSON 中提取 reason 字段
         let trimmed = body.trim();
         if trimmed.starts_with('{') || trimmed.starts_with('[') {

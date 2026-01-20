@@ -460,6 +460,8 @@ pub async fn handle_messages(
     let mut last_error = String::new();
     let mut retried_without_thinking = false;
     let mut last_email: Option<String> = None;
+    // [Grace Retry] Track if we've already done a grace retry on same account for transient 429
+    let mut grace_retry_used = false;
 
     for attempt in 0..max_attempts {
         // 2. 模型路由解析
@@ -906,6 +908,22 @@ pub async fn handle_messages(
             .unwrap_or_else(|_| format!("HTTP {}", status));
         last_error = format!("HTTP {}: {}", status_code, error_text);
         debug!("[{}] Upstream Error Response: {}", trace_id, error_text);
+
+        // [Grace Retry] For transient 429 (RATE_LIMIT_EXCEEDED), retry once on same account before rotation
+        if status_code == 429 && !grace_retry_used {
+            let reason = token_manager
+                .rate_limit_tracker()
+                .parse_rate_limit_reason(&error_text);
+            if reason == crate::proxy::rate_limit::RateLimitReason::RateLimitExceeded {
+                grace_retry_used = true;
+                tracing::info!(
+                    "[{}] 🔄 Grace retry: RATE_LIMIT_EXCEEDED on {}, waiting 1s before retry on same account",
+                    trace_id, email
+                );
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                continue;
+            }
+        }
 
         // 3. 标记限流状态(用于 UI 显示) - 使用异步版本以支持实时配额刷新
         // 🆕 传入实际使用的模型,实现模型级别限流,避免不同模型配额互相影响

@@ -317,16 +317,9 @@ async fn refresh_account_quota(
     }
 }
 
-#[derive(Serialize)]
-struct RefreshAllResponse {
-    success: usize,
-    failed: usize,
-    total: usize,
-}
-
 async fn refresh_all_quotas(
     State(state): State<AppState>,
-) -> Result<Json<RefreshAllResponse>, (StatusCode, String)> {
+) -> Result<Json<antigravity_shared::models::RefreshStats>, (StatusCode, String)> {
     let accounts = match account::list_accounts() {
         Ok(a) => a,
         Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
@@ -353,10 +346,10 @@ async fn refresh_all_quotas(
     // Reload token manager
     let _ = state.reload_accounts().await;
 
-    Ok(Json(RefreshAllResponse {
+    Ok(Json(antigravity_shared::models::RefreshStats {
+        total,
         success,
         failed,
-        total,
     }))
 }
 

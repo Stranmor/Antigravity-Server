@@ -999,6 +999,10 @@ impl TokenManager {
         self.rate_limit_tracker.is_rate_limited(account_id)
     }
 
+    pub fn rate_limit_tracker(&self) -> &RateLimitTracker {
+        &self.rate_limit_tracker
+    }
+
     /// 获取距离限流重置还有多少秒
     #[allow(dead_code)]
     pub fn get_rate_limit_reset_seconds(&self, account_id: &str) -> Option<u64> {

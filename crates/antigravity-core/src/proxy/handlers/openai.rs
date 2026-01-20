@@ -181,6 +181,7 @@ pub async fn handle_chat_completions(
     let mut last_error = String::new();
     let mut last_email: Option<String> = None;
     let trace_id = format!("oai_{}", chrono::Utc::now().timestamp_subsec_millis());
+    let mut grace_retry_used = false;
 
     for attempt in 0..max_attempts {
         // 2. 模型路由解析
@@ -410,6 +411,22 @@ pub async fn handle_chat_completions(
             status_code,
             error_text
         );
+
+        // [Grace Retry] For transient 429 (RATE_LIMIT_EXCEEDED), retry once on same account before rotation
+        if status_code == 429 && !grace_retry_used {
+            let reason = token_manager
+                .rate_limit_tracker()
+                .parse_rate_limit_reason(&error_text);
+            if reason == crate::proxy::rate_limit::RateLimitReason::RateLimitExceeded {
+                grace_retry_used = true;
+                tracing::info!(
+                    "[{}] 🔄 Grace retry: RATE_LIMIT_EXCEEDED on {}, waiting 1s before retry on same account",
+                    trace_id, email
+                );
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                continue;
+            }
+        }
 
         // 429/529/503 智能处理
         if status_code == 429 || status_code == 529 || status_code == 503 || status_code == 500 {
@@ -846,6 +863,7 @@ pub async fn handle_completions(
 
     let mut last_email: Option<String> = None;
     let trace_id = format!("req_{}", chrono::Utc::now().timestamp_subsec_millis());
+    let mut grace_retry_used = false;
 
     for attempt in 0..max_attempts {
         // 1. 模型路由解析
@@ -1068,6 +1086,22 @@ pub async fn handle_completions(
             status_code,
             error_text
         );
+
+        // [Grace Retry] For transient 429 (RATE_LIMIT_EXCEEDED), retry once on same account
+        if status_code == 429 && !grace_retry_used {
+            let reason = token_manager
+                .rate_limit_tracker()
+                .parse_rate_limit_reason(&error_text);
+            if reason == crate::proxy::rate_limit::RateLimitReason::RateLimitExceeded {
+                grace_retry_used = true;
+                tracing::info!(
+                    "[{}] 🔄 Grace retry: RATE_LIMIT_EXCEEDED on {}, waiting 1s before retry on same account",
+                    trace_id, email
+                );
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                continue;
+            }
+        }
 
         // 3. 标记限流状态(用于 UI 显示)
         if status_code == 429 || status_code == 529 || status_code == 503 || status_code == 500 {
