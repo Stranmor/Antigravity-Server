@@ -421,6 +421,9 @@ impl StreamingState {
     ) -> Vec<Bytes> {
         let mut chunks = Vec::new();
 
+        let was_inside_block = self.block_type != BlockType::None;
+        let prev_block_type = self.block_type;
+
         // 关闭最后一个块
         chunks.extend(self.end_block());
 
@@ -490,17 +493,18 @@ impl StreamingState {
         }
 
         // 确定 stop_reason
-        // [FIX] Detect silent truncation: if stream ends without finish_reason AND we're still inside a block,
+        // [FIX] Detect silent truncation: if stream ends without finish_reason AND we were inside a block,
         // assume the response was truncated by upstream's undocumented output limit (~4K tokens)
         let stop_reason = if self.used_tool {
             "tool_use"
         } else if finish_reason == Some("MAX_TOKENS") {
             "max_tokens"
-        } else if finish_reason.is_none() && self.block_type != BlockType::None {
+        } else if finish_reason.is_none() && was_inside_block {
             tracing::warn!(
                 "[Truncation Detected] Stream ended without finish_reason while inside {:?} block",
-                self.block_type
+                prev_block_type
             );
+            crate::proxy::prometheus::record_truncation();
             "max_tokens"
         } else {
             "end_turn"
@@ -1091,5 +1095,69 @@ mod tests {
 
         // 3. content_block_stop
         assert!(output.contains(r#""type":"content_block_stop""#));
+    }
+
+    #[test]
+    fn test_truncation_detection_inside_text_block() {
+        let mut state = StreamingState::new();
+        state.message_start_sent = true;
+        state.block_type = BlockType::Text;
+
+        let chunks = state.emit_finish(None, None);
+        let output = chunks
+            .iter()
+            .map(|b| String::from_utf8(b.to_vec()).unwrap())
+            .collect::<Vec<_>>()
+            .join("");
+
+        assert!(output.contains(r#""stop_reason":"max_tokens""#));
+    }
+
+    #[test]
+    fn test_truncation_detection_inside_function_block() {
+        let mut state = StreamingState::new();
+        state.message_start_sent = true;
+        state.block_type = BlockType::Function;
+
+        let chunks = state.emit_finish(None, None);
+        let output = chunks
+            .iter()
+            .map(|b| String::from_utf8(b.to_vec()).unwrap())
+            .collect::<Vec<_>>()
+            .join("");
+
+        assert!(output.contains(r#""stop_reason":"max_tokens""#));
+    }
+
+    #[test]
+    fn test_no_truncation_when_block_closed() {
+        let mut state = StreamingState::new();
+        state.message_start_sent = true;
+        state.block_type = BlockType::None;
+
+        let chunks = state.emit_finish(None, None);
+        let output = chunks
+            .iter()
+            .map(|b| String::from_utf8(b.to_vec()).unwrap())
+            .collect::<Vec<_>>()
+            .join("");
+
+        assert!(output.contains(r#""stop_reason":"end_turn""#));
+    }
+
+    #[test]
+    fn test_explicit_max_tokens_finish_reason() {
+        let mut state = StreamingState::new();
+        state.message_start_sent = true;
+        state.block_type = BlockType::None;
+
+        let chunks = state.emit_finish(Some("MAX_TOKENS"), None);
+        let output = chunks
+            .iter()
+            .map(|b| String::from_utf8(b.to_vec()).unwrap())
+            .collect::<Vec<_>>()
+            .join("");
+
+        assert!(output.contains(r#""stop_reason":"max_tokens""#));
     }
 }

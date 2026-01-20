@@ -119,6 +119,10 @@ pub fn init_metrics() -> PrometheusHandle {
             "antigravity_primary_wins_total",
             "Total times primary request won after hedge fired"
         );
+        describe_counter!(
+            "antigravity_truncations_total",
+            "Total output truncations detected (upstream ~4K token limit)"
+        );
         describe_gauge!(
             "antigravity_adaptive_limit_gauge",
             "Current working threshold per account"
@@ -244,6 +248,10 @@ pub fn record_hedge_win() {
 
 pub fn record_primary_win() {
     counter!("antigravity_primary_wins_total").increment(1);
+}
+
+pub fn record_truncation() {
+    counter!("antigravity_truncations_total").increment(1);
 }
 
 pub fn update_adaptive_limit_gauge(account_id: &str, working_threshold: u64) {
