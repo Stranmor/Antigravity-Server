@@ -105,7 +105,7 @@ GET /api/metrics
 cargo check --workspace                        # ✅ passes
 cargo clippy --workspace -- -Dwarnings         # ✅ passes
 cargo test -p antigravity-types                # ✅ 7 tests pass
-cargo test -p antigravity-core --lib           # ✅ 112+ tests pass
+cargo test -p antigravity-core --lib           # ✅ 149 tests pass
 cargo build --release -p antigravity-server    # ✅ builds (1m 22s, 11MB)
 ```
 
@@ -206,6 +206,16 @@ git add . && git commit -m "chore: sync upstream v3.3.XX changes"
   - Fixes unresolved `$ref` fallback → converts to string type with hint
 - **Stop sequences improvement** — removed from request transformation
   - Upstream removed `stop` field handling (models handle natively)
+- **`common_utils.rs` OpenAI Image Parameters** — Extended API for image generation
+  - `resolve_request_config()` now accepts `size: Option<&str>` and `quality: Option<&str>`
+  - `parse_image_config_with_params()` — converts OpenAI size/quality to Gemini config
+  - `calculate_aspect_ratio_from_size()` — "1024x1024" → "1:1", "1792x1024" → "16:9"
+  - Quality mapping: "hd" → 4K, "medium" → 2K
+- **`context_manager.rs` Multi-Language Token Estimation** — Improved accuracy
+  - ASCII text: ~4 chars/token
+  - CJK (Chinese, Japanese, Korean): ~1.5 chars/token
+  - +15% safety margin for worst-case scenarios
+  - Layer 1/2/3 compression hierarchy for thinking blocks
 
 **Ported from v3.3.45:**
 - **[FIX #820] Fixed Account Mode** — `preferred_account_id` in token_manager.rs

@@ -615,21 +615,26 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> crate::error::AppR
     // 2. Fetch quota
     let result = quota::fetch_quota(&account.token.access_token, &account.email).await;
 
-    // Update project_id if changed
-    if let Ok((ref _q, ref project_id)) = result {
+    // Update quota and project_id if successful
+    if let Ok((ref quota_data, ref project_id)) = result {
+        // Always update quota data
+        account.update_quota(quota_data.clone());
+
+        // Update project_id if changed
         if project_id.is_some() && *project_id != account.token.project_id {
             logger::log_info(&format!(
                 "Project ID updated ({}), saving...",
                 account.email
             ));
             account.token.project_id = project_id.clone();
-            if let Err(e) = upsert_account(
-                account.email.clone(),
-                account.name.clone(),
-                account.token.clone(),
-            ) {
-                logger::log_warn(&format!("Failed to save project_id: {}", e));
-            }
+        }
+
+        // Save account with updated quota
+        if let Err(e) = save_account(account) {
+            logger::log_warn(&format!(
+                "Failed to save quota for {}: {}",
+                account.email, e
+            ));
         }
     }
 
@@ -689,19 +694,18 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> crate::error::AppR
                 let retry_result =
                     quota::fetch_quota(&new_token.access_token, &account.email).await;
 
-                if let Ok((ref _q, ref project_id)) = retry_result {
+                if let Ok((ref quota_data, ref project_id)) = retry_result {
+                    account.update_quota(quota_data.clone());
+
                     if project_id.is_some() && *project_id != account.token.project_id {
                         logger::log_info(&format!(
                             "Project ID updated after retry ({}), saving...",
                             account.email
                         ));
                         account.token.project_id = project_id.clone();
-                        let _ = upsert_account(
-                            account.email.clone(),
-                            account.name.clone(),
-                            account.token.clone(),
-                        );
                     }
+
+                    let _ = save_account(account);
                 }
 
                 if let Err(AppError::Network(ref e)) = retry_result {

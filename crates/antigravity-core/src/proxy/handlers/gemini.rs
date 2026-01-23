@@ -65,6 +65,8 @@ pub async fn handle_generate(
             &model_name,
             &mapped_model,
             &tools_val,
+            None,
+            None,
         );
         let session_id = SessionManager::extract_gemini_session_id(&body, &model_name);
 

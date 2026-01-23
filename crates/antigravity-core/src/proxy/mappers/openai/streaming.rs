@@ -87,6 +87,7 @@ fn extract_usage_metadata(u: &Value) -> Option<super::models::OpenAIUsage> {
 pub fn create_openai_sse_stream(
     mut gemini_stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
     model: String,
+    _estimated_tokens: Option<u32>,
 ) -> Pin<Box<dyn Stream<Item = Result<Bytes, String>> + Send>> {
     let mut buffer = BytesMut::new();
 

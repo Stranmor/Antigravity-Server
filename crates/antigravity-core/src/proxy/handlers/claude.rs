@@ -481,6 +481,8 @@ pub async fn handle_messages(
             &request_for_body.model,
             &mapped_model,
             &tools_val,
+            None,
+            None,
         );
 
         // 0. 尝试提取 session_id 用于粘性调度 (Phase 2/3)
@@ -693,6 +695,13 @@ pub async fn handle_messages(
                 &request_with_mapped.model,
             );
 
+            let estimated_tokens = {
+                use crate::proxy::mappers::context_manager::ContextManager;
+                use crate::proxy::mappers::estimation_calibrator::get_calibrator;
+                let raw_estimate = ContextManager::estimate_token_usage(&request);
+                Some(get_calibrator().calibrate(raw_estimate))
+            };
+
             // 处理流式响应
             if actual_stream {
                 let stream = response.bytes_stream();
@@ -705,6 +714,7 @@ pub async fn handle_messages(
                     Some(session_id_str.clone()),
                     scaling_enabled,
                     context_limit,
+                    estimated_tokens,
                 );
 
                 // [FIX #530/#529/#859] Enhanced Peek logic to handle heartbeats and slow start

@@ -19,9 +19,21 @@
 //! - On success above threshold: gradually expand limit (+5%)
 
 use dashmap::DashMap;
+use serde::Serialize;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
+
+/// Stats for a single account (for API display)
+#[derive(Debug, Clone, Serialize)]
+pub struct AimdAccountStats {
+    pub account_id: String,
+    pub confirmed_limit: u64,
+    pub ceiling: u64,
+    pub requests_this_minute: u64,
+    pub working_threshold: u64,
+    pub usage_ratio: f64,
+}
 
 /// AIMD Controller - Additive Increase, Multiplicative Decrease
 /// Inspired by TCP Vegas congestion control
@@ -471,6 +483,21 @@ impl AdaptiveLimitManager {
             .map(|entry| {
                 let (confirmed, ceiling, age) = entry.value().to_persisted();
                 (entry.key().clone(), confirmed, ceiling, age)
+            })
+            .collect()
+    }
+
+    /// Get all trackers with current stats for API display
+    pub fn all_stats(&self) -> Vec<AimdAccountStats> {
+        self.trackers
+            .iter()
+            .map(|entry| AimdAccountStats {
+                account_id: entry.key().clone(),
+                confirmed_limit: entry.value().confirmed_limit(),
+                ceiling: entry.value().ceiling(),
+                requests_this_minute: entry.value().requests_this_minute(),
+                working_threshold: entry.value().working_threshold(),
+                usage_ratio: entry.value().usage_ratio(),
             })
             .collect()
     }

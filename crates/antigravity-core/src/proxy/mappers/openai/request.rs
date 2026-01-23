@@ -19,6 +19,8 @@ pub fn transform_openai_request(
         &request.model,
         &mapped_model_lower,
         &tools_val,
+        None,
+        None,
     );
 
     // Detect thinking models early (needed for signature handling)

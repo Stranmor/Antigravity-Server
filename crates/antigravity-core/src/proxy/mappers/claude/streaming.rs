@@ -250,6 +250,8 @@ pub struct StreamingState {
     // [NEW] MCP XML Bridge 缓冲区
     pub mcp_xml_buffer: String,
     pub in_mcp_xml: bool,
+    // [NEW] Estimated tokens for calibration (set before streaming)
+    pub estimated_tokens: Option<u32>,
 }
 
 impl Default for StreamingState {
@@ -279,6 +281,7 @@ impl StreamingState {
             context_limit: 1_048_576, // Default to 1M
             mcp_xml_buffer: String::new(),
             in_mcp_xml: false,
+            estimated_tokens: None,
         }
     }
 
@@ -516,6 +519,15 @@ impl StreamingState {
                 cache_creation_input_tokens: None,
                 server_tool_use: None,
             });
+
+        if let (Some(estimated), Some(um)) = (self.estimated_tokens, usage_metadata) {
+            let actual =
+                um.prompt_token_count.unwrap_or(0) + um.candidates_token_count.unwrap_or(0);
+            if actual > 0 {
+                crate::proxy::mappers::estimation_calibrator::get_calibrator()
+                    .record(estimated, actual);
+            }
+        }
 
         chunks.push(self.emit(
             "message_delta",

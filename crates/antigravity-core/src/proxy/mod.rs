@@ -62,7 +62,7 @@ pub use warp_isolation::WarpIsolationManager;
 
 // AIMD rate limiting types
 pub use adaptive_limit::{
-    AIMDController, AdaptiveLimitManager, AdaptiveLimitTracker, ProbeStrategy,
+    AIMDController, AdaptiveLimitManager, AdaptiveLimitTracker, AimdAccountStats, ProbeStrategy,
 };
 pub use common::circuit_breaker::{CircuitBreakerManager, CircuitState};
 pub use health::HealthMonitor;

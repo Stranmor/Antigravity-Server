@@ -20,10 +20,13 @@ pub fn resolve_request_config(
     original_model: &str,
     mapped_model: &str,
     tools: &Option<Vec<Value>>,
+    size: Option<&str>,
+    quality: Option<&str>,
 ) -> RequestConfig {
     // 1. Image Generation Check (Priority)
     if mapped_model.starts_with("gemini-3-pro-image") {
-        let (image_config, parsed_base_model) = parse_image_config(original_model);
+        let (image_config, parsed_base_model) =
+            parse_image_config_with_params(original_model, size, quality);
 
         return RequestConfig {
             request_type: "image_gen".to_string(),
@@ -96,13 +99,23 @@ pub fn resolve_request_config(
     }
 }
 
-/// Parse image configuration from model name suffixes
-/// Returns (image_config, clean_model_name)
-fn parse_image_config(model_name: &str) -> (Value, String) {
-    let mut aspect_ratio = "1:1";
-    let _image_size = "1024x1024"; // Default, not explicitly sent unless 4k/hd
+/// Legacy wrapper for backward compatibility
+#[allow(dead_code)]
+pub fn parse_image_config(model_name: &str) -> (Value, String) {
+    parse_image_config_with_params(model_name, None, None)
+}
 
-    if model_name.contains("-21x9") || model_name.contains("-21-9") {
+/// Extended version that accepts OpenAI size and quality parameters
+pub fn parse_image_config_with_params(
+    model_name: &str,
+    size: Option<&str>,
+    quality: Option<&str>,
+) -> (Value, String) {
+    let mut aspect_ratio = "1:1";
+
+    if let Some(s) = size {
+        aspect_ratio = calculate_aspect_ratio_from_size(s);
+    } else if model_name.contains("-21x9") || model_name.contains("-21-9") {
         aspect_ratio = "21:9";
     } else if model_name.contains("-16x9") || model_name.contains("-16-9") {
         aspect_ratio = "16:9";
@@ -116,23 +129,65 @@ fn parse_image_config(model_name: &str) -> (Value, String) {
         aspect_ratio = "1:1";
     }
 
-    let is_hd = model_name.contains("-4k") || model_name.contains("-hd");
-    let is_2k = model_name.contains("-2k");
-
     let mut config = serde_json::Map::new();
     config.insert("aspectRatio".to_string(), json!(aspect_ratio));
 
-    if is_hd {
-        config.insert("imageSize".to_string(), json!("4K"));
-    } else if is_2k {
-        config.insert("imageSize".to_string(), json!("2K"));
+    if let Some(q) = quality {
+        match q {
+            "hd" => {
+                config.insert("imageSize".to_string(), json!("4K"));
+            }
+            "medium" => {
+                config.insert("imageSize".to_string(), json!("2K"));
+            }
+            _ => {}
+        }
+    } else {
+        let is_hd = model_name.contains("-4k") || model_name.contains("-hd");
+        let is_2k = model_name.contains("-2k");
+
+        if is_hd {
+            config.insert("imageSize".to_string(), json!("4K"));
+        } else if is_2k {
+            config.insert("imageSize".to_string(), json!("2K"));
+        }
     }
 
-    // The upstream model must be EXACTLY "gemini-3-pro-image"
     (
         serde_json::Value::Object(config),
         "gemini-3-pro-image".to_string(),
     )
+}
+
+fn calculate_aspect_ratio_from_size(size: &str) -> &'static str {
+    if let Some((w_str, h_str)) = size.split_once('x') {
+        if let (Ok(width), Ok(height)) = (w_str.parse::<f64>(), h_str.parse::<f64>()) {
+            if width > 0.0 && height > 0.0 {
+                let ratio = width / height;
+
+                if (ratio - 21.0 / 9.0).abs() < 0.1 {
+                    return "21:9";
+                }
+                if (ratio - 16.0 / 9.0).abs() < 0.1 {
+                    return "16:9";
+                }
+                if (ratio - 4.0 / 3.0).abs() < 0.1 {
+                    return "4:3";
+                }
+                if (ratio - 3.0 / 4.0).abs() < 0.1 {
+                    return "3:4";
+                }
+                if (ratio - 9.0 / 16.0).abs() < 0.1 {
+                    return "9:16";
+                }
+                if (ratio - 1.0).abs() < 0.1 {
+                    return "1:1";
+                }
+            }
+        }
+    }
+
+    "1:1"
 }
 
 /// Inject current googleSearch tool and ensure no duplicate legacy search tools
@@ -325,7 +380,7 @@ mod tests {
     #[test]
     fn test_high_quality_model_auto_grounding() {
         // Auto-grounding is currently disabled by default due to conflict with image gen
-        let config = resolve_request_config("gpt-4o", "gemini-2.5-flash", &None);
+        let config = resolve_request_config("gpt-4o", "gemini-2.5-flash", &None, None, None);
         assert_eq!(config.request_type, "agent");
         assert!(!config.inject_google_search);
     }
@@ -342,7 +397,8 @@ mod tests {
 
     #[test]
     fn test_online_suffix_force_grounding() {
-        let config = resolve_request_config("gemini-3-flash-online", "gemini-3-flash", &None);
+        let config =
+            resolve_request_config("gemini-3-flash-online", "gemini-3-flash", &None, None, None);
         assert_eq!(config.request_type, "web_search");
         assert!(config.inject_google_search);
         assert_eq!(config.final_model, "gemini-2.5-flash");
@@ -350,14 +406,20 @@ mod tests {
 
     #[test]
     fn test_default_no_grounding() {
-        let config = resolve_request_config("claude-sonnet", "gemini-3-flash", &None);
+        let config = resolve_request_config("claude-sonnet", "gemini-3-flash", &None, None, None);
         assert_eq!(config.request_type, "agent");
         assert!(!config.inject_google_search);
     }
 
     #[test]
     fn test_image_model_excluded() {
-        let config = resolve_request_config("gemini-3-pro-image", "gemini-3-pro-image", &None);
+        let config = resolve_request_config(
+            "gemini-3-pro-image",
+            "gemini-3-pro-image",
+            &None,
+            None,
+            None,
+        );
         assert_eq!(config.request_type, "image_gen");
         assert!(!config.inject_google_search);
     }
@@ -381,5 +443,57 @@ mod tests {
         let (config_4k_wide, _) = parse_image_config("gemini-3-pro-image-4k-21x9");
         assert_eq!(config_4k_wide["imageSize"], "4K");
         assert_eq!(config_4k_wide["aspectRatio"], "21:9");
+    }
+
+    #[test]
+    fn test_parse_image_config_with_openai_params() {
+        // Test OpenAI size parameter (e.g., "1024x1024")
+        let (config, _) =
+            parse_image_config_with_params("gemini-3-pro-image", Some("1024x1024"), None);
+        assert_eq!(config["aspectRatio"], "1:1");
+
+        // Test landscape size
+        let (config_landscape, _) =
+            parse_image_config_with_params("gemini-3-pro-image", Some("1792x1024"), None);
+        assert_eq!(config_landscape["aspectRatio"], "16:9");
+
+        // Test portrait size
+        let (config_portrait, _) =
+            parse_image_config_with_params("gemini-3-pro-image", Some("1024x1792"), None);
+        assert_eq!(config_portrait["aspectRatio"], "9:16");
+
+        // Test quality parameter (hd → 4K)
+        let (config_hd, _) = parse_image_config_with_params("gemini-3-pro-image", None, Some("hd"));
+        assert_eq!(config_hd["imageSize"], "4K");
+
+        // Test quality standard (no change to default)
+        let (config_std, _) =
+            parse_image_config_with_params("gemini-3-pro-image", None, Some("standard"));
+        // Standard should not set 4K
+        assert_ne!(
+            config_std.get("imageSize").and_then(|v| v.as_str()),
+            Some("4K")
+        );
+    }
+
+    #[test]
+    fn test_calculate_aspect_ratio_from_size() {
+        // Common OpenAI sizes
+        assert_eq!(calculate_aspect_ratio_from_size("1024x1024"), "1:1");
+        assert_eq!(calculate_aspect_ratio_from_size("1792x1024"), "16:9");
+        assert_eq!(calculate_aspect_ratio_from_size("1024x1792"), "9:16");
+
+        // Custom sizes that should calculate to standard ratios
+        assert_eq!(calculate_aspect_ratio_from_size("1920x1080"), "16:9");
+        assert_eq!(calculate_aspect_ratio_from_size("1080x1920"), "9:16");
+
+        // Square variants
+        assert_eq!(calculate_aspect_ratio_from_size("512x512"), "1:1");
+        assert_eq!(calculate_aspect_ratio_from_size("2048x2048"), "1:1");
+
+        // Invalid formats return default "1:1"
+        assert_eq!(calculate_aspect_ratio_from_size("invalid"), "1:1");
+        assert_eq!(calculate_aspect_ratio_from_size("1024"), "1:1");
+        assert_eq!(calculate_aspect_ratio_from_size(""), "1:1");
     }
 }

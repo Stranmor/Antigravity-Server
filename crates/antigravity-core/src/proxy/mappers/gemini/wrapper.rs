@@ -74,6 +74,8 @@ pub fn wrap_request(
         original_model,
         final_model_name,
         &tools_val,
+        None,
+        None,
     );
 
     // Clean tool declarations (remove forbidden Schema fields like multipleOf, and remove redundant search decls)

@@ -638,34 +638,14 @@ async fn get_circuit_status(State(state): State<AppState>) -> Json<CircuitStatus
 }
 
 #[derive(Serialize)]
-struct AimdAccountStats {
-    account_id: String,
-    confirmed_limit: u64,
-    ceiling: u64,
-    requests_this_minute: u64,
-}
-
-#[derive(Serialize)]
 struct AimdStatusResponse {
     tracked_accounts: usize,
-    accounts: Vec<AimdAccountStats>,
+    accounts: Vec<antigravity_core::proxy::AimdAccountStats>,
 }
 
 async fn get_aimd_status(State(state): State<AppState>) -> Json<AimdStatusResponse> {
     let adaptive_limits = state.adaptive_limits();
-
-    let all_persisted = adaptive_limits.all_for_persistence();
-    let accounts: Vec<AimdAccountStats> = all_persisted
-        .into_iter()
-        .map(
-            |(account_id, confirmed_limit, ceiling, requests)| AimdAccountStats {
-                account_id,
-                confirmed_limit,
-                ceiling,
-                requests_this_minute: requests,
-            },
-        )
-        .collect();
+    let accounts = adaptive_limits.all_stats();
 
     Json(AimdStatusResponse {
         tracked_accounts: adaptive_limits.len(),

@@ -417,6 +417,8 @@ pub fn transform_claude_request_in(
         &claude_req.model,
         &mapped_model,
         &tools_val,
+        None,
+        None,
     );
 
     // [CRITICAL FIX] Disable dummy thought injection for Vertex AI

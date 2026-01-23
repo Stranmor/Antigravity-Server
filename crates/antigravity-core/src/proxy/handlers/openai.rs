@@ -195,6 +195,8 @@ pub async fn handle_chat_completions(
             &openai_req.model,
             &mapped_model,
             &tools_val,
+            None,
+            None,
         );
 
         // 3. 提取 SessionId (粘性指纹)
@@ -288,8 +290,11 @@ pub async fn handle_chat_completions(
                 use futures::StreamExt;
 
                 let gemini_stream = response.bytes_stream();
-                let openai_stream =
-                    create_openai_sse_stream(Box::pin(gemini_stream), openai_req.model.clone());
+                let openai_stream = create_openai_sse_stream(
+                    Box::pin(gemini_stream),
+                    openai_req.model.clone(),
+                    None,
+                );
 
                 // [FIX #859] Enhanced Peek logic to handle heartbeats and slow start
                 let peek_config = PeekConfig::openai();
@@ -877,6 +882,8 @@ pub async fn handle_completions(
             &openai_req.model,
             &mapped_model,
             &tools_val,
+            None,
+            None,
         );
 
         // 3. 提取 SessionId (复用)

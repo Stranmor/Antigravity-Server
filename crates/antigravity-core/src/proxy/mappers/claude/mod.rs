@@ -33,6 +33,7 @@ pub fn create_claude_sse_stream(
     session_id: Option<String>, // [NEW v3.3.17] Session ID for signature caching
     scaling_enabled: bool,      // [NEW] Flag for context usage scaling
     context_limit: u32,
+    estimated_tokens: Option<u32>,
 ) -> Pin<Box<dyn Stream<Item = Result<Bytes, String>> + Send>> {
     use async_stream::stream;
     use bytes::BytesMut;
@@ -43,6 +44,7 @@ pub fn create_claude_sse_stream(
         state.session_id = session_id; // Set session ID for signature caching
         state.scaling_enabled = scaling_enabled; // Set scaling enabled flag
         state.context_limit = context_limit;
+        state.estimated_tokens = estimated_tokens;
         let mut buffer = BytesMut::new();
 
         loop {

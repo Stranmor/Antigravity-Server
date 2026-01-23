@@ -151,6 +151,8 @@ pub async fn handle_detect_model(
         model_name,
         &mapped_model,
         &None, // We don't check tools for static capability detection
+        None,
+        None,
     );
 
     // 3. Construct response

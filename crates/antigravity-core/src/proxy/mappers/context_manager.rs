@@ -6,18 +6,16 @@
 use super::claude::models::{ClaudeRequest, ContentBlock, Message, MessageContent, SystemPrompt};
 use tracing::{debug, info};
 
-/// Purification Strategy for Context History
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// Strategy for context purification
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PurificationStrategy {
-    /// Do nothing, keep all thinking blocks
-    None,
-    /// Keep thinking blocks only in the last 2 turns
+    /// Soft purification: Retains recent thinking blocks (~2 turns), removes older ones
     Soft,
-    /// Remove ALL thinking blocks in history
+    /// Aggressive purification: Removes ALL thinking blocks to save maximum tokens
     Aggressive,
 }
 
-/// Context Statistics
+/// Context Statistics (our local addition)
 #[derive(Debug, Clone)]
 pub struct ContextStats {
     pub estimated_tokens: u32,
@@ -25,23 +23,92 @@ pub struct ContextStats {
     pub usage_ratio: f32,
 }
 
-/// Helper to estimate tokens from text (approx 3.5 chars per token)
+/// Helper to estimate tokens from text with multi-language awareness
+///
+/// Improved estimation algorithm:
+/// - ASCII/English: ~4 characters per token
+/// - Unicode/CJK: ~1.5 characters per token (Chinese, Japanese, Korean are tokenized differently)
+/// - Adds 15% safety margin to prevent underestimation
 fn estimate_tokens_from_str(s: &str) -> u32 {
-    (s.len() as f32 / 3.5).ceil() as u32
+    if s.is_empty() {
+        return 0;
+    }
+
+    let mut ascii_chars = 0u32;
+    let mut unicode_chars = 0u32;
+
+    for c in s.chars() {
+        if c.is_ascii() {
+            ascii_chars += 1;
+        } else {
+            unicode_chars += 1;
+        }
+    }
+
+    // ASCII: ~4 chars/token, Unicode/CJK: ~1.5 chars/token
+    let ascii_tokens = (ascii_chars as f32 / 4.0).ceil() as u32;
+    let unicode_tokens = (unicode_chars as f32 / 1.5).ceil() as u32;
+
+    // Add 15% safety margin to account for tokenizer variations
+    ((ascii_tokens + unicode_tokens) as f32 * 1.15).ceil() as u32
 }
 
 /// Context Manager implementation
 pub struct ContextManager;
 
 impl ContextManager {
-    /// Estimate token usage for a Claude Request
+    /// Purify message history based on the selected strategy
     ///
-    /// This is a lightweight estimation, not a precise count.
-    /// It iterates through all messages and blocks to sum up estimated tokens.
+    /// This removes Thinking blocks completely (unlike compression which keeps placeholders/signatures)
+    /// Used when context is critical or signatures are invalid.
+    pub fn purify_history(messages: &mut [Message], strategy: PurificationStrategy) -> bool {
+        let protected_last_n = match strategy {
+            PurificationStrategy::Soft => 4,
+            PurificationStrategy::Aggressive => 0,
+        };
+
+        Self::strip_thinking_blocks(messages, protected_last_n)
+    }
+
+    fn strip_thinking_blocks(messages: &mut [Message], protected_last_n: usize) -> bool {
+        let total_msgs = messages.len();
+        if total_msgs == 0 {
+            return false;
+        }
+
+        let start_protection_idx = total_msgs.saturating_sub(protected_last_n);
+        let mut modified = false;
+
+        for (i, msg) in messages.iter_mut().enumerate() {
+            if i >= start_protection_idx {
+                continue;
+            }
+
+            if msg.role == "assistant" {
+                if let MessageContent::Array(blocks) = &mut msg.content {
+                    let original_len = blocks.len();
+                    blocks.retain(|b| !matches!(b, ContentBlock::Thinking { .. }));
+
+                    if blocks.len() != original_len {
+                        modified = true;
+                        debug!(
+                            "[ContextManager] Stripped {} thinking blocks from message {}",
+                            original_len - blocks.len(),
+                            i
+                        );
+                    }
+                }
+            }
+        }
+
+        modified
+    }
+}
+
+impl ContextManager {
     pub fn estimate_token_usage(request: &ClaudeRequest) -> u32 {
         let mut total = 0;
 
-        // System prompt
         if let Some(sys) = &request.system {
             match sys {
                 SystemPrompt::String(s) => total += estimate_tokens_from_str(s),
@@ -53,9 +120,7 @@ impl ContextManager {
             }
         }
 
-        // Messages
         for msg in &request.messages {
-            // Message overhead
             total += 4;
 
             match &msg.content {
@@ -70,22 +135,20 @@ impl ContextManager {
                             }
                             ContentBlock::Thinking { thinking, .. } => {
                                 total += estimate_tokens_from_str(thinking);
-                                // Signature overhead
                                 total += 100;
                             }
                             ContentBlock::RedactedThinking { data } => {
                                 total += estimate_tokens_from_str(data);
                             }
                             ContentBlock::ToolUse { name, input, .. } => {
-                                total += 20; // Function call overhead
+                                total += 20;
                                 total += estimate_tokens_from_str(name);
                                 if let Ok(json_str) = serde_json::to_string(input) {
                                     total += estimate_tokens_from_str(&json_str);
                                 }
                             }
                             ContentBlock::ToolResult { content, .. } => {
-                                total += 10; // Result overhead
-                                             // content is serde_json::Value
+                                total += 10;
                                 if let Some(s) = content.as_str() {
                                     total += estimate_tokens_from_str(s);
                                 } else if let Some(arr) = content.as_array() {
@@ -96,11 +159,8 @@ impl ContextManager {
                                             total += estimate_tokens_from_str(text);
                                         }
                                     }
-                                } else {
-                                    // Fallback for objects or other types
-                                    if let Ok(s) = serde_json::to_string(content) {
-                                        total += estimate_tokens_from_str(&s);
-                                    }
+                                } else if let Ok(s) = serde_json::to_string(content) {
+                                    total += estimate_tokens_from_str(&s);
                                 }
                             }
                             _ => {}
@@ -110,7 +170,6 @@ impl ContextManager {
             }
         }
 
-        // Tools definition overhead (rough estimate)
         if let Some(tools) = &request.tools {
             for tool in tools {
                 if let Ok(json_str) = serde_json::to_string(tool) {
@@ -119,10 +178,8 @@ impl ContextManager {
             }
         }
 
-        // Thinking budget overhead if enabled
         if let Some(thinking) = &request.thinking {
             if let Some(budget) = thinking.budget_tokens {
-                // Reserve budget in estimation
                 total += budget;
             }
         }
@@ -130,77 +187,195 @@ impl ContextManager {
         total
     }
 
-    /// Purify history based on strategy
-    ///
-    /// Modifies the messages vector in-place.
-    /// - Level 0 (None): No change
-    /// - Level 1 (Soft): Keep thinking in last 2 turns, strip others
-    /// - Level 2 (Aggressive): Strip ALL thinking in history (except current generation which is handled by LLM)
-    pub fn purify_history(messages: &mut [Message], strategy: PurificationStrategy) -> bool {
-        if strategy == PurificationStrategy::None {
-            return false;
-        }
-
+    /// [Layer 2] Compress thinking content while preserving signatures
+    pub fn compress_thinking_preserve_signature(
+        messages: &mut [Message],
+        protected_last_n: usize,
+    ) -> bool {
         let total_msgs = messages.len();
         if total_msgs == 0 {
             return false;
         }
 
-        let mut modified = false;
-
-        // Determine the number of protected turns (most recent)
-        let protected_count = if strategy == PurificationStrategy::Soft {
-            4 // Protect last 4 messages (~2 turns)
-        } else {
-            0
-        };
-
-        // Protected range start index
-        let start_protection_idx = total_msgs.saturating_sub(protected_count);
+        let start_protection_idx = total_msgs.saturating_sub(protected_last_n);
+        let mut compressed_count = 0;
+        let mut total_chars_saved = 0;
 
         for (i, msg) in messages.iter_mut().enumerate() {
-            let is_protected = i >= start_protection_idx;
+            if i >= start_protection_idx {
+                continue;
+            }
 
-            // Only process Assistant messages
-            if msg.role == "assistant" && !is_protected {
+            if msg.role == "assistant" {
                 if let MessageContent::Array(blocks) = &mut msg.content {
-                    let initial_len = blocks.len();
+                    for block in blocks.iter_mut() {
+                        if let ContentBlock::Thinking {
+                            thinking,
+                            signature,
+                            ..
+                        } = block
+                        {
+                            if signature.is_some() && thinking.len() > 10 {
+                                let original_len = thinking.len();
+                                *thinking = "...".to_string();
+                                compressed_count += 1;
+                                total_chars_saved += original_len - 3;
 
-                    // Filter out Thinking blocks
-                    // IMPORTANT: This also removes the `signature` field inside the block
-                    blocks.retain(|b| {
-                        !matches!(
-                            b,
-                            ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. }
-                        )
-                    });
-
-                    if blocks.len() != initial_len {
-                        modified = true;
-
-                        // If message becomes empty (it was only thinking), replace with placeholder
-                        // to maintain valid conversation structure
-                        if blocks.is_empty() {
-                            blocks.push(ContentBlock::Text {
-                                text: "...".to_string(),
-                            });
-                            debug!(
-                                "[ContextManager] Replaced empty assistant message with placeholder"
-                            );
+                                debug!(
+                                    "[ContextManager] [Layer-2] Compressed thinking: {} → 3 chars (signature preserved)",
+                                    original_len
+                                );
+                            }
                         }
                     }
                 }
             }
         }
 
-        if modified {
+        if compressed_count > 0 {
+            let estimated_tokens_saved = (total_chars_saved as f32 / 3.5).ceil() as u32;
             info!(
-                "[ContextManager] Purified history with strategy: {:?} (Protected last {} msgs)",
-                strategy, protected_count
+                "[ContextManager] [Layer-2] Compressed {} thinking blocks (saved ~{} tokens, signatures preserved)",
+                compressed_count, estimated_tokens_saved
             );
         }
 
-        modified
+        compressed_count > 0
+    }
+
+    /// [Layer 3 Helper] Extract the last valid thinking signature from message history
+    pub fn extract_last_valid_signature(messages: &[Message]) -> Option<String> {
+        for msg in messages.iter().rev() {
+            if msg.role == "assistant" {
+                if let MessageContent::Array(blocks) = &msg.content {
+                    for block in blocks {
+                        if let ContentBlock::Thinking {
+                            signature: Some(sig),
+                            ..
+                        } = block
+                        {
+                            if sig.len() >= 50 {
+                                debug!(
+                                    "[ContextManager] [Layer-3] Extracted last valid signature (len: {})",
+                                    sig.len()
+                                );
+                                return Some(sig.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        debug!("[ContextManager] [Layer-3] No valid signature found in history");
+        None
+    }
+
+    /// [Layer 1] Trim old tool messages, keeping only the last N rounds
+    pub fn trim_tool_messages(messages: &mut Vec<Message>, keep_last_n_rounds: usize) -> bool {
+        let tool_rounds = identify_tool_rounds(messages);
+
+        if tool_rounds.len() <= keep_last_n_rounds {
+            return false;
+        }
+
+        let rounds_to_remove = tool_rounds.len() - keep_last_n_rounds;
+        let mut indices_to_remove = std::collections::HashSet::new();
+
+        for round in tool_rounds.iter().take(rounds_to_remove) {
+            for idx in &round.indices {
+                indices_to_remove.insert(*idx);
+            }
+        }
+
+        let mut removed_count = 0;
+        for idx in (0..messages.len()).rev() {
+            if indices_to_remove.contains(&idx) {
+                messages.remove(idx);
+                removed_count += 1;
+            }
+        }
+
+        if removed_count > 0 {
+            info!(
+                "[ContextManager] [Layer-1] Trimmed {} tool messages, kept last {} rounds",
+                removed_count, keep_last_n_rounds
+            );
+        }
+
+        removed_count > 0
+    }
+}
+
+#[derive(Debug)]
+struct ToolRound {
+    _assistant_index: usize,
+    tool_result_indices: Vec<usize>,
+    indices: Vec<usize>,
+}
+
+fn identify_tool_rounds(messages: &[Message]) -> Vec<ToolRound> {
+    let mut rounds = Vec::new();
+    let mut current_round: Option<ToolRound> = None;
+
+    for (i, msg) in messages.iter().enumerate() {
+        match msg.role.as_str() {
+            "assistant" => {
+                if has_tool_use(&msg.content) {
+                    if let Some(round) = current_round.take() {
+                        rounds.push(round);
+                    }
+                    current_round = Some(ToolRound {
+                        _assistant_index: i,
+                        tool_result_indices: Vec::new(),
+                        indices: vec![i],
+                    });
+                }
+            }
+            "user" => {
+                if let Some(ref mut round) = current_round {
+                    if has_tool_result(&msg.content) {
+                        round.tool_result_indices.push(i);
+                        round.indices.push(i);
+                    } else {
+                        rounds.push(current_round.take().unwrap());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(round) = current_round {
+        rounds.push(round);
+    }
+
+    debug!(
+        "[ContextManager] Identified {} tool rounds in {} messages",
+        rounds.len(),
+        messages.len()
+    );
+
+    rounds
+}
+
+fn has_tool_use(content: &MessageContent) -> bool {
+    if let MessageContent::Array(blocks) = content {
+        blocks
+            .iter()
+            .any(|b| matches!(b, ContentBlock::ToolUse { .. }))
+    } else {
+        false
+    }
+}
+
+fn has_tool_result(content: &MessageContent) -> bool {
+    if let MessageContent::Array(blocks) = content {
+        blocks
+            .iter()
+            .any(|b| matches!(b, ContentBlock::ToolResult { .. }))
+    } else {
+        false
     }
 }
 
@@ -208,7 +383,6 @@ impl ContextManager {
 mod tests {
     use super::*;
 
-    // Helper to create a request since Default is not implemented
     fn create_test_request() -> ClaudeRequest {
         ClaudeRequest {
             model: "claude-3-5-sonnet".into(),
@@ -241,14 +415,6 @@ mod tests {
 
     #[test]
     fn test_purify_history_soft() {
-        // Construct history of 6 messages (indices 0-5)
-        // 0: Assistant (Ancient) -> Should be purified
-        // 1: User
-        // 2: Assistant (Old) -> Should be protected (index 2 >= 6-4=2)
-        // 3: User
-        // 4: Assistant (Recent) -> Should be protected
-        // 5: User
-
         let mut messages = vec![
             Message {
                 role: "assistant".into(),
@@ -299,7 +465,6 @@ mod tests {
 
         ContextManager::purify_history(&mut messages, PurificationStrategy::Soft);
 
-        // 0: Ancient -> Filtered
         if let MessageContent::Array(blocks) = &messages[0].content {
             assert_eq!(blocks.len(), 1);
             if let ContentBlock::Text { text } = &blocks[0] {
@@ -309,7 +474,6 @@ mod tests {
             }
         }
 
-        // 2: Old -> Protected
         if let MessageContent::Array(blocks) = &messages[2].content {
             assert_eq!(blocks.len(), 2);
         }
