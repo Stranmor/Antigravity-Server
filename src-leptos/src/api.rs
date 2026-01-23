@@ -220,7 +220,17 @@ pub mod commands {
         enable: bool,
         reason: Option<&str>,
     ) -> Result<(), String> {
-        let _: bool = api_post(
+        #[derive(serde::Deserialize)]
+        struct ToggleProxyResponse {
+            #[allow(dead_code)]
+            success: bool,
+            #[allow(dead_code)]
+            account_id: String,
+            #[allow(dead_code)]
+            proxy_disabled: bool,
+        }
+
+        let _: ToggleProxyResponse = api_post(
             "/accounts/toggle-proxy",
             &serde_json::json!({
                 "account_id": account_id,
