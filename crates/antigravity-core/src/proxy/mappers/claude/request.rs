@@ -1742,7 +1742,7 @@ fn build_generation_config(
     config["maxOutputTokens"] = json!(final_max_tokens);
 
     // [优化] 设置全局停止序列,防止流式输出冗余 (控制在 4 个以内)
-    config["stopSequences"] = json!(["<|user|>", "<|end_of_turn|>", "[DONE]", "\n\nHuman:"]);
+    config["stopSequences"] = json!(["<|user|>", "<|end_of_turn|>", "\n\nHuman:"]);
 
     config
 }

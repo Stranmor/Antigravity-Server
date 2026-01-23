@@ -193,7 +193,19 @@ cargo test -p antigravity-core --lib
 git add . && git commit -m "chore: sync upstream v3.3.XX changes"
 ```
 
-### Last Sync: 2026-01-20
+### Last Sync: 2026-01-23
+
+**Ported from v3.3.49:**
+- **`estimation_calibrator.rs`** — New module for token estimation calibration
+  - Learns from actual API responses using exponential moving average
+  - `record(estimated, actual)` → refines future predictions
+  - `calibrate(estimated)` → applies learned correction factor
+  - Global singleton via `OnceCell` for cross-request learning
+- **[FIX #952] Nested `$defs` collection** — `collect_all_defs()` function
+  - Recursively collects `$defs` from all schema levels
+  - Fixes unresolved `$ref` fallback → converts to string type with hint
+- **Stop sequences improvement** — removed from request transformation
+  - Upstream removed `stop` field handling (models handle natively)
 
 **Ported from v3.3.45:**
 - **[FIX #820] Fixed Account Mode** — `preferred_account_id` in token_manager.rs
