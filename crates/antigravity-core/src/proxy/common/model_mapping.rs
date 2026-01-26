@@ -72,7 +72,7 @@ pub fn map_claude_model_to_gemini(input: &str) -> String {
     // 3. Intelligent fallback based on model keywords
     let lower = input.to_lowercase();
     if lower.contains("opus") {
-        return "gemini-3-pro-preview".to_string();
+        return "claude-opus-4-5-thinking".to_string();
     }
 
     // 4. Fallback to default
@@ -104,9 +104,6 @@ pub async fn get_all_dynamic_models(
         }
     }
 
-    // 5. 确保包含常用的 Gemini/画画模型 ID
-    model_ids.insert("gemini-3-pro-low".to_string());
-
     // [NEW] Issue #247: Dynamically generate all Image Gen Combinations
     let base = "gemini-3-pro-image";
     let resolutions = vec!["", "-2k", "-4k"];
@@ -122,50 +119,10 @@ pub async fn get_all_dynamic_models(
     }
 
     model_ids.insert("gemini-2.0-flash-exp".to_string());
-    model_ids.insert("gemini-2.5-flash".to_string());
-    // gemini-2.5-pro removed
-    model_ids.insert("gemini-3-flash".to_string());
-    model_ids.insert("gemini-3-pro-high".to_string());
-    model_ids.insert("gemini-3-pro-low".to_string());
 
     let mut sorted_ids: Vec<_> = model_ids.into_iter().collect();
     sorted_ids.sort();
     sorted_ids
-}
-
-/// Wildcard matching - supports multiple wildcards
-/// Pattern `GPT-4*` will NOT match `gpt-4-turbo` (case-sensitive)
-/// Examples: `gpt-4*`, `claude-*-sonnet-*`, `*-thinking`, `a*b*c`
-#[allow(dead_code)]
-fn wildcard_match(pattern: &str, text: &str) -> bool {
-    let parts: Vec<&str> = pattern.split('*').collect();
-
-    if parts.len() == 1 {
-        return pattern == text;
-    }
-
-    let mut text_pos = 0;
-
-    for (i, part) in parts.iter().enumerate() {
-        if part.is_empty() {
-            continue;
-        }
-
-        if i == 0 {
-            if !text[text_pos..].starts_with(part) {
-                return false;
-            }
-            text_pos += part.len();
-        } else if i == parts.len() - 1 {
-            return text[text_pos..].ends_with(part);
-        } else if let Some(pos) = text[text_pos..].find(part) {
-            text_pos += pos + part.len();
-        } else {
-            return false;
-        }
-    }
-
-    true
 }
 
 /// 核心模型路由解析引擎
@@ -175,42 +132,51 @@ fn wildcard_match(pattern: &str, text: &str) -> bool {
 /// - `original_model`: 原始模型名称
 /// - `custom_mapping`: 用户自定义映射表
 ///
-/// Normalize any physical model name to one of the 3 standard protection IDs.
+/// Normalize any physical model name to one of the 5 standard protection IDs.
 /// This ensures quota protection works consistently regardless of API versioning or request variations.
 ///
-/// Standard IDs:
-/// - `gemini-3-flash`: All Flash variants (1.5-flash, 2.5-flash, 3-flash, etc.)
-/// - `gemini-3-pro-high`: All Pro variants (1.5-pro, 2.5-pro, etc.)
-/// - `claude-sonnet-4-5`: All Claude Sonnet variants (3-5-sonnet, sonnet-4-5, etc.)
+/// Standard IDs for quota protection:
+/// - `gemini-3-flash`: Gemini 3 Flash variants only (gemini-3-flash, gemini-3-flash-*)
+/// - `gemini-3-pro-high`: Gemini 3 Pro variants (gemini-3-pro, gemini-3-pro-*)
+/// - `claude-opus-4-5-thinking`: All Claude Opus variants
+/// - `claude-sonnet-4-5-thinking`: Claude Sonnet with thinking
+/// - `claude-sonnet-4-5`: All Claude Sonnet/Haiku variants
 ///
-/// Returns `None` if the model doesn't match any of the 3 protected categories.
+/// Returns `None` if model doesn't match protected categories.
+/// Note: Gemini 2.x models intentionally excluded from protection.
 pub fn normalize_to_standard_id(model_name: &str) -> Option<String> {
-    // [FIX] Strict matching based on user-defined groups (Case Insensitive)
+    normalize_to_standard_id_with_depth(model_name, 0)
+}
+
+fn normalize_to_standard_id_with_depth(model_name: &str, depth: u8) -> Option<String> {
+    if depth > 5 {
+        return None;
+    }
+
+    if let Some(mapped) = CLAUDE_TO_GEMINI.get(model_name) {
+        if *mapped != model_name {
+            return normalize_to_standard_id_with_depth(mapped, depth + 1);
+        }
+    }
+
     let lower = model_name.to_lowercase();
 
-    // Use prefix/suffix matching to support all versioned model names
-    // Gemini 3 Flash Group
     if lower == "gemini-3-flash" || lower.starts_with("gemini-3-flash-") {
         return Some("gemini-3-flash".to_string());
     }
 
-    // Gemini 3 Pro High Group (includes pro-high, pro-low, pro-preview)
     if lower.starts_with("gemini-3-pro") {
         return Some("gemini-3-pro-high".to_string());
     }
 
-    // Claude Opus Group - maps to claude-opus-4-5-thinking
     if lower.contains("opus") {
         return Some("claude-opus-4-5-thinking".to_string());
     }
 
-    // Claude Sonnet Thinking Group
     if lower.contains("sonnet") && lower.contains("thinking") {
         return Some("claude-sonnet-4-5-thinking".to_string());
     }
 
-    // Claude Sonnet Group (non-thinking)
-    // Covers: claude-sonnet-4-5, claude-3-5-sonnet-20241022, claude-3-5-sonnet, etc.
     if lower.contains("sonnet") || lower.contains("haiku") {
         return Some("claude-sonnet-4-5".to_string());
     }
@@ -241,5 +207,58 @@ mod tests {
             map_claude_model_to_gemini("unknown-model"),
             "claude-sonnet-4-5"
         );
+
+        // Test gemini-3-pro → gemini-3-pro-preview mapping (required for audio transcription)
+        assert_eq!(
+            map_claude_model_to_gemini("gemini-3-pro"),
+            "gemini-3-pro-preview"
+        );
+    }
+
+    #[test]
+    fn test_normalize_to_standard_id() {
+        assert_eq!(
+            normalize_to_standard_id("gemini-3-flash"),
+            Some("gemini-3-flash".to_string())
+        );
+        assert_eq!(
+            normalize_to_standard_id("gemini-3-flash-exp"),
+            Some("gemini-3-flash".to_string())
+        );
+        assert_eq!(
+            normalize_to_standard_id("gemini-3-pro-high"),
+            Some("gemini-3-pro-high".to_string())
+        );
+        assert_eq!(
+            normalize_to_standard_id("gemini-3-pro"),
+            Some("gemini-3-pro-high".to_string())
+        );
+        assert_eq!(
+            normalize_to_standard_id("gemini-3-pro-low"),
+            Some("gemini-3-pro-high".to_string())
+        );
+        assert_eq!(normalize_to_standard_id("gemini-2.5-flash"), None);
+        assert_eq!(normalize_to_standard_id("gemini-2.5-pro"), None);
+        assert_eq!(
+            normalize_to_standard_id("claude-opus-4-5"),
+            Some("claude-opus-4-5-thinking".to_string())
+        );
+        assert_eq!(
+            normalize_to_standard_id("claude-sonnet-4-5-thinking"),
+            Some("claude-sonnet-4-5-thinking".to_string())
+        );
+        assert_eq!(
+            normalize_to_standard_id("claude-sonnet-4-5-20250929"),
+            Some("claude-sonnet-4-5-thinking".to_string())
+        );
+        assert_eq!(
+            normalize_to_standard_id("claude-sonnet-4-5"),
+            Some("claude-sonnet-4-5".to_string())
+        );
+        assert_eq!(
+            normalize_to_standard_id("claude-3-5-haiku-20241022"),
+            Some("claude-sonnet-4-5".to_string())
+        );
+        assert_eq!(normalize_to_standard_id("gpt-4o"), None);
     }
 }
