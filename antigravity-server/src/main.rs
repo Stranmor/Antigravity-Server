@@ -69,7 +69,13 @@ async fn run_server(port: u16) -> Result<()> {
 
     let data_dir = antigravity_core::modules::account::get_data_dir()
         .map_err(|e| anyhow::anyhow!("Failed to get data directory: {}", e))?;
-    let initial_app_config = antigravity_core::modules::config::load_config().unwrap_or_default();
+    let initial_app_config = match antigravity_core::modules::config::load_config() {
+        Ok(config) => config,
+        Err(e) => {
+            tracing::warn!("⚠️ Failed to load config, using defaults: {}", e);
+            Default::default()
+        }
+    };
     let initial_proxy_config = initial_app_config.proxy;
 
     let token_manager = Arc::new(antigravity_core::proxy::TokenManager::new(data_dir.clone()));
@@ -234,7 +240,7 @@ async fn shutdown_signal() {
         _ = terminate => info!("🛑 Received SIGTERM, initiating graceful shutdown..."),
     }
 
-    info!("⏳ Draining active connections (30s timeout)...");
+    info!("⏳ Graceful shutdown initiated...");
     tokio::time::sleep(Duration::from_millis(100)).await;
 }
 
@@ -254,14 +260,12 @@ async fn build_router(state: AppState, _axum_server: Arc<AxumServer>) -> Router 
         .route("/version", get(version_info))
         .with_state(state);
 
-    // SPA fallback: when a file is not found, serve index.html
-    // This is the standard pattern for all SPA frameworks (React, Vue, Angular, Leptos, etc.)
-    // Direct URL access to /monitor, /accounts, /proxy, /settings will serve index.html
-    // and let Leptos Router handle the client-side routing
+    // SPA fallback: use ServeDir::fallback() which preserves 200 status from ServeFile
+    // (unlike not_found_service which wraps response in 404)
     let index_path = format!("{}/index.html", static_dir);
     let spa_service = ServeDir::new(&static_dir)
         .append_index_html_on_directories(true)
-        .not_found_service(ServeFile::new(&index_path));
+        .fallback(ServeFile::new(&index_path));
 
     // Combine: API routes + Proxy routes + SPA fallback
     api_routes
@@ -288,8 +292,8 @@ async fn version_info() -> impl IntoResponse {
     (
         StatusCode::OK,
         axum::Json(serde_json::json!({
-            "version": env!("GIT_VERSION"),
-            "build_time": env!("BUILD_TIME"),
+            "version": option_env!("GIT_VERSION").unwrap_or("dev"),
+            "build_time": option_env!("BUILD_TIME").unwrap_or("unknown"),
             "cargo_version": env!("CARGO_PKG_VERSION"),
         })),
     )
