@@ -61,9 +61,9 @@ pub async fn handle_audio_transcription(
         model
     );
 
-    // 2. 检测 MIME 类型
-    let mime_type =
-        AudioProcessor::detect_mime_type(&file_name).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    // 2. Detect MIME type from magic bytes (more secure than extension)
+    let mime_type = AudioProcessor::detect_mime_type(&file_name, &audio_bytes)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
 
     // 3. 验证文件大小
     if AudioProcessor::exceeds_size_limit(audio_bytes.len()) {

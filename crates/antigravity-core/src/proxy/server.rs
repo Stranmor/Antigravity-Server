@@ -102,7 +102,9 @@ pub fn build_proxy_router_with_shared_state(
         )
         .route(
             "/v1/audio/transcriptions",
-            post(handlers::audio::handle_audio_transcription),
+            post(handlers::audio::handle_audio_transcription).layer(DefaultBodyLimit::max(
+                crate::proxy::audio::AudioProcessor::max_size_bytes(),
+            )),
         )
         // Claude Protocol
         .route("/v1/messages", post(handlers::claude::handle_messages))

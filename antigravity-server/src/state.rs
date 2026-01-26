@@ -4,7 +4,9 @@
 
 use anyhow::Result;
 use axum::Router;
+use dashmap::DashMap;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::RwLock;
 
 use antigravity_core::models::Account;
@@ -39,6 +41,8 @@ pub struct AppStateInner {
     pub health_monitor: Arc<HealthMonitor>,
     pub circuit_breaker: Arc<CircuitBreakerManager>,
     pub warp_isolation: Option<Arc<WarpIsolationManager>>,
+    /// OAuth state tokens for CSRF protection (state -> created_at)
+    pub oauth_states: Arc<DashMap<String, Instant>>,
 }
 
 impl AppState {
@@ -90,6 +94,7 @@ impl AppState {
                 health_monitor,
                 circuit_breaker,
                 warp_isolation,
+                oauth_states: Arc::new(DashMap::new()),
             }),
         })
     }
@@ -224,6 +229,34 @@ impl AppState {
 
     pub fn circuit_breaker(&self) -> &Arc<CircuitBreakerManager> {
         &self.inner.circuit_breaker
+    }
+
+    pub fn generate_oauth_state(&self) -> String {
+        use rand::Rng;
+        let state: String = rand::thread_rng()
+            .sample_iter(&rand::distributions::Alphanumeric)
+            .take(32)
+            .map(char::from)
+            .collect();
+        self.inner
+            .oauth_states
+            .insert(state.clone(), Instant::now());
+        self.cleanup_expired_oauth_states();
+        state
+    }
+
+    pub fn validate_oauth_state(&self, state: &str) -> bool {
+        if let Some((_, created_at)) = self.inner.oauth_states.remove(state) {
+            created_at.elapsed().as_secs() < 600
+        } else {
+            false
+        }
+    }
+
+    fn cleanup_expired_oauth_states(&self) {
+        self.inner
+            .oauth_states
+            .retain(|_, created_at: &mut Instant| created_at.elapsed().as_secs() < 600);
     }
 }
 

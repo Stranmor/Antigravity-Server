@@ -337,6 +337,12 @@ git add . && git commit -m "chore: sync upstream v3.3.XX changes"
 - **`src-tauri/`** — DELETED (6.5MB obsolete v3.3.20 copy, real upstream is `vendor/antigravity-upstream/` v4.0.1)
 - **Commit:** `89abe947` — 154 files changed, 26,994 lines deleted
 
+**API Architecture Fixes (2026-01-26):**
+- **Concurrent batch operations** — `refresh_all_quotas`, `warmup_all_accounts`, `add_account_by_token` now use `JoinSet` for parallel execution instead of sequential loops
+- **OAuth CSRF protection** — Added `state` parameter generation and validation in OAuth flow (`generate_oauth_state`, `validate_oauth_state` in AppState)
+- **Port resolution from AppState** — OAuth redirect URI now uses actual server port from `AppState::get_proxy_port()` instead of `ANTIGRAVITY_PORT` env var
+- **Error logging in batch operations** — Failed operations now log specific error messages via `tracing::warn!`
+
 ---
 
 ## ✅ FIX: Sticky Session Rebind on 429 [2026-01-19]

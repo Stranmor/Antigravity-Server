@@ -10,6 +10,7 @@ use axum::{
     Router,
 };
 use serde::{Deserialize, Serialize};
+use tokio::task::JoinSet;
 
 use antigravity_core::models::AppConfig;
 use antigravity_core::modules::{account, config as core_config, oauth};
@@ -223,62 +224,70 @@ async fn add_account_by_token(
     State(state): State<AppState>,
     Json(payload): Json<AddByTokenRequest>,
 ) -> Result<Json<AddByTokenResponse>, (StatusCode, String)> {
+    let mut join_set: JoinSet<Result<antigravity_shared::models::Account, String>> = JoinSet::new();
+
+    for token in payload.refresh_tokens {
+        join_set.spawn(async move {
+            let token_response = oauth::refresh_access_token(&token)
+                .await
+                .map_err(|e| format!("Token refresh failed: {}", e))?;
+
+            let user_info = oauth::get_user_info(&token_response.access_token)
+                .await
+                .map_err(|e| format!("User info failed: {}", e))?;
+
+            let token_data = TokenData::new(
+                token_response.access_token,
+                token.clone(),
+                token_response.expires_in,
+                Some(user_info.email.clone()),
+                None,
+                None,
+            );
+
+            account::upsert_account(
+                user_info.email.clone(),
+                user_info.get_display_name(),
+                token_data,
+            )
+            .map_err(|e| format!("Upsert failed: {}", e))
+        });
+    }
+
     let mut success_count = 0;
     let mut fail_count = 0;
     let mut added_accounts = Vec::new();
+    let mut errors = Vec::new();
 
-    for token in payload.refresh_tokens {
-        // Try to get user info using this refresh token
-        match oauth::refresh_access_token(&token).await {
-            Ok(token_response) => {
-                // Get user info
-                match oauth::get_user_info(&token_response.access_token).await {
-                    Ok(user_info) => {
-                        // Create TokenData
-                        let token_data = TokenData::new(
-                            token_response.access_token,
-                            token.clone(),
-                            token_response.expires_in,
-                            Some(user_info.email.clone()),
-                            None,
-                            None,
-                        );
-
-                        // Upsert account
-                        match account::upsert_account(
-                            user_info.email.clone(),
-                            user_info.get_display_name(),
-                            token_data,
-                        ) {
-                            Ok(acc) => {
-                                success_count += 1;
-                                added_accounts.push(AccountInfo {
-                                    id: acc.id.clone(),
-                                    email: acc.email.clone(),
-                                    name: acc.name.clone(),
-                                    disabled: acc.disabled,
-                                    proxy_disabled: acc.proxy_disabled,
-                                    is_current: false,
-                                    gemini_quota: get_model_quota(&acc, "gemini"),
-                                    claude_quota: get_model_quota(&acc, "claude"),
-                                    subscription_tier: acc
-                                        .quota
-                                        .as_ref()
-                                        .and_then(|q| q.subscription_tier.clone()),
-                                    quota: acc.quota.clone(),
-                                });
-                            }
-                            Err(_) => fail_count += 1,
-                        }
-                    }
-                    Err(_) => fail_count += 1,
-                }
+    while let Some(result) = join_set.join_next().await {
+        match result {
+            Ok(Ok(acc)) => {
+                success_count += 1;
+                added_accounts.push(AccountInfo {
+                    id: acc.id.clone(),
+                    email: acc.email.clone(),
+                    name: acc.name.clone(),
+                    disabled: acc.disabled,
+                    proxy_disabled: acc.proxy_disabled,
+                    is_current: false,
+                    gemini_quota: get_model_quota(&acc, "gemini"),
+                    claude_quota: get_model_quota(&acc, "claude"),
+                    subscription_tier: acc.quota.as_ref().and_then(|q| q.subscription_tier.clone()),
+                    quota: acc.quota.clone(),
+                });
             }
-            Err(_) => fail_count += 1,
+            Ok(Err(e)) => {
+                fail_count += 1;
+                errors.push(e);
+                tracing::warn!("Failed to add account: {}", errors.last().unwrap());
+            }
+            Err(e) => {
+                fail_count += 1;
+                tracing::error!("Task panicked: {}", e);
+            }
         }
     }
 
-    // Reload token manager
     let _ = state.reload_accounts().await;
 
     Ok(Json(AddByTokenResponse {
@@ -337,27 +346,45 @@ async fn refresh_all_quotas(
     };
 
     let total = accounts.len();
-    let mut success = 0;
-    let mut failed = 0;
+    let mut join_set: JoinSet<Result<(String, antigravity_shared::models::QuotaData), String>> =
+        JoinSet::new();
 
     for mut acc in accounts {
         if acc.disabled {
             continue;
         }
 
-        match account::fetch_quota_with_retry(&mut acc).await {
-            Ok(quota) => {
-                if let Err(e) = account::update_account_quota(&acc.id, quota) {
-                    tracing::warn!("Quota protection update failed for {}: {}", acc.email, e);
-                    let _ = account::save_account(&acc);
+        let account_id = acc.id.clone();
+        join_set.spawn(async move {
+            let quota = account::fetch_quota_with_retry(&mut acc)
+                .await
+                .map_err(|e| format!("{}: {}", acc.email, e))?;
+            Ok((account_id, quota))
+        });
+    }
+
+    let mut success = 0;
+    let mut failed = 0;
+
+    while let Some(result) = join_set.join_next().await {
+        match result {
+            Ok(Ok((account_id, quota))) => {
+                if let Err(e) = account::update_account_quota(&account_id, quota) {
+                    tracing::warn!("Quota protection update failed for {}: {}", account_id, e);
                 }
                 success += 1;
             }
-            Err(_) => failed += 1,
+            Ok(Err(e)) => {
+                tracing::warn!("Quota refresh failed: {}", e);
+                failed += 1;
+            }
+            Err(e) => {
+                tracing::error!("Task panicked: {}", e);
+                failed += 1;
+            }
         }
     }
 
-    // Reload token manager
     let _ = state.reload_accounts().await;
 
     Ok(Json(antigravity_shared::models::RefreshStats {
@@ -470,27 +497,44 @@ async fn warmup_all_accounts(
     };
 
     let total = accounts.len();
-    let mut success = 0;
-    let mut failed = 0;
+    let mut join_set: JoinSet<Result<String, String>> = JoinSet::new();
 
     for mut acc in accounts {
         if acc.disabled || acc.proxy_disabled {
             continue;
         }
 
-        match account::fetch_quota_with_retry(&mut acc).await {
-            Ok(_) => {
-                // Use update_account_quota to properly populate protected_models
-                if let Some(quota) = acc.quota.clone() {
-                    let _ = account::update_account_quota(&acc.id, quota);
-                }
-                success += 1;
+        let account_id = acc.id.clone();
+        let email = acc.email.clone();
+        join_set.spawn(async move {
+            account::fetch_quota_with_retry(&mut acc)
+                .await
+                .map_err(|e| format!("{}: {}", email, e))?;
+
+            if let Some(quota) = acc.quota.clone() {
+                let _ = account::update_account_quota(&account_id, quota);
             }
-            Err(_) => failed += 1,
+            Ok(email)
+        });
+    }
+
+    let mut success = 0;
+    let mut failed = 0;
+
+    while let Some(result) = join_set.join_next().await {
+        match result {
+            Ok(Ok(_)) => success += 1,
+            Ok(Err(e)) => {
+                tracing::warn!("Warmup failed: {}", e);
+                failed += 1;
+            }
+            Err(e) => {
+                tracing::error!("Task panicked: {}", e);
+                failed += 1;
+            }
         }
     }
 
-    // Reload token manager
     let _ = state.reload_accounts().await;
 
     Ok(Json(WarmupResponse {
@@ -715,15 +759,27 @@ async fn get_metrics(State(state): State<AppState>) -> axum::response::Response<
 
 // ============ OAuth (Headless Flow) ============
 
-/// OAuth callback redirect URI base.
-/// In headless mode, we use the same server to handle the callback.
-fn get_oauth_redirect_uri() -> String {
-    let port: u16 = std::env::var("ANTIGRAVITY_PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(8045);
+#[derive(Serialize)]
+struct OAuthUrlResponse {
+    url: String,
+    redirect_uri: String,
+    state: String,
+}
 
-    // Check if running behind a custom host (e.g., reverse proxy)
+async fn get_oauth_url(State(state): State<AppState>) -> Json<OAuthUrlResponse> {
+    let port = state.get_proxy_port().await;
+    let redirect_uri = get_oauth_redirect_uri_with_port(port);
+    let oauth_state = state.generate_oauth_state();
+    let url = oauth::get_auth_url_with_state(&redirect_uri, &oauth_state);
+
+    Json(OAuthUrlResponse {
+        url,
+        redirect_uri,
+        state: oauth_state,
+    })
+}
+
+fn get_oauth_redirect_uri_with_port(port: u16) -> String {
     if let Ok(host) = std::env::var("ANTIGRAVITY_OAUTH_HOST") {
         format!("{}/api/oauth/callback", host)
     } else {
@@ -731,34 +787,54 @@ fn get_oauth_redirect_uri() -> String {
     }
 }
 
-#[derive(Serialize)]
-struct OAuthUrlResponse {
-    url: String,
-    redirect_uri: String,
-}
-
-/// Generate OAuth URL for user to open manually.
-/// Returns the URL that user should open in browser.
-async fn get_oauth_url() -> Json<OAuthUrlResponse> {
-    let redirect_uri = get_oauth_redirect_uri();
-    let url = oauth::get_auth_url(&redirect_uri);
-
-    Json(OAuthUrlResponse { url, redirect_uri })
-}
-
 #[derive(Deserialize)]
 struct OAuthCallbackQuery {
     code: Option<String>,
     error: Option<String>,
+    state: Option<String>,
 }
 
 /// OAuth callback handler.
 /// Google redirects here after user authorizes the app.
 async fn handle_oauth_callback(
-    State(state): State<AppState>,
+    State(app_state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<OAuthCallbackQuery>,
 ) -> impl IntoResponse {
     use axum::response::Html;
+
+    // Validate CSRF state token
+    let oauth_state = match query.state {
+        Some(s) if app_state.validate_oauth_state(&s) => s,
+        Some(_) => {
+            return Html(
+                r#"<!DOCTYPE html>
+                <html>
+                <head><meta charset="utf-8"><title>OAuth Error</title></head>
+                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+                    <h1 style="color: red;">❌ Invalid State Token</h1>
+                    <p>CSRF validation failed. Please try again.</p>
+                </body>
+                </html>"#
+                    .to_string(),
+            )
+            .into_response();
+        }
+        None => {
+            return Html(
+                r#"<!DOCTYPE html>
+                <html>
+                <head><meta charset="utf-8"><title>OAuth Error</title></head>
+                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+                    <h1 style="color: red;">❌ Missing State Token</h1>
+                    <p>No state parameter received. Please try again.</p>
+                </body>
+                </html>"#
+                    .to_string(),
+            )
+            .into_response();
+        }
+    };
+    let _ = oauth_state;
 
     // Check for error
     if let Some(error) = query.error {
@@ -793,7 +869,8 @@ async fn handle_oauth_callback(
         .into_response();
     };
 
-    let redirect_uri = get_oauth_redirect_uri();
+    let port = app_state.get_proxy_port().await;
+    let redirect_uri = get_oauth_redirect_uri_with_port(port);
 
     // Exchange code for tokens
     let token_res = match oauth::exchange_code(&code, &redirect_uri).await {
@@ -869,8 +946,7 @@ async fn handle_oauth_callback(
         token_data,
     ) {
         Ok(acc) => {
-            // Reload token manager
-            let _ = state.reload_accounts().await;
+            let _ = app_state.reload_accounts().await;
 
             Html(format!(
                 r#"<!DOCTYPE html>
@@ -911,14 +987,18 @@ async fn handle_oauth_callback(
 struct OAuthLoginResponse {
     url: String,
     message: String,
+    state: String,
 }
 
-async fn start_oauth_login() -> Json<OAuthLoginResponse> {
-    let redirect_uri = get_oauth_redirect_uri();
-    let url = oauth::get_auth_url(&redirect_uri);
+async fn start_oauth_login(State(state): State<AppState>) -> Json<OAuthLoginResponse> {
+    let port = state.get_proxy_port().await;
+    let redirect_uri = get_oauth_redirect_uri_with_port(port);
+    let oauth_state = state.generate_oauth_state();
+    let url = oauth::get_auth_url_with_state(&redirect_uri, &oauth_state);
 
     Json(OAuthLoginResponse {
         url,
         message: "Open this URL in your browser to authorize".to_string(),
+        state: oauth_state,
     })
 }

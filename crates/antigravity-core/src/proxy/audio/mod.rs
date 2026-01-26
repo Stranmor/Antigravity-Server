@@ -3,9 +3,50 @@ use std::path::Path;
 
 pub struct AudioProcessor;
 
+const MAX_SIZE: usize = 15 * 1024 * 1024; // 15MB
+
 impl AudioProcessor {
-    /// 检测音频 MIME 类型
-    pub fn detect_mime_type(filename: &str) -> Result<String, String> {
+    /// Detect MIME type from file magic bytes (signature)
+    pub fn detect_mime_type_from_bytes(data: &[u8]) -> Option<String> {
+        if data.len() < 12 {
+            return None;
+        }
+
+        // MP3: starts with ID3 tag or frame sync
+        if data.starts_with(b"ID3") || (data[0] == 0xFF && (data[1] & 0xE0) == 0xE0) {
+            return Some("audio/mp3".to_string());
+        }
+
+        // WAV: RIFF....WAVE
+        if data.starts_with(b"RIFF") && data.len() >= 12 && &data[8..12] == b"WAVE" {
+            return Some("audio/wav".to_string());
+        }
+
+        // FLAC: fLaC
+        if data.starts_with(b"fLaC") {
+            return Some("audio/flac".to_string());
+        }
+
+        // OGG: OggS
+        if data.starts_with(b"OggS") {
+            return Some("audio/ogg".to_string());
+        }
+
+        // AIFF: FORM....AIFF
+        if data.starts_with(b"FORM") && data.len() >= 12 && &data[8..12] == b"AIFF" {
+            return Some("audio/aiff".to_string());
+        }
+
+        // M4A/AAC: ftyp (ISO Base Media)
+        if data.len() >= 8 && &data[4..8] == b"ftyp" {
+            return Some("audio/aac".to_string());
+        }
+
+        None
+    }
+
+    /// Detect MIME type from filename extension (fallback)
+    pub fn detect_mime_type_from_extension(filename: &str) -> Result<String, String> {
         let ext = Path::new(filename)
             .extension()
             .and_then(|s| s.to_str())
@@ -20,6 +61,19 @@ impl AudioProcessor {
             "aiff" | "aif" => Ok("audio/aiff".to_string()),
             _ => Err(format!("不支持的音频格式: {}", ext)),
         }
+    }
+
+    /// Detect MIME type: prioritize magic bytes, fallback to extension
+    pub fn detect_mime_type(filename: &str, data: &[u8]) -> Result<String, String> {
+        if let Some(mime) = Self::detect_mime_type_from_bytes(data) {
+            return Ok(mime);
+        }
+        Self::detect_mime_type_from_extension(filename)
+    }
+
+    /// Get max file size limit in bytes
+    pub const fn max_size_bytes() -> usize {
+        MAX_SIZE
     }
 
     /// 将音频数据编码为 Base64
@@ -39,24 +93,76 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_detect_mime_type() {
+    fn test_detect_mime_type_from_extension() {
         assert_eq!(
-            AudioProcessor::detect_mime_type("audio.mp3").unwrap(),
+            AudioProcessor::detect_mime_type_from_extension("audio.mp3").unwrap(),
             "audio/mp3"
         );
         assert_eq!(
-            AudioProcessor::detect_mime_type("audio.wav").unwrap(),
+            AudioProcessor::detect_mime_type_from_extension("audio.wav").unwrap(),
             "audio/wav"
         );
-        assert!(AudioProcessor::detect_mime_type("audio.txt").is_err());
+        assert!(AudioProcessor::detect_mime_type_from_extension("audio.txt").is_err());
+    }
+
+    #[test]
+    fn test_detect_mime_type_from_bytes() {
+        // MP3 with ID3 tag
+        let mp3_id3 = b"ID3\x04\x00\x00\x00\x00\x00\x00\x00\x00";
+        assert_eq!(
+            AudioProcessor::detect_mime_type_from_bytes(mp3_id3),
+            Some("audio/mp3".to_string())
+        );
+
+        // WAV file
+        let wav = b"RIFF\x00\x00\x00\x00WAVEfmt ";
+        assert_eq!(
+            AudioProcessor::detect_mime_type_from_bytes(wav),
+            Some("audio/wav".to_string())
+        );
+
+        // FLAC file
+        let flac = b"fLaC\x00\x00\x00\x00\x00\x00\x00\x00";
+        assert_eq!(
+            AudioProcessor::detect_mime_type_from_bytes(flac),
+            Some("audio/flac".to_string())
+        );
+
+        // OGG file
+        let ogg = b"OggS\x00\x00\x00\x00\x00\x00\x00\x00";
+        assert_eq!(
+            AudioProcessor::detect_mime_type_from_bytes(ogg),
+            Some("audio/ogg".to_string())
+        );
+
+        // Unknown format
+        let unknown = b"UNKNOWN_FORMAT__";
+        assert_eq!(AudioProcessor::detect_mime_type_from_bytes(unknown), None);
+    }
+
+    #[test]
+    fn test_detect_mime_type_combined() {
+        // Magic bytes take priority over extension
+        let wav_data = b"RIFF\x00\x00\x00\x00WAVEfmt ";
+        assert_eq!(
+            AudioProcessor::detect_mime_type("fake.mp3", wav_data).unwrap(),
+            "audio/wav"
+        );
+
+        // Fallback to extension when magic bytes unknown
+        let unknown = b"UNKNOWN_FORMAT__";
+        assert_eq!(
+            AudioProcessor::detect_mime_type("audio.flac", unknown).unwrap(),
+            "audio/flac"
+        );
     }
 
     #[test]
     fn test_exceeds_size_limit() {
-        assert!(!AudioProcessor::exceeds_size_limit(10 * 1024 * 1024)); // 10MB
-        assert!(AudioProcessor::exceeds_size_limit(20 * 1024 * 1024)); // 20MB
-        assert!(AudioProcessor::exceeds_size_limit(15 * 1024 * 1024 + 1)); // 刚好超过
-        assert!(!AudioProcessor::exceeds_size_limit(15 * 1024 * 1024)); // 刚好等于限制
+        assert!(!AudioProcessor::exceeds_size_limit(10 * 1024 * 1024));
+        assert!(AudioProcessor::exceeds_size_limit(20 * 1024 * 1024));
+        assert!(AudioProcessor::exceeds_size_limit(15 * 1024 * 1024 + 1));
+        assert!(!AudioProcessor::exceeds_size_limit(15 * 1024 * 1024));
     }
 
     #[test]

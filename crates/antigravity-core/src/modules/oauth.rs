@@ -49,6 +49,11 @@ impl UserInfo {
 
 /// 生成 OAuth 授权 URL
 pub fn get_auth_url(redirect_uri: &str) -> String {
+    get_auth_url_with_state(redirect_uri, "")
+}
+
+/// 生成 OAuth 授权 URL with optional state parameter for CSRF protection
+pub fn get_auth_url_with_state(redirect_uri: &str, state: &str) -> String {
     let scopes = [
         "https://www.googleapis.com/auth/cloud-platform",
         "https://www.googleapis.com/auth/userinfo.email",
@@ -58,7 +63,7 @@ pub fn get_auth_url(redirect_uri: &str) -> String {
     ]
     .join(" ");
 
-    let params = vec![
+    let mut params: Vec<(&str, &str)> = vec![
         ("client_id", CLIENT_ID),
         ("redirect_uri", redirect_uri),
         ("response_type", "code"),
@@ -67,6 +72,10 @@ pub fn get_auth_url(redirect_uri: &str) -> String {
         ("prompt", "consent"),
         ("include_granted_scopes", "true"),
     ];
+
+    if !state.is_empty() {
+        params.push(("state", state));
+    }
 
     let url = url::Url::parse_with_params(AUTH_URL, &params).expect("无效的 Auth URL");
     url.to_string()
