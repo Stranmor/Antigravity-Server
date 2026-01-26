@@ -210,7 +210,7 @@ git add . && git commit -m "chore: sync upstream v3.3.XX changes"
   - **Important note:** Config is read from `~/.antigravity_tools/gui_config.json` (NOT `config.json`). The `quota_protection.enabled` must be `true` in this file for model protection to work.
 
 - **[FEATURE] Smart Warmup Scheduler enabled** (2026-01-26)
-  - **Purpose:** Automatically warms up accounts with 100% quota to prevent staleness and maintain active sessions.
+  - **Purpose:** Automatically warms up accounts to prevent staleness and maintain active sessions.
   - **Config location:** `~/.antigravity_tools/gui_config.json` → `smart_warmup` section
   - **Config example:**
     ```json
@@ -222,8 +222,9 @@ git add . && git commit -m "chore: sync upstream v3.3.XX changes"
     }
     ```
   - **Behavior:**
-    - Runs every 60 seconds to check config
-    - Warms up models at 100% quota every `interval_minutes` (default 60)
+    - Checks config every 60 seconds, triggers warmup every `interval_minutes` (default 60)
+    - **`only_low_quota: false` (default):** Warms up models at 100% quota to prevent staleness
+    - **`only_low_quota: true`:** Warms up models below 50% quota to refresh them
     - 4-hour cooldown per model to prevent re-warming
     - Persistent history in `~/.antigravity_tools/warmup_history.json`
   - **Note:** Different from `scheduled_warmup` (old format). Use `smart_warmup` for the scheduler.

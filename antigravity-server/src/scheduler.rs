@@ -201,7 +201,16 @@ pub fn start(state: AppState) {
 
                     let history_key = format!("{}:{}:100", acc.email, model.name);
 
-                    if model.percentage == 100 {
+                    // Determine if this model should be warmed up based on config
+                    let should_warmup = if warmup_config.only_low_quota {
+                        // Warmup models with low quota to refresh them
+                        model.percentage < 50
+                    } else {
+                        // Warmup models at 100% to prevent staleness
+                        model.percentage == 100
+                    };
+
+                    if should_warmup {
                         // Check cooldown
                         if scheduler.is_in_cooldown(&history_key, now) {
                             skipped_cooldown += 1;
@@ -211,12 +220,13 @@ pub fn start(state: AppState) {
                         warmup_tasks.push((acc.email.clone(), model.name.clone()));
 
                         tracing::info!(
-                            "[Scheduler] ✓ Scheduled warmup: {} @ {} (quota at 100%)",
+                            "[Scheduler] ✓ Scheduled warmup: {} @ {} (quota {}%)",
                             model.name,
-                            acc.email
+                            acc.email,
+                            model.percentage
                         );
-                    } else if model.percentage < 100 {
-                        // Quota not full, mark for cleanup (batch save at end)
+                    } else if model.percentage < 100 && !warmup_config.only_low_quota {
+                        // Quota not full and we're in 100% mode, mark for cleanup
                         scheduler.history.entries.remove(&history_key);
                     }
                 }
