@@ -277,7 +277,10 @@ pub fn start(state: AppState) {
 
                             match account::fetch_quota_with_retry(&mut acc).await {
                                 Ok(_) => {
-                                    let _ = account::save_account(&acc);
+                                    // Use update_account_quota to properly populate protected_models
+                                    if let Some(quota) = acc.quota.clone() {
+                                        let _ = account::update_account_quota(&acc.id, quota);
+                                    }
                                     Some(true)
                                 }
                                 Err(_) => Some(false),
