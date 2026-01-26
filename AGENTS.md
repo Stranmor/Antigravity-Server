@@ -147,8 +147,8 @@ This fork uses **SEMANTIC PORTING** — we don't blindly copy upstream files, we
 
 - **Location:** `vendor/antigravity-upstream/` (git submodule)
 - **Upstream repo:** https://github.com/lbjlaq/Antigravity-Manager
-- **Current upstream:** v3.3.43
-- **Our version:** v3.3.20 (with custom improvements)
+- **Current upstream:** v4.0.1
+- **Our version:** v3.3.45 (with custom improvements)
 
 ### Intentional Divergences
 
@@ -193,7 +193,26 @@ cargo test -p antigravity-core --lib
 git add . && git commit -m "chore: sync upstream v3.3.XX changes"
 ```
 
-### Last Sync: 2026-01-26
+### Last Sync: 2026-01-26 (v4.0.1)
+
+**Ported from v4.0.1:**
+- **`gemini/collector.rs`** — NEW: Stream collector for Gemini SSE → JSON conversion
+  - Collects streaming responses into complete JSON for non-stream requests
+  - Signature caching side-effect during collection
+  - Adjacent text part merging for optimization
+- **`middleware/service_status.rs`** — NEW: Service status middleware (stub)
+  - Placeholder for `is_running` state control (requires AppState extension)
+- **`handlers/common.rs` RetryStrategy** — Unified retry logic
+  - `RetryStrategy` enum: NoRetry, FixedDelay, LinearBackoff, ExponentialBackoff
+  - `determine_retry_strategy()` with thinking signature error detection
+  - `apply_retry_strategy()` async execution with logging
+  - `should_rotate_account()` for 429/401/403/500 errors
+- **`model_mapping.rs` improvements:**
+  - `internal-background-task` → `gemini-2.5-flash` mapping for background tasks
+  - Intelligent opus fallback → `gemini-3-pro-preview`
+  - Multi-wildcard matching (`a*b*c` patterns)
+- **`handlers/openai.rs` refactoring:**
+  - Removed local RetryStrategy duplicate, now uses `super::common`
 
 **OUR BUG FIXES (not in upstream):**
 - **[FIX] protected_models not populated in headless server** (2026-01-26)

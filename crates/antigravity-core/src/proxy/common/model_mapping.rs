@@ -52,6 +52,9 @@ static CLAUDE_TO_GEMINI: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|
     m.insert("gemini-3-flash", "gemini-3-flash");
     m.insert("gemini-3-pro-image", "gemini-3-pro-image");
 
+    // Unified Virtual ID for Background Tasks (Title, Summary, etc.)
+    m.insert("internal-background-task", "gemini-2.5-flash");
+
     m
 });
 
@@ -66,7 +69,13 @@ pub fn map_claude_model_to_gemini(input: &str) -> String {
         return input.to_string();
     }
 
-    // 3. Fallback to default
+    // 3. Intelligent fallback based on model keywords
+    let lower = input.to_lowercase();
+    if lower.contains("opus") {
+        return "gemini-3-pro-preview".to_string();
+    }
+
+    // 4. Fallback to default
     "claude-sonnet-4-5".to_string()
 }
 
@@ -124,22 +133,39 @@ pub async fn get_all_dynamic_models(
     sorted_ids
 }
 
-/// 通配符匹配辅助函数
-/// 支持简单的 * 通配符匹配
-///
-/// # 示例
-/// - `gpt-4*` 匹配 `gpt-4`, `gpt-4-turbo`, `gpt-4-0613` 等
-/// - `claude-3-5-sonnet-*` 匹配所有 3.5 sonnet 版本
-/// - `*-thinking` 匹配所有以 `-thinking` 结尾的模型
+/// Wildcard matching - supports multiple wildcards
+/// Pattern `GPT-4*` will NOT match `gpt-4-turbo` (case-sensitive)
+/// Examples: `gpt-4*`, `claude-*-sonnet-*`, `*-thinking`, `a*b*c`
 #[allow(dead_code)]
 fn wildcard_match(pattern: &str, text: &str) -> bool {
-    if let Some(star_pos) = pattern.find('*') {
-        let prefix = &pattern[..star_pos];
-        let suffix = &pattern[star_pos + 1..];
-        text.starts_with(prefix) && text.ends_with(suffix)
-    } else {
-        pattern == text
+    let parts: Vec<&str> = pattern.split('*').collect();
+
+    if parts.len() == 1 {
+        return pattern == text;
     }
+
+    let mut text_pos = 0;
+
+    for (i, part) in parts.iter().enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+
+        if i == 0 {
+            if !text[text_pos..].starts_with(part) {
+                return false;
+            }
+            text_pos += part.len();
+        } else if i == parts.len() - 1 {
+            return text[text_pos..].ends_with(part);
+        } else if let Some(pos) = text[text_pos..].find(part) {
+            text_pos += pos + part.len();
+        } else {
+            return false;
+        }
+    }
+
+    true
 }
 
 /// 核心模型路由解析引擎

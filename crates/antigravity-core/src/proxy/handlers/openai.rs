@@ -1,101 +1,20 @@
 // OpenAI Handler
-use super::common::{peek_first_data_chunk, PeekConfig, PeekResult};
+use super::common::{
+    apply_retry_strategy, determine_retry_strategy, peek_first_data_chunk, PeekConfig, PeekResult,
+};
 use axum::{extract::Json, extract::State, http::StatusCode, response::IntoResponse};
 use base64::Engine as _;
 use bytes::Bytes;
 use serde_json::{json, Value};
-use tracing::{debug, error, info}; // Import Engine trait for encode method
+use tracing::{debug, error, info};
 
 use crate::proxy::mappers::openai::{
     transform_openai_request, transform_openai_response, OpenAIRequest,
 };
-// use crate::proxy::upstream::client::UpstreamClient; // 通过 state 获取
 use crate::proxy::server::AppState;
 
 const MAX_RETRY_ATTEMPTS: usize = 3;
 use crate::proxy::session_manager::SessionManager;
-use tokio::time::{sleep, Duration};
-
-/// 重试策略枚举
-#[derive(Debug, Clone)]
-enum RetryStrategy {
-    NoRetry,
-    FixedDelay(Duration),
-    LinearBackoff { base_ms: u64 },
-    ExponentialBackoff { base_ms: u64, max_ms: u64 },
-}
-
-fn determine_retry_strategy(status_code: u16, error_text: &str) -> RetryStrategy {
-    match status_code {
-        429 => {
-            if let Some(delay_ms) = crate::proxy::upstream::retry::parse_retry_delay(error_text) {
-                let actual_delay = delay_ms.saturating_add(200).min(10_000);
-                RetryStrategy::FixedDelay(Duration::from_millis(actual_delay))
-            } else {
-                RetryStrategy::LinearBackoff { base_ms: 1000 }
-            }
-        }
-        503 | 529 => RetryStrategy::ExponentialBackoff {
-            base_ms: 1000,
-            max_ms: 8000,
-        },
-        500 => RetryStrategy::LinearBackoff { base_ms: 500 },
-        401 | 403 => RetryStrategy::FixedDelay(Duration::from_millis(100)),
-        _ => RetryStrategy::NoRetry,
-    }
-}
-
-async fn apply_retry_strategy(
-    strategy: RetryStrategy,
-    attempt: usize,
-    status_code: u16,
-    trace_id: &str,
-) -> bool {
-    match strategy {
-        RetryStrategy::NoRetry => {
-            debug!(
-                "[{}] Non-retryable error {}, stopping",
-                trace_id, status_code
-            );
-            false
-        }
-        RetryStrategy::FixedDelay(duration) => {
-            info!(
-                "[{}] ⏱️ Retry with fixed delay: status={}, attempt={}/{}",
-                trace_id,
-                status_code,
-                attempt + 1,
-                MAX_RETRY_ATTEMPTS
-            );
-            sleep(duration).await;
-            true
-        }
-        RetryStrategy::LinearBackoff { base_ms } => {
-            let delay = base_ms * (attempt as u64 + 1);
-            info!(
-                "[{}] ⏱️ Retry with linear backoff: status={}, attempt={}/{}",
-                trace_id,
-                status_code,
-                attempt + 1,
-                MAX_RETRY_ATTEMPTS
-            );
-            sleep(Duration::from_millis(delay)).await;
-            true
-        }
-        RetryStrategy::ExponentialBackoff { base_ms, max_ms } => {
-            let delay = (base_ms * 2_u64.pow(attempt as u32)).min(max_ms);
-            info!(
-                "[{}] ⏱️ Retry with exponential backoff: status={}, attempt={}/{}",
-                trace_id,
-                status_code,
-                attempt + 1,
-                MAX_RETRY_ATTEMPTS
-            );
-            sleep(Duration::from_millis(delay)).await;
-            true
-        }
-    }
-}
 
 pub async fn handle_chat_completions(
     State(state): State<AppState>,
@@ -1132,9 +1051,17 @@ pub async fn handle_completions(
         }
 
         // 确定重试策略
-        let strategy = determine_retry_strategy(status_code, &error_text);
+        let strategy = determine_retry_strategy(status_code, &error_text, false);
 
-        if apply_retry_strategy(strategy, attempt, status_code, &trace_id).await {
+        if apply_retry_strategy(
+            strategy,
+            attempt,
+            MAX_RETRY_ATTEMPTS,
+            status_code,
+            &trace_id,
+        )
+        .await
+        {
             // 继续重试 (loop 会增加 attempt, 导致 force_rotate=true)
             continue;
         } else {
