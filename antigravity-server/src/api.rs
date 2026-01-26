@@ -373,7 +373,6 @@ async fn refresh_all_quotas(
 struct ToggleProxyRequest {
     account_id: String,
     enable: bool,
-    #[allow(dead_code)]
     reason: Option<String>,
 }
 
@@ -388,6 +387,14 @@ async fn toggle_proxy_status(
     State(state): State<AppState>,
     Json(payload): Json<ToggleProxyRequest>,
 ) -> Result<Json<ToggleProxyResponse>, (StatusCode, String)> {
+    // Log toggle with optional reason
+    tracing::info!(
+        account_id = %payload.account_id,
+        enable = %payload.enable,
+        reason = ?payload.reason,
+        "Toggling proxy status"
+    );
+
     // Load account
     let mut acc = match account::load_account(&payload.account_id) {
         Ok(a) => a,
