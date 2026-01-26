@@ -413,46 +413,60 @@ pub fn update_account_quota(account_id: &str, quota: QuotaData) -> Result<(), St
     if let Ok(config) = config_result {
         if config.quota_protection.enabled {
             let threshold = config.quota_protection.threshold_percentage as i32;
-            logger::log_info(&format!(
-                "[Quota Protection] Processing {} models for {}, threshold={}%",
-                quota.models.len(),
-                account.email,
-                threshold
-            ));
 
-            for model in &quota.models {
-                // Normalize model name to standard ID (e.g., "gemini-2.5-flash" -> "gemini-3-flash")
-                let standard_id = match normalize_to_standard_id(&model.name) {
-                    Some(id) => id,
-                    None => continue, // Not one of the 3 protected models, skip
-                };
-
-                // Only monitor models that user has checked in config
-                if !config
-                    .quota_protection
-                    .monitored_models
-                    .contains(&standard_id)
-                {
-                    continue;
-                }
-
-                if model.percentage <= threshold {
-                    // Trigger model-level protection
-                    if !account.is_model_protected(&standard_id) {
-                        logger::log_info(&format!(
-                            "[Quota] Protecting model: {} ({} [{}] at {}% <= threshold {}%)",
-                            account.email, standard_id, model.name, model.percentage, threshold
-                        ));
-                        account.protect_model(&standard_id);
+            // If account is forbidden (403), protect ALL monitored models
+            if quota.is_forbidden {
+                logger::log_info(&format!(
+                    "[Quota Protection] Account {} is forbidden, protecting all monitored models",
+                    account.email
+                ));
+                for model_id in &config.quota_protection.monitored_models {
+                    if !account.is_model_protected(model_id) {
+                        account.protect_model(model_id);
                     }
-                } else if config.quota_protection.auto_restore {
-                    // Auto-restore if above threshold
-                    if account.is_model_protected(&standard_id) {
-                        logger::log_info(&format!(
-                            "[Quota] Restoring model: {} ({} [{}] quota recovered to {}%)",
-                            account.email, standard_id, model.name, model.percentage
-                        ));
-                        account.unprotect_model(&standard_id);
+                }
+            } else {
+                logger::log_info(&format!(
+                    "[Quota Protection] Processing {} models for {}, threshold={}%",
+                    quota.models.len(),
+                    account.email,
+                    threshold
+                ));
+
+                for model in &quota.models {
+                    // Normalize model name to standard ID (e.g., "gemini-2.5-flash" -> "gemini-3-flash")
+                    let standard_id = match normalize_to_standard_id(&model.name) {
+                        Some(id) => id,
+                        None => continue, // Not one of the 3 protected models, skip
+                    };
+
+                    // Only monitor models that user has checked in config
+                    if !config
+                        .quota_protection
+                        .monitored_models
+                        .contains(&standard_id)
+                    {
+                        continue;
+                    }
+
+                    if model.percentage <= threshold {
+                        // Trigger model-level protection
+                        if !account.is_model_protected(&standard_id) {
+                            logger::log_info(&format!(
+                                "[Quota] Protecting model: {} ({} [{}] at {}% <= threshold {}%)",
+                                account.email, standard_id, model.name, model.percentage, threshold
+                            ));
+                            account.protect_model(&standard_id);
+                        }
+                    } else if config.quota_protection.auto_restore {
+                        // Auto-restore if above threshold
+                        if account.is_model_protected(&standard_id) {
+                            logger::log_info(&format!(
+                                "[Quota] Restoring model: {} ({} [{}] quota recovered to {}%)",
+                                account.email, standard_id, model.name, model.percentage
+                            ));
+                            account.unprotect_model(&standard_id);
+                        }
                     }
                 }
             }
