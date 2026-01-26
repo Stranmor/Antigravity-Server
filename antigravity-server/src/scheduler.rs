@@ -134,8 +134,11 @@ pub fn start(state: AppState) {
 
             // Check if enough time has passed since last warmup
             let now = Utc::now().timestamp();
-            // Ensure minimum 5 minutes, default 60 if invalid
             let interval_minutes = if warmup_config.interval_minutes < 5 {
+                tracing::warn!(
+                    "[Scheduler] interval_minutes {} too low, using 60",
+                    warmup_config.interval_minutes
+                );
                 60
             } else {
                 warmup_config.interval_minutes
@@ -191,47 +194,48 @@ pub fn start(state: AppState) {
             let mut skipped_cooldown = 0;
             let mut skipped_disabled = 0;
 
-            for acc in &accounts {
-                if acc.disabled || acc.proxy_disabled {
-                    skipped_disabled += 1;
-                    continue;
-                }
-
-                let quota = match &acc.quota {
-                    Some(q) => q,
-                    None => continue,
-                };
-
+            {
                 let scheduler = scheduler_state.lock().await;
-                let account_key = acc.email.clone();
 
-                for model in &quota.models {
-                    let model_matches = models_to_warmup
-                        .iter()
-                        .any(|m| model.name.to_lowercase().contains(&m.to_lowercase()));
-
-                    if !model_matches {
+                for acc in &accounts {
+                    if acc.disabled || acc.proxy_disabled {
+                        skipped_disabled += 1;
                         continue;
                     }
 
-                    let should_warmup = if warmup_config.only_low_quota {
-                        model.percentage < LOW_QUOTA_THRESHOLD
-                    } else {
-                        model.percentage == 100
+                    let quota = match &acc.quota {
+                        Some(q) => q,
+                        None => continue,
                     };
 
-                    if should_warmup {
-                        if scheduler.is_in_cooldown(&account_key, now) {
-                            skipped_cooldown += 1;
+                    for model in &quota.models {
+                        let model_matches = models_to_warmup
+                            .iter()
+                            .any(|m| model.name.to_lowercase().contains(&m.to_lowercase()));
+
+                        if !model_matches {
                             continue;
                         }
-                        accounts_to_warmup.insert(acc.email.clone());
-                        tracing::info!(
-                            "[Scheduler] ✓ Account {} has {} at {}%",
-                            acc.email,
-                            model.name,
-                            model.percentage
-                        );
+
+                        let should_warmup = if warmup_config.only_low_quota {
+                            model.percentage < LOW_QUOTA_THRESHOLD
+                        } else {
+                            model.percentage == 100
+                        };
+
+                        if should_warmup {
+                            if scheduler.is_in_cooldown(&acc.email, now) {
+                                skipped_cooldown += 1;
+                                continue;
+                            }
+                            accounts_to_warmup.insert(acc.email.clone());
+                            tracing::info!(
+                                "[Scheduler] ✓ Account {} has {} at {}%",
+                                acc.email,
+                                model.name,
+                                model.percentage
+                            );
+                        }
                     }
                 }
             }
@@ -260,14 +264,6 @@ pub fn start(state: AppState) {
                 tracing::info!("[Scheduler] 🔥 Triggering {} account warmups...", total);
 
                 let mut success = 0;
-
-                let accounts = match account::list_accounts() {
-                    Ok(a) => a,
-                    Err(e) => {
-                        tracing::warn!("[Scheduler] Failed to reload accounts: {}", e);
-                        continue;
-                    }
-                };
 
                 for email in &accounts_to_warmup {
                     let mut acc = match accounts.iter().find(|a| &a.email == email).cloned() {
