@@ -1,17 +1,21 @@
 //! Smart Warmup Scheduler
 //!
-//! Background task that periodically warms up accounts with 100% quota.
-//! Prevents accounts from going stale and ensures quota is actively used.
+//! Background task that periodically warms up accounts to maintain active sessions.
+//!
+//! Modes:
+//! - `only_low_quota: false` — Warms up accounts with 100% quota to prevent staleness
+//! - `only_low_quota: true` — Warms up accounts with <50% quota to refresh them
 //!
 //! Features:
 //! - Configurable interval (default 60 minutes)
-//! - 4-hour cooldown per model to prevent re-warming
+//! - 4-hour cooldown per account to prevent re-warming
 //! - Whitelisted models only (from SmartWarmupConfig)
-//! - Persistent history across restarts
+//! - Persistent history across restarts (async I/O)
+//! - Groups warmup by account to avoid N+1 API calls
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -23,6 +27,9 @@ use antigravity_core::modules::{account, config};
 /// Cooldown period: 4 hours (matches Pro account 5h reset, leaving 1h margin)
 const COOLDOWN_SECONDS: i64 = 14400;
 
+/// Threshold for low quota mode
+const LOW_QUOTA_THRESHOLD: i32 = 50;
+
 /// Default models to warmup if config is empty
 const DEFAULT_WARMUP_MODELS: &[&str] = &[
     "gemini-3-flash",
@@ -31,14 +38,11 @@ const DEFAULT_WARMUP_MODELS: &[&str] = &[
     "gemini-3-pro-image",
 ];
 
-/// Warmup history entry
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct WarmupHistory {
-    /// Key = "email:model:100", Value = timestamp when warmed up
     entries: HashMap<String, i64>,
 }
 
-/// Scheduler state
 struct SchedulerState {
     history: WarmupHistory,
     history_path: PathBuf,
@@ -47,41 +51,48 @@ struct SchedulerState {
 impl SchedulerState {
     fn new(data_dir: PathBuf) -> Self {
         let history_path = data_dir.join("warmup_history.json");
-        let history = Self::load_history(&history_path);
+        let history = Self::load_history_sync(&history_path);
         Self {
             history,
             history_path,
         }
     }
 
-    fn load_history(path: &PathBuf) -> WarmupHistory {
+    fn load_history_sync(path: &PathBuf) -> WarmupHistory {
         if path.exists() {
-            match std::fs::read_to_string(path) {
-                Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-                Err(_) => WarmupHistory::default(),
-            }
+            std::fs::read_to_string(path)
+                .ok()
+                .and_then(|c| serde_json::from_str(&c).ok())
+                .unwrap_or_default()
         } else {
             WarmupHistory::default()
         }
     }
 
-    fn save_history(&self) {
-        if let Ok(content) = serde_json::to_string_pretty(&self.history) {
-            let _ = std::fs::write(&self.history_path, content);
-        }
+    async fn save_history_async(&self) {
+        let path = self.history_path.clone();
+        let content = match serde_json::to_string_pretty(&self.history) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let _ = tokio::fs::write(path, content).await;
     }
 
     fn record_warmup(&mut self, key: &str, timestamp: i64) {
         self.history.entries.insert(key.to_string(), timestamp);
-        self.save_history();
     }
 
     fn is_in_cooldown(&self, key: &str, now: i64) -> bool {
-        if let Some(&last_ts) = self.history.entries.get(key) {
-            now - last_ts < COOLDOWN_SECONDS
-        } else {
-            false
-        }
+        self.history
+            .entries
+            .get(key)
+            .is_some_and(|&ts| now - ts < COOLDOWN_SECONDS)
+    }
+
+    fn cleanup_stale(&mut self, cutoff: i64) -> usize {
+        let before = self.history.entries.len();
+        self.history.entries.retain(|_, &mut ts| ts > cutoff);
+        before - self.history.entries.len()
     }
 }
 
@@ -165,32 +176,36 @@ pub fn start(state: AppState) {
                 continue;
             }
 
+            let mode_desc = if warmup_config.only_low_quota {
+                "low quota"
+            } else {
+                "100% quota"
+            };
             tracing::info!(
-                "[Scheduler] Scanning {} accounts for 100% quota models...",
-                accounts.len()
+                "[Scheduler] Scanning {} accounts for {} models...",
+                accounts.len(),
+                mode_desc
             );
 
-            let mut warmup_tasks: Vec<(String, String)> = Vec::new(); // (email, model)
+            let mut accounts_to_warmup: HashSet<String> = HashSet::new();
             let mut skipped_cooldown = 0;
             let mut skipped_disabled = 0;
 
             for acc in &accounts {
-                // Skip disabled accounts
                 if acc.disabled || acc.proxy_disabled {
                     skipped_disabled += 1;
                     continue;
                 }
 
-                // Get quota data
                 let quota = match &acc.quota {
                     Some(q) => q,
                     None => continue,
                 };
 
-                let mut scheduler = scheduler_state.lock().await;
+                let scheduler = scheduler_state.lock().await;
+                let account_key = acc.email.clone();
 
                 for model in &quota.models {
-                    // Check if this model is in our warmup list
                     let model_matches = models_to_warmup
                         .iter()
                         .any(|m| model.name.to_lowercase().contains(&m.to_lowercase()));
@@ -199,109 +214,89 @@ pub fn start(state: AppState) {
                         continue;
                     }
 
-                    let history_key = format!("{}:{}:100", acc.email, model.name);
-
-                    // Determine if this model should be warmed up based on config
                     let should_warmup = if warmup_config.only_low_quota {
-                        // Warmup models with low quota to refresh them
-                        model.percentage < 50
+                        model.percentage < LOW_QUOTA_THRESHOLD
                     } else {
-                        // Warmup models at 100% to prevent staleness
                         model.percentage == 100
                     };
 
                     if should_warmup {
-                        // Check cooldown
-                        if scheduler.is_in_cooldown(&history_key, now) {
+                        if scheduler.is_in_cooldown(&account_key, now) {
                             skipped_cooldown += 1;
                             continue;
                         }
-
-                        warmup_tasks.push((acc.email.clone(), model.name.clone()));
-
+                        accounts_to_warmup.insert(acc.email.clone());
                         tracing::info!(
-                            "[Scheduler] ✓ Scheduled warmup: {} @ {} (quota {}%)",
-                            model.name,
+                            "[Scheduler] ✓ Account {} has {} at {}%",
                             acc.email,
+                            model.name,
                             model.percentage
                         );
-                    } else if model.percentage < 100 && !warmup_config.only_low_quota {
-                        // Quota not full and we're in 100% mode, mark for cleanup
-                        scheduler.history.entries.remove(&history_key);
                     }
                 }
             }
 
-            // Cleanup old entries and save once (outside account loop)
             {
                 let mut scheduler = scheduler_state.lock().await;
-                let now_ts = Utc::now().timestamp();
-                let cutoff = now_ts - 86400; // 24 hours
-                let before = scheduler.history.entries.len();
-                scheduler.history.entries.retain(|_, &mut ts| ts > cutoff);
-                if scheduler.history.entries.len() < before {
-                    tracing::debug!(
-                        "[Scheduler] Cleaned up {} stale history entries",
-                        before - scheduler.history.entries.len()
-                    );
+                let cutoff = now - 86400;
+                let cleaned = scheduler.cleanup_stale(cutoff);
+                if cleaned > 0 {
+                    tracing::debug!("[Scheduler] Cleaned up {} stale history entries", cleaned);
                 }
-                scheduler.save_history();
+                scheduler.save_history_async().await;
             }
 
-            // Execute warmup tasks sequentially to avoid race conditions on account files
-            if !warmup_tasks.is_empty() {
-                let total = warmup_tasks.len();
+            if !accounts_to_warmup.is_empty() {
+                let total = accounts_to_warmup.len();
 
                 if skipped_cooldown > 0 {
                     tracing::info!(
-                        "[Scheduler] Skipped {} models in cooldown, warming {} models",
+                        "[Scheduler] Skipped {} in cooldown, warming {} accounts",
                         skipped_cooldown,
                         total
                     );
                 }
 
-                tracing::info!("[Scheduler] 🔥 Triggering {} warmup tasks...", total);
+                tracing::info!("[Scheduler] 🔥 Triggering {} account warmups...", total);
 
                 let mut success = 0;
 
-                // Reload accounts once for all warmup tasks
                 let accounts = match account::list_accounts() {
                     Ok(a) => a,
                     Err(e) => {
-                        tracing::warn!("[Scheduler] Failed to reload accounts for warmup: {}", e);
+                        tracing::warn!("[Scheduler] Failed to reload accounts: {}", e);
                         continue;
                     }
                 };
 
-                for (idx, (email, model)) in warmup_tasks.iter().enumerate() {
-                    tracing::info!("[Warmup {}/{}] {} @ {}", idx + 1, total, model, email);
-
+                for email in &accounts_to_warmup {
                     let mut acc = match accounts.iter().find(|a| &a.email == email).cloned() {
                         Some(a) => a,
-                        None => {
-                            tracing::warn!("[Scheduler] Account {} not found, skipping", email);
-                            continue;
-                        }
+                        None => continue,
                     };
+
+                    tracing::info!("[Warmup] Refreshing {}", email);
 
                     match account::fetch_quota_with_retry(&mut acc).await {
                         Ok(_) => {
-                            // Use update_account_quota to properly populate protected_models
                             if let Some(quota) = acc.quota.clone() {
                                 let _ = account::update_account_quota(&acc.id, quota);
                             }
                             success += 1;
-                            let history_key = format!("{}:{}:100", email, model);
                             let mut scheduler = scheduler_state.lock().await;
-                            scheduler.record_warmup(&history_key, now);
+                            scheduler.record_warmup(email, now);
                         }
                         Err(e) => {
                             tracing::warn!("[Scheduler] Warmup failed for {}: {}", email, e);
                         }
                     }
 
-                    // Small delay between requests to avoid rate limiting
                     tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+
+                {
+                    let scheduler = scheduler_state.lock().await;
+                    scheduler.save_history_async().await;
                 }
 
                 tracing::info!(
@@ -310,21 +305,20 @@ pub fn start(state: AppState) {
                     total
                 );
 
-                // Reload accounts into token manager
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 let _ = state.reload_accounts().await;
             } else if skipped_cooldown > 0 {
                 tracing::info!(
-                    "[Scheduler] Scan complete, all {} models in cooldown period",
+                    "[Scheduler] Scan complete, all {} in cooldown",
                     skipped_cooldown
                 );
             } else if skipped_disabled > 0 {
                 tracing::debug!(
-                    "[Scheduler] Scan complete, {} accounts disabled, no 100% quota models found",
+                    "[Scheduler] Scan complete, {} disabled, no matching models",
                     skipped_disabled
                 );
             } else {
-                tracing::debug!("[Scheduler] Scan complete, no 100% quota models need warmup");
+                tracing::debug!("[Scheduler] Scan complete, no accounts need warmup");
             }
         }
     });
