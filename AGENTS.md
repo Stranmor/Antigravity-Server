@@ -209,6 +209,25 @@ git add . && git commit -m "chore: sync upstream v3.3.XX changes"
     - `map_or(false, ...)` → `is_some_and(...)`
   - **Important note:** Config is read from `~/.antigravity_tools/gui_config.json` (NOT `config.json`). The `quota_protection.enabled` must be `true` in this file for model protection to work.
 
+- **[FEATURE] Smart Warmup Scheduler enabled** (2026-01-26)
+  - **Purpose:** Automatically warms up accounts with 100% quota to prevent staleness and maintain active sessions.
+  - **Config location:** `~/.antigravity_tools/gui_config.json` → `smart_warmup` section
+  - **Config example:**
+    ```json
+    "smart_warmup": {
+      "enabled": true,
+      "models": ["gemini-3-flash", "claude-sonnet-4-5", "gemini-3-pro-high", "gemini-3-pro-image", "claude-opus-4-5-thinking"],
+      "interval_minutes": 60,
+      "only_low_quota": false
+    }
+    ```
+  - **Behavior:**
+    - Runs every 60 seconds to check config
+    - Warms up models at 100% quota every `interval_minutes` (default 60)
+    - 4-hour cooldown per model to prevent re-warming
+    - Persistent history in `~/.antigravity_tools/warmup_history.json`
+  - **Note:** Different from `scheduled_warmup` (old format). Use `smart_warmup` for the scheduler.
+
 **Ported from v3.3.49:**
 - **`estimation_calibrator.rs`** — New module for token estimation calibration
   - Learns from actual API responses using exponential moving average
