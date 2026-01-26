@@ -129,11 +129,13 @@ cargo build --release -p antigravity-server    # ✅ builds (1m 22s, 11MB)
 
 ### Modules Status
 
-**ALL MODULES (23 total - clippy-clean):**
+**ALL MODULES (22 total - clippy-clean):**
 - `adaptive_limit`, `audio`, `common`, `handlers`, `health`, `mappers`, `middleware`
 - `monitor`, `project_resolver`, `prometheus`, `providers`, `rate_limit`, `security`
-- `server`, `session_manager`, `signature_cache`, `smart_prober`, `sticky_config`
+- `server`, `session_manager`, `signature_cache`, `sticky_config`
 - `token_manager`, `upstream`, `warp_isolation`, `zai_vision_mcp`, `zai_vision_tools`
+
+> **Note:** `smart_prober` was removed on 2026-01-26 (dead code — never called).
 
 ---
 
@@ -316,6 +318,14 @@ git add . && git commit -m "chore: sync upstream v3.3.XX changes"
 - Resilience API endpoints
 - WARP proxy support for per-account IP isolation (`call_v1_internal_with_warp`)
 - **Sticky session rebind on 429** — preserves prompt cache after rate limit failover (see below)
+
+**Dead Code Cleanup (2026-01-26):**
+- **`smart_prober.rs`** — DELETED (entire module, 14 pub functions, never called from anywhere)
+- **`prometheus.rs`** — Removed 6 dead functions:
+  - `record_log_rotation`, `record_log_cleanup`, `record_adaptive_probe`
+  - `record_hedge_win`, `record_primary_win`, `update_adaptive_limit_gauge`
+- **`src-tauri/`** — DELETED (6.5MB obsolete v3.3.20 copy, real upstream is `vendor/antigravity-upstream/` v4.0.1)
+- **Commit:** `89abe947` — 154 files changed, 26,994 lines deleted
 
 ---
 
