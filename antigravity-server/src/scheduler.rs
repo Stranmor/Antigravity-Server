@@ -83,23 +83,6 @@ impl SchedulerState {
             false
         }
     }
-
-    fn clear_entry(&mut self, key: &str) {
-        if self.history.entries.remove(key).is_some() {
-            self.save_history();
-        }
-    }
-
-    /// Clean entries older than 24 hours
-    fn cleanup_old_entries(&mut self) {
-        let now = Utc::now().timestamp();
-        let cutoff = now - 86400; // 24 hours
-        let before = self.history.entries.len();
-        self.history.entries.retain(|_, &mut ts| ts > cutoff);
-        if self.history.entries.len() < before {
-            self.save_history();
-        }
-    }
 }
 
 /// Start the smart warmup scheduler as a background tokio task
@@ -233,13 +216,26 @@ pub fn start(state: AppState) {
                             acc.email
                         );
                     } else if model.percentage < 100 {
-                        // Quota not full, clear history entry to allow warmup when it resets
-                        scheduler.clear_entry(&history_key);
+                        // Quota not full, mark for cleanup (batch save at end)
+                        scheduler.history.entries.remove(&history_key);
                     }
                 }
+            }
 
-                // Cleanup old entries periodically
-                scheduler.cleanup_old_entries();
+            // Cleanup old entries and save once (outside account loop)
+            {
+                let mut scheduler = scheduler_state.lock().await;
+                let now_ts = Utc::now().timestamp();
+                let cutoff = now_ts - 86400; // 24 hours
+                let before = scheduler.history.entries.len();
+                scheduler.history.entries.retain(|_, &mut ts| ts > cutoff);
+                if scheduler.history.entries.len() < before {
+                    tracing::debug!(
+                        "[Scheduler] Cleaned up {} stale history entries",
+                        before - scheduler.history.entries.len()
+                    );
+                }
+                scheduler.save_history();
             }
 
             // Execute warmup tasks
