@@ -217,6 +217,16 @@ git add . && git commit -m "chore: sync upstream v3.3.XX changes"
   - Removed local RetryStrategy duplicate, now uses `super::common`
 
 **OUR BUG FIXES (not in upstream):**
+- **[FIX] 60s Global Lock missing rate limit check** (2026-01-26)
+  - **Root cause:** TokenManager has 3 account selection modes:
+    - Mode A: Sticky session (checks rate limit ✓)
+    - Mode B: 60s global lock (MISSING rate limit check ✗)
+    - Mode C: Round-robin (checks rate limit ✓)
+  - **Symptom:** When account gets 429, Mode B still reuses it for 60 seconds because it only checked `attempted.contains()` and quota protection, NOT rate limit status.
+  - **Result:** Infinite 429 loop — same account hammered for minutes despite being rate-limited.
+  - **Fix:** Added `is_rate_limited()` check before reusing account in 60s window (line 637).
+  - **Affected file:** `crates/antigravity-core/src/proxy/token_manager.rs`
+
 - **[FIX] protected_models not populated in headless server** (2026-01-26)
   - **Root cause:** Headless server (`antigravity-server`) used `save_account()` after quota refresh, but this function does NOT check quota thresholds and does NOT populate `protected_models`. The correct function is `update_account_quota()` which contains the protection logic.
   - **Affected files:** `antigravity-server/src/api.rs`, `antigravity-server/src/commands.rs`

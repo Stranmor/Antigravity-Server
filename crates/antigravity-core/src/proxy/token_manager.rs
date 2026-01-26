@@ -632,7 +632,14 @@ impl TokenManager {
                 // 【优化】使用预先获取的快照，不再在循环内加锁
                 if let Some((account_id, last_time)) = &last_used_account_id {
                     if last_time.elapsed().as_secs() < 60 && !attempted.contains(account_id) {
-                        if let Some(found) =
+                        // [FIX] Check rate limit BEFORE reusing account in 60s window
+                        // Bug: Mode B was missing rate limit check, causing infinite 429 loops
+                        if self.is_rate_limited(account_id) {
+                            tracing::debug!(
+                                "60s Window: Last account {} is rate-limited, skipping to round-robin",
+                                account_id
+                            );
+                        } else if let Some(found) =
                             tokens_snapshot.iter().find(|t| &t.account_id == account_id)
                         {
                             // [FIX #621] Check quota protection before reusing
