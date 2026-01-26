@@ -238,7 +238,7 @@ pub fn start(state: AppState) {
                 scheduler.save_history();
             }
 
-            // Execute warmup tasks
+            // Execute warmup tasks sequentially to avoid race conditions on account files
             if !warmup_tasks.is_empty() {
                 let total = warmup_tasks.len();
 
@@ -254,52 +254,44 @@ pub fn start(state: AppState) {
 
                 let mut success = 0;
 
-                // Process in batches of 3 to avoid overwhelming the API
-                for (batch_idx, batch) in warmup_tasks.chunks(3).enumerate() {
-                    let mut handles = Vec::new();
-
-                    for (task_idx, (email, model)) in batch.iter().enumerate() {
-                        let global_idx = batch_idx * 3 + task_idx + 1;
-                        let email_for_spawn = email.clone();
-                        let email_for_handle = email.clone();
-                        let model_for_handle = model.clone();
-
-                        tracing::info!("[Warmup {}/{}] {} @ {}", global_idx, total, model, email);
-
-                        let handle = tokio::spawn(async move {
-                            let accounts = account::list_accounts().ok()?;
-                            let mut acc =
-                                accounts.into_iter().find(|a| a.email == email_for_spawn)?;
-
-                            match account::fetch_quota_with_retry(&mut acc).await {
-                                Ok(_) => {
-                                    // Use update_account_quota to properly populate protected_models
-                                    if let Some(quota) = acc.quota.clone() {
-                                        let _ = account::update_account_quota(&acc.id, quota);
-                                    }
-                                    Some(true)
-                                }
-                                Err(_) => Some(false),
-                            }
-                        });
-
-                        handles.push((handle, email_for_handle, model_for_handle));
+                // Reload accounts once for all warmup tasks
+                let accounts = match account::list_accounts() {
+                    Ok(a) => a,
+                    Err(e) => {
+                        tracing::warn!("[Scheduler] Failed to reload accounts for warmup: {}", e);
+                        continue;
                     }
+                };
 
-                    // Wait for batch to complete
-                    for (handle, email, model) in handles {
-                        if let Ok(Some(true)) = handle.await {
+                for (idx, (email, model)) in warmup_tasks.iter().enumerate() {
+                    tracing::info!("[Warmup {}/{}] {} @ {}", idx + 1, total, model, email);
+
+                    let mut acc = match accounts.iter().find(|a| &a.email == email).cloned() {
+                        Some(a) => a,
+                        None => {
+                            tracing::warn!("[Scheduler] Account {} not found, skipping", email);
+                            continue;
+                        }
+                    };
+
+                    match account::fetch_quota_with_retry(&mut acc).await {
+                        Ok(_) => {
+                            // Use update_account_quota to properly populate protected_models
+                            if let Some(quota) = acc.quota.clone() {
+                                let _ = account::update_account_quota(&acc.id, quota);
+                            }
                             success += 1;
                             let history_key = format!("{}:{}:100", email, model);
                             let mut scheduler = scheduler_state.lock().await;
                             scheduler.record_warmup(&history_key, now);
                         }
+                        Err(e) => {
+                            tracing::warn!("[Scheduler] Warmup failed for {}: {}", email, e);
+                        }
                     }
 
-                    // Small delay between batches
-                    if batch_idx < warmup_tasks.len().div_ceil(3) - 1 {
-                        tokio::time::sleep(Duration::from_secs(2)).await;
-                    }
+                    // Small delay between requests to avoid rate limiting
+                    tokio::time::sleep(Duration::from_millis(500)).await;
                 }
 
                 tracing::info!(
