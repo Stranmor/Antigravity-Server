@@ -281,7 +281,10 @@ async fn warmup_account(email: &str) -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
-    account::save_account(&acc).map_err(|e| anyhow::anyhow!(e))?;
+    // Use update_account_quota to properly populate protected_models
+    if let Some(quota) = acc.quota.clone() {
+        account::update_account_quota(&acc.id, quota).map_err(|e| anyhow::anyhow!(e))?;
+    }
     println!("{} Account {} warmed up", "✓".green(), acc.email.green());
     Ok(())
 }
@@ -300,7 +303,10 @@ async fn warmup_all() -> Result<()> {
         print!("Warming up {}... ", acc.email);
         match account::fetch_quota_with_retry(&mut acc).await {
             Ok(_) => {
-                let _ = account::save_account(&acc);
+                // Use update_account_quota to properly populate protected_models
+                if let Some(quota) = acc.quota.clone() {
+                    let _ = account::update_account_quota(&acc.id, quota);
+                }
                 println!("{}", "✓".green());
                 success += 1;
             }

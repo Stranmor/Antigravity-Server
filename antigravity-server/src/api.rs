@@ -430,7 +430,10 @@ async fn warmup_account(
     // Warmup by refreshing quota (this makes an API call which "warms up" the session)
     match account::fetch_quota_with_retry(&mut acc).await {
         Ok(_) => {
-            let _ = account::save_account(&acc);
+            // Use update_account_quota to properly populate protected_models
+            if let Some(quota) = acc.quota.clone() {
+                let _ = account::update_account_quota(&acc.id, quota);
+            }
             let _ = state.reload_accounts().await;
 
             Ok(Json(WarmupResponse {
@@ -461,7 +464,10 @@ async fn warmup_all_accounts(
 
         match account::fetch_quota_with_retry(&mut acc).await {
             Ok(_) => {
-                let _ = account::save_account(&acc);
+                // Use update_account_quota to properly populate protected_models
+                if let Some(quota) = acc.quota.clone() {
+                    let _ = account::update_account_quota(&acc.id, quota);
+                }
                 success += 1;
             }
             Err(_) => failed += 1,
