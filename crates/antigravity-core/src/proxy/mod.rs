@@ -22,7 +22,6 @@ pub mod monitor;
 pub mod prometheus;
 pub mod security;
 pub mod server;
-pub mod smart_prober;
 pub mod sticky_config;
 pub mod token_manager;
 
@@ -66,7 +65,6 @@ pub use adaptive_limit::{
 };
 pub use common::circuit_breaker::{CircuitBreakerManager, CircuitState};
 pub use health::HealthMonitor;
-pub use smart_prober::SmartProber;
 
 #[cfg(test)]
 pub mod tests;

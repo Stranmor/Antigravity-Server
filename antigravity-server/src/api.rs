@@ -55,6 +55,15 @@ pub fn router() -> Router<AppState> {
         .route("/resilience/aimd", get(get_aimd_status))
         // Prometheus metrics
         .route("/metrics", get(get_metrics))
+        // API fallback: return 404 for unknown API endpoints
+        .fallback(api_not_found)
+}
+
+async fn api_not_found() -> impl IntoResponse {
+    (
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({"error": "Not found"})),
+    )
 }
 
 // ============ Status ============

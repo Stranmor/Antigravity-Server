@@ -8,13 +8,11 @@
 //! - `antigravity_uptime_seconds` - Gauge of server uptime
 //! - `antigravity_log_files_total` - Gauge of total log files
 //! - `antigravity_log_disk_bytes` - Gauge of log disk usage in bytes
-//! - `antigravity_log_rotations_total` - Counter of log rotation events
-//! - `antigravity_log_cleanup_removed_total` - Counter of files removed by cleanup
-//! - `antigravity_adaptive_probes_total{strategy}` - Counter of probes by strategy
 //! - `antigravity_aimd_rewards_total` - Counter of AIMD limit expansions
 //! - `antigravity_aimd_penalties_total` - Counter of AIMD limit contractions
-//! - `antigravity_hedge_wins_total` - Counter of hedge request wins
-//! - `antigravity_primary_wins_total` - Counter of primary request wins after hedge
+//! - `antigravity_truncations_total` - Counter of output truncations
+//! - `antigravity_peek_retries_total{reason}` - Counter of peek phase retries
+//! - `antigravity_peek_heartbeats_total` - Counter of heartbeats during peek
 
 use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gauge, histogram};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
@@ -81,7 +79,7 @@ pub fn init_metrics() -> PrometheusHandle {
         );
         describe_gauge!("antigravity_uptime_seconds", "Server uptime in seconds");
 
-        // Log rotation metrics
+        // Log metrics (gauges updated by update_log_rotation_gauges)
         describe_gauge!(
             "antigravity_log_files_total",
             "Total number of log files in logs directory"
@@ -90,19 +88,7 @@ pub fn init_metrics() -> PrometheusHandle {
             "antigravity_log_disk_bytes",
             "Total disk space used by log files in bytes"
         );
-        describe_counter!(
-            "antigravity_log_rotations_total",
-            "Total number of log file rotations"
-        );
-        describe_counter!(
-            "antigravity_log_cleanup_removed_total",
-            "Total number of log files removed by cleanup"
-        );
 
-        describe_counter!(
-            "antigravity_adaptive_probes_total",
-            "Total adaptive rate limit probes by strategy"
-        );
         describe_counter!(
             "antigravity_aimd_rewards_total",
             "Total AIMD limit expansions (success above threshold)"
@@ -112,20 +98,8 @@ pub fn init_metrics() -> PrometheusHandle {
             "Total AIMD limit contractions (429 received)"
         );
         describe_counter!(
-            "antigravity_hedge_wins_total",
-            "Total times hedge request completed before primary"
-        );
-        describe_counter!(
-            "antigravity_primary_wins_total",
-            "Total times primary request won after hedge fired"
-        );
-        describe_counter!(
             "antigravity_truncations_total",
             "Total output truncations detected (upstream ~4K token limit)"
-        );
-        describe_gauge!(
-            "antigravity_adaptive_limit_gauge",
-            "Current working threshold per account"
         );
         describe_counter!(
             "antigravity_peek_retries_total",
@@ -220,28 +194,6 @@ pub fn update_log_rotation_gauges(log_dir: &Path) -> (usize, u64) {
     (file_count, disk_bytes)
 }
 
-/// Increment the log rotation counter.
-/// Call this after a log file rotation occurs.
-pub fn record_log_rotation() {
-    counter!("antigravity_log_rotations_total").increment(1);
-}
-
-/// Increment the log cleanup counter by the number of files removed.
-/// Call this after cleanup removes old log files.
-///
-/// # Arguments
-/// * `count` - Number of files removed
-pub fn record_log_cleanup(count: usize) {
-    if count > 0 {
-        counter!("antigravity_log_cleanup_removed_total").increment(count as u64);
-    }
-}
-
-pub fn record_adaptive_probe(strategy: &str) {
-    let labels = [("strategy", strategy.to_string())];
-    counter!("antigravity_adaptive_probes_total", &labels).increment(1);
-}
-
 pub fn record_aimd_reward() {
     counter!("antigravity_aimd_rewards_total").increment(1);
 }
@@ -250,21 +202,8 @@ pub fn record_aimd_penalty() {
     counter!("antigravity_aimd_penalties_total").increment(1);
 }
 
-pub fn record_hedge_win() {
-    counter!("antigravity_hedge_wins_total").increment(1);
-}
-
-pub fn record_primary_win() {
-    counter!("antigravity_primary_wins_total").increment(1);
-}
-
 pub fn record_truncation() {
     counter!("antigravity_truncations_total").increment(1);
-}
-
-pub fn update_adaptive_limit_gauge(account_id: &str, working_threshold: u64) {
-    let labels = [("account_id", account_id.to_string())];
-    gauge!("antigravity_adaptive_limit_gauge", &labels).set(working_threshold as f64);
 }
 
 pub fn record_peek_retry(reason: &str) {
