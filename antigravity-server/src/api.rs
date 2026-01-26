@@ -803,7 +803,7 @@ async fn handle_oauth_callback(
     use axum::response::Html;
 
     // Validate CSRF state token
-    let oauth_state = match query.state {
+    let _oauth_state = match query.state {
         Some(s) if app_state.validate_oauth_state(&s) => s,
         Some(_) => {
             return Html(
@@ -834,7 +834,6 @@ async fn handle_oauth_callback(
             .into_response();
         }
     };
-    let _ = oauth_state;
 
     // Check for error
     if let Some(error) = query.error {

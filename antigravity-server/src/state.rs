@@ -233,6 +233,16 @@ impl AppState {
 
     pub fn generate_oauth_state(&self) -> String {
         use rand::Rng;
+
+        const MAX_OAUTH_STATES: usize = 100;
+        if self.inner.oauth_states.len() >= MAX_OAUTH_STATES {
+            self.cleanup_expired_oauth_states();
+            if self.inner.oauth_states.len() >= MAX_OAUTH_STATES {
+                self.inner.oauth_states.clear();
+                tracing::warn!("OAuth states limit reached, cleared all pending states");
+            }
+        }
+
         let state: String = rand::thread_rng()
             .sample_iter(&rand::distributions::Alphanumeric)
             .take(32)
@@ -241,7 +251,6 @@ impl AppState {
         self.inner
             .oauth_states
             .insert(state.clone(), Instant::now());
-        self.cleanup_expired_oauth_states();
         state
     }
 

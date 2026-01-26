@@ -8,7 +8,9 @@ use serde_json::{json, Value};
 use tracing::{debug, info};
 use uuid::Uuid;
 
-use crate::proxy::{audio::AudioProcessor, server::AppState};
+use crate::proxy::{
+    audio::AudioProcessor, common::model_mapping::map_claude_model_to_gemini, server::AppState,
+};
 
 /// 处理音频转录请求 (OpenAI Whisper API 兼容)
 pub async fn handle_audio_transcription(
@@ -106,11 +108,13 @@ pub async fn handle_audio_transcription(
     info!("使用账号: {}", email);
 
     // 7. 包装请求为 v1internal 格式
+    // Map alias (gemini-3-pro) to physical model name (gemini-3-pro-preview)
+    let mapped_model = map_claude_model_to_gemini(&model);
     let wrapped_body = json!({
         "project": project_id,
         "requestId": format!("audio-{}", Uuid::new_v4()),
         "request": gemini_request,
-        "model": model,
+        "model": mapped_model,
         "userAgent": "antigravity",
         "requestType": "text"
     });
