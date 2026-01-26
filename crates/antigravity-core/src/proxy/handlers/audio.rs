@@ -17,7 +17,7 @@ pub async fn handle_audio_transcription(
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let mut audio_data: Option<Vec<u8>> = None;
     let mut filename: Option<String> = None;
-    let mut model = "gemini-3-flash".to_string();
+    let model = "gemini-3-pro".to_string();
     let mut prompt = "Generate a transcript of the speech.".to_string();
 
     // 1. 解析 multipart/form-data
@@ -40,7 +40,8 @@ pub async fn handle_audio_transcription(
                 );
             }
             "model" => {
-                model = field.text().await.unwrap_or(model);
+                // Ignore client-provided model (whisper-1, etc.) — always use gemini-3-pro for audio
+                let _ = field.text().await;
             }
             "prompt" => {
                 prompt = field.text().await.unwrap_or(prompt);
