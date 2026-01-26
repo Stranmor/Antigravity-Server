@@ -140,6 +140,7 @@ async fn run_server(port: u16) -> Result<()> {
         )),
         health_monitor: antigravity_core::proxy::HealthMonitor::new(),
         circuit_breaker: Arc::new(antigravity_core::proxy::CircuitBreakerManager::new()),
+        warp_isolation: Some(warp_manager.clone()),
     };
 
     let axum_server = Arc::new(AxumServer::new(server_config));
@@ -149,6 +150,7 @@ async fn run_server(port: u16) -> Result<()> {
         monitor.clone(),
         initial_proxy_config.clone(),
         axum_server.clone(),
+        Some(warp_manager.clone()),
     )
     .await?;
 

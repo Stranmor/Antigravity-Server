@@ -49,11 +49,13 @@ pub fn build_proxy_router_with_shared_state(
     adaptive_limits: Arc<crate::proxy::AdaptiveLimitManager>,
     health_monitor: Arc<crate::proxy::HealthMonitor>,
     circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
+    warp_isolation: Option<Arc<crate::proxy::warp_isolation::WarpIsolationManager>>,
 ) -> Router<()> {
     let proxy_state = Arc::new(tokio::sync::RwLock::new(upstream_proxy.clone()));
     let provider_rr = Arc::new(AtomicUsize::new(0));
     let zai_vision_mcp_state = Arc::new(crate::proxy::zai_vision_mcp::ZaiVisionMcpState::new());
-    let warp_isolation = Arc::new(crate::proxy::warp_isolation::WarpIsolationManager::new());
+    let warp_isolation = warp_isolation
+        .unwrap_or_else(|| Arc::new(crate::proxy::warp_isolation::WarpIsolationManager::new()));
 
     let state = AppState {
         token_manager,
@@ -170,6 +172,7 @@ pub struct ServerStartConfig {
     pub adaptive_limits: Arc<crate::proxy::AdaptiveLimitManager>,
     pub health_monitor: Arc<crate::proxy::HealthMonitor>,
     pub circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
+    pub warp_isolation: Option<Arc<crate::proxy::warp_isolation::WarpIsolationManager>>,
 }
 
 /// Axum 服务器实例
@@ -202,6 +205,7 @@ impl AxumServer {
             self.config.adaptive_limits,
             self.config.health_monitor,
             self.config.circuit_breaker,
+            self.config.warp_isolation.clone(),
         );
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;
@@ -241,5 +245,6 @@ pub fn build_proxy_router(
         adaptive_limits,
         health_monitor,
         circuit_breaker,
+        None,
     )
 }

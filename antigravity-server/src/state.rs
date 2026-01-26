@@ -10,8 +10,9 @@ use tokio::sync::RwLock;
 use antigravity_core::models::Account;
 use antigravity_core::modules::account;
 use antigravity_core::proxy::{
-    build_proxy_router_with_shared_state, server::AxumServer, AdaptiveLimitManager,
-    CircuitBreakerManager, HealthMonitor, ProxyMonitor, ProxySecurityConfig, TokenManager,
+    build_proxy_router_with_shared_state, server::AxumServer, warp_isolation::WarpIsolationManager,
+    AdaptiveLimitManager, CircuitBreakerManager, HealthMonitor, ProxyMonitor, ProxySecurityConfig,
+    TokenManager,
 };
 use antigravity_shared::proxy::config::ProxyConfig;
 
@@ -37,6 +38,7 @@ pub struct AppStateInner {
     pub adaptive_limits: Arc<AdaptiveLimitManager>,
     pub health_monitor: Arc<HealthMonitor>,
     pub circuit_breaker: Arc<CircuitBreakerManager>,
+    pub warp_isolation: Option<Arc<WarpIsolationManager>>,
 }
 
 impl AppState {
@@ -46,6 +48,7 @@ impl AppState {
         monitor: Arc<ProxyMonitor>,
         proxy_config: ProxyConfig,
         axum_server: Arc<AxumServer>,
+        warp_isolation: Option<Arc<WarpIsolationManager>>,
     ) -> Result<Self> {
         // Create shared Arc references for hot-reload
         let custom_mapping = Arc::new(RwLock::new(proxy_config.custom_mapping.clone()));
@@ -86,6 +89,7 @@ impl AppState {
                 adaptive_limits,
                 health_monitor,
                 circuit_breaker,
+                warp_isolation,
             }),
         })
     }
@@ -103,6 +107,7 @@ impl AppState {
             self.inner.adaptive_limits.clone(),
             self.inner.health_monitor.clone(),
             self.inner.circuit_breaker.clone(),
+            self.inner.warp_isolation.clone(),
         )
     }
 
