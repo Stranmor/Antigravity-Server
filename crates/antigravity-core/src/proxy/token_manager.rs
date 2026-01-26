@@ -1,4 +1,4 @@
-use crate::modules::{oauth, quota};
+use crate::modules::{config, oauth, quota};
 // 移除冗余的顶层导入，因为这些在代码中已由 full path 或局部导入处理
 use dashmap::DashMap;
 use std::collections::HashSet;
@@ -27,6 +27,7 @@ pub struct ProxyToken {
     pub project_id: Option<String>,
     pub subscription_tier: Option<String>, // "FREE" | "PRO" | "ULTRA"
     pub remaining_quota: Option<i32>, // [FIX #563] Remaining quota percentage for priority sorting
+    pub protected_models: HashSet<String>, // [FIX #621] Models with exhausted quota (0%)
 }
 
 /// Manages OAuth tokens for multiple accounts with rate limiting and session affinity.
@@ -267,6 +268,18 @@ impl TokenManager {
             .get("quota")
             .and_then(Self::calculate_max_quota_percentage);
 
+        // [FIX #621] 提取受保护模型列表 (quota exhausted models)
+        let protected_models: HashSet<String> = account
+            .get("protected_models")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+
         Ok(Some(ProxyToken {
             account_id,
             access_token,
@@ -278,6 +291,7 @@ impl TokenManager {
             project_id,
             subscription_tier,
             remaining_quota,
+            protected_models,
         }))
     }
 
@@ -307,19 +321,19 @@ impl TokenManager {
     /// 参数 `quota_group` 用于区分 "claude" vs "gemini" 组
     /// 参数 `force_rotate` 为 true 时将忽略锁定，强制切换账号
     /// 参数 `session_id` 用于跨请求维持会话粘性
-    /// 参数 `target_model` 目标模型名称（用于配额保护，暂未使用）
+    /// 参数 `target_model` 目标模型名称（用于配额保护检查）
     pub async fn get_token(
         &self,
         quota_group: &str,
         force_rotate: bool,
         session_id: Option<&str>,
-        _target_model: &str, // Added for upstream API compatibility
+        target_model: &str, // [FIX #621] Now used for quota protection
     ) -> Result<(String, String, String), String> {
         // 【优化 Issue #284】添加 5 秒超时，防止死锁
         let timeout_duration = std::time::Duration::from_secs(5);
         match tokio::time::timeout(
             timeout_duration,
-            self.get_token_internal(quota_group, force_rotate, session_id),
+            self.get_token_internal(quota_group, force_rotate, session_id, target_model),
         )
         .await
         {
@@ -402,6 +416,7 @@ impl TokenManager {
         quota_group: &str,
         force_rotate: bool,
         session_id: Option<&str>,
+        target_model: &str, // [FIX #621] Used for quota protection
     ) -> Result<(String, String, String), String> {
         let mut tokens_snapshot: Vec<ProxyToken> =
             self.tokens.iter().map(|e| e.value().clone()).collect();
@@ -441,14 +456,29 @@ impl TokenManager {
         let scheduling = self.sticky_config.read().await.clone();
         // SchedulingMode already imported at top from antigravity_shared
 
+        // [FIX #621] Load quota protection config
+        let quota_protection_enabled = config::load_config()
+            .map(|cfg| cfg.quota_protection.enabled)
+            .unwrap_or(false);
+
+        // Normalize target model name to standard ID for quota protection check
+        let normalized_target =
+            crate::proxy::common::model_mapping::normalize_to_standard_id(target_model)
+                .unwrap_or_else(|| target_model.to_string());
+
         // ===== [FIX #820] Fixed Account Mode: prefer specified account =====
         let preferred_id = self.preferred_account_id.read().await.clone();
         if let Some(ref pref_id) = preferred_id {
             if let Some(preferred_token) = tokens_snapshot.iter().find(|t| &t.account_id == pref_id)
             {
                 let is_rate_limited = self.is_rate_limited(&preferred_token.account_id);
+                // [FIX #621] Check if model is quota-protected
+                let is_quota_protected = quota_protection_enabled
+                    && preferred_token
+                        .protected_models
+                        .contains(&normalized_target);
 
-                if !is_rate_limited {
+                if !is_rate_limited && !is_quota_protected {
                     tracing::info!(
                         "🔒 [FIX #820] Using preferred account: {} (fixed mode)",
                         preferred_token.email
@@ -503,10 +533,15 @@ impl TokenManager {
                     };
 
                     return Ok((token.access_token, project_id, token.email));
-                } else {
+                } else if is_rate_limited {
                     tracing::warn!(
                         "🔒 [FIX #820] Preferred account {} is rate-limited, falling back to round-robin",
                         preferred_token.email
+                    );
+                } else {
+                    tracing::warn!(
+                        "🔒 [FIX #621] Preferred account {} is quota-protected for model {}, falling back to round-robin",
+                        preferred_token.email, normalized_target
                     );
                 }
             } else {
@@ -561,8 +596,23 @@ impl TokenManager {
                             );
                             self.session_accounts.remove(sid);
                         } else if !attempted.contains(&bound_id) {
-                            // 3. 账号可用且未被标记为尝试失败，优先复用
-                            if let Some(found) =
+                            // 3. 账号可用且未被标记为尝试失败
+                            // [FIX #621] Also check quota protection
+                            let is_quota_protected = quota_protection_enabled
+                                && tokens_snapshot
+                                    .iter()
+                                    .find(|t| t.account_id == bound_id)
+                                    .is_some_and(|t| {
+                                        t.protected_models.contains(&normalized_target)
+                                    });
+
+                            if is_quota_protected {
+                                tracing::debug!(
+                                    "Sticky Session: Bound account {} is quota-protected for {}, unbinding",
+                                    bound_id, normalized_target
+                                );
+                                self.session_accounts.remove(sid);
+                            } else if let Some(found) =
                                 tokens_snapshot.iter().find(|t| t.account_id == bound_id)
                             {
                                 tracing::debug!(
@@ -585,11 +635,22 @@ impl TokenManager {
                         if let Some(found) =
                             tokens_snapshot.iter().find(|t| &t.account_id == account_id)
                         {
-                            tracing::debug!(
-                                "60s Window: Force reusing last account: {}",
-                                found.email
-                            );
-                            target_token = Some(found.clone());
+                            // [FIX #621] Check quota protection before reusing
+                            let is_quota_protected = quota_protection_enabled
+                                && found.protected_models.contains(&normalized_target);
+
+                            if !is_quota_protected {
+                                tracing::debug!(
+                                    "60s Window: Force reusing last account: {}",
+                                    found.email
+                                );
+                                target_token = Some(found.clone());
+                            } else {
+                                tracing::debug!(
+                                    "60s Window: Last account {} is quota-protected for {}, skipping",
+                                    found.email, normalized_target
+                                );
+                            }
                         }
                     }
                 }
@@ -606,6 +667,18 @@ impl TokenManager {
 
                         // 【新增】主动避开限流或 5xx 锁定的账号 (来自 PR #28 的高可用思路)
                         if self.is_rate_limited(&candidate.account_id) {
+                            continue;
+                        }
+
+                        // [FIX #621] Skip quota-protected accounts for target model
+                        if quota_protection_enabled
+                            && candidate.protected_models.contains(&normalized_target)
+                        {
+                            tracing::debug!(
+                                "Account {} is quota-protected for model {}, skipping",
+                                candidate.email,
+                                normalized_target
+                            );
                             continue;
                         }
 
@@ -654,6 +727,18 @@ impl TokenManager {
 
                     // 【新增】主动避开限流或 5xx 锁定的账号
                     if self.is_rate_limited(&candidate.account_id) {
+                        continue;
+                    }
+
+                    // [FIX #621] Skip quota-protected accounts for target model
+                    if quota_protection_enabled
+                        && candidate.protected_models.contains(&normalized_target)
+                    {
+                        tracing::debug!(
+                            "Account {} is quota-protected for model {}, skipping",
+                            candidate.email,
+                            normalized_target
+                        );
                         continue;
                     }
 

@@ -161,20 +161,35 @@ fn wildcard_match(pattern: &str, text: &str) -> bool {
 pub fn normalize_to_standard_id(model_name: &str) -> Option<String> {
     // [FIX] Strict matching based on user-defined groups (Case Insensitive)
     let lower = model_name.to_lowercase();
-    match lower.as_str() {
-        // Gemini 3 Flash Group
-        "gemini-3-flash" => Some("gemini-3-flash".to_string()),
 
-        // Gemini 3 Pro High Group
-        "gemini-3-pro-high" | "gemini-3-pro-low" => Some("gemini-3-pro-high".to_string()),
-
-        // Claude 4.5 Sonnet Group
-        "claude-sonnet-4-5" | "claude-sonnet-4-5-thinking" | "claude-opus-4-5-thinking" => {
-            Some("claude-sonnet-4-5".to_string())
-        }
-
-        _ => None,
+    // Use prefix/suffix matching to support all versioned model names
+    // Gemini 3 Flash Group
+    if lower == "gemini-3-flash" || lower.starts_with("gemini-3-flash-") {
+        return Some("gemini-3-flash".to_string());
     }
+
+    // Gemini 3 Pro High Group (includes pro-high, pro-low, pro-preview)
+    if lower.starts_with("gemini-3-pro") {
+        return Some("gemini-3-pro-high".to_string());
+    }
+
+    // Claude Opus Group - maps to claude-opus-4-5-thinking
+    if lower.contains("opus") {
+        return Some("claude-opus-4-5-thinking".to_string());
+    }
+
+    // Claude Sonnet Thinking Group
+    if lower.contains("sonnet") && lower.contains("thinking") {
+        return Some("claude-sonnet-4-5-thinking".to_string());
+    }
+
+    // Claude Sonnet Group (non-thinking)
+    // Covers: claude-sonnet-4-5, claude-3-5-sonnet-20241022, claude-3-5-sonnet, etc.
+    if lower.contains("sonnet") || lower.contains("haiku") {
+        return Some("claude-sonnet-4-5".to_string());
+    }
+
+    None
 }
 
 #[cfg(test)]

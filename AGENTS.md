@@ -193,7 +193,21 @@ cargo test -p antigravity-core --lib
 git add . && git commit -m "chore: sync upstream v3.3.XX changes"
 ```
 
-### Last Sync: 2026-01-23
+### Last Sync: 2026-01-26
+
+**OUR BUG FIXES (not in upstream):**
+- **[FIX] protected_models not populated in headless server** (2026-01-26)
+  - **Root cause:** Headless server (`antigravity-server`) used `save_account()` after quota refresh, but this function does NOT check quota thresholds and does NOT populate `protected_models`. The correct function is `update_account_quota()` which contains the protection logic.
+  - **Affected files:** `antigravity-server/src/api.rs`, `antigravity-server/src/commands.rs`
+  - **Fix:** Replaced `save_account()` with `update_account_quota()` in:
+    - `refresh_account_quota()` API handler
+    - `refresh_all_quotas()` API handler
+    - `refresh_quota()` CLI command
+    - `refresh_all_quotas()` CLI command
+  - **Additional fixes:** Fixed Rust 1.92 clippy warnings in `token_manager.rs`:
+    - `collapsible_else_if` → collapsed nested else-if blocks
+    - `map_or(false, ...)` → `is_some_and(...)`
+  - **Important note:** Config is read from `~/.antigravity_tools/gui_config.json` (NOT `config.json`). The `quota_protection.enabled` must be `true` in this file for model protection to work.
 
 **Ported from v3.3.49:**
 - **`estimation_calibrator.rs`** — New module for token estimation calibration

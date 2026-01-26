@@ -303,8 +303,10 @@ async fn refresh_account_quota(
     // Fetch quota with retry
     match account::fetch_quota_with_retry(&mut acc).await {
         Ok(quota) => {
-            // Save updated account
-            let _ = account::save_account(&acc);
+            if let Err(e) = account::update_account_quota(&payload.account_id, quota.clone()) {
+                tracing::warn!("Failed to update quota protection: {}", e);
+                let _ = account::save_account(&acc);
+            }
             // Reload token manager
             let _ = state.reload_accounts().await;
 
@@ -335,8 +337,11 @@ async fn refresh_all_quotas(
         }
 
         match account::fetch_quota_with_retry(&mut acc).await {
-            Ok(_) => {
-                let _ = account::save_account(&acc);
+            Ok(quota) => {
+                if let Err(e) = account::update_account_quota(&acc.id, quota) {
+                    tracing::warn!("Quota protection update failed for {}: {}", acc.email, e);
+                    let _ = account::save_account(&acc);
+                }
                 success += 1;
             }
             Err(_) => failed += 1,

@@ -409,9 +409,16 @@ pub fn update_account_quota(account_id: &str, quota: QuotaData) -> Result<(), St
     account.update_quota(quota.clone());
 
     // --- Quota protection logic ---
-    if let Ok(config) = load_config() {
+    let config_result = load_config();
+    if let Ok(config) = config_result {
         if config.quota_protection.enabled {
             let threshold = config.quota_protection.threshold_percentage as i32;
+            logger::log_info(&format!(
+                "[Quota Protection] Processing {} models for {}, threshold={}%",
+                quota.models.len(),
+                account.email,
+                threshold
+            ));
 
             for model in &quota.models {
                 // Normalize model name to standard ID (e.g., "gemini-2.5-flash" -> "gemini-3-flash")

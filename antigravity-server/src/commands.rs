@@ -228,7 +228,8 @@ async fn refresh_quota(identifier: &str) -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
-    account::save_account(&acc).map_err(|e| anyhow::anyhow!(e))?;
+    account::update_account_quota(&acc.id, acc.quota.clone().unwrap_or_default())
+        .map_err(|e| anyhow::anyhow!(e))?;
     println!("{} Quota refreshed for {}", "✓".green(), acc.email.green());
     Ok(())
 }
@@ -246,7 +247,10 @@ async fn refresh_all_quotas() -> Result<()> {
         print!("Refreshing {}... ", acc.email);
         match account::fetch_quota_with_retry(&mut acc).await {
             Ok(_) => {
-                let _ = account::save_account(&acc);
+                // Use update_account_quota to properly populate protected_models
+                if let Some(quota) = acc.quota.clone() {
+                    let _ = account::update_account_quota(&acc.id, quota);
+                }
                 println!("{}", "✓".green());
                 success += 1;
             }
