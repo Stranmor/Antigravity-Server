@@ -65,7 +65,9 @@ mod integration_tests {
 
     /// Creates a minimal AppState for testing endpoints that don't require real accounts
     fn create_test_app_state() -> AppState {
-        let token_manager = Arc::new(TokenManager::new(std::path::PathBuf::from("/tmp/test")));
+        let temp_dir =
+            std::env::temp_dir().join(format!("antigravity-test-{}", uuid::Uuid::new_v4()));
+        let token_manager = Arc::new(TokenManager::new(temp_dir));
         let custom_mapping = Arc::new(RwLock::new(HashMap::new()));
         let upstream_proxy = Arc::new(RwLock::new(
             antigravity_shared::utils::http::UpstreamProxyConfig::default(),
