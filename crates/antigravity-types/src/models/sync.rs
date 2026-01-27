@@ -45,18 +45,35 @@ impl MappingEntry {
         }
     }
 
-    /// Create tombstone entry (marks key as deleted for sync propagation).
-    pub fn tombstone() -> Self {
+    /// Create tombstone with specific timestamp (for testing).
+    pub fn tombstone_at(updated_at: i64) -> Self {
         Self {
             target: String::new(),
-            updated_at: current_timestamp_ms(),
+            updated_at,
             deleted: true,
         }
+    }
+
+    /// Create tombstone entry (marks key as deleted for sync propagation).
+    pub fn tombstone() -> Self {
+        Self::tombstone_at(current_timestamp_ms())
     }
 
     /// Check if entry is a tombstone (deleted).
     pub fn is_tombstone(&self) -> bool {
         self.deleted
+    }
+
+    /// LWW comparison: returns true if self should win over other.
+    /// Order: higher timestamp wins, on tie: tombstone wins, on tie: higher target wins.
+    fn wins_over(&self, other: &Self) -> bool {
+        if self.updated_at != other.updated_at {
+            return self.updated_at > other.updated_at;
+        }
+        if self.deleted != other.deleted {
+            return self.deleted;
+        }
+        self.target > other.target
     }
 }
 
@@ -119,13 +136,12 @@ impl SyncableMapping {
             .map(|e| e.target.as_str())
     }
 
-    /// Merge remote mappings using LWW strategy with lexicographic tie-breaker.
+    /// Merge remote mappings using LWW strategy.
     ///
     /// For each key:
     /// - If only in local -> keep local
     /// - If only in remote -> add from remote
-    /// - If in both -> keep the one with higher timestamp
-    /// - On timestamp tie -> use lexicographic comparison of target as tie-breaker
+    /// - If in both -> use LWW: higher timestamp, tombstone, then target as tie-breakers
     ///
     /// Returns number of entries updated from remote.
     pub fn merge_lww(&mut self, remote: &SyncableMapping) -> usize {
@@ -133,11 +149,7 @@ impl SyncableMapping {
 
         for (key, remote_entry) in &remote.entries {
             let should_update = match self.entries.get(key) {
-                Some(local_entry) => {
-                    remote_entry.updated_at > local_entry.updated_at
-                        || (remote_entry.updated_at == local_entry.updated_at
-                            && remote_entry.target > local_entry.target)
-                }
+                Some(local_entry) => remote_entry.wins_over(local_entry),
                 None => true,
             };
 
@@ -150,9 +162,9 @@ impl SyncableMapping {
         updated
     }
 
-    /// Compute diff: entries that are newer locally than in remote.
+    /// Compute diff: entries that would win if merged into remote.
     ///
-    /// Used to send only changed entries to remote.
+    /// Used to send only entries that would update remote.
     pub fn diff_newer_than(&self, remote: &SyncableMapping) -> SyncableMapping {
         let entries: HashMap<_, _> = self
             .entries
@@ -161,7 +173,7 @@ impl SyncableMapping {
                 remote
                     .entries
                     .get(*key)
-                    .is_none_or(|remote_entry| local_entry.updated_at > remote_entry.updated_at)
+                    .is_none_or(|remote_entry| local_entry.wins_over(remote_entry))
             })
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
@@ -415,5 +427,108 @@ mod tests {
 
         assert_eq!(updated, 0);
         assert_eq!(local.get("gpt-4o"), Some("zzz-model"));
+    }
+
+    #[test]
+    fn test_tombstone_wins_over_live_on_timestamp_tie() {
+        let mut local = SyncableMapping::new();
+        local.entries.insert(
+            "gpt-4o".to_string(),
+            MappingEntry::with_timestamp("gemini-3-pro", 1000),
+        );
+
+        let mut remote = SyncableMapping::new();
+        remote
+            .entries
+            .insert("gpt-4o".to_string(), MappingEntry::tombstone_at(1000));
+
+        let updated = local.merge_lww(&remote);
+
+        assert_eq!(updated, 1);
+        assert!(local.entries.get("gpt-4o").unwrap().is_tombstone());
+    }
+
+    #[test]
+    fn test_live_does_not_override_tombstone_on_timestamp_tie() {
+        let mut local = SyncableMapping::new();
+        local
+            .entries
+            .insert("gpt-4o".to_string(), MappingEntry::tombstone_at(1000));
+
+        let mut remote = SyncableMapping::new();
+        remote.entries.insert(
+            "gpt-4o".to_string(),
+            MappingEntry::with_timestamp("gemini-3-pro", 1000),
+        );
+
+        let updated = local.merge_lww(&remote);
+
+        assert_eq!(updated, 0);
+        assert!(local.entries.get("gpt-4o").unwrap().is_tombstone());
+    }
+
+    #[test]
+    fn test_set_overwrites_tombstone() {
+        let mut mapping = SyncableMapping::new();
+        mapping.set("gpt-4o", "old-target");
+        mapping.remove("gpt-4o");
+        assert!(mapping.entries.get("gpt-4o").unwrap().is_tombstone());
+
+        mapping.set("gpt-4o", "new-target");
+
+        assert!(!mapping.entries.get("gpt-4o").unwrap().is_tombstone());
+        assert_eq!(mapping.get("gpt-4o"), Some("new-target"));
+        assert_eq!(mapping.len(), 1);
+    }
+
+    #[test]
+    fn test_diff_includes_tombstones() {
+        let mut local = SyncableMapping::new();
+        local
+            .entries
+            .insert("gpt-4o".to_string(), MappingEntry::tombstone_at(3000));
+
+        let mut remote = SyncableMapping::new();
+        remote.entries.insert(
+            "gpt-4o".to_string(),
+            MappingEntry::with_timestamp("gemini-3-pro", 2000),
+        );
+
+        let diff = local.diff_newer_than(&remote);
+
+        assert_eq!(diff.total_entries(), 1);
+        assert!(diff.entries.get("gpt-4o").unwrap().is_tombstone());
+    }
+
+    #[test]
+    fn test_diff_uses_same_tiebreaker_as_merge() {
+        let mut local = SyncableMapping::new();
+        local
+            .entries
+            .insert("gpt-4o".to_string(), MappingEntry::tombstone_at(1000));
+
+        let mut remote = SyncableMapping::new();
+        remote.entries.insert(
+            "gpt-4o".to_string(),
+            MappingEntry::with_timestamp("gemini-3-pro", 1000),
+        );
+
+        let diff = local.diff_newer_than(&remote);
+
+        assert_eq!(diff.total_entries(), 1);
+    }
+
+    #[test]
+    fn test_identical_entries_no_update() {
+        let mut local = SyncableMapping::new();
+        local.entries.insert(
+            "gpt-4o".to_string(),
+            MappingEntry::with_timestamp("gemini-3-pro", 1000),
+        );
+
+        let remote = local.clone();
+        let updated = local.merge_lww(&remote);
+
+        assert_eq!(updated, 0);
     }
 }
