@@ -116,16 +116,39 @@ impl SyncableMapping {
             .collect()
     }
 
-    /// Set or update a mapping entry (updates timestamp).
+    /// Set or update a mapping entry with monotonic timestamp.
     pub fn set(&mut self, source: impl Into<String>, target: impl Into<String>) {
-        self.entries
-            .insert(source.into(), MappingEntry::new(target));
+        let source = source.into();
+        let now = current_timestamp_ms();
+        let ts = self
+            .entries
+            .get(&source)
+            .map_or(now, |e| now.max(e.updated_at + 1));
+        self.entries.insert(
+            source,
+            MappingEntry {
+                target: target.into(),
+                updated_at: ts,
+                deleted: false,
+            },
+        );
     }
 
     /// Mark a mapping entry as deleted (tombstone for sync propagation).
     pub fn remove(&mut self, source: &str) {
-        self.entries
-            .insert(source.to_string(), MappingEntry::tombstone());
+        let now = current_timestamp_ms();
+        let ts = self
+            .entries
+            .get(source)
+            .map_or(now, |e| now.max(e.updated_at + 1));
+        self.entries.insert(
+            source.to_string(),
+            MappingEntry {
+                target: String::new(),
+                updated_at: ts,
+                deleted: true,
+            },
+        );
     }
 
     /// Get target for a source model (returns None for tombstones).
@@ -530,5 +553,33 @@ mod tests {
         let updated = local.merge_lww(&remote);
 
         assert_eq!(updated, 0);
+    }
+
+    #[test]
+    fn test_monotonic_timestamp_on_rapid_updates() {
+        let mut mapping = SyncableMapping::new();
+        mapping.set("gpt-4o", "target-1");
+        let ts1 = mapping.entries.get("gpt-4o").unwrap().updated_at;
+
+        mapping.set("gpt-4o", "target-2");
+        let ts2 = mapping.entries.get("gpt-4o").unwrap().updated_at;
+
+        mapping.set("gpt-4o", "target-3");
+        let ts3 = mapping.entries.get("gpt-4o").unwrap().updated_at;
+
+        assert!(ts2 > ts1);
+        assert!(ts3 > ts2);
+    }
+
+    #[test]
+    fn test_monotonic_timestamp_remove_after_set() {
+        let mut mapping = SyncableMapping::new();
+        mapping.set("gpt-4o", "target");
+        let ts_set = mapping.entries.get("gpt-4o").unwrap().updated_at;
+
+        mapping.remove("gpt-4o");
+        let ts_remove = mapping.entries.get("gpt-4o").unwrap().updated_at;
+
+        assert!(ts_remove > ts_set);
     }
 }
