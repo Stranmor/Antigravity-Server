@@ -1,4 +1,4 @@
-use super::super::tool_adapter::{append_hint_to_schema, ToolAdapter};
+use super::super::tool_adapter::ToolAdapter;
 use serde_json::Value;
 
 pub struct PencilAdapter;
@@ -21,10 +21,23 @@ impl PencilAdapter {
     fn handle_visual_properties(&self, map: &mut serde_json::Map<String, Value>) {
         let visual_props = ["cornerRadius", "strokeWidth", "opacity", "rotation"];
 
-        for prop in visual_props {
-            if map.contains_key(prop) {
-                let hint = format!("Visual property: {}", prop);
-                append_hint_to_schema(&mut Value::Object(map.clone()), &hint);
+        let has_visual_prop = visual_props.iter().any(|p| map.contains_key(*p));
+        if has_visual_prop {
+            let desc_val = map
+                .entry("description".to_string())
+                .or_insert_with(|| Value::String(String::new()));
+            if let Value::String(s) = desc_val {
+                if !s.contains("Pencil visual properties") {
+                    if s.is_empty() {
+                        *s = "Pencil visual properties: cornerRadius, strokeWidth, opacity, rotation"
+                            .to_string();
+                    } else {
+                        *s = format!(
+                            "{} (Pencil visual properties: cornerRadius, strokeWidth, opacity, rotation)",
+                            s
+                        );
+                    }
+                }
             }
         }
 

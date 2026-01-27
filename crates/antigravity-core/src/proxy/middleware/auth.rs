@@ -6,6 +6,7 @@ use axum::{
     response::Response,
 };
 use std::sync::Arc;
+use subtle::ConstantTimeEq;
 use tokio::sync::RwLock;
 
 use crate::proxy::{ProxyAuthMode, ProxySecurityConfig};
@@ -26,6 +27,17 @@ pub async fn admin_auth_middleware(
     auth_middleware_internal(state, request, next, true).await
 }
 
+fn constant_time_compare(a: &str, b: &str) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.as_bytes().ct_eq(b.as_bytes()).into()
+}
+
+fn is_health_check(path: &str) -> bool {
+    path == "/healthz" || path == "/api/health" || path == "/health" || path == "/api/status"
+}
+
 async fn auth_middleware_internal(
     State(security): State<Arc<RwLock<ProxySecurityConfig>>>,
     request: Request,
@@ -33,15 +45,15 @@ async fn auth_middleware_internal(
     force_strict: bool,
 ) -> Result<Response, StatusCode> {
     let method = request.method().clone();
-    let path = request.uri().path().to_string();
+    let path = request.uri().path();
 
-    let is_health_check =
-        path == "/healthz" || path == "/api/health" || path == "/health" || path == "/api/status";
+    let health = is_health_check(path);
+    let log_path = path.to_string();
 
-    if !path.contains("event_logging") && !is_health_check {
-        tracing::info!("Request: {} {}", method, path);
+    if !path.contains("event_logging") && !health {
+        tracing::info!("Request: {} {}", method, log_path);
     } else {
-        tracing::trace!("Heartbeat/Health: {} {}", method, path);
+        tracing::trace!("Heartbeat/Health: {} {}", method, log_path);
     }
 
     if method == axum::http::Method::OPTIONS {
@@ -56,7 +68,7 @@ async fn auth_middleware_internal(
             return Ok(next.run(request).await);
         }
 
-        if matches!(effective_mode, ProxyAuthMode::AllExceptHealth) && is_health_check {
+        if matches!(effective_mode, ProxyAuthMode::AllExceptHealth) && health {
             return Ok(next.run(request).await);
         }
     } else {
@@ -64,7 +76,7 @@ async fn auth_middleware_internal(
             return Ok(next.run(request).await);
         }
 
-        if is_health_check {
+        if health {
             return Ok(next.run(request).await);
         }
     }
@@ -96,7 +108,7 @@ async fn auth_middleware_internal(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    let authorized = api_key.is_some_and(|k| k == security.api_key);
+    let authorized = api_key.is_some_and(|k| constant_time_compare(k, &security.api_key));
 
     if authorized {
         Ok(next.run(request).await)
@@ -107,6 +119,12 @@ async fn auth_middleware_internal(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn test_auth_placeholder() {}
+    fn test_constant_time_compare() {
+        assert!(constant_time_compare("abc", "abc"));
+        assert!(!constant_time_compare("abc", "abd"));
+        assert!(!constant_time_compare("ab", "abc"));
+    }
 }

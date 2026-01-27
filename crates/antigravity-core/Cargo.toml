@@ -72,9 +72,17 @@ metrics = "0.23"
 metrics-exporter-prometheus = "0.15"
 parking_lot = "0.12"
 
+# Crypto (constant-time comparison)
+subtle = "2"
+
 [features]
 default = ["custom_handlers"]
 # Enable Tauri-specific integrations (tray, etc)
 tauri-compat = []
 # Enable custom handler modifications (account rotation, etc)
 custom_handlers = []
+
+[dev-dependencies]
+wiremock = "0.6"
+axum-test = "16"
+tokio-test = "0.4"
