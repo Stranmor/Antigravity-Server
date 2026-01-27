@@ -105,9 +105,55 @@ GET /api/metrics
 cargo check --workspace                        # ✅ passes
 cargo clippy --workspace -- -Dwarnings         # ✅ passes
 cargo test -p antigravity-types                # ✅ 7 tests pass
-cargo test -p antigravity-core --lib           # ✅ 149 tests pass
+cargo test -p antigravity-core --lib           # ✅ 156 tests pass
 cargo build --release -p antigravity-server    # ✅ builds (1m 22s, 11MB)
 ```
+
+---
+
+## 📝 Changes Summary (2026-01-27)
+
+### Architecture Cleanup: Signature Storage Unification
+
+**Problem:** Thought signature storage was duplicated in two places:
+- `mappers/signature_store.rs` — used by Claude path
+- `mappers/openai/streaming.rs` — used by OpenAI path (lines 12-53)
+
+Both created **separate** `static GLOBAL_THOUGHT_SIG` variables, meaning signatures stored by one path were invisible to the other. This caused signature isolation bugs when switching between OpenAI and Claude endpoints.
+
+**Solution:** Unified to single `signature_store.rs`:
+- Removed duplicate from `openai/streaming.rs` (~40 lines)
+- Changed OpenAI path to use re-export: `pub use crate::proxy::mappers::signature_store::*`
+- Removed "deprecated" comments from `signature_store.rs` (it's now the canonical implementation)
+
+**Files Changed:**
+- `proxy/mappers/openai/streaming.rs` — removed duplicate, added re-export
+- `proxy/mappers/openai/request.rs` — changed import path
+- `proxy/mappers/openai/response.rs` — changed function call path
+- `proxy/mappers/signature_store.rs` — removed deprecated annotations
+- `proxy/mappers/claude/streaming.rs` — removed commented import
+- `proxy/mappers/claude/request.rs` — removed deprecated comment
+
+### Intentional Divergence: RetryStrategy in Claude Handler
+
+**Discovery:** `RetryStrategy` enum is duplicated in `handlers/common.rs` and `handlers/claude.rs` with **different delay values**:
+
+| Error Code | common.rs | claude.rs |
+|------------|-----------|-----------|
+| 429 | `base_ms: 5000` | `base_ms: 1000` |
+| 503/529 | `base_ms: 10000, max_ms: 60000` | `base_ms: 1000, max_ms: 8000` |
+| 500 | `base_ms: 3000` | `base_ms: 500` |
+
+**Decision:** This is **intentional** — Claude API benefits from more aggressive (shorter) retry delays. Marked as "analyzed, not a bug" rather than refactoring to unified config.
+
+### Dead Code Analysis
+
+27 `#[allow(dead_code)]` annotations reviewed across 13 files. All are justified:
+- **Public API methods** — exposed for external consumers (e.g., `get_rate_limit_reset_seconds`)
+- **Struct fields for diagnostics** — `RateLimitInfo.reason`, `.detected_at`, `.model`
+- **Future-ready infrastructure** — API ready for upcoming features
+
+No dead code removed — all suppressions are intentional.
 
 ---
 
