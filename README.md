@@ -6,7 +6,7 @@
 
 <img src="public/icon.png" alt="Antigravity Logo" width="140" height="140" style="border-radius: 24px;">
 
-[![Upstream](https://img.shields.io/badge/Upstream-v4.0.1-888?style=for-the-badge&logo=github)](https://github.com/lbjlaq/Antigravity-Manager)
+[![Upstream](https://img.shields.io/badge/Upstream-v4.0.3-888?style=for-the-badge&logo=github)](https://github.com/lbjlaq/Antigravity-Manager)
 [![Rust](https://img.shields.io/badge/100%25_Rust-dea584?style=for-the-badge&logo=rust&logoColor=black)](https://www.rust-lang.org/)
 [![Leptos](https://img.shields.io/badge/Leptos-WASM-8B5CF6?style=for-the-badge)](https://leptos.dev/)
 [![Axum](https://img.shields.io/badge/Axum-Server-3B82F6?style=for-the-badge)](https://github.com/tokio-rs/axum)
@@ -340,7 +340,7 @@ This fork uses **Semantic Porting** — we don't blindly copy upstream changes. 
 - ✅ **Always Port**: Bug fixes, new model support, security patches, JSON schema improvements
 - ❌ **Never Port**: React/Tauri code (we use Leptos/Axum), changes conflicting with our resilience layer
 
-**🔄 Active Sync**: We actively port useful upstream changes. Currently synced with v4.0.1, plus our exclusive additions: AIMD predictive rate limiting, Circuit Breakers, Prometheus metrics, WARP proxy isolation, multimodal audio/video support, and sticky session rebind on 429.
+**🔄 Active Sync**: We actively port useful upstream changes. Currently synced with v4.0.3, plus our exclusive additions: AIMD predictive rate limiting, Circuit Breakers, Prometheus metrics, WARP proxy isolation, multimodal audio/video support, and sticky session rebind on 429.
 
 See [AGENTS.md](AGENTS.md) for detailed architecture documentation and sync workflow.
 

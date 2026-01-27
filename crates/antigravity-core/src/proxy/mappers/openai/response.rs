@@ -28,7 +28,7 @@ pub fn transform_openai_response(gemini_response: &Value) -> OpenAIResponse {
                         .or(part.get("thought_signature"))
                         .and_then(|s| s.as_str())
                     {
-                        super::streaming::store_thought_signature(sig);
+                        crate::proxy::mappers::signature_store::store_thought_signature(sig);
                     }
 
                     // 检查该 part 是否是思考内容 (thought: true)

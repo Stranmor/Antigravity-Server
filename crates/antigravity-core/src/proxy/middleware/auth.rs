@@ -1,4 +1,3 @@
-// API Key 认证中间件
 use axum::{
     extract::Request,
     extract::State,
@@ -11,23 +10,40 @@ use tokio::sync::RwLock;
 
 use crate::proxy::{ProxyAuthMode, ProxySecurityConfig};
 
-/// API Key 认证中间件
 pub async fn auth_middleware(
+    state: State<Arc<RwLock<ProxySecurityConfig>>>,
+    request: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    auth_middleware_internal(state, request, next, false).await
+}
+
+pub async fn admin_auth_middleware(
+    state: State<Arc<RwLock<ProxySecurityConfig>>>,
+    request: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    auth_middleware_internal(state, request, next, true).await
+}
+
+async fn auth_middleware_internal(
     State(security): State<Arc<RwLock<ProxySecurityConfig>>>,
     request: Request,
     next: Next,
+    force_strict: bool,
 ) -> Result<Response, StatusCode> {
     let method = request.method().clone();
     let path = request.uri().path().to_string();
 
-    // 过滤心跳和健康检查请求,避免日志噪音
-    if !path.contains("event_logging") && path != "/healthz" {
+    let is_health_check =
+        path == "/healthz" || path == "/api/health" || path == "/health" || path == "/api/status";
+
+    if !path.contains("event_logging") && !is_health_check {
         tracing::info!("Request: {} {}", method, path);
     } else {
-        tracing::trace!("Heartbeat: {} {}", method, path);
+        tracing::trace!("Heartbeat/Health: {} {}", method, path);
     }
 
-    // Allow CORS preflight regardless of auth policy.
     if method == axum::http::Method::OPTIONS {
         return Ok(next.run(request).await);
     }
@@ -35,15 +51,24 @@ pub async fn auth_middleware(
     let security = security.read().await.clone();
     let effective_mode = security.effective_auth_mode();
 
-    if matches!(effective_mode, ProxyAuthMode::Off) {
-        return Ok(next.run(request).await);
+    if !force_strict {
+        if matches!(effective_mode, ProxyAuthMode::Off) {
+            return Ok(next.run(request).await);
+        }
+
+        if matches!(effective_mode, ProxyAuthMode::AllExceptHealth) && is_health_check {
+            return Ok(next.run(request).await);
+        }
+    } else {
+        if matches!(effective_mode, ProxyAuthMode::Off) {
+            return Ok(next.run(request).await);
+        }
+
+        if is_health_check {
+            return Ok(next.run(request).await);
+        }
     }
 
-    if matches!(effective_mode, ProxyAuthMode::AllExceptHealth) && path == "/healthz" {
-        return Ok(next.run(request).await);
-    }
-
-    // 从 header 中提取 API key
     let api_key = request
         .headers()
         .get(header::AUTHORIZATION)
@@ -63,12 +88,15 @@ pub async fn auth_middleware(
         });
 
     if security.api_key.is_empty() {
+        if force_strict {
+            tracing::error!("Admin auth is required but api_key is empty");
+            return Err(StatusCode::UNAUTHORIZED);
+        }
         tracing::error!("Proxy auth is enabled but api_key is empty; denying request");
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    // Constant-time compare is unnecessary here, but keep strict equality and avoid leaking values.
-    let authorized = api_key.map(|k| k == security.api_key).unwrap_or(false);
+    let authorized = api_key.is_some_and(|k| k == security.api_key);
 
     if authorized {
         Ok(next.run(request).await)
@@ -79,11 +107,6 @@ pub async fn auth_middleware(
 
 #[cfg(test)]
 mod tests {
-    // 移除未使用的 use super::*;
-
     #[test]
-    fn test_auth_placeholder() {
-        // Middleware auth is tested via integration tests
-        // This placeholder ensures the test module compiles
-    }
+    fn test_auth_placeholder() {}
 }

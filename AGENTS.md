@@ -67,7 +67,7 @@ vendor/
 | Duplicate type definitions | ~20 | **0** |
 | `#[allow(warnings)]` | 11 modules | **0** |
 | Clippy warnings suppressed | ~58 | **0** |
-| Unit tests | - | **112+** |
+| Unit tests | - | **156+** |
 | Clippy status | ⚠️ | **✅ -D warnings** |
 | Release build | - | **11MB** |
 
@@ -195,7 +195,32 @@ cargo test -p antigravity-core --lib
 git add . && git commit -m "chore: sync upstream v3.3.XX changes"
 ```
 
-### Last Sync: 2026-01-26 (v4.0.1)
+### Last Sync: 2026-01-27 (v4.0.3)
+
+**Ported from v4.0.3:**
+- **`common/schema_cache.rs`** — NEW: LRU cache for cleaned JSON schemas
+  - SHA-256 hash-based cache keys
+  - Max 1000 entries with LRU eviction
+  - `clean_json_schema_cached()` — cached entry point for schema cleaning
+  - `get_cache_stats()` — hit rate monitoring
+- **`common/tool_adapter.rs`** — NEW: MCP tool adapter trait
+  - `ToolAdapter` trait with `matches()`, `pre_process()`, `post_process()`
+  - `append_hint_to_schema()` helper
+- **`common/tool_adapters/pencil.rs`** — NEW: Pencil MCP adapter
+  - Handles visual properties (cornerRadius, strokeWidth, etc.)
+  - Optimizes file path parameter descriptions
+- **`json_schema.rs`** — Added `clean_json_schema_for_tool()` function
+  - Applies tool-specific adapters before/after generic cleaning
+  - Global `TOOL_ADAPTERS` registry
+- **`middleware/auth.rs`** — Fix #1163: 401 auth loop
+  - Added `admin_auth_middleware()` for admin routes
+  - Extended health check paths: `/healthz`, `/api/health`, `/health`, `/api/status`
+  - Refactored to `auth_middleware_internal()` with `force_strict` parameter
+
+**NOT ported (intentionally):**
+- **Body limit 50MB** — we already have 100MB, no need to reduce
+- **`admin_password` field** — we use single `api_key` for simplicity
+- **`server.rs` admin API routes** — we have our own Axum-based admin API
 
 **Ported from v4.0.1:**
 - **`gemini/collector.rs`** — NEW: Stream collector for Gemini SSE → JSON conversion

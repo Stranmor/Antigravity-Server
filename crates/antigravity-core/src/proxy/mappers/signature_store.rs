@@ -1,4 +1,4 @@
-// Global thought_signature storage shared by all endpoints
+// Global thought_signature storage shared by all endpoints (OpenAI + Claude)
 // Used to capture and replay signatures for Gemini 3+ function calls when clients don't pass them back.
 
 use std::sync::{Mutex, OnceLock};
@@ -12,9 +12,6 @@ fn get_thought_sig_storage() -> &'static Mutex<Option<String>> {
 /// Store thought_signature to global storage.
 /// Only stores if the new signature is longer than the existing one,
 /// to avoid short/partial signatures overwriting valid ones.
-///
-/// DEPRECATED: Use SignatureCache::cache_session_signature instead for session-isolated storage.
-#[allow(dead_code)] // Deprecated, kept for backward compatibility
 pub fn store_thought_signature(sig: &str) {
     if let Ok(mut guard) = get_thought_sig_storage().lock() {
         let should_store = match &*guard {
@@ -49,7 +46,6 @@ pub fn get_thought_signature() -> Option<String> {
 }
 
 /// Get and clear the stored thought_signature.
-#[allow(dead_code)]
 pub fn take_thought_signature() -> Option<String> {
     if let Ok(mut guard) = get_thought_sig_storage().lock() {
         guard.take()
@@ -59,7 +55,6 @@ pub fn take_thought_signature() -> Option<String> {
 }
 
 /// Clear the stored thought_signature.
-#[allow(dead_code)]
 pub fn clear_thought_signature() {
     if let Ok(mut guard) = get_thought_sig_storage().lock() {
         *guard = None;

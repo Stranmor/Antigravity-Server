@@ -3,7 +3,6 @@
 
 use super::models::*;
 use super::utils::to_claude_usage;
-// use crate::proxy::mappers::signature_store::store_thought_signature; // Deprecated
 use crate::proxy::SignatureCache;
 use bytes::Bytes;
 use serde_json::{json, Value};

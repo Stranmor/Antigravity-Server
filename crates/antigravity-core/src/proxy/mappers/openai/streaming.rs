@@ -5,52 +5,11 @@ use futures::{Stream, StreamExt};
 use rand::Rng;
 use serde_json::{json, Value};
 use std::pin::Pin;
-use std::sync::{Mutex, OnceLock};
 use tracing::debug;
 use uuid::Uuid;
 
-// === 全局 ThoughtSignature 存储 ===
-// 用于在流式响应和后续请求之间传递签名，避免嵌入到用户可见的文本中
-static GLOBAL_THOUGHT_SIG: OnceLock<Mutex<Option<String>>> = OnceLock::new();
-
-fn get_thought_sig_storage() -> &'static Mutex<Option<String>> {
-    GLOBAL_THOUGHT_SIG.get_or_init(|| Mutex::new(None))
-}
-
-/// 保存 thoughtSignature 到全局存储
-/// 注意：只在新签名比现有签名更长时才存储，避免短签名覆盖有效签名
-pub fn store_thought_signature(sig: &str) {
-    if let Ok(mut guard) = get_thought_sig_storage().lock() {
-        let should_store = match &*guard {
-            None => true,                                 // 没有签名，直接存储
-            Some(existing) => sig.len() > existing.len(), // 只有新签名更长才存储
-        };
-
-        if should_store {
-            tracing::debug!(
-                "[ThoughtSig] 存储新签名 (长度: {}，替换旧长度: {:?})",
-                sig.len(),
-                guard.as_ref().map(|s| s.len())
-            );
-            *guard = Some(sig.to_string());
-        } else {
-            tracing::debug!(
-                "[ThoughtSig] 跳过短签名 (新长度: {}，现有长度: {})",
-                sig.len(),
-                guard.as_ref().map(|s| s.len()).unwrap_or(0)
-            );
-        }
-    }
-}
-
-/// 获取全局存储的 thoughtSignature（不清除）
-pub fn get_thought_signature() -> Option<String> {
-    if let Ok(guard) = get_thought_sig_storage().lock() {
-        guard.clone()
-    } else {
-        None
-    }
-}
+// Use unified signature storage (shared with Claude path)
+pub use crate::proxy::mappers::signature_store::{get_thought_signature, store_thought_signature};
 
 /// Extract and convert Gemini usageMetadata to OpenAI usage format
 fn extract_usage_metadata(u: &Value) -> Option<super::models::OpenAIUsage> {

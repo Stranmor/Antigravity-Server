@@ -1,4 +1,24 @@
+use once_cell::sync::Lazy;
 use serde_json::Value;
+
+use super::tool_adapter::ToolAdapter;
+use super::tool_adapters::PencilAdapter;
+
+static TOOL_ADAPTERS: Lazy<Vec<Box<dyn ToolAdapter>>> = Lazy::new(|| vec![Box::new(PencilAdapter)]);
+
+pub fn clean_json_schema_for_tool(value: &mut Value, tool_name: &str) {
+    let adapter = TOOL_ADAPTERS.iter().find(|a| a.matches(tool_name));
+
+    if let Some(adapter) = adapter {
+        let _ = adapter.pre_process(value);
+    }
+
+    clean_json_schema(value);
+
+    if let Some(adapter) = adapter {
+        let _ = adapter.post_process(value);
+    }
+}
 
 /// 递归清理 JSON Schema 以符合 Gemini 接口要求
 ///

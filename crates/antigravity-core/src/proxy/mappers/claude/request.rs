@@ -2,7 +2,7 @@
 // 对应 transformClaudeRequestIn
 
 use super::models::*;
-use crate::proxy::mappers::signature_store::get_thought_signature; // Deprecated, kept for fallback
+use crate::proxy::mappers::signature_store::get_thought_signature;
 use crate::proxy::mappers::tool_result_compressor;
 use crate::proxy::session_manager::SessionManager;
 use serde_json::{json, Value};

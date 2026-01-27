@@ -1,6 +1,6 @@
 // OpenAI → Gemini 请求转换
 use super::models::*;
-use super::streaming::get_thought_signature;
+use crate::proxy::mappers::signature_store::get_thought_signature;
 use crate::proxy::mappers::tool_result_compressor;
 use serde_json::{json, Value};
 
