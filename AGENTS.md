@@ -216,7 +216,7 @@ This fork uses **SEMANTIC PORTING** — we don't blindly copy upstream files, we
 
 - **Location:** `vendor/antigravity-upstream/` (git submodule)
 - **Upstream repo:** https://github.com/lbjlaq/Antigravity-Manager
-- **Current upstream:** v4.0.1
+- **Current upstream:** v4.0.3
 - **Our version:** v3.3.45 (with custom improvements)
 
 ### Intentional Divergences
@@ -283,6 +283,12 @@ git add . && git commit -m "chore: sync upstream v3.3.XX changes"
   - Added `admin_auth_middleware()` for admin routes
   - Extended health check paths: `/healthz`, `/api/health`, `/health`, `/api/status`
   - Refactored to `auth_middleware_internal()` with `force_strict` parameter
+
+**OUR SECURITY ENHANCEMENTS (not in upstream):**
+- **Constant-time API key comparison** — uses `subtle::ConstantTimeEq` to prevent timing attacks
+  - Upstream uses simple `==` comparison (vulnerable to timing analysis)
+  - Our `constant_time_compare()` function in `auth.rs` lines 30-35
+- **`/api/status` health path** — added for load balancer compatibility (upstream only has `/healthz`, `/api/health`, `/health`)
 
 **NOT ported (intentionally):**
 - **Body limit 50MB** — we already have 100MB, no need to reduce
