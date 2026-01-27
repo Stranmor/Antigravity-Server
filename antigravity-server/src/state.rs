@@ -5,6 +5,7 @@
 use anyhow::Result;
 use axum::Router;
 use dashmap::DashMap;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
@@ -43,6 +44,8 @@ pub struct AppStateInner {
     pub circuit_breaker: Arc<CircuitBreakerManager>,
     pub warp_isolation: Option<Arc<WarpIsolationManager>>,
     pub oauth_states: Arc<DashMap<String, Instant>>,
+    /// Actual bound port (set after listener creation, 0 if not yet bound)
+    pub bound_port: AtomicU16,
 }
 
 impl AppState {
@@ -96,8 +99,19 @@ impl AppState {
                 circuit_breaker,
                 warp_isolation,
                 oauth_states: Arc::new(DashMap::new()),
+                bound_port: AtomicU16::new(0),
             }),
         })
+    }
+
+    /// Set the actual port the server is listening on (called after listener bind)
+    pub fn set_bound_port(&self, port: u16) {
+        self.inner.bound_port.store(port, Ordering::Relaxed);
+    }
+
+    /// Get the actual bound port (returns 0 if not yet bound)
+    pub fn get_bound_port(&self) -> u16 {
+        self.inner.bound_port.load(Ordering::Relaxed)
     }
 
     pub fn build_proxy_router(&self) -> Router {
@@ -134,10 +148,6 @@ impl AppState {
             Ok(accounts) => accounts.iter().filter(|a| !a.disabled).count(),
             Err(_) => 0,
         }
-    }
-
-    pub async fn get_proxy_port(&self) -> u16 {
-        self.inner.proxy_config.read().await.port
     }
 
     pub async fn get_proxy_bind_address(&self) -> String {

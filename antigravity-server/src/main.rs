@@ -164,11 +164,12 @@ async fn run_server(port: u16) -> Result<()> {
         config_sync::start_auto_config_sync(Arc::new(state.clone()), remote_url);
     }
 
+    let listener = create_listener(port, &initial_proxy_config).await?;
+    let local_addr = listener.local_addr()?;
+    state.set_bound_port(local_addr.port());
+
     let app = build_router(state, axum_server).await;
 
-    let listener = create_listener(port, &initial_proxy_config).await?;
-
-    let local_addr = listener.local_addr()?;
     info!("🌐 Server listening on http://{}", local_addr);
     info!(
         "📊 WebUI available at http://localhost:{}/",

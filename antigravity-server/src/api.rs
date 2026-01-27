@@ -560,7 +560,7 @@ struct ProxyStatusResponse {
 }
 
 async fn get_proxy_status(State(state): State<AppState>) -> Json<ProxyStatusResponse> {
-    let port = state.get_proxy_port().await;
+    let port = state.get_bound_port();
     let bind_addr = state.get_proxy_bind_address().await;
 
     Json(ProxyStatusResponse {
@@ -800,7 +800,7 @@ struct OAuthUrlResponse {
 }
 
 async fn get_oauth_url(State(state): State<AppState>) -> Json<OAuthUrlResponse> {
-    let port = state.get_proxy_port().await;
+    let port = state.get_bound_port();
     let redirect_uri = get_oauth_redirect_uri_with_port(port);
     let oauth_state = state.generate_oauth_state();
     let url = oauth::get_auth_url_with_state(&redirect_uri, &oauth_state);
@@ -901,7 +901,7 @@ async fn handle_oauth_callback(
         .into_response();
     };
 
-    let port = app_state.get_proxy_port().await;
+    let port = app_state.get_bound_port();
     let redirect_uri = get_oauth_redirect_uri_with_port(port);
 
     // Exchange code for tokens
@@ -1023,7 +1023,7 @@ struct OAuthLoginResponse {
 }
 
 async fn start_oauth_login(State(state): State<AppState>) -> Json<OAuthLoginResponse> {
-    let port = state.get_proxy_port().await;
+    let port = state.get_bound_port();
     let redirect_uri = get_oauth_redirect_uri_with_port(port);
     let oauth_state = state.generate_oauth_state();
     let url = oauth::get_auth_url_with_state(&redirect_uri, &oauth_state);
