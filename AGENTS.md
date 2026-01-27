@@ -649,4 +649,91 @@ Server binary embeds path to dist/
 | `ANTIGRAVITY_STATIC_DIR` | `./src-leptos/dist` | Path to frontend assets |
 | `ANTIGRAVITY_PORT` | `8045` | Server port |
 | `SKIP_TRUNK_BUILD` | unset | Skip frontend build in CI |
+| `ANTIGRAVITY_SYNC_REMOTE` | unset | Remote server URL for bidirectional config sync |
+
+---
+
+## 🔄 MODEL ROUTING SYNC [2026-01-27]
+
+### Overview
+
+Bidirectional synchronization of `custom_mapping` (model routing) between VPS and local instances using **Last-Write-Wins (LWW)** merge strategy — the same approach used by AWS DynamoDB and Apache Cassandra for distributed state.
+
+### How It Works
+
+```
+VPS (antigravity.quantumind.ru)          Local Machine
+┌─────────────────────────────┐         ┌─────────────────────────┐
+│  SyncableMapping (MASTER)   │ ◄─────► │  SyncableMapping        │
+│                             │         │                         │
+│  GET /api/config/mapping    │         │  Auto-sync every 60s    │
+│  POST /api/config/mapping   │         │  (if ANTIGRAVITY_SYNC_  │
+└─────────────────────────────┘         │   REMOTE is set)        │
+                                        └─────────────────────────┘
+```
+
+### LWW Merge Strategy
+
+Each mapping entry has a timestamp. On merge:
+- If only in local → keep local
+- If only in remote → add from remote  
+- If in both → keep the one with **higher timestamp**
+
+No conflicts. Eventual consistency guaranteed.
+
+### Data Structures
+
+```rust
+// crates/antigravity-types/src/models/sync.rs
+
+pub struct MappingEntry {
+    pub target: String,      // e.g., "gemini-3-pro-high"
+    pub updated_at: i64,     // Unix timestamp (ms)
+}
+
+pub struct SyncableMapping {
+    pub entries: HashMap<String, MappingEntry>,
+    pub instance_id: Option<String>,
+}
+```
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/config/mapping` | GET | Get current mappings with timestamps |
+| `/api/config/mapping` | POST | Merge remote mappings (LWW) |
+
+### Usage
+
+**Enable sync on local machine:**
+```bash
+export ANTIGRAVITY_SYNC_REMOTE="https://antigravity.quantumind.ru"
+antigravity-server
+```
+
+**Manual sync via API:**
+```bash
+# Get current mappings from VPS
+curl https://antigravity.quantumind.ru/api/config/mapping
+
+# Push local changes to VPS
+curl -X POST https://antigravity.quantumind.ru/api/config/mapping \
+  -H "Content-Type: application/json" \
+  -d '{"mapping": {"entries": {"gpt-4o": {"target": "gemini-3-pro", "updated_at": 1737932400000}}}}'
+```
+
+### Sync Flow
+
+1. Every 60s, local fetches remote mappings
+2. LWW merge: newer entries overwrite older
+3. Local sends back any entries that are newer locally
+4. Both instances converge to identical state
+
+### Files
+
+- `crates/antigravity-types/src/models/sync.rs` — `SyncableMapping`, `MappingEntry`, LWW merge logic
+- `antigravity-server/src/config_sync.rs` — Auto-sync background task
+- `antigravity-server/src/state.rs` — `get_syncable_mapping()`, `merge_remote_mapping()`
+- `antigravity-server/src/api.rs` — `/api/config/mapping` endpoints
 

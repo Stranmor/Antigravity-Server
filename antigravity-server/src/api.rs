@@ -50,6 +50,9 @@ pub fn router() -> Router<AppState> {
         // Config
         .route("/config", get(get_config))
         .route("/config", post(save_config))
+        // Config Sync (LWW Bidirectional)
+        .route("/config/mapping", get(get_syncable_mapping))
+        .route("/config/mapping", post(merge_remote_mapping))
         // Resilience (AIMD, Circuit Breaker, Health)
         .route("/resilience/health", get(get_health_status))
         .route("/resilience/circuits", get(get_circuit_status))
@@ -663,6 +666,36 @@ async fn save_config(
         }
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
     }
+}
+
+async fn get_syncable_mapping(
+    State(state): State<AppState>,
+) -> Json<antigravity_shared::SyncableMapping> {
+    Json(state.get_syncable_mapping().await)
+}
+
+#[derive(Deserialize)]
+struct MergeMappingRequest {
+    mapping: antigravity_shared::SyncableMapping,
+}
+
+#[derive(Serialize)]
+struct MergeMappingResponse {
+    updated_count: usize,
+    total_count: usize,
+}
+
+async fn merge_remote_mapping(
+    State(state): State<AppState>,
+    Json(payload): Json<MergeMappingRequest>,
+) -> Json<MergeMappingResponse> {
+    let updated = state.merge_remote_mapping(&payload.mapping).await;
+    let total = state.get_syncable_mapping().await.len();
+
+    Json(MergeMappingResponse {
+        updated_count: updated,
+        total_count: total,
+    })
 }
 
 // ============ Resilience (AIMD/Circuit Breaker/Health) ============

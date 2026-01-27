@@ -29,6 +29,7 @@ use tracing_subscriber::FmtSubscriber;
 mod api;
 mod cli;
 mod commands;
+mod config_sync;
 mod scheduler;
 mod state;
 
@@ -158,6 +159,10 @@ async fn run_server(port: u16) -> Result<()> {
     info!("📊 {} accounts loaded", state.get_account_count());
 
     scheduler::start(state.clone());
+
+    if let Ok(remote_url) = std::env::var("ANTIGRAVITY_SYNC_REMOTE") {
+        config_sync::start_auto_config_sync(Arc::new(state.clone()), remote_url);
+    }
 
     let app = build_router(state, axum_server).await;
 

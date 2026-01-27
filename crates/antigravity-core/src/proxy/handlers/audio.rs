@@ -8,9 +8,7 @@ use serde_json::{json, Value};
 use tracing::{debug, info};
 use uuid::Uuid;
 
-use crate::proxy::{
-    audio::AudioProcessor, common::model_mapping::map_claude_model_to_gemini, server::AppState,
-};
+use crate::proxy::{audio::AudioProcessor, server::AppState};
 
 /// 处理音频转录请求 (OpenAI Whisper API 兼容)
 pub async fn handle_audio_transcription(
@@ -19,7 +17,7 @@ pub async fn handle_audio_transcription(
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let mut audio_data: Option<Vec<u8>> = None;
     let mut filename: Option<String> = None;
-    let model = "gemini-3-pro".to_string();
+    let model = "gemini-2.5-flash".to_string();
     let mut prompt = "Generate a transcript of the speech.".to_string();
 
     // 1. 解析 multipart/form-data
@@ -86,6 +84,7 @@ pub async fn handle_audio_transcription(
     // 5. 构建 Gemini 请求
     let gemini_request = json!({
         "contents": [{
+            "role": "user",
             "parts": [
                 {"text": prompt},
                 {
@@ -108,8 +107,8 @@ pub async fn handle_audio_transcription(
     info!("使用账号: {}", email);
 
     // 7. 包装请求为 v1internal 格式
-    // Map alias (gemini-3-pro) to physical model name (gemini-3-pro-preview)
-    let mapped_model = map_claude_model_to_gemini(&model);
+    // Use model as-is — Antigravity API expects "gemini-3-pro" directly
+    let mapped_model = model.clone();
     let wrapped_body = json!({
         "project": project_id,
         "requestId": format!("audio-{}", Uuid::new_v4()),

@@ -6,6 +6,7 @@ mod account;
 mod config;
 mod quota;
 mod stats;
+mod sync;
 mod token;
 
 // Re-export all models
@@ -19,4 +20,5 @@ pub use quota::{ModelQuota, QuotaData};
 pub use stats::{
     DashboardStats, ProxyRequestLog, ProxyStats, ProxyStatus, RefreshStats, UpdateInfo,
 };
+pub use sync::{MappingEntry, SyncableMapping};
 pub use token::TokenData;

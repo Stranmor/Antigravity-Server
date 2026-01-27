@@ -27,10 +27,10 @@ pub use antigravity_types::{
     error::{AccountError, ConfigError, ProxyError, Result, TypedError},
     // Model types
     models::{
-        Account, AccountIndex, AccountSummary, AppConfig, ExperimentalConfig, ModelQuota, Protocol,
-        ProxyAuthMode, ProxyConfig, ProxyRequestLog, ProxyStats, QuotaData, SchedulingMode,
-        StickySessionConfig, TokenData, UpstreamProxyConfig, ZaiConfig, ZaiDispatchMode,
-        ZaiMcpConfig, ZaiModelDefaults,
+        Account, AccountIndex, AccountSummary, AppConfig, ExperimentalConfig, MappingEntry,
+        ModelQuota, Protocol, ProxyAuthMode, ProxyConfig, ProxyRequestLog, ProxyStats, QuotaData,
+        SchedulingMode, StickySessionConfig, SyncableMapping, TokenData, UpstreamProxyConfig,
+        ZaiConfig, ZaiDispatchMode, ZaiMcpConfig, ZaiModelDefaults,
     },
     // Protocol types
     protocol,

@@ -32,6 +32,7 @@ pub struct AppStateInner {
     pub axum_server: Arc<AxumServer>,
     // Shared state for hot-reload
     pub custom_mapping: Arc<RwLock<std::collections::HashMap<String, String>>>,
+    pub mapping_timestamps: Arc<RwLock<std::collections::HashMap<String, i64>>>,
     pub security_config: Arc<RwLock<ProxySecurityConfig>>,
     pub zai_config: Arc<RwLock<antigravity_shared::proxy::config::ZaiConfig>>,
     pub experimental_config: Arc<RwLock<antigravity_shared::proxy::config::ExperimentalConfig>>,
@@ -41,7 +42,6 @@ pub struct AppStateInner {
     pub health_monitor: Arc<HealthMonitor>,
     pub circuit_breaker: Arc<CircuitBreakerManager>,
     pub warp_isolation: Option<Arc<WarpIsolationManager>>,
-    /// OAuth state tokens for CSRF protection (state -> created_at)
     pub oauth_states: Arc<DashMap<String, Instant>>,
 }
 
@@ -87,6 +87,7 @@ impl AppState {
                 proxy_config: Arc::new(RwLock::new(proxy_config)),
                 axum_server,
                 custom_mapping,
+                mapping_timestamps: Arc::new(RwLock::new(std::collections::HashMap::new())),
                 security_config,
                 zai_config,
                 experimental_config,
@@ -231,6 +232,92 @@ impl AppState {
         &self.inner.circuit_breaker
     }
 
+    pub async fn get_syncable_mapping(&self) -> antigravity_shared::SyncableMapping {
+        use antigravity_shared::MappingEntry;
+
+        let mapping = self.inner.custom_mapping.read().await;
+        let timestamps = self.inner.mapping_timestamps.read().await;
+
+        let entries = mapping
+            .iter()
+            .map(|(k, v)| {
+                let ts = timestamps
+                    .get(k)
+                    .copied()
+                    .unwrap_or_else(current_timestamp_ms);
+                (k.clone(), MappingEntry::with_timestamp(v.clone(), ts))
+            })
+            .collect();
+
+        antigravity_shared::SyncableMapping {
+            entries,
+            instance_id: Some(get_instance_id()),
+        }
+    }
+
+    pub async fn merge_remote_mapping(
+        &self,
+        remote: &antigravity_shared::SyncableMapping,
+    ) -> usize {
+        let mapping_to_persist = {
+            let mut mapping = self.inner.custom_mapping.write().await;
+            let mut timestamps = self.inner.mapping_timestamps.write().await;
+
+            let mut updated = 0;
+
+            for (key, remote_entry) in &remote.entries {
+                let local_ts = timestamps.get(key).copied().unwrap_or(0);
+
+                if remote_entry.updated_at > local_ts {
+                    mapping.insert(key.clone(), remote_entry.target.clone());
+                    timestamps.insert(key.clone(), remote_entry.updated_at);
+                    updated += 1;
+                }
+            }
+
+            if updated > 0 {
+                tracing::info!(
+                    "🔄 Merged {} mapping entries from remote (instance: {:?})",
+                    updated,
+                    remote.instance_id
+                );
+                Some((mapping.clone(), updated))
+            } else {
+                None
+            }
+        };
+
+        if let Some((mapping, updated)) = mapping_to_persist {
+            if let Err(e) = self.persist_mapping_to_config(&mapping).await {
+                tracing::error!("Failed to persist mapping to config: {}", e);
+            }
+            updated
+        } else {
+            0
+        }
+    }
+
+    async fn persist_mapping_to_config(
+        &self,
+        mapping: &std::collections::HashMap<String, String>,
+    ) -> Result<(), String> {
+        use antigravity_core::modules::config as core_config;
+
+        let mapping_clone = mapping.clone();
+        tokio::task::spawn_blocking(move || {
+            core_config::update_config(|config| {
+                config.proxy.custom_mapping = mapping_clone;
+            })
+        })
+        .await
+        .map_err(|e| format!("spawn_blocking failed: {}", e))??;
+
+        let mut proxy_config = self.inner.proxy_config.write().await;
+        proxy_config.custom_mapping = mapping.clone();
+
+        Ok(())
+    }
+
     pub fn generate_oauth_state(&self) -> String {
         use rand::Rng;
 
@@ -276,4 +363,27 @@ pub fn get_model_quota(account: &Account, model_prefix: &str) -> Option<i32> {
             .find(|m| m.name.to_lowercase().contains(&model_prefix.to_lowercase()))
             .map(|m| m.percentage)
     })
+}
+
+fn current_timestamp_ms() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn get_instance_id() -> String {
+    use std::sync::OnceLock;
+    static INSTANCE_ID: OnceLock<String> = OnceLock::new();
+
+    INSTANCE_ID
+        .get_or_init(|| {
+            let hostname = hostname::get()
+                .map(|h| h.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| "unknown".to_string());
+            let pid = std::process::id();
+            format!("{}-{}", hostname, pid)
+        })
+        .clone()
 }
