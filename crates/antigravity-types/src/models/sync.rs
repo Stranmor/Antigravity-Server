@@ -158,8 +158,8 @@ impl SyncableMapping {
 fn current_timestamp_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
+        .expect("system clock before UNIX epoch")
+        .as_millis() as i64
 }
 
 #[cfg(test)]

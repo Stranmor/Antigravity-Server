@@ -255,6 +255,63 @@ impl AppState {
         }
     }
 
+    pub async fn sync_with_remote(
+        &self,
+        remote: &antigravity_shared::SyncableMapping,
+    ) -> (usize, antigravity_shared::SyncableMapping) {
+        use antigravity_shared::MappingEntry;
+
+        let (mapping_to_persist, inbound, diff) = {
+            let mut mapping = self.inner.custom_mapping.write().await;
+            let mut timestamps = self.inner.mapping_timestamps.write().await;
+
+            let local_entries: std::collections::HashMap<_, _> = mapping
+                .iter()
+                .map(|(k, v)| {
+                    let ts = timestamps.get(k).copied().unwrap_or(0);
+                    (k.clone(), MappingEntry::with_timestamp(v.clone(), ts))
+                })
+                .collect();
+            let local_mapping = antigravity_shared::SyncableMapping {
+                entries: local_entries,
+                instance_id: Some(get_instance_id()),
+            };
+
+            let diff = local_mapping.diff_newer_than(remote);
+
+            let mut updated = 0;
+            for (key, remote_entry) in &remote.entries {
+                let local_ts = timestamps.get(key).copied().unwrap_or(0);
+                if remote_entry.updated_at > local_ts {
+                    mapping.insert(key.clone(), remote_entry.target.clone());
+                    timestamps.insert(key.clone(), remote_entry.updated_at);
+                    updated += 1;
+                }
+            }
+
+            let persist = if updated > 0 {
+                Some(mapping.clone())
+            } else {
+                None
+            };
+
+            (persist, updated, diff)
+        };
+
+        if let Some(ref map) = mapping_to_persist {
+            tracing::info!(
+                "🔄 Merged {} mapping entries from remote (instance: {:?})",
+                inbound,
+                remote.instance_id
+            );
+            if let Err(e) = self.persist_mapping_to_config(map).await {
+                tracing::error!("Failed to persist mapping to config: {}", e);
+            }
+        }
+
+        (inbound, diff)
+    }
+
     pub async fn merge_remote_mapping(
         &self,
         remote: &antigravity_shared::SyncableMapping,
@@ -369,8 +426,8 @@ fn current_timestamp_ms() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
+        .expect("system clock before UNIX epoch")
+        .as_millis() as i64
 }
 
 fn get_instance_id() -> String {

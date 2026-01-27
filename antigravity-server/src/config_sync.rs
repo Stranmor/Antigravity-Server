@@ -44,8 +44,8 @@ async fn sync_once(
     client: &reqwest::Client,
     remote_url: &str,
 ) -> Result<(), String> {
-    let fetch_url = format!("{}/api/config/mapping", remote_url);
-    let push_url = format!("{}/api/config/mapping", remote_url);
+    let fetch_url = format!("{}/api/config/mapping", remote_url.trim_end_matches('/'));
+    let push_url = format!("{}/api/config/mapping", remote_url.trim_end_matches('/'));
 
     let remote_mapping: antigravity_shared::SyncableMapping = client
         .get(&fetch_url)
@@ -56,11 +56,7 @@ async fn sync_once(
         .await
         .map_err(|e| format!("parse failed: {}", e))?;
 
-    let local_mapping = state.get_syncable_mapping().await;
-
-    let inbound_updated = state.merge_remote_mapping(&remote_mapping).await;
-
-    let diff = local_mapping.diff_newer_than(&remote_mapping);
+    let (inbound_updated, diff) = state.sync_with_remote(&remote_mapping).await;
     let outbound_count = diff.len();
 
     if outbound_count > 0 {
