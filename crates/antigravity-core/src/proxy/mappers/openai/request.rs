@@ -230,59 +230,18 @@ pub fn transform_openai_request(
                                         }
                                     }
                                 }
-                                OpenAIContentBlock::AudioUrl { audio_url } => {
-                                    if audio_url.url.starts_with("data:") {
-                                        if let Some(pos) = audio_url.url.find(',') {
-                                            let mime_part = &audio_url.url[5..pos];
-                                            let mime_type = mime_part.split(';').next().unwrap_or("audio/mp3");
-                                            let data = &audio_url.url[pos + 1..];
-
-                                            parts.push(json!({
-                                                "inlineData": { "mimeType": mime_type, "data": data }
-                                            }));
-                                        }
-                                    } else if audio_url.url.starts_with("http") {
-                                        parts.push(json!({
-                                            "fileData": { "fileUri": &audio_url.url, "mimeType": "audio/mp3" }
-                                        }));
-                                    } else {
-                                        let file_path = if audio_url.url.starts_with("file://") {
-                                            #[cfg(target_os = "windows")]
-                                            { audio_url.url.trim_start_matches("file:///").replace('/', "\\") }
-                                            #[cfg(not(target_os = "windows"))]
-                                            { audio_url.url.trim_start_matches("file://").to_string() }
-                                        } else {
-                                            audio_url.url.clone()
-                                        };
-
-                                        tracing::debug!("[OpenAI-Request] Reading local audio: {}", file_path);
-
-                                        if let Ok(file_bytes) = std::fs::read(&file_path) {
-                                            use base64::Engine as _;
-                                            let b64 = base64::engine::general_purpose::STANDARD.encode(&file_bytes);
-
-                                            let mime_type = if file_path.to_lowercase().ends_with(".mp3") {
-                                                "audio/mp3"
-                                            } else if file_path.to_lowercase().ends_with(".wav") {
-                                                "audio/wav"
-                                            } else if file_path.to_lowercase().ends_with(".ogg") {
-                                                "audio/ogg"
-                                            } else if file_path.to_lowercase().ends_with(".flac") {
-                                                "audio/flac"
-                                            } else if file_path.to_lowercase().ends_with(".m4a") {
-                                                "audio/aac"
-                                            } else {
-                                                "audio/mp3"
-                                            };
-
-                                            parts.push(json!({
-                                                "inlineData": { "mimeType": mime_type, "data": b64 }
-                                            }));
-                                            tracing::debug!("[OpenAI-Request] Successfully loaded audio: {} ({} bytes)", file_path, file_bytes.len());
-                                        } else {
-                                            tracing::debug!("[OpenAI-Request] Failed to read local audio: {}", file_path);
-                                        }
-                                    }
+                                OpenAIContentBlock::InputAudio { input_audio } => {
+                                    let mime_type = match input_audio.format.as_str() {
+                                        "wav" => "audio/wav",
+                                        "mp3" => "audio/mp3",
+                                        "ogg" => "audio/ogg",
+                                        "flac" => "audio/flac",
+                                        "m4a" | "aac" => "audio/aac",
+                                        _ => "audio/wav",
+                                    };
+                                    parts.push(json!({
+                                        "inlineData": { "mimeType": mime_type, "data": &input_audio.data }
+                                    }));
                                 }
                                 OpenAIContentBlock::VideoUrl { video_url } => {
                                     if video_url.url.starts_with("data:") {
