@@ -1,4 +1,3 @@
-```markdown
 <div align="center">
 
 # Antigravity Server
@@ -54,8 +53,6 @@ While [Antigravity Manager](https://github.com/lbjlaq/Antigravity-Manager) provi
 | **Routing** | Silent Model Substitution | **Strict Routing (Explicit Errors)** |
 | **Isolation** | Shared IP | **WARP Proxy Support (Per-Account IP)** |
 | **Observability**| Local UI | **Resilience API & Prometheus Metrics** |
-| **Security** | Standard String Compare | **Constant-time Auth (Timing Safe)** |
-| **Performance** | Standard | **LRU Schema Caching** |
 | **Audio in Chat** | ❌ Not implemented | **✅ Official `input_audio` format** |
 | **Video in Chat** | ❌ Not supported | **✅ Via `video_url` extension** |
 
@@ -97,7 +94,6 @@ Connect any OpenAI-compatible tool to Claude and Gemini:
 - **Standardized API**: Implements `/v1/chat/completions` and `/v1/messages`.
 - **Dynamic Discovery**: Supports `/v1/models` for seamless integration with IDEs.
 - **Image Support**: Imagen 3 via OpenAI DALL-E interface compatibility.
-- **Enhanced Tooling**: Includes correct JSON schema alignment for function calling (fixing upstream quirks).
 
 ---
 
@@ -204,7 +200,6 @@ cargo build --release -p antigravity-server
 export ANTHROPIC_API_KEY="sk-antigravity"
 export ANTHROPIC_BASE_URL="http://127.0.0.1:8045"
 claude
-# Now supports efficient JSON schema caching for faster tool interactions
 ```
 
 ### Python (OpenAI SDK)
@@ -345,7 +340,7 @@ This fork uses **Semantic Porting** — we don't blindly copy upstream changes. 
 - ✅ **Always Port**: Bug fixes, new model support, security patches, JSON schema improvements
 - ❌ **Never Port**: React/Tauri code (we use Leptos/Axum), changes conflicting with our resilience layer
 
-**🔄 Active Sync**: We actively port useful upstream changes. Currently synced with v4.0.3, plus our exclusive additions: AIMD predictive rate limiting, Circuit Breakers, Prometheus metrics, WARP proxy isolation, multimodal audio/video support, sticky session rebind on 429, **hardened security (constant-time auth comparisons)**, and **LRU schema caching**.
+**🔄 Active Sync**: We actively port useful upstream changes. Currently synced with v4.0.3, plus our exclusive additions: AIMD predictive rate limiting, Circuit Breakers, Prometheus metrics, WARP proxy isolation, multimodal audio/video support, and sticky session rebind on 429.
 
 See [AGENTS.md](AGENTS.md) for detailed architecture documentation and sync workflow.
 
@@ -366,4 +361,3 @@ This project is based on [lbjlaq/Antigravity-Manager](https://github.com/lbjlaq/
 [![GitHub Stars](https://img.shields.io/github/stars/Stranmor/Antigravity-Server?style=social)](https://github.com/Stranmor/Antigravity-Server)
 
 </div>
-```

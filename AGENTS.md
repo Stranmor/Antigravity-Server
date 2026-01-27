@@ -67,7 +67,7 @@ vendor/
 | Duplicate type definitions | ~20 | **0** |
 | `#[allow(warnings)]` | 11 modules | **0** |
 | Clippy warnings suppressed | ~58 | **0** |
-| Unit tests | - | **168** |
+| Unit tests | - | **170** |
 | Clippy status | ⚠️ | **✅ -D warnings** |
 | Release build | - | **11MB** |
 
@@ -105,7 +105,7 @@ GET /api/metrics
 cargo check --workspace                        # ✅ passes
 cargo clippy --workspace -- -Dwarnings         # ✅ passes
 cargo test -p antigravity-types                # ✅ 7 tests pass
-cargo test -p antigravity-core --lib           # ✅ 168 tests pass
+cargo test -p antigravity-core --lib           # ✅ 170 tests pass
 cargo build --release -p antigravity-server    # ✅ builds (1m 22s, 11MB)
 ```
 
@@ -126,13 +126,18 @@ Added integration tests using `axum-test` crate for HTTP endpoint verification:
 - `test_chat_completions_rejects_invalid_json` — 400 on malformed JSON
 - `test_chat_completions_rejects_missing_model` — 400 on missing model field
 - `test_chat_completions_no_accounts_returns_503` — 503 when no accounts available
+- `test_auth_middleware_rejects_missing_token` — 401 without auth header
+- `test_auth_middleware_rejects_invalid_token` — 401 with wrong key
+- `test_auth_middleware_accepts_valid_token` — 200 with correct key
 
 **Test infrastructure:**
 - `create_test_app_state()` — minimal AppState for testing endpoints
 - `create_test_app_state_with_mapping()` — AppState with custom model mappings
+- `create_test_app_state_with_auth()` — AppState with custom auth config
 - `build_models_router()` / `build_chat_completions_router()` — focused test routers
+- `build_models_router_with_auth()` — router with auth middleware layer
 
-**Total tests:** 168 (was 160)
+**Total tests:** 170 (was 160)
 
 ### Architecture Cleanup: Signature Storage Unification
 

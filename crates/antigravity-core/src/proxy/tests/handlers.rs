@@ -47,19 +47,6 @@ mod tests {
             "Should include image generation models"
         );
     }
-
-    #[tokio::test]
-    async fn test_custom_mapping_appears_in_models_list() {
-        let custom_mapping = RwLock::new(HashMap::from([
-            ("my-special-model".to_string(), "gemini-3-flash".to_string()),
-            ("another-alias".to_string(), "claude-sonnet-4-5".to_string()),
-        ]));
-
-        let models = get_all_dynamic_models(&custom_mapping).await;
-
-        assert!(models.contains(&"my-special-model".to_string()));
-        assert!(models.contains(&"another-alias".to_string()));
-    }
 }
 
 /// Integration tests for HTTP handlers using axum-test
@@ -304,5 +291,88 @@ mod integration_tests {
             .await;
 
         response.assert_status(axum::http::StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    fn create_test_app_state_with_auth(
+        auth_mode: antigravity_shared::proxy::config::ProxyAuthMode,
+        api_key: &str,
+    ) -> AppState {
+        let mut state = create_test_app_state();
+        state.security_config = Arc::new(RwLock::new(ProxySecurityConfig {
+            auth_mode,
+            api_key: api_key.to_string(),
+            allow_lan_access: true,
+        }));
+        state
+    }
+
+    fn build_models_router_with_auth(state: AppState) -> Router {
+        let security_config = state.security_config.clone();
+        Router::new()
+            .route(
+                "/v1/models",
+                get(crate::proxy::handlers::openai::handle_list_models),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                security_config,
+                crate::proxy::middleware::auth_middleware,
+            ))
+            .with_state(state)
+    }
+
+    #[tokio::test]
+    async fn test_auth_middleware_rejects_missing_token() {
+        let state = create_test_app_state_with_auth(
+            antigravity_shared::proxy::config::ProxyAuthMode::AllExceptHealth,
+            "secret-api-key",
+        );
+        let app = build_models_router_with_auth(state);
+
+        let response = axum_test::TestServer::new(app)
+            .unwrap()
+            .get("/v1/models")
+            .await;
+
+        response.assert_status(axum::http::StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_auth_middleware_rejects_invalid_token() {
+        let state = create_test_app_state_with_auth(
+            antigravity_shared::proxy::config::ProxyAuthMode::AllExceptHealth,
+            "secret-api-key",
+        );
+        let app = build_models_router_with_auth(state);
+
+        let response = axum_test::TestServer::new(app)
+            .unwrap()
+            .get("/v1/models")
+            .add_header(
+                axum::http::header::AUTHORIZATION,
+                axum::http::HeaderValue::from_static("Bearer wrong-key"),
+            )
+            .await;
+
+        response.assert_status(axum::http::StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_auth_middleware_accepts_valid_token() {
+        let state = create_test_app_state_with_auth(
+            antigravity_shared::proxy::config::ProxyAuthMode::AllExceptHealth,
+            "secret-api-key",
+        );
+        let app = build_models_router_with_auth(state);
+
+        let response = axum_test::TestServer::new(app)
+            .unwrap()
+            .get("/v1/models")
+            .add_header(
+                axum::http::header::AUTHORIZATION,
+                axum::http::HeaderValue::from_static("Bearer secret-api-key"),
+            )
+            .await;
+
+        response.assert_status_ok();
     }
 }
