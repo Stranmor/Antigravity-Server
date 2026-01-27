@@ -53,6 +53,8 @@ pub enum OpenAIContentBlock {
     ImageUrl { image_url: OpenAIImageUrl },
     #[serde(rename = "audio_url")]
     AudioUrl { audio_url: AudioUrlContent },
+    #[serde(rename = "video_url")]
+    VideoUrl { video_url: VideoUrlContent },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -64,6 +66,11 @@ pub struct OpenAIImageUrl {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AudioUrlContent {
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct VideoUrlContent {
     pub url: String,
 }
 

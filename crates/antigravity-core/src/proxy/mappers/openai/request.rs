@@ -230,11 +230,111 @@ pub fn transform_openai_request(
                                         }
                                     }
                                 }
-                                OpenAIContentBlock::AudioUrl { audio_url: _ } => {
-                                    // [PR #311 部分合并] 暂时跳过 audio_url 处理
-                                    // 完整实现需要下载音频文件并转换为 Gemini inlineData 格式
-                                    // 这会与 v3.3.16 的 thinkingConfig 逻辑冲突，留待后续版本实现
-                                    tracing::debug!("[OpenAI-Request] Skipping audio_url (not yet implemented in v3.3.16)");
+                                OpenAIContentBlock::AudioUrl { audio_url } => {
+                                    if audio_url.url.starts_with("data:") {
+                                        if let Some(pos) = audio_url.url.find(',') {
+                                            let mime_part = &audio_url.url[5..pos];
+                                            let mime_type = mime_part.split(';').next().unwrap_or("audio/mp3");
+                                            let data = &audio_url.url[pos + 1..];
+
+                                            parts.push(json!({
+                                                "inlineData": { "mimeType": mime_type, "data": data }
+                                            }));
+                                        }
+                                    } else if audio_url.url.starts_with("http") {
+                                        parts.push(json!({
+                                            "fileData": { "fileUri": &audio_url.url, "mimeType": "audio/mp3" }
+                                        }));
+                                    } else {
+                                        let file_path = if audio_url.url.starts_with("file://") {
+                                            #[cfg(target_os = "windows")]
+                                            { audio_url.url.trim_start_matches("file:///").replace('/', "\\") }
+                                            #[cfg(not(target_os = "windows"))]
+                                            { audio_url.url.trim_start_matches("file://").to_string() }
+                                        } else {
+                                            audio_url.url.clone()
+                                        };
+
+                                        tracing::debug!("[OpenAI-Request] Reading local audio: {}", file_path);
+
+                                        if let Ok(file_bytes) = std::fs::read(&file_path) {
+                                            use base64::Engine as _;
+                                            let b64 = base64::engine::general_purpose::STANDARD.encode(&file_bytes);
+
+                                            let mime_type = if file_path.to_lowercase().ends_with(".mp3") {
+                                                "audio/mp3"
+                                            } else if file_path.to_lowercase().ends_with(".wav") {
+                                                "audio/wav"
+                                            } else if file_path.to_lowercase().ends_with(".ogg") {
+                                                "audio/ogg"
+                                            } else if file_path.to_lowercase().ends_with(".flac") {
+                                                "audio/flac"
+                                            } else if file_path.to_lowercase().ends_with(".m4a") {
+                                                "audio/aac"
+                                            } else {
+                                                "audio/mp3"
+                                            };
+
+                                            parts.push(json!({
+                                                "inlineData": { "mimeType": mime_type, "data": b64 }
+                                            }));
+                                            tracing::debug!("[OpenAI-Request] Successfully loaded audio: {} ({} bytes)", file_path, file_bytes.len());
+                                        } else {
+                                            tracing::debug!("[OpenAI-Request] Failed to read local audio: {}", file_path);
+                                        }
+                                    }
+                                }
+                                OpenAIContentBlock::VideoUrl { video_url } => {
+                                    if video_url.url.starts_with("data:") {
+                                        if let Some(pos) = video_url.url.find(',') {
+                                            let mime_part = &video_url.url[5..pos];
+                                            let mime_type = mime_part.split(';').next().unwrap_or("video/mp4");
+                                            let data = &video_url.url[pos + 1..];
+
+                                            parts.push(json!({
+                                                "inlineData": { "mimeType": mime_type, "data": data }
+                                            }));
+                                        }
+                                    } else if video_url.url.starts_with("http") {
+                                        parts.push(json!({
+                                            "fileData": { "fileUri": &video_url.url, "mimeType": "video/mp4" }
+                                        }));
+                                    } else {
+                                        let file_path = if video_url.url.starts_with("file://") {
+                                            #[cfg(target_os = "windows")]
+                                            { video_url.url.trim_start_matches("file:///").replace('/', "\\") }
+                                            #[cfg(not(target_os = "windows"))]
+                                            { video_url.url.trim_start_matches("file://").to_string() }
+                                        } else {
+                                            video_url.url.clone()
+                                        };
+
+                                        tracing::debug!("[OpenAI-Request] Reading local video: {}", file_path);
+
+                                        if let Ok(file_bytes) = std::fs::read(&file_path) {
+                                            use base64::Engine as _;
+                                            let b64 = base64::engine::general_purpose::STANDARD.encode(&file_bytes);
+
+                                            let mime_type = if file_path.to_lowercase().ends_with(".mp4") {
+                                                "video/mp4"
+                                            } else if file_path.to_lowercase().ends_with(".mov") {
+                                                "video/quicktime"
+                                            } else if file_path.to_lowercase().ends_with(".webm") {
+                                                "video/webm"
+                                            } else if file_path.to_lowercase().ends_with(".avi") {
+                                                "video/x-msvideo"
+                                            } else {
+                                                "video/mp4"
+                                            };
+
+                                            parts.push(json!({
+                                                "inlineData": { "mimeType": mime_type, "data": b64 }
+                                            }));
+                                            tracing::debug!("[OpenAI-Request] Successfully loaded video: {} ({} bytes)", file_path, file_bytes.len());
+                                        } else {
+                                            tracing::debug!("[OpenAI-Request] Failed to read local video: {}", file_path);
+                                        }
+                                    }
                                 }
                             }
                         }
