@@ -6,7 +6,7 @@
 
 <img src="public/icon.png" alt="Antigravity Logo" width="140" height="140" style="border-radius: 24px;">
 
-[![Upstream](https://img.shields.io/badge/Upstream-v3.3.45-888?style=for-the-badge&logo=github)](https://github.com/lbjlaq/Antigravity-Manager)
+[![Upstream](https://img.shields.io/badge/Upstream-v4.0.1-888?style=for-the-badge&logo=github)](https://github.com/lbjlaq/Antigravity-Manager)
 [![Rust](https://img.shields.io/badge/100%25_Rust-dea584?style=for-the-badge&logo=rust&logoColor=black)](https://www.rust-lang.org/)
 [![Leptos](https://img.shields.io/badge/Leptos-WASM-8B5CF6?style=for-the-badge)](https://leptos.dev/)
 [![Axum](https://img.shields.io/badge/Axum-Server-3B82F6?style=for-the-badge)](https://github.com/tokio-rs/axum)
@@ -53,6 +53,8 @@ While [Antigravity Manager](https://github.com/lbjlaq/Antigravity-Manager) provi
 | **Routing** | Silent Model Substitution | **Strict Routing (Explicit Errors)** |
 | **Isolation** | Shared IP | **WARP Proxy Support (Per-Account IP)** |
 | **Observability**| Local UI | **Resilience API & Prometheus Metrics** |
+| **Audio in Chat** | ❌ Not implemented | **✅ Official `input_audio` format** |
+| **Video in Chat** | ❌ Not supported | **✅ Via `video_url` extension** |
 
 ---
 
@@ -92,6 +94,73 @@ Connect any OpenAI-compatible tool to Claude and Gemini:
 - **Standardized API**: Implements `/v1/chat/completions` and `/v1/messages`.
 - **Dynamic Discovery**: Supports `/v1/models` for seamless integration with IDEs.
 - **Image Support**: Imagen 3 via OpenAI DALL-E interface compatibility.
+
+---
+
+## 🎵 Multimodal Support
+
+Full support for audio and video inputs using official OpenAI API format:
+
+### Audio Input (Official OpenAI Format)
+
+```python
+import openai
+import base64
+
+client = openai.OpenAI(
+    api_key="sk-antigravity",
+    base_url="http://127.0.0.1:8045/v1"
+)
+
+# Read and encode audio file
+with open("audio.wav", "rb") as f:
+    audio_b64 = base64.b64encode(f.read()).decode()
+
+response = client.chat.completions.create(
+    model="gemini-3-pro",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What is being said in this audio?"},
+            {"type": "input_audio", "input_audio": {"data": audio_b64, "format": "wav"}}
+        ]
+    }]
+)
+```
+
+**Supported formats:** `wav`, `mp3`, `ogg`, `flac`, `m4a`
+
+### Video Input (Gemini Extension)
+
+```python
+# Read and encode video file
+with open("video.mp4", "rb") as f:
+    video_b64 = base64.b64encode(f.read()).decode()
+
+response = client.chat.completions.create(
+    model="gemini-3-pro",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Describe what happens in this video"},
+            {"type": "video_url", "video_url": {"url": f"data:video/mp4;base64,{video_b64}"}}
+        ]
+    }]
+)
+```
+
+**Supported formats:** `mp4`, `mov`, `webm`, `avi`
+
+### Audio Transcription (Whisper-compatible)
+
+```bash
+curl -X POST http://127.0.0.1:8045/v1/audio/transcriptions \
+  -H "Authorization: Bearer sk-antigravity" \
+  -F "file=@audio.mp3" \
+  -F "model=whisper-1"
+```
+
+> **Note:** `video_url` is our extension — OpenAI doesn't support video in chat completions, but Gemini does.
 
 ---
 
@@ -186,7 +255,7 @@ systemctl --user enable --now antigravity
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ANTIGRAVITY_PORT` | `8045` | Port the gateway listens on |
-| `ANTIGRAVITY_DATA_DIR` | `~/.antigravity` | Path for database and configuration |
+| `ANTIGRAVITY_DATA_DIR` | `~/.antigravity_tools` | Path for accounts and configuration |
 | `RUST_LOG` | `info` | Logging verbosity (debug, info, warn) |
 
 ---
@@ -271,7 +340,7 @@ This fork uses **Semantic Porting** — we don't blindly copy upstream changes. 
 - ✅ **Always Port**: Bug fixes, new model support, security patches, JSON schema improvements
 - ❌ **Never Port**: React/Tauri code (we use Leptos/Axum), changes conflicting with our resilience layer
 
-**🔄 Active Sync**: We actively port all upstream changes within 24-48 hours of release. Currently synced with v3.3.45, plus our exclusive additions: AIMD predictive rate limiting, Circuit Breakers, Prometheus metrics, WARP proxy isolation, Grace Retry, and sticky session rebind on 429.
+**🔄 Active Sync**: We actively port useful upstream changes. Currently synced with v4.0.1, plus our exclusive additions: AIMD predictive rate limiting, Circuit Breakers, Prometheus metrics, WARP proxy isolation, multimodal audio/video support, and sticky session rebind on 429.
 
 See [AGENTS.md](AGENTS.md) for detailed architecture documentation and sync workflow.
 
