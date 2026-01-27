@@ -740,6 +740,11 @@ curl -X POST https://antigravity.quantumind.ru/api/config/mapping \
 3. Local sends back any entries that are newer locally
 4. Both instances converge to identical state
 
+### Known Limitations
+
+- **Tombstone persistence:** Currently tombstones are not fully persisted. Deletions set `target=""` which effectively disables the mapping, but the key remains in storage. Full tombstone garbage collection is TODO.
+- **Storage format:** Runtime uses `SyncableMapping` with timestamps, but persistence uses legacy `HashMap<String, String>` format in `gui_config.json`. Timestamps are stored separately in memory.
+
 ### Files
 
 - `crates/antigravity-types/src/models/sync.rs` — `SyncableMapping`, `MappingEntry`, LWW merge logic
