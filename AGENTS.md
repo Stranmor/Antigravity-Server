@@ -678,8 +678,17 @@ Each mapping entry has a timestamp. On merge:
 - If only in local → keep local
 - If only in remote → add from remote  
 - If in both → keep the one with **higher timestamp**
+- On timestamp tie → lexicographic comparison of `target` as tie-breaker
 
 No conflicts. Eventual consistency guaranteed.
+
+### Tombstone Support
+
+Deletions use **tombstones** (soft delete) to prevent "zombie resurrection" during sync:
+- `remove(key)` → inserts tombstone entry with `deleted: true`
+- Tombstones propagate via LWW like regular entries
+- `get()`, `len()`, `to_simple_map()` exclude tombstones
+- `total_entries()` includes tombstones (for debugging)
 
 ### Data Structures
 
@@ -689,6 +698,7 @@ No conflicts. Eventual consistency guaranteed.
 pub struct MappingEntry {
     pub target: String,      // e.g., "gemini-3-pro-high"
     pub updated_at: i64,     // Unix timestamp (ms)
+    pub deleted: bool,       // Tombstone flag
 }
 
 pub struct SyncableMapping {

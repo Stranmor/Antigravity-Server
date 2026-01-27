@@ -21,6 +21,9 @@ pub struct MappingEntry {
     pub target: String,
     /// Unix timestamp in milliseconds when this entry was last updated
     pub updated_at: i64,
+    /// Tombstone flag: true = entry is deleted (for sync propagation)
+    #[serde(default)]
+    pub deleted: bool,
 }
 
 impl MappingEntry {
@@ -29,6 +32,7 @@ impl MappingEntry {
         Self {
             target: target.into(),
             updated_at: current_timestamp_ms(),
+            deleted: false,
         }
     }
 
@@ -37,7 +41,22 @@ impl MappingEntry {
         Self {
             target: target.into(),
             updated_at,
+            deleted: false,
         }
+    }
+
+    /// Create tombstone entry (marks key as deleted for sync propagation).
+    pub fn tombstone() -> Self {
+        Self {
+            target: String::new(),
+            updated_at: current_timestamp_ms(),
+            deleted: true,
+        }
+    }
+
+    /// Check if entry is a tombstone (deleted).
+    pub fn is_tombstone(&self) -> bool {
+        self.deleted
     }
 }
 
@@ -71,10 +90,11 @@ impl SyncableMapping {
         }
     }
 
-    /// Convert to simple HashMap (for runtime use).
+    /// Convert to simple HashMap (for runtime use, excludes tombstones).
     pub fn to_simple_map(&self) -> HashMap<String, String> {
         self.entries
             .iter()
+            .filter(|(_, v)| !v.deleted)
             .map(|(k, v)| (k.clone(), v.target.clone()))
             .collect()
     }
@@ -85,22 +105,27 @@ impl SyncableMapping {
             .insert(source.into(), MappingEntry::new(target));
     }
 
-    /// Remove a mapping entry.
-    pub fn remove(&mut self, source: &str) -> Option<MappingEntry> {
-        self.entries.remove(source)
+    /// Mark a mapping entry as deleted (tombstone for sync propagation).
+    pub fn remove(&mut self, source: &str) {
+        self.entries
+            .insert(source.to_string(), MappingEntry::tombstone());
     }
 
-    /// Get target for a source model.
+    /// Get target for a source model (returns None for tombstones).
     pub fn get(&self, source: &str) -> Option<&str> {
-        self.entries.get(source).map(|e| e.target.as_str())
+        self.entries
+            .get(source)
+            .filter(|e| !e.deleted)
+            .map(|e| e.target.as_str())
     }
 
-    /// Merge remote mappings using LWW strategy.
+    /// Merge remote mappings using LWW strategy with lexicographic tie-breaker.
     ///
     /// For each key:
     /// - If only in local -> keep local
     /// - If only in remote -> add from remote
     /// - If in both -> keep the one with higher timestamp
+    /// - On timestamp tie -> use lexicographic comparison of target as tie-breaker
     ///
     /// Returns number of entries updated from remote.
     pub fn merge_lww(&mut self, remote: &SyncableMapping) -> usize {
@@ -108,7 +133,11 @@ impl SyncableMapping {
 
         for (key, remote_entry) in &remote.entries {
             let should_update = match self.entries.get(key) {
-                Some(local_entry) => remote_entry.updated_at > local_entry.updated_at,
+                Some(local_entry) => {
+                    remote_entry.updated_at > local_entry.updated_at
+                        || (remote_entry.updated_at == local_entry.updated_at
+                            && remote_entry.target > local_entry.target)
+                }
                 None => true,
             };
 
@@ -143,14 +172,19 @@ impl SyncableMapping {
         }
     }
 
-    /// Number of entries.
+    /// Number of live entries (excludes tombstones).
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.entries.values().filter(|e| !e.deleted).count()
     }
 
-    /// Check if empty.
+    /// Check if empty (no live entries).
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.len() == 0
+    }
+
+    /// Total entries including tombstones (for sync/debug).
+    pub fn total_entries(&self) -> usize {
+        self.entries.len()
     }
 }
 
@@ -285,5 +319,101 @@ mod tests {
         assert!(diff.entries.contains_key("gpt-4o"));
         assert!(diff.entries.contains_key("new-model"));
         assert!(!diff.entries.contains_key("claude")); // remote is newer
+    }
+
+    #[test]
+    fn test_tombstone_creation() {
+        let tombstone = MappingEntry::tombstone();
+        assert!(tombstone.is_tombstone());
+        assert!(tombstone.deleted);
+        assert!(tombstone.target.is_empty());
+    }
+
+    #[test]
+    fn test_remove_creates_tombstone() {
+        let mut mapping = SyncableMapping::new();
+        mapping.set("gpt-4o", "gemini-3-pro");
+        assert_eq!(mapping.len(), 1);
+
+        mapping.remove("gpt-4o");
+
+        assert_eq!(mapping.len(), 0);
+        assert_eq!(mapping.total_entries(), 1);
+        assert!(mapping.entries.get("gpt-4o").unwrap().is_tombstone());
+        assert_eq!(mapping.get("gpt-4o"), None);
+    }
+
+    #[test]
+    fn test_tombstone_excluded_from_simple_map() {
+        let mut mapping = SyncableMapping::new();
+        mapping.set("gpt-4o", "gemini-3-pro");
+        mapping.set("claude", "claude-opus");
+        mapping.remove("claude");
+
+        let simple = mapping.to_simple_map();
+
+        assert_eq!(simple.len(), 1);
+        assert!(simple.contains_key("gpt-4o"));
+        assert!(!simple.contains_key("claude"));
+    }
+
+    #[test]
+    fn test_tombstone_propagates_via_merge() {
+        let mut local = SyncableMapping::new();
+        local.entries.insert(
+            "gpt-4o".to_string(),
+            MappingEntry::with_timestamp("gemini-3-pro", 1000),
+        );
+
+        let mut remote = SyncableMapping::new();
+        let mut tombstone = MappingEntry::tombstone();
+        tombstone.updated_at = 2000;
+        remote.entries.insert("gpt-4o".to_string(), tombstone);
+
+        let updated = local.merge_lww(&remote);
+
+        assert_eq!(updated, 1);
+        assert!(local.entries.get("gpt-4o").unwrap().is_tombstone());
+        assert_eq!(local.get("gpt-4o"), None);
+    }
+
+    #[test]
+    fn test_lww_tie_breaker_lexicographic() {
+        let mut local = SyncableMapping::new();
+        local.entries.insert(
+            "gpt-4o".to_string(),
+            MappingEntry::with_timestamp("aaa-model", 1000),
+        );
+
+        let mut remote = SyncableMapping::new();
+        remote.entries.insert(
+            "gpt-4o".to_string(),
+            MappingEntry::with_timestamp("zzz-model", 1000),
+        );
+
+        let updated = local.merge_lww(&remote);
+
+        assert_eq!(updated, 1);
+        assert_eq!(local.get("gpt-4o"), Some("zzz-model"));
+    }
+
+    #[test]
+    fn test_lww_tie_breaker_local_wins_if_greater() {
+        let mut local = SyncableMapping::new();
+        local.entries.insert(
+            "gpt-4o".to_string(),
+            MappingEntry::with_timestamp("zzz-model", 1000),
+        );
+
+        let mut remote = SyncableMapping::new();
+        remote.entries.insert(
+            "gpt-4o".to_string(),
+            MappingEntry::with_timestamp("aaa-model", 1000),
+        );
+
+        let updated = local.merge_lww(&remote);
+
+        assert_eq!(updated, 0);
+        assert_eq!(local.get("gpt-4o"), Some("zzz-model"));
     }
 }
