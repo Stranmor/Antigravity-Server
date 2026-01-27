@@ -67,7 +67,7 @@ vendor/
 | Duplicate type definitions | ~20 | **0** |
 | `#[allow(warnings)]` | 11 modules | **0** |
 | Clippy warnings suppressed | ~58 | **0** |
-| Unit tests | - | **156+** |
+| Unit tests | - | **168** |
 | Clippy status | ⚠️ | **✅ -D warnings** |
 | Release build | - | **11MB** |
 
@@ -105,13 +105,34 @@ GET /api/metrics
 cargo check --workspace                        # ✅ passes
 cargo clippy --workspace -- -Dwarnings         # ✅ passes
 cargo test -p antigravity-types                # ✅ 7 tests pass
-cargo test -p antigravity-core --lib           # ✅ 156 tests pass
+cargo test -p antigravity-core --lib           # ✅ 168 tests pass
 cargo build --release -p antigravity-server    # ✅ builds (1m 22s, 11MB)
 ```
 
 ---
 
 ## 📝 Changes Summary (2026-01-27)
+
+### Integration Tests for HTTP Handlers
+
+Added integration tests using `axum-test` crate for HTTP endpoint verification:
+
+**New tests in `proxy/tests/handlers.rs`:**
+- `test_list_models_endpoint_returns_200` — verifies `/v1/models` returns 200 OK
+- `test_list_models_endpoint_returns_json` — verifies response structure
+- `test_list_models_includes_default_models` — verifies built-in models presence
+- `test_list_models_includes_custom_mapping` — verifies custom model aliases appear
+- `test_list_models_includes_image_models` — verifies image generation models
+- `test_chat_completions_rejects_invalid_json` — 400 on malformed JSON
+- `test_chat_completions_rejects_missing_model` — 400 on missing model field
+- `test_chat_completions_no_accounts_returns_503` — 503 when no accounts available
+
+**Test infrastructure:**
+- `create_test_app_state()` — minimal AppState for testing endpoints
+- `create_test_app_state_with_mapping()` — AppState with custom model mappings
+- `build_models_router()` / `build_chat_completions_router()` — focused test routers
+
+**Total tests:** 168 (was 160)
 
 ### Architecture Cleanup: Signature Storage Unification
 
