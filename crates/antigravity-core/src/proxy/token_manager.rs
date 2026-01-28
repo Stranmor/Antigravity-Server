@@ -1323,6 +1323,22 @@ impl TokenManager {
         error_body: &str,
         model: Option<&str>, // 🆕 新增模型参数
     ) {
+        // [FIX] IMMEDIATELY set temporary rate limit to prevent race condition.
+        // Problem: async quota refresh takes 1-2 seconds, during which other requests
+        // can still use this account (they don't see it as rate-limited yet).
+        // Solution: Block the account NOW with 60s temporary lockout, then refine
+        // with precise reset time once we have it.
+        self.rate_limit_tracker.set_lockout_until(
+            account_id,
+            std::time::SystemTime::now() + std::time::Duration::from_secs(60),
+            crate::proxy::rate_limit::RateLimitReason::Unknown,
+            None,
+        );
+        tracing::debug!(
+            "⚡ Account {} immediately blocked (60s temporary) pending precise reset time",
+            account_id
+        );
+
         // 检查 API 是否返回了精确的重试时间
         let has_explicit_retry_time =
             retry_after_header.is_some() || error_body.contains("quotaResetDelay");
