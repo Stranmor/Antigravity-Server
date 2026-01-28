@@ -381,7 +381,10 @@ pub fn start_quota_refresh(state: AppState) {
                     continue;
                 }
             };
-            let enabled_accounts: Vec<_> = accounts.into_iter().filter(|a| !a.disabled).collect();
+            let enabled_accounts: Vec<_> = accounts
+                .into_iter()
+                .filter(|a| !a.disabled && !a.proxy_disabled)
+                .collect();
             let total = enabled_accounts.len();
             let mut success = 0;
 
@@ -397,7 +400,7 @@ pub fn start_quota_refresh(state: AppState) {
                         tracing::warn!("[QuotaRefresh] Failed to refresh {}: {}", acc.email, e);
                     }
                 }
-                tokio::time::sleep(Duration::from_millis(300)).await;
+                tokio::time::sleep(Duration::from_millis(500)).await;
             }
 
             tracing::info!(
