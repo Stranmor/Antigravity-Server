@@ -574,7 +574,6 @@ impl RateLimitTracker {
     }
 
     /// 清除指定账号的限流记录
-    #[allow(dead_code)]
     pub fn clear(&self, account_id: &str) -> bool {
         self.limits.remove(account_id).is_some()
     }
