@@ -240,9 +240,15 @@ async fn add_account_by_token(
                 .await
                 .map_err(|e| format!("User info failed: {}", e))?;
 
+            // Use rotated refresh token if provider returned new one, else keep original
+            let refresh_token = token_response
+                .refresh_token
+                .clone()
+                .unwrap_or_else(|| token.clone());
+
             let token_data = TokenData::new(
                 token_response.access_token,
-                token.clone(),
+                refresh_token,
                 token_response.expires_in,
                 Some(user_info.email.clone()),
                 None,
@@ -1097,7 +1103,8 @@ async fn submit_oauth_code(
         None,
     );
 
-    account::add_account(user_info.email.clone(), user_info.name.clone(), token_data).map_err(
+    // Use upsert to support re-authentication (consistent with handle_oauth_callback)
+    account::upsert_account(user_info.email.clone(), user_info.name.clone(), token_data).map_err(
         |e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
