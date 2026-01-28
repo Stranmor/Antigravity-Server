@@ -1,9 +1,13 @@
 //! Sidebar navigation component
 
 use leptos::prelude::*;
+use leptos_router::components::A;
 use leptos_router::hooks::use_location;
 
-const VERSION: &str = env!("GIT_VERSION");
+const VERSION: &str = match option_env!("GIT_VERSION") {
+    Some(v) => v,
+    None => "dev",
+};
 
 const ICON_DASHBOARD: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>"#;
 
@@ -17,11 +21,22 @@ const ICON_MONITOR: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="20"
 
 const ICON_LOGO: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>"#;
 
+fn is_path_active(current: &str, path: &str) -> bool {
+    if path == "/" {
+        current == "/"
+    } else {
+        current == path
+            || current
+                .strip_prefix(path)
+                .is_some_and(|s| s.starts_with('/'))
+    }
+}
+
 #[component]
 pub fn Sidebar() -> impl IntoView {
     let location = use_location();
 
-    let nav_items: Vec<(&str, &str, &str)> = vec![
+    let nav_items: [(&str, &str, &str); 4] = [
         ("Dashboard", "/", ICON_DASHBOARD),
         ("Accounts", "/accounts", ICON_ACCOUNTS),
         ("API Proxy", "/proxy", ICON_PROXY),
@@ -40,33 +55,41 @@ pub fn Sidebar() -> impl IntoView {
 
             <nav class="sidebar-nav">
                 {nav_items.into_iter().map(|(label, path, icon)| {
-                    let current_path = location.pathname;
-                    let is_active = move || {
-                        let curr = current_path.get();
-                        if path == "/" {
-                            curr == "/"
+                    let pathname = location.pathname;
+                    let class_signal = Memo::new(move |_| {
+                        if is_path_active(&pathname.get(), path) {
+                            "nav-item active"
                         } else {
-                            curr.starts_with(path)
+                            "nav-item"
                         }
-                    };
+                    });
 
                     view! {
-                        <a
-                            href=path
-                            class=move || format!("nav-item {}", if is_active() { "active" } else { "" })
-                        >
+                        <A href=path attr:class=class_signal>
                             <span class="nav-icon" inner_html=icon></span>
                             <span class="nav-label">{label}</span>
-                        </a>
+                        </A>
                     }
                 }).collect_view()}
             </nav>
 
             <div class="sidebar-footer">
-                <a href="/monitor" class="nav-item">
-                    <span class="nav-icon" inner_html=ICON_MONITOR></span>
-                    <span class="nav-label">"Monitor"</span>
-                </a>
+                {
+                    let pathname = location.pathname;
+                    let monitor_class = Memo::new(move |_| {
+                        if is_path_active(&pathname.get(), "/monitor") {
+                            "nav-item active"
+                        } else {
+                            "nav-item"
+                        }
+                    });
+                    view! {
+                        <A href="/monitor" attr:class=monitor_class>
+                            <span class="nav-icon" inner_html=ICON_MONITOR></span>
+                            <span class="nav-label">"Monitor"</span>
+                        </A>
+                    }
+                }
             </div>
         </aside>
     }
