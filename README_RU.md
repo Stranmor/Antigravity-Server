@@ -175,10 +175,10 @@ systemctl --user enable --now antigravity
 ```
 crates/
 ├── antigravity-types/      # Базовые типы и иерархия ошибок
-├── antigravity-shared/     # Слой реэкспорта
 ├── antigravity-core/       # Бизнес-логика (Proxy, AIMD, Circuits)
-└── antigravity-server/     # Axum HTTP Entry Point
+└── antigravity-client/     # Rust SDK (авто-обнаружение, ретраи, стриминг)
 
+antigravity-server/         # Axum HTTP Entry Point
 src-leptos/                 # 100% Rust WASM фронтенд
 vendor/antigravity-upstream/ # Upstream (Git Submodule)
 ```

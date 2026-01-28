@@ -340,10 +340,10 @@ antigravity-server config show --json
 ```
 crates/
 ├── antigravity-types/      # Foundation types & error hierarchy
-├── antigravity-shared/     # Re-export layer for external crates
 ├── antigravity-core/       # Business logic (Proxy, AIMD, Circuits)
-└── antigravity-server/     # Axum HTTP Entry Point
+└── antigravity-client/     # Rust SDK (auto-discovery, retry, streaming)
 
+antigravity-server/         # Axum HTTP Entry Point
 src-leptos/                 # Pure Rust WASM Frontend
 vendor/antigravity-upstream/ # Upstream reference (Git Submodule)
 ```
