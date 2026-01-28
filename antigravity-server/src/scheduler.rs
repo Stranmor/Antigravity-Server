@@ -58,21 +58,24 @@ struct SchedulerState {
 }
 
 impl SchedulerState {
-    fn new(data_dir: PathBuf) -> Self {
+    async fn new_async(data_dir: PathBuf) -> Self {
         let history_path = data_dir.join("warmup_history.json");
-        let history = Self::load_history_sync(&history_path);
+        let history = Self::load_history_async(&history_path).await;
         Self {
             history,
             history_path,
         }
     }
 
-    fn load_history_sync(path: &PathBuf) -> WarmupHistory {
+    async fn load_history_async(path: &PathBuf) -> WarmupHistory {
         if path.exists() {
-            std::fs::read_to_string(path)
-                .ok()
-                .and_then(|c| serde_json::from_str(&c).ok())
-                .unwrap_or_default()
+            match tokio::fs::read_to_string(path).await {
+                Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+                Err(e) => {
+                    tracing::warn!("[Scheduler] Failed to read history file: {}", e);
+                    WarmupHistory::default()
+                }
+            }
         } else {
             WarmupHistory::default()
         }
@@ -82,9 +85,14 @@ impl SchedulerState {
         let path = self.history_path.clone();
         let content = match serde_json::to_string_pretty(&self.history) {
             Ok(c) => c,
-            Err(_) => return,
+            Err(e) => {
+                tracing::warn!("[Scheduler] Failed to serialize history: {}", e);
+                return;
+            }
         };
-        let _ = tokio::fs::write(path, content).await;
+        if let Err(e) = tokio::fs::write(&path, content).await {
+            tracing::warn!("[Scheduler] Failed to write history to {:?}: {}", path, e);
+        }
     }
 
     fn record_warmup(&mut self, key: &str, timestamp: i64) {
@@ -117,7 +125,7 @@ pub fn start(state: AppState) {
             }
         };
 
-        let scheduler_state = Arc::new(Mutex::new(SchedulerState::new(data_dir)));
+        let scheduler_state = Arc::new(Mutex::new(SchedulerState::new_async(data_dir).await));
 
         tracing::info!("🔥 [Scheduler] Smart Warmup Scheduler started");
 
@@ -285,7 +293,13 @@ pub fn start(state: AppState) {
                     match account::fetch_quota_with_retry(&mut acc).await {
                         Ok(_) => {
                             if let Some(quota) = acc.quota.clone() {
-                                let _ = account::update_account_quota(&acc.id, quota);
+                                if let Err(e) = account::update_account_quota(&acc.id, quota) {
+                                    tracing::warn!(
+                                        "[Warmup] Failed to update quota for {}: {}",
+                                        email,
+                                        e
+                                    );
+                                }
                             }
                             success += 1;
                             let mut scheduler = scheduler_state.lock().await;
@@ -392,7 +406,13 @@ pub fn start_quota_refresh(state: AppState) {
                 match account::fetch_quota_with_retry(&mut acc).await {
                     Ok(_) => {
                         if let Some(quota) = acc.quota.clone() {
-                            let _ = account::update_account_quota(&acc.id, quota);
+                            if let Err(e) = account::update_account_quota(&acc.id, quota) {
+                                tracing::warn!(
+                                    "[QuotaRefresh] Failed to update quota for {}: {}",
+                                    acc.email,
+                                    e
+                                );
+                            }
                         }
                         success += 1;
                     }
