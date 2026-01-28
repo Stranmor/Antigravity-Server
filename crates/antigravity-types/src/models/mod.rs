@@ -2,12 +2,12 @@
 //!
 //! This module contains all shared data structures used across the Antigravity ecosystem.
 
-mod account;
-mod config;
-mod quota;
-mod stats;
-mod sync;
-mod token;
+pub mod account;
+pub mod config;
+pub mod quota;
+pub mod stats;
+pub mod sync;
+pub mod token;
 
 // Re-export all models
 pub use account::{Account, AccountIndex, AccountSummary};

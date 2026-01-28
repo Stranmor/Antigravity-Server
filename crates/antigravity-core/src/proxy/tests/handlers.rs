@@ -70,19 +70,17 @@ mod integration_tests {
         let token_manager = Arc::new(TokenManager::new(temp_dir));
         let custom_mapping = Arc::new(RwLock::new(HashMap::new()));
         let upstream_proxy = Arc::new(RwLock::new(
-            antigravity_shared::utils::http::UpstreamProxyConfig::default(),
+            antigravity_types::models::UpstreamProxyConfig::default(),
         ));
         let security_config = Arc::new(RwLock::new(ProxySecurityConfig {
-            auth_mode: antigravity_shared::proxy::config::ProxyAuthMode::Off,
+            auth_mode: antigravity_types::models::ProxyAuthMode::Off,
             api_key: "test-key".to_string(),
             allow_lan_access: true,
         }));
-        let zai = Arc::new(RwLock::new(
-            antigravity_shared::proxy::config::ZaiConfig::default(),
-        ));
+        let zai = Arc::new(RwLock::new(antigravity_types::models::ZaiConfig::default()));
         let monitor = Arc::new(ProxyMonitor::new());
         let experimental = Arc::new(RwLock::new(
-            antigravity_shared::proxy::config::ExperimentalConfig::default(),
+            antigravity_types::models::ExperimentalConfig::default(),
         ));
         let adaptive_limits = Arc::new(AdaptiveLimitManager::default());
         let health_monitor = HealthMonitor::new();
@@ -296,7 +294,7 @@ mod integration_tests {
     }
 
     fn create_test_app_state_with_auth(
-        auth_mode: antigravity_shared::proxy::config::ProxyAuthMode,
+        auth_mode: antigravity_types::models::ProxyAuthMode,
         api_key: &str,
     ) -> AppState {
         let mut state = create_test_app_state();
@@ -325,7 +323,7 @@ mod integration_tests {
     #[tokio::test]
     async fn test_auth_middleware_rejects_missing_token() {
         let state = create_test_app_state_with_auth(
-            antigravity_shared::proxy::config::ProxyAuthMode::AllExceptHealth,
+            antigravity_types::models::ProxyAuthMode::AllExceptHealth,
             "secret-api-key",
         );
         let app = build_models_router_with_auth(state);
@@ -341,7 +339,7 @@ mod integration_tests {
     #[tokio::test]
     async fn test_auth_middleware_rejects_invalid_token() {
         let state = create_test_app_state_with_auth(
-            antigravity_shared::proxy::config::ProxyAuthMode::AllExceptHealth,
+            antigravity_types::models::ProxyAuthMode::AllExceptHealth,
             "secret-api-key",
         );
         let app = build_models_router_with_auth(state);
@@ -361,7 +359,7 @@ mod integration_tests {
     #[tokio::test]
     async fn test_auth_middleware_accepts_valid_token() {
         let state = create_test_app_state_with_auth(
-            antigravity_shared::proxy::config::ProxyAuthMode::AllExceptHealth,
+            antigravity_types::models::ProxyAuthMode::AllExceptHealth,
             "secret-api-key",
         );
         let app = build_models_router_with_auth(state);

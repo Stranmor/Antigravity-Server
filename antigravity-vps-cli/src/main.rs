@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-use tracing::{Level, info};
+use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 mod ssh_client;

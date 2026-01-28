@@ -3,7 +3,7 @@
 //! This module provides type-safe wrappers for calling the antigravity-server REST API.
 //! Replaces Tauri IPC for the headless server architecture.
 
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Serialize};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, Response};
@@ -139,13 +139,13 @@ pub mod commands {
         pub claude_quota: Option<i32>,
         pub image_quota: Option<i32>,
         pub subscription_tier: Option<String>,
-        pub quota: Option<antigravity_shared::models::QuotaData>,
+        pub quota: Option<antigravity_types::models::QuotaData>,
     }
 
     impl ApiAccount {
         /// Convert to full Account type for UI compatibility
         pub fn into_account(self) -> Account {
-            use antigravity_shared::models::TokenData;
+            use antigravity_types::models::TokenData;
             use std::collections::HashSet;
 
             Account {

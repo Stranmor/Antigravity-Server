@@ -195,7 +195,7 @@ async fn run_server(port: u16) -> Result<()> {
 
 async fn create_listener(
     port: u16,
-    proxy_config: &antigravity_shared::proxy::config::ProxyConfig,
+    proxy_config: &antigravity_types::models::ProxyConfig,
 ) -> Result<tokio::net::TcpListener> {
     let mut listenfd = ListenFd::from_env();
 

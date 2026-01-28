@@ -1,10 +1,10 @@
 [package]
 name = "antigravity-leptos"
 version = "3.3.43"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
-antigravity-shared = { workspace = true }
+antigravity-types = { workspace = true }
 # Leptos core
 leptos = { version = "0.7", features = ["csr"] }
 leptos_router = { version = "0.7" }

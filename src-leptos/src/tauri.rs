@@ -2,7 +2,7 @@
 //!
 //! This module provides type-safe wrappers around Tauri's invoke() function.
 
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Serialize};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]

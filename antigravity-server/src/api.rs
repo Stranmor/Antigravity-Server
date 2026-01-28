@@ -14,7 +14,7 @@ use tokio::task::JoinSet;
 
 use antigravity_core::models::AppConfig;
 use antigravity_core::modules::{account, config as core_config, oauth};
-use antigravity_shared::models::TokenData;
+use antigravity_types::models::TokenData;
 
 use crate::state::{get_model_quota, AppState};
 
@@ -107,7 +107,7 @@ struct AccountInfo {
     gemini_quota: Option<i32>,
     claude_quota: Option<i32>,
     subscription_tier: Option<String>,
-    quota: Option<antigravity_shared::models::QuotaData>,
+    quota: Option<antigravity_types::models::QuotaData>,
 }
 
 async fn list_accounts(
@@ -340,7 +340,7 @@ struct RefreshQuotaRequest {
 #[derive(Serialize)]
 struct QuotaResponse {
     account_id: String,
-    quota: Option<antigravity_shared::models::QuotaData>,
+    quota: Option<antigravity_types::models::QuotaData>,
 }
 
 async fn refresh_account_quota(
@@ -374,14 +374,14 @@ async fn refresh_account_quota(
 
 async fn refresh_all_quotas(
     State(state): State<AppState>,
-) -> Result<Json<antigravity_shared::models::RefreshStats>, (StatusCode, String)> {
+) -> Result<Json<antigravity_types::models::RefreshStats>, (StatusCode, String)> {
     let accounts = match account::list_accounts() {
         Ok(a) => a,
         Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
     };
 
     let total = accounts.len();
-    let mut join_set: JoinSet<Result<(String, antigravity_shared::models::QuotaData), String>> =
+    let mut join_set: JoinSet<Result<(String, antigravity_types::models::QuotaData), String>> =
         JoinSet::new();
 
     for mut acc in accounts {
@@ -422,7 +422,7 @@ async fn refresh_all_quotas(
 
     let _ = state.reload_accounts().await;
 
-    Ok(Json(antigravity_shared::models::RefreshStats {
+    Ok(Json(antigravity_types::models::RefreshStats {
         total,
         success,
         failed,
@@ -536,7 +536,7 @@ async fn warmup_all_accounts(
     // Return data for sequential update (avoid race condition on file storage)
     struct WarmupResult {
         account_id: String,
-        quota: Option<antigravity_shared::models::QuotaData>,
+        quota: Option<antigravity_types::models::QuotaData>,
     }
 
     let mut join_set: JoinSet<Result<WarmupResult, String>> = JoinSet::new();
@@ -690,14 +690,14 @@ struct MonitorQuery {
 async fn get_monitor_requests(
     State(state): State<AppState>,
     axum::extract::Query(query): axum::extract::Query<MonitorQuery>,
-) -> Json<Vec<antigravity_shared::models::ProxyRequestLog>> {
+) -> Json<Vec<antigravity_types::models::ProxyRequestLog>> {
     let logs = state.get_proxy_logs(query.limit).await;
     Json(logs)
 }
 
 async fn get_monitor_stats(
     State(state): State<AppState>,
-) -> Json<antigravity_shared::models::ProxyStats> {
+) -> Json<antigravity_types::models::ProxyStats> {
     let stats = state.get_proxy_stats().await;
     Json(stats)
 }
@@ -733,13 +733,13 @@ async fn save_config(
 
 async fn get_syncable_mapping(
     State(state): State<AppState>,
-) -> Json<antigravity_shared::SyncableMapping> {
+) -> Json<antigravity_types::SyncableMapping> {
     Json(state.get_syncable_mapping().await)
 }
 
 #[derive(Deserialize)]
 struct MergeMappingRequest {
-    mapping: antigravity_shared::SyncableMapping,
+    mapping: antigravity_types::SyncableMapping,
 }
 
 #[derive(Serialize)]

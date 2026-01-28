@@ -17,7 +17,7 @@ use antigravity_core::proxy::{
     AdaptiveLimitManager, CircuitBreakerManager, HealthMonitor, ProxyMonitor, ProxySecurityConfig,
     TokenManager,
 };
-use antigravity_shared::proxy::config::ProxyConfig;
+use antigravity_types::models::ProxyConfig;
 
 /// Shared application state
 #[derive(Clone)]
@@ -35,8 +35,8 @@ pub struct AppStateInner {
     pub custom_mapping: Arc<RwLock<std::collections::HashMap<String, String>>>,
     pub mapping_timestamps: Arc<RwLock<std::collections::HashMap<String, i64>>>,
     pub security_config: Arc<RwLock<ProxySecurityConfig>>,
-    pub zai_config: Arc<RwLock<antigravity_shared::proxy::config::ZaiConfig>>,
-    pub experimental_config: Arc<RwLock<antigravity_shared::proxy::config::ExperimentalConfig>>,
+    pub zai_config: Arc<RwLock<antigravity_types::models::ZaiConfig>>,
+    pub experimental_config: Arc<RwLock<antigravity_types::models::ExperimentalConfig>>,
     // AIMD Predictive Rate Limiting System
     // Wired into proxy router via build_proxy_router_with_shared_state
     pub adaptive_limits: Arc<AdaptiveLimitManager>,
@@ -119,7 +119,7 @@ impl AppState {
             self.inner.token_manager.clone(),
             self.inner.custom_mapping.clone(),
             // We need to get upstream_proxy, but it's in proxy_config - for now use default
-            antigravity_shared::utils::http::UpstreamProxyConfig::default(),
+            antigravity_types::models::UpstreamProxyConfig::default(),
             self.inner.security_config.clone(),
             self.inner.zai_config.clone(),
             self.inner.monitor.clone(),
@@ -154,14 +154,14 @@ impl AppState {
         self.inner.proxy_config.read().await.get_bind_address()
     }
 
-    pub async fn get_proxy_stats(&self) -> antigravity_shared::models::ProxyStats {
+    pub async fn get_proxy_stats(&self) -> antigravity_types::models::ProxyStats {
         self.inner.monitor.get_stats().await
     }
 
     pub async fn get_proxy_logs(
         &self,
         limit: Option<usize>,
-    ) -> Vec<antigravity_shared::models::ProxyRequestLog> {
+    ) -> Vec<antigravity_types::models::ProxyRequestLog> {
         self.inner.monitor.get_logs(limit).await
     }
 
@@ -250,8 +250,8 @@ impl AppState {
         &self.inner.circuit_breaker
     }
 
-    pub async fn get_syncable_mapping(&self) -> antigravity_shared::SyncableMapping {
-        use antigravity_shared::MappingEntry;
+    pub async fn get_syncable_mapping(&self) -> antigravity_types::SyncableMapping {
+        use antigravity_types::MappingEntry;
 
         let mapping = self.inner.custom_mapping.read().await;
         let timestamps = self.inner.mapping_timestamps.read().await;
@@ -267,7 +267,7 @@ impl AppState {
             })
             .collect();
 
-        antigravity_shared::SyncableMapping {
+        antigravity_types::SyncableMapping {
             entries,
             instance_id: Some(get_instance_id()),
         }
@@ -275,9 +275,9 @@ impl AppState {
 
     pub async fn sync_with_remote(
         &self,
-        remote: &antigravity_shared::SyncableMapping,
-    ) -> (usize, antigravity_shared::SyncableMapping) {
-        use antigravity_shared::MappingEntry;
+        remote: &antigravity_types::SyncableMapping,
+    ) -> (usize, antigravity_types::SyncableMapping) {
+        use antigravity_types::MappingEntry;
 
         let (mapping_to_persist, inbound, diff) = {
             let mut mapping = self.inner.custom_mapping.write().await;
@@ -290,7 +290,7 @@ impl AppState {
                     (k.clone(), MappingEntry::with_timestamp(v.clone(), ts))
                 })
                 .collect();
-            let local_mapping = antigravity_shared::SyncableMapping {
+            let local_mapping = antigravity_types::SyncableMapping {
                 entries: local_entries,
                 instance_id: Some(get_instance_id()),
             };
@@ -330,10 +330,7 @@ impl AppState {
         (inbound, diff)
     }
 
-    pub async fn merge_remote_mapping(
-        &self,
-        remote: &antigravity_shared::SyncableMapping,
-    ) -> usize {
+    pub async fn merge_remote_mapping(&self, remote: &antigravity_types::SyncableMapping) -> usize {
         let mapping_to_persist = {
             let mut mapping = self.inner.custom_mapping.write().await;
             let mut timestamps = self.inner.mapping_timestamps.write().await;

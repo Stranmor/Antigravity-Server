@@ -7,7 +7,7 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
-antigravity-shared = { workspace = true }
+antigravity-types = { workspace = true }
 # Async
 tokio = { workspace = true }
 tokio-stream = { workspace = true }

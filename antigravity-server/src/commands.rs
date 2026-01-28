@@ -3,7 +3,7 @@ use colored::Colorize;
 use comfy_table::{presets::UTF8_FULL, Cell, Color, Table};
 
 use antigravity_core::modules::{account, config as core_config, oauth};
-use antigravity_shared::models::TokenData;
+use antigravity_types::models::TokenData;
 
 use crate::cli::{AccountCommands, ConfigCommands};
 

@@ -47,7 +47,7 @@ async fn sync_once(
     let fetch_url = format!("{}/api/config/mapping", remote_url.trim_end_matches('/'));
     let push_url = format!("{}/api/config/mapping", remote_url.trim_end_matches('/'));
 
-    let remote_mapping: antigravity_shared::SyncableMapping = client
+    let remote_mapping: antigravity_types::SyncableMapping = client
         .get(&fetch_url)
         .send()
         .await

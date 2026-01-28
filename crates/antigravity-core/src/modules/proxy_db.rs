@@ -1,4 +1,4 @@
-use antigravity_shared::models::{ProxyRequestLog, ProxyStats};
+use antigravity_types::models::{ProxyRequestLog, ProxyStats};
 use rusqlite::{params, Connection};
 use std::path::PathBuf;
 

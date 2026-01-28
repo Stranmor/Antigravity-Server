@@ -9,7 +9,6 @@ resolver = "2"
 members = [
     "crates/antigravity-types",
     "crates/antigravity-core",
-    "crates/antigravity-shared",
     "crates/antigravity-client",
     "src-leptos",
     # NOTE: src-tauri is excluded from workspace - it's a read-only upstream reference
@@ -25,7 +24,6 @@ license = "CC-BY-NC-SA-4.0"
 authors = ["lbjlaq", "Stranmor"]
 
 [workspace.dependencies]
-antigravity-shared = { path = "crates/antigravity-shared" }
 antigravity-types = { path = "crates/antigravity-types" }
 # Async runtime
 tokio = { version = "1", features = ["full"] }

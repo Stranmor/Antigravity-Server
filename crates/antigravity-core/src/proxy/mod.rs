@@ -45,9 +45,9 @@ pub mod zai_vision_tools;
 // RE-EXPORTS
 // ============================================================================
 
-// Config types from shared (which re-exports from types)
-pub use antigravity_shared::proxy::config;
-pub use antigravity_shared::proxy::config::{ProxyAuthMode, ZaiConfig, ZaiDispatchMode};
+// Config types from types crate (single source of truth)
+pub use antigravity_types::models::config;
+pub use antigravity_types::models::{ProxyAuthMode, ZaiConfig, ZaiDispatchMode};
 
 // Core types
 pub use monitor::{ProxyEventBus, ProxyMonitor};

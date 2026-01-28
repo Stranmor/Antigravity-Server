@@ -64,25 +64,25 @@ pub fn AddAccountModal(
 
     let on_copy_url = move |_| {
         let url = oauth_url.get();
-        if !url.is_empty()
-            && let Some(window) = web_sys::window()
-        {
-            let clipboard = window.navigator().clipboard();
-            let _ = clipboard.write_text(&url);
-            url_copied.set(true);
-            spawn_local(async move {
-                gloo_timers::future::TimeoutFuture::new(1500).await;
-                url_copied.set(false);
-            });
+        if !url.is_empty() {
+            if let Some(window) = web_sys::window() {
+                let clipboard = window.navigator().clipboard();
+                let _ = clipboard.write_text(&url);
+                url_copied.set(true);
+                spawn_local(async move {
+                    gloo_timers::future::TimeoutFuture::new(1500).await;
+                    url_copied.set(false);
+                });
+            }
         }
     };
 
     let on_open_url = move |_| {
         let url = oauth_url.get();
-        if !url.is_empty()
-            && let Some(window) = web_sys::window()
-        {
-            let _ = window.open_with_url_and_target(&url, "_blank");
+        if !url.is_empty() {
+            if let Some(window) = web_sys::window() {
+                let _ = window.open_with_url_and_target(&url, "_blank");
+            }
         }
     };
 
@@ -91,10 +91,10 @@ pub fn AddAccountModal(
         message.set("Opening browser for OAuth...".to_string());
 
         let url = oauth_url.get();
-        if !url.is_empty()
-            && let Some(window) = web_sys::window()
-        {
-            let _ = window.open_with_url_and_target(&url, "_blank");
+        if !url.is_empty() {
+            if let Some(window) = web_sys::window() {
+                let _ = window.open_with_url_and_target(&url, "_blank");
+            }
         }
 
         message.set("Complete authorization in your browser, then click 'Finish OAuth' or refresh the accounts list.".to_string());
@@ -181,24 +181,23 @@ pub fn AddAccountModal(
         let mut tokens = Vec::new();
 
         // Try JSON array first
-        if input.starts_with('[')
-            && input.ends_with(']')
-            && let Ok(parsed) = serde_json::from_str::<Vec<serde_json::Value>>(input)
-        {
-            for item in parsed {
-                // Check refresh_token field first
-                if let Some(token) = item
-                    .get("refresh_token")
-                    .and_then(|v| v.as_str())
-                    .filter(|t| t.starts_with("1//"))
-                {
-                    tokens.push(token.to_string());
-                } else if let Some(token) = item.as_str().filter(|t| t.starts_with("1//")) {
-                    tokens.push(token.to_string());
+        if input.starts_with('[') && input.ends_with(']') {
+            if let Ok(parsed) = serde_json::from_str::<Vec<serde_json::Value>>(input) {
+                for item in parsed {
+                    // Check refresh_token field first
+                    if let Some(token) = item
+                        .get("refresh_token")
+                        .and_then(|v| v.as_str())
+                        .filter(|t| t.starts_with("1//"))
+                    {
+                        tokens.push(token.to_string());
+                    } else if let Some(token) = item.as_str().filter(|t| t.starts_with("1//")) {
+                        tokens.push(token.to_string());
+                    }
                 }
-            }
-            if !tokens.is_empty() {
-                return tokens;
+                if !tokens.is_empty() {
+                    return tokens;
+                }
             }
         }
 

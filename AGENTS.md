@@ -2,7 +2,7 @@
 
 ## 🏛️ ARCHITECTURAL EVOLUTION [2026-01-17]
 
-**Current Status:** PHASE 3c COMPLETE — Full Clippy Compliance
+**Current Status:** PHASE 4 COMPLETE — antigravity-shared eliminated, direct imports from antigravity-types
 
 ### ✅ Completed Phases
 
@@ -29,6 +29,9 @@
 | **3c** | Remove `#[allow(warnings)]` from all 11 modules | ✅ |
 | **3c** | Fix ~58 Rust 1.92+ clippy lints in upstream copies | ✅ |
 | **3c** | Deploy updated binary to local service | ✅ |
+| **4** | **Eliminate antigravity-shared crate** — direct imports from antigravity-types | ✅ |
+| **4** | Edition alignment: 2024 → 2021 for stable Rust compat | ✅ |
+| **4** | Make models submodules public in antigravity-types | ✅ |
 
 ### 📊 Architecture (Current)
 
@@ -38,19 +41,18 @@ crates/
 │   └── src/
 │       ├── error/              # AccountError, ProxyError, ConfigError, TypedError
 │       ├── models/             # Account, AppConfig, ProxyConfig, QuotaData, TokenData...
+│       │   ├── account.rs      # (pub mod)
+│       │   ├── config.rs       # (pub mod)
+│       │   ├── quota.rs        # (pub mod)
+│       │   ├── stats.rs        # (pub mod)
+│       │   ├── sync.rs         # (pub mod)
+│       │   └── token.rs        # (pub mod)
 │       └── protocol/           # OpenAI/Claude/Gemini message types
-├── antigravity-shared/         # 🟡 RE-EXPORT LAYER (no duplicates!)
-│   └── src/
-│       ├── lib.rs              # pub use antigravity_types::*;
-│       ├── error.rs            # re-exports from types
-│       ├── models/mod.rs       # re-exports from types
-│       ├── proxy/config.rs     # re-exports from types
-│       └── utils/              # HTTP utilities (re-export UpstreamProxyConfig)
 ├── antigravity-client/         # 🟣 RUST SDK (auto-discovery, retry, streaming)
 │   └── src/
 │       ├── client.rs           # AntigravityClient with auto_discover()
 │       ├── error.rs            # ClientError enum
-│       └── types.rs            # ChatRequest, ChatResponse, StreamChunk
+│       └── types.rs            # ChatRequest, ChatResponse, StreamChunk (SDK-specific)
 ├── antigravity-core/           # 🟢 BUSINESS LOGIC (all clippy-clean!)
 │   └── src/proxy/
 │       └── 23 modules          # ALL modules now clippy-clean
@@ -58,6 +60,8 @@ crates/
 vendor/
 └── antigravity-upstream/       # Git submodule (REFERENCE ONLY)
 ```
+
+> **Note:** `antigravity-shared` has been ELIMINATED (2026-01-28). All code now imports directly from `antigravity-types`.
 
 ### 🎯 Key Metrics
 
@@ -67,7 +71,7 @@ vendor/
 | Duplicate type definitions | ~20 | **0** |
 | `#[allow(warnings)]` | 11 modules | **0** |
 | Clippy warnings suppressed | ~58 | **0** |
-| Unit tests | - | **170** |
+| Unit tests | - | **197** |
 | Clippy status | ⚠️ | **✅ -D warnings** |
 | Release build | - | **11MB** |
 

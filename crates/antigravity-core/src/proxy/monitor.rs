@@ -4,7 +4,7 @@
 //! without any GUI-specific dependencies.
 
 // Re-export ProxyRequestLog for upstream middleware compatibility
-pub use antigravity_shared::models::{ProxyRequestLog, ProxyStats};
+pub use antigravity_types::models::{ProxyRequestLog, ProxyStats};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;

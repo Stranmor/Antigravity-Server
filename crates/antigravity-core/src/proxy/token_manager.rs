@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use crate::proxy::rate_limit::RateLimitTracker;
 use crate::proxy::AdaptiveLimitManager;
-use antigravity_shared::proxy::config::StickySessionConfig;
-use antigravity_shared::proxy::SchedulingMode; // Use shared version to avoid type conflict
+use antigravity_types::models::SchedulingMode;
+use antigravity_types::models::StickySessionConfig;
 
 /// Token representing an authenticated account with OAuth credentials.
 ///
@@ -478,7 +478,6 @@ impl TokenManager {
 
         // 0. 读取当前调度配置
         let scheduling = self.sticky_config.read().await.clone();
-        // SchedulingMode already imported at top from antigravity_shared
 
         // [FIX #621] Load quota protection config
         let quota_protection_enabled = config::load_config()

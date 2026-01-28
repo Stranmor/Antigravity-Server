@@ -12,7 +12,7 @@ path = "src/main.rs"
 [dependencies]
 # Core
 antigravity-core = { path = "../crates/antigravity-core" }
-antigravity-shared = { path = "../crates/antigravity-shared" }
+antigravity-types = { path = "../crates/antigravity-types" }
 
 # Web Framework
 axum = { version = "0.7", features = ["macros", "multipart"] }
