@@ -18,6 +18,7 @@ static CLAUDE_TO_GEMINI: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|
     m.insert("claude-opus-4-5", "claude-opus-4-5-thinking"); // [FIX] Missing base model ID
     m.insert("claude-opus-4-5-20251101", "claude-opus-4-5-thinking");
     m.insert("claude-haiku-4", "claude-sonnet-4-5");
+    m.insert("claude-haiku-4-5", "gemini-3-flash"); // [DEFAULT] Haiku 4.5 → Flash for cost efficiency
     m.insert("claude-3-haiku-20240307", "claude-sonnet-4-5");
     m.insert("claude-haiku-4-5-20251001", "claude-sonnet-4-5");
     // OpenAI 协议映射表
@@ -50,6 +51,8 @@ static CLAUDE_TO_GEMINI: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|
     m.insert("gemini-3-pro", "gemini-3-pro-preview"); // [FIX PR #368] 统一映射到 preview
     m.insert("gemini-2.5-flash", "gemini-2.5-flash");
     m.insert("gemini-3-flash", "gemini-3-flash");
+    m.insert("gemini-3-flash-high", "gemini-3-flash"); // [DEFAULT] flash-high → flash
+    m.insert("gemini-3-flash-preview", "gemini-3-flash"); // [DEFAULT] flash-preview → flash
     m.insert("gemini-3-pro-image", "gemini-3-pro-image");
 
     // Unified Virtual ID for Background Tasks (Title, Summary, etc.)

@@ -28,6 +28,7 @@ pub struct ProxyToken {
     pub subscription_tier: Option<String>, // "FREE" | "PRO" | "ULTRA"
     pub remaining_quota: Option<i32>, // [FIX #563] Remaining quota percentage for priority sorting
     pub protected_models: HashSet<String>, // [FIX #621] Models with exhausted quota (0%)
+    pub health_score: f32,            // [NEW v4.0.4] Health score (0.0 - 1.0)
 }
 
 /// Manages OAuth tokens for multiple accounts with rate limiting and session affinity.
@@ -48,6 +49,7 @@ pub struct TokenManager {
     session_accounts: Arc<DashMap<String, String>>, // 新增：会话与账号映射 (SessionID -> AccountID)
     adaptive_limits: Arc<tokio::sync::RwLock<Option<Arc<AdaptiveLimitManager>>>>, // AIMD integration
     preferred_account_id: Arc<tokio::sync::RwLock<Option<String>>>, // [FIX #820] Fixed account mode
+    health_scores: Arc<DashMap<String, f32>>, // [NEW v4.0.4] account_id -> health_score
 }
 
 impl TokenManager {
@@ -63,6 +65,7 @@ impl TokenManager {
             session_accounts: Arc::new(DashMap::new()),
             adaptive_limits: Arc::new(tokio::sync::RwLock::new(None)),
             preferred_account_id: Arc::new(tokio::sync::RwLock::new(None)),
+            health_scores: Arc::new(DashMap::new()),
         }
     }
 
@@ -280,6 +283,12 @@ impl TokenManager {
             })
             .unwrap_or_default();
 
+        let health_score = self
+            .health_scores
+            .get(&account_id)
+            .map(|v| *v)
+            .unwrap_or(1.0);
+
         Ok(Some(ProxyToken {
             account_id,
             access_token,
@@ -292,6 +301,7 @@ impl TokenManager {
             subscription_tier,
             remaining_quota,
             protected_models,
+            health_score,
         }))
     }
 
@@ -449,7 +459,16 @@ impl TokenManager {
             // Accounts with unknown/zero percentage go last within their tier
             let quota_a = a.remaining_quota.unwrap_or(0);
             let quota_b = b.remaining_quota.unwrap_or(0);
-            quota_b.cmp(&quota_a) // Descending: higher percentage first
+            let quota_cmp = quota_b.cmp(&quota_a);
+
+            if quota_cmp != std::cmp::Ordering::Equal {
+                return quota_cmp;
+            }
+
+            // [NEW v4.0.4] Third: compare by health score (higher is better)
+            b.health_score
+                .partial_cmp(&a.health_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // 0. 读取当前调度配置
@@ -1413,6 +1432,26 @@ impl TokenManager {
 
     pub async fn get_preferred_account(&self) -> Option<String> {
         self.preferred_account_id.read().await.clone()
+    }
+
+    // ===== [NEW v4.0.4] Health Score Tracking =====
+
+    /// Record request success, increase health score
+    pub fn record_success(&self, account_id: &str) {
+        self.health_scores
+            .entry(account_id.to_string())
+            .and_modify(|s| *s = (*s + 0.05).min(1.0))
+            .or_insert(1.0);
+        tracing::debug!("📈 Health score increased for account {}", account_id);
+    }
+
+    /// Record request failure, decrease health score
+    pub fn record_failure(&self, account_id: &str) {
+        self.health_scores
+            .entry(account_id.to_string())
+            .and_modify(|s| *s = (*s - 0.2).max(0.0))
+            .or_insert(0.8);
+        tracing::warn!("📉 Health score decreased for account {}", account_id);
     }
 }
 

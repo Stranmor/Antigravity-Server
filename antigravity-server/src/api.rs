@@ -38,6 +38,7 @@ pub fn router() -> Router<AppState> {
         .route("/oauth/url", get(get_oauth_url))
         .route("/oauth/callback", get(handle_oauth_callback))
         .route("/oauth/login", post(start_oauth_login))
+        .route("/oauth/submit-code", post(submit_oauth_code))
         // Proxy
         .route("/proxy/status", get(get_proxy_status))
         .route("/proxy/generate-key", post(generate_api_key))
@@ -1033,4 +1034,78 @@ async fn start_oauth_login(State(state): State<AppState>) -> Json<OAuthLoginResp
         message: "Open this URL in your browser to authorize".to_string(),
         state: oauth_state,
     })
+}
+
+#[derive(Deserialize)]
+struct SubmitCodeRequest {
+    code: String,
+    state: Option<String>,
+}
+
+async fn submit_oauth_code(
+    State(app_state): State<AppState>,
+    Json(payload): Json<SubmitCodeRequest>,
+) -> Result<Json<AddAccountResponse>, (StatusCode, Json<ErrorResponse>)> {
+    if let Some(ref s) = payload.state {
+        if !app_state.validate_oauth_state(s) {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "Invalid or expired OAuth state".to_string(),
+                }),
+            ));
+        }
+    }
+
+    let port = app_state.get_bound_port();
+    let redirect_uri = get_oauth_redirect_uri_with_port(port);
+
+    let token_res = oauth::exchange_code(&payload.code, &redirect_uri)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("Failed to exchange code: {}", e),
+                }),
+            )
+        })?;
+
+    let user_info = oauth::get_user_info(&token_res.access_token)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to get user info: {}", e),
+                }),
+            )
+        })?;
+
+    let token_data = antigravity_types::TokenData::new(
+        token_res.access_token,
+        token_res.refresh_token,
+        token_res.expires_in,
+        Some(user_info.email.clone()),
+        None,
+        None,
+    );
+
+    account::add_account(user_info.email.clone(), Some(user_info.name.clone()), token_data)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to add account: {}", e),
+                }),
+            )
+        })?;
+
+    let _ = app_state.reload_accounts().await;
+
+    Ok(Json(AddAccountResponse {
+        success: true,
+        message: format!("Account {} added successfully", user_info.email),
+        email: Some(user_info.email),
+    }))
 }

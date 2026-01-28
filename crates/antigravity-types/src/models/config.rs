@@ -350,6 +350,10 @@ pub struct ProxyConfig {
     #[serde(default)]
     #[validate(nested)]
     pub experimental: ExperimentalConfig,
+    /// Fixed account mode: use this account for all requests
+    /// None = round-robin, Some(account_id) = always use this account
+    #[serde(default)]
+    pub preferred_account_id: Option<String>,
 }
 
 impl Default for ProxyConfig {
@@ -368,6 +372,7 @@ impl Default for ProxyConfig {
             zai: ZaiConfig::default(),
             scheduling: StickySessionConfig::default(),
             experimental: ExperimentalConfig::default(),
+            preferred_account_id: None,
         }
     }
 }

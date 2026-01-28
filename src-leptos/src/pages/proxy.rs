@@ -175,11 +175,11 @@ pub fn ApiProxy() -> impl IntoView {
 
     let on_apply_presets = move || {
         let presets: HashMap<String, String> = [
-            ("gpt-4*", "gemini-3-pro-high"),
-            ("gpt-4o*", "gemini-3-flash"),
-            ("gpt-3.5*", "gemini-2.5-flash"),
-            ("claude-3-sonnet-*", "claude-sonnet-4-5"),
-            ("claude-3-opus-*", "claude-opus-4-5-thinking"),
+            ("claude-opus-4-5", "claude-opus-4-5-thinking"),
+            ("claude-haiku-4-5", "gemini-3-flash"),
+            ("gemini-3-flash-high", "gemini-3-flash"),
+            ("gemini-3-flash-preview", "gemini-3-flash"),
+            ("claude-opus-4-5-20251101", "claude-opus-4-5-thinking"),
         ]
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))

@@ -273,9 +273,11 @@ impl RateLimitTracker {
                         lockout
                     }
                     RateLimitReason::RateLimitExceeded => {
-                        // 速率限制：通常是短暂的，使用较短的默认值（30秒）
-                        tracing::debug!("检测到速率限制 (RATE_LIMIT_EXCEEDED)，使用默认值 30秒");
-                        30
+                        // 🔧 [FIX] 速率限制：降低默认值从 30秒 → 5秒
+                        // 原因: 时间解析器修复后,多数情况会解析成功,不会走到这里
+                        // 即使解析失败,5秒也足够应对瞬时限流
+                        tracing::debug!("检测到速率限制 (RATE_LIMIT_EXCEEDED)，使用默认值 5秒");
+                        5
                     }
                     RateLimitReason::ModelCapacityExhausted => {
                         // 模型容量耗尽：服务端暂时无可用 GPU 实例
@@ -376,8 +378,10 @@ impl RateLimitTracker {
         tracing::debug!("[时间解析] 尝试解析: '{}'", s);
 
         // 使用正则表达式提取小时、分钟、秒、毫秒
-        // 支持格式："2h1m1s", "1h30m", "5m", "30s", "500ms" 等
-        let re = Regex::new(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?(?:(\d+)ms)?").ok()?;
+        // 支持格式：\"2h1m1s\", \"1h30m\", \"5m\", \"30s\", \"500ms\", \"510.790006ms\" 等
+        // 🔧 [FIX] 修改 ms 部分支持小数: (\d+)ms -> (\d+(?:\.\d+)?)ms
+        let re = Regex::new(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?(?:(\d+(?:\.\d+)?)ms)?")
+            .ok()?;
         let caps = match re.captures(s) {
             Some(c) => c,
             None => {
@@ -398,22 +402,25 @@ impl RateLimitTracker {
             .get(3)
             .and_then(|m| m.as_str().parse::<f64>().ok())
             .unwrap_or(0.0);
+        // 🔧 [FIX] 毫秒也支持小数解析
         let milliseconds = caps
             .get(4)
-            .and_then(|m| m.as_str().parse::<u64>().ok())
-            .unwrap_or(0);
+            .and_then(|m| m.as_str().parse::<f64>().ok())
+            .unwrap_or(0.0);
 
         tracing::debug!(
-            "[时间解析] 提取结果: {}h {}m {:.3}s {}ms",
+            "[时间解析] 提取结果: {}h {}m {:.3}s {:.3}ms",
             hours,
             minutes,
             seconds,
             milliseconds
         );
 
-        // 计算总秒数
-        let total_seconds =
-            hours * 3600 + minutes * 60 + seconds.ceil() as u64 + milliseconds.div_ceil(1000);
+        // 🔧 [FIX] 计算总秒数，毫秒部分向上取整
+        let total_seconds = hours * 3600
+            + minutes * 60
+            + seconds.ceil() as u64
+            + (milliseconds / 1000.0).ceil() as u64;
 
         // 如果总秒数为 0，说明解析失败
         if total_seconds == 0 {
@@ -421,12 +428,13 @@ impl RateLimitTracker {
             None
         } else {
             tracing::info!(
-                "[时间解析] ✓ 成功: '{}' => {}秒 ({}h {}m {:.1}s)",
+                "[时间解析] ✓ 成功: '{}' => {}秒 ({}h {}m {:.1}s {:.1}ms)",
                 s,
                 total_seconds,
                 hours,
                 minutes,
-                seconds
+                seconds,
+                milliseconds
             );
             Some(total_seconds)
         }
