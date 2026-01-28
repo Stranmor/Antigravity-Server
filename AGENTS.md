@@ -267,7 +267,20 @@ cargo test -p antigravity-core --lib
 git add . && git commit -m "chore: sync upstream v3.3.XX changes"
 ```
 
-### Last Sync: 2026-01-28 (v4.0.4)
+### Last Sync: 2026-01-28 (v4.0.5)
+
+**Ported from v4.0.5:**
+- **`token_manager.rs`** — Auto-clear rate limits on reload
+  - `reload_account()` now clears rate limit for that account
+  - `reload_all_accounts()` now clears all rate limits
+- **`api.rs` (antigravity-server)** — Rate limit clearing endpoints
+  - New `DELETE /api/proxy/rate-limits` clears all rate limit records
+  - New `DELETE /api/proxy/rate-limits/:account_id` clears rate limit for specific account
+- **`state.rs`** — Added `clear_all_rate_limits()` and `clear_rate_limit()` methods
+
+**NOT ported (intentionally):**
+- **Arabic + RTL layout** — React UI changes, we use Leptos
+- **Effra fonts** — UI assets, not applicable
 
 **Ported from v4.0.4:**
 - **`rate_limit.rs`** — Millisecond parsing with decimals

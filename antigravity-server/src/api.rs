@@ -3,10 +3,10 @@
 //! REST API endpoints that mirror the Tauri IPC commands.
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json},
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
@@ -43,6 +43,8 @@ pub fn router() -> Router<AppState> {
         .route("/proxy/status", get(get_proxy_status))
         .route("/proxy/generate-key", post(generate_api_key))
         .route("/proxy/clear-bindings", post(clear_session_bindings))
+        .route("/proxy/rate-limits", delete(clear_all_rate_limits))
+        .route("/proxy/rate-limits/:account_id", delete(clear_rate_limit))
         .route("/accounts/reload", post(reload_accounts))
         // Monitor
         .route("/monitor/requests", get(get_monitor_requests))
@@ -657,6 +659,24 @@ async fn reload_accounts(
     match state.reload_accounts().await {
         Ok(count) => Ok(Json(ReloadAccountsResponse { count })),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
+    }
+}
+
+async fn clear_all_rate_limits(State(state): State<AppState>) -> StatusCode {
+    state.clear_all_rate_limits();
+    tracing::info!("[API] Cleared all rate limit records");
+    StatusCode::OK
+}
+
+async fn clear_rate_limit(
+    State(state): State<AppState>,
+    Path(account_id): Path<String>,
+) -> StatusCode {
+    if state.clear_rate_limit(&account_id) {
+        tracing::info!("[API] Cleared rate limit for account {}", account_id);
+        StatusCode::OK
+    } else {
+        StatusCode::NOT_FOUND
     }
 }
 

@@ -1,4 +1,3 @@
-```markdown
 <div align="center">
 
 # Antigravity Server
@@ -7,7 +6,7 @@
 
 <img src="public/icon.png" alt="Antigravity Logo" width="140" height="140" style="border-radius: 24px;">
 
-[![Upstream](https://img.shields.io/badge/Upstream-v4.0.3-888?style=for-the-badge&logo=github)](https://github.com/lbjlaq/Antigravity-Manager)
+[![Upstream](https://img.shields.io/badge/Upstream-v4.0.5-888?style=for-the-badge&logo=github)](https://github.com/lbjlaq/Antigravity-Manager)
 [![Rust](https://img.shields.io/badge/100%25_Rust-dea584?style=for-the-badge&logo=rust&logoColor=black)](https://www.rust-lang.org/)
 [![Leptos](https://img.shields.io/badge/Leptos-WASM-8B5CF6?style=for-the-badge)](https://leptos.dev/)
 [![Axum](https://img.shields.io/badge/Axum-Server-3B82F6?style=for-the-badge)](https://github.com/tokio-rs/axum)
@@ -49,9 +48,11 @@ While [Antigravity Manager](https://github.com/lbjlaq/Antigravity-Manager) provi
 | **Primary Target** | Desktop (Tauri + GUI) | **Headless Server (Axum Daemon)** |
 | **Frontend** | React + TypeScript | **Leptos (Pure Rust → WASM)** |
 | **Architecture** | Monolithic | **Modular Crate Workspace** |
+| **Automation** | Frontend Polling (Open UI) | **Native Async Schedulers (Daemon)** |
+| **Persistence** | Direct File I/O | **Sequential Actor Loop (Race-free)** |
 | **Rate Limiting** | Reactive (Retry on 429) | **AIMD Predictive Algorithm** |
-| **Reliability** | Basic Failover | **Circuit Breakers per Account** |
-| **Routing** | Silent Model Substitution | **Strict Routing (Explicit Errors)** |
+| **Reliability** | Basic Failover | **Circuit Breakers + Health Scores** |
+| **Routing** | Silent Model Substitution | **Strict Routing + Preferred Account** |
 | **Isolation** | Shared IP | **WARP Proxy Support (Per-Account IP)** |
 | **Observability**| Local UI | **Resilience API & Prometheus Metrics** |
 | **Security** | Standard String Compare | **Constant-time Auth (Timing Safe)** |
@@ -69,8 +70,15 @@ No X server, no GUI required. Deploy `antigravity-server` as a lightweight daemo
 ### 📊 AIMD Predictive Rate Limiting (Killer Feature #2)
 Using the **Additive Increase / Multiplicative Decrease** algorithm (similar to TCP congestion control), the gateway learns the optimal request rate for each account. It predicts quota exhaustion *before* it happens, ensuring zero wasted requests and smoother failover.
 
+### 🔄 Integrated Background Schedulers
+The server operates fully autonomously with a dedicated `Scheduler` system (ported and enhanced from upstream logic). Independent async tasks handle:
+- **Auto Quota Refresh**: Automatically updates account capabilities and quotas as they reset, without manual intervention.
+- **Active Warmup**: Periodic background requests keep sessions alive and validate cookie integrity, ensuring accounts are ready when needed.
+- **Non-blocking Persistence**: Chat history and state are saved asynchronously, ensuring the main request loop handles traffic with zero I/O jitter.
+- **Self-Healing**: Periodic health checks monitor and reset circuit breakers.
+
 ### 🛡️ Circuit Breakers & Resilience
-Each account is protected by an independent circuit breaker. If an account starts failing, it's automatically isolated to prevent cascading failures. Monitor everything via the **Resilience API**:
+Each account is protected by an independent circuit breaker and a dynamic **Health Score**. If an account starts failing, it's automatically isolated to prevent cascading failures. Monitor everything via the **Resilience API**:
 - `GET /api/resilience/health` — Real-time account availability.
 - `GET /api/resilience/circuits` — Circuit breaker states.
 - `GET /api/resilience/aimd` — Rate limiting telemetry.
@@ -342,10 +350,15 @@ vendor/antigravity-upstream/ # Upstream reference (Git Submodule)
 
 This fork uses **Semantic Porting** — we don't blindly copy upstream changes. Instead, we:
 
-- ✅ **Always Port**: Bug fixes, new model support, security patches, JSON schema improvements
+- ✅ **Always Port**: Bug fixes, new model support, security patches, JSON schema improvements, background logic (like `BackgroundTaskRunner` behavior).
 - ❌ **Never Port**: React/Tauri code (we use Leptos/Axum), changes conflicting with our resilience layer
 
-**🔄 Active Sync**: We actively port useful upstream changes. Currently synced with v4.0.3, plus our exclusive additions: AIMD predictive rate limiting, Circuit Breakers, Prometheus metrics, WARP proxy isolation, multimodal audio/video support, sticky session rebind on 429, **hardened security (constant-time auth comparisons)**, and **LRU schema caching**.
+**🔄 Active Sync**: We actively port useful upstream changes. Currently synced with **v4.0.4**, plus our exclusive additions: 
+
+- **Reliability**: AIMD predictive rate limiting, Circuit Breakers, sticky session rebind on 429.
+- **Persistence**: Sequential actor-based file writing to eliminate race conditions.
+- **Security**: Hardened constant-time auth, WARP proxy isolation.
+- **Features**: Multimodal audio/video support, LRU schema caching, `preferred_account_id` routing, aspect ratio support, robust token rotation, and auto-refresh schedulers.
 
 See [AGENTS.md](AGENTS.md) for detailed architecture documentation and sync workflow.
 
@@ -366,4 +379,3 @@ This project is based on [lbjlaq/Antigravity-Manager](https://github.com/lbjlaq/
 [![GitHub Stars](https://img.shields.io/github/stars/Stranmor/Antigravity-Server?style=social)](https://github.com/Stranmor/Antigravity-Server)
 
 </div>
-```

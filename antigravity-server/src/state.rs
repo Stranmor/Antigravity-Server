@@ -229,6 +229,14 @@ impl AppState {
         tracing::info!("🔄 Cleared all session bindings");
     }
 
+    pub fn clear_all_rate_limits(&self) {
+        self.inner.token_manager.clear_all_rate_limits();
+    }
+
+    pub fn clear_rate_limit(&self, account_id: &str) -> bool {
+        self.inner.token_manager.clear_rate_limit(account_id)
+    }
+
     // AIMD accessors (used by /api/resilience/* endpoints)
     pub fn adaptive_limits(&self) -> &Arc<AdaptiveLimitManager> {
         &self.inner.adaptive_limits
