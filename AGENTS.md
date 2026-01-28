@@ -359,6 +359,12 @@ git add . && git commit -m "chore: sync upstream v3.3.XX changes"
   - Removed local RetryStrategy duplicate, now uses `super::common`
 
 **OUR BUG FIXES (not in upstream):**
+- **[FIX] Race condition in rate limit recording** (2026-01-28)
+  - **Root cause:** `mark_rate_limited_async()` didn't record rate limit until async quota refresh completed (1-2 seconds). During this window, other concurrent requests could still use the rate-limited account.
+  - **Symptom:** Same account hammered with 429s repeatedly because each new request didn't see the account as blocked yet.
+  - **Fix:** Immediately set 60s temporary lockout at the START of `mark_rate_limited_async()`, BEFORE any async operations. The precise reset time updates this lockout once available.
+  - **Affected file:** `crates/antigravity-core/src/proxy/token_manager.rs`
+
 - **[FIX] 60s Global Lock missing rate limit check** (2026-01-26)
   - **Root cause:** TokenManager has 3 account selection modes:
     - Mode A: Sticky session (checks rate limit ✓)
