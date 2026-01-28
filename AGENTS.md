@@ -389,6 +389,24 @@ git add . && git commit -m "chore: sync upstream v3.3.XX changes"
     - Persistent history in `~/.antigravity_tools/warmup_history.json`
   - **Note:** Different from `scheduled_warmup` (old format). Use `smart_warmup` for the scheduler.
 
+- **[FEATURE] Auto Quota Refresh Scheduler** (2026-01-28)
+  - **Purpose:** Automatically refreshes account quotas at configurable intervals (mirrors upstream Tauri behavior).
+  - **Config location:** `~/.antigravity_tools/gui_config.json` → `auto_refresh` and `refresh_interval` fields
+  - **Config example:**
+    ```json
+    {
+      "auto_refresh": true,
+      "refresh_interval": 15
+    }
+    ```
+  - **Behavior:**
+    - Checks config every 60 seconds
+    - If `auto_refresh: true`, refreshes all enabled accounts at `refresh_interval` minute intervals
+    - Minimum interval enforced: 5 minutes (values <5 are clamped to 15)
+    - After refresh, reloads accounts into AppState for immediate availability
+  - **Implementation:** `scheduler::start_quota_refresh()` in `antigravity-server/src/scheduler.rs`
+  - **Note:** This was missing in headless server while upstream Tauri had it via `BackgroundTaskRunner.tsx`
+
 **Ported from v3.3.49:**
 - **`estimation_calibrator.rs`** — New module for token estimation calibration
   - Learns from actual API responses using exponential moving average

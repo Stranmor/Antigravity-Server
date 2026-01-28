@@ -1,5 +1,6 @@
-//! Smart Warmup Scheduler
+//! Background Schedulers
 //!
+//! ## Smart Warmup Scheduler
 //! Background task that periodically warms up accounts to maintain active sessions.
 //!
 //! Modes:
@@ -12,6 +13,14 @@
 //! - Whitelisted models only (from SmartWarmupConfig)
 //! - Persistent history across restarts (async I/O)
 //! - Groups warmup by account to avoid N+1 API calls
+//!
+//! ## Auto Quota Refresh Scheduler
+//! Background task that periodically refreshes account quotas from Google API.
+//!
+//! Features:
+//! - Enabled via `config.auto_refresh` flag
+//! - Configurable interval via `config.refresh_interval` (minutes, default 15)
+//! - Required for quota protection and smart warmup to have fresh data
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -316,6 +325,88 @@ pub fn start(state: AppState) {
             } else {
                 tracing::debug!("[Scheduler] Scan complete, no accounts need warmup");
             }
+        }
+    });
+}
+
+/// Start the auto quota refresh scheduler as a background tokio task
+pub fn start_quota_refresh(state: AppState) {
+    tokio::spawn(async move {
+        tracing::info!("📊 [QuotaRefresh] Auto Quota Refresh Scheduler started");
+
+        let mut check_interval = interval(Duration::from_secs(60));
+        let mut last_refresh: Option<i64> = None;
+
+        loop {
+            check_interval.tick().await;
+
+            let app_config = match config::load_config() {
+                Ok(cfg) => cfg,
+                Err(_) => continue,
+            };
+
+            if !app_config.auto_refresh {
+                continue;
+            }
+
+            let now = Utc::now().timestamp();
+            let interval_minutes = if app_config.refresh_interval < 5 {
+                tracing::warn!(
+                    "[QuotaRefresh] refresh_interval {} too low, using 15",
+                    app_config.refresh_interval
+                );
+                15
+            } else {
+                app_config.refresh_interval
+            };
+            let interval_secs = (interval_minutes as i64) * 60;
+
+            if let Some(last) = last_refresh {
+                if now - last < interval_secs {
+                    continue;
+                }
+            }
+
+            last_refresh = Some(now);
+
+            tracing::info!(
+                "[QuotaRefresh] 🔄 Refreshing all account quotas (interval: {}min)...",
+                interval_minutes
+            );
+
+            let accounts = match account::list_accounts() {
+                Ok(accs) => accs,
+                Err(e) => {
+                    tracing::warn!("[QuotaRefresh] Failed to list accounts: {}", e);
+                    continue;
+                }
+            };
+            let enabled_accounts: Vec<_> = accounts.into_iter().filter(|a| !a.disabled).collect();
+            let total = enabled_accounts.len();
+            let mut success = 0;
+
+            for mut acc in enabled_accounts {
+                match account::fetch_quota_with_retry(&mut acc).await {
+                    Ok(_) => {
+                        if let Some(quota) = acc.quota.clone() {
+                            let _ = account::update_account_quota(&acc.id, quota);
+                        }
+                        success += 1;
+                    }
+                    Err(e) => {
+                        tracing::warn!("[QuotaRefresh] Failed to refresh {}: {}", acc.email, e);
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(300)).await;
+            }
+
+            tracing::info!(
+                "[QuotaRefresh] ✅ Refreshed {}/{} accounts successfully",
+                success,
+                total
+            );
+
+            let _ = state.reload_accounts().await;
         }
     });
 }
