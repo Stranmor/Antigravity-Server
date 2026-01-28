@@ -12,7 +12,8 @@
 
     --text-primary: #f5f5f7;
     --text-secondary: #a1a1a6;
-    --text-tertiary: #6e6e73;
+    --text-tertiary: #8a8a8f;
+    --text-muted: #6e6e73;
 
     --accent-primary: #6366f1;
     --accent-secondary: #818cf8;
@@ -202,6 +203,7 @@ body {
 
 .btn--primary:hover {
     background: var(--accent-secondary);
+    transform: translateY(-1px);
 }
 
 .btn--secondary {
@@ -212,6 +214,7 @@ body {
 
 .btn--secondary:hover {
     background: var(--bg-hover);
+    transform: translateY(-1px);
 }
 
 .btn--danger {
@@ -221,6 +224,7 @@ body {
 
 .btn--danger:hover {
     background: #dc2626;
+    transform: translateY(-1px);
 }
 
 .btn--ghost {
@@ -243,6 +247,21 @@ body {
     pointer-events: none;
 }
 
+.btn:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
+}
+
+.btn:active {
+    transform: translateY(0) scale(0.98);
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
 /* Stats Grid */
 .stats-grid {
     display: grid;
@@ -259,6 +278,13 @@ body {
     display: flex;
     align-items: center;
     gap: 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.stats-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .stats-card__icon {
@@ -357,15 +383,15 @@ body {
 }
 
 .quota-fill--good {
-    background: var(--accent-success);
+    background: linear-gradient(90deg, #22c55e 0%, #4ade80 100%);
 }
 
 .quota-fill--warning {
-    background: var(--accent-warning);
+    background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%);
 }
 
 .quota-fill--critical {
-    background: var(--accent-danger);
+    background: linear-gradient(90deg, #ef4444 0%, #f87171 100%);
 }
 
 .quota-text {
@@ -394,14 +420,37 @@ body {
     margin-bottom: 20px;
 }
 
+.search-box {
+    position: relative;
+}
+
+.search-box::before {
+    content: '';
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236e6e73' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+    pointer-events: none;
+}
+
 .search-box input {
     background: var(--bg-tertiary);
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius-sm);
-    padding: 10px 16px;
+    padding: 10px 16px 10px 38px;
     color: var(--text-primary);
     width: 280px;
     font-size: 14px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.search-box input:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
 }
 
 .search-box input::placeholder {
@@ -693,6 +742,30 @@ section h2 {
     border-radius: var(--border-radius);
     padding: 20px;
     text-align: center;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.tier-card:hover {
+    transform: translateY(-2px);
+}
+
+.tier-card--ultra {
+    background: linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(236, 72, 153, 0.1) 100%);
+    border-color: rgba(168, 85, 247, 0.3);
+}
+
+.tier-card--pro {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%);
+    border-color: rgba(99, 102, 241, 0.3);
+}
+
+.tier-card--free {
+    background: var(--bg-card);
+}
+
+.tier-card--warning {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(239, 68, 68, 0.1) 100%);
+    border-color: rgba(245, 158, 11, 0.3);
 }
 
 .tier-count {
@@ -708,10 +781,12 @@ section h2 {
 
 .tier-card--ultra .tier-count {
     color: #a855f7;
+    text-shadow: 0 0 20px rgba(168, 85, 247, 0.5);
 }
 
 .tier-card--pro .tier-count {
     color: var(--accent-primary);
+    text-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
 }
 
 .tier-card--free .tier-count {
@@ -720,6 +795,7 @@ section h2 {
 
 .tier-card--warning .tier-count {
     color: var(--accent-warning);
+    text-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
 }
 
 /* Action grid */
@@ -1073,6 +1149,7 @@ select {
 select:focus {
     outline: none;
     border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
 }
 
 /* ========================================
@@ -1081,8 +1158,8 @@ select:focus {
 .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(8px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1096,7 +1173,9 @@ select:focus {
     border-radius: var(--border-radius);
     width: 100%;
     max-width: 420px;
-    animation: slideUp 0.2s ease;
+    animation: modalEnter 0.25s ease;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+}
 }
 
 .modal-header {
@@ -1159,6 +1238,25 @@ select:focus {
     from {
         transform: translateY(20px);
         opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes modalEnter {
+    from {
+        transform: scale(0.95) translateY(10px);
+        opacity: 0;
+    }
+
+    to {
+        transform: scale(1) translateY(0);
+        opacity: 1;
+    }
+}
     }
 
     to {
@@ -1252,12 +1350,14 @@ select:focus {
     border-radius: var(--border-radius);
     padding: 16px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .account-card:hover {
     border-color: rgba(255, 255, 255, 0.15);
-    transform: translateY(-2px);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 .account-card.is-current {
@@ -1499,6 +1599,7 @@ select:focus {
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius);
     margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .config-header {
@@ -1802,6 +1903,7 @@ select:focus {
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius);
     padding: 20px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .dashboard-card h2 {
@@ -2092,20 +2194,6 @@ select:focus {
 /* Add Account Modal */
 .add-account-modal {
     max-width: 480px;
-}
-
-.modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
 }
 
 .modal-content {
@@ -2649,4 +2737,69 @@ select:focus {
     font-size: 13px;
     color: var(--text-tertiary);
     margin-top: 8px;
+}
+
+/* ========================================
+   Skeleton Loading
+   ======================================== */
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+.skeleton {
+    background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-hover) 50%, var(--bg-tertiary) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: var(--border-radius-sm);
+}
+
+.skeleton-card {
+    height: 180px;
+}
+
+.skeleton-text {
+    height: 14px;
+    margin-bottom: 8px;
+}
+
+.skeleton-text--lg {
+    height: 24px;
+    width: 60%;
+}
+
+/* ========================================
+   Rank Indicators (Best Accounts)
+   ======================================== */
+.rank-indicator {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.rank-indicator--1 {
+    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    color: #000;
+    box-shadow: 0 0 12px rgba(251, 191, 36, 0.4);
+}
+
+.rank-indicator--2 {
+    background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
+    color: #fff;
+}
+
+.rank-indicator--3 {
+    background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+    color: #fff;
+}
+
+.rank-indicator--default {
+    background: var(--bg-tertiary);
+    color: var(--text-tertiary);
 }

@@ -743,6 +743,29 @@ systemctl --user start antigravity-manager
 
 Or use: `./scripts/zero-downtime-deploy.sh`
 
+### Container Deployment (Recommended) [2026-01-28]
+
+For production VPS, use containerized deployment via Podman:
+
+```bash
+# From project root:
+./deploy/deploy-vps.sh
+```
+
+This script:
+1. Builds container image locally via `podman build`
+2. Saves and ships image to VPS via SSH
+3. Loads image on VPS
+4. Installs Quadlet systemd unit (`/etc/containers/systemd/antigravity.container`)
+5. Restarts service via `systemctl restart antigravity.service`
+
+**Files:**
+- `Containerfile` — Multi-stage build (Rust + Trunk frontend)
+- `deploy/antigravity.container` — Quadlet systemd unit
+- `deploy/deploy-vps.sh` — Automated deployment script
+
+**Note:** First build takes ~15min (Rust compilation). Subsequent builds are faster due to layer caching.
+
 ### Important: Unified Build
 
 **Backend and frontend are built together** via `build.rs`:

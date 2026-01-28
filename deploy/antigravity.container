@@ -1,0 +1,42 @@
+# Antigravity Manager - Podman Quadlet Unit (VPS Production)
+# This is for ROOT deployment on VPS. For local user deployment, see flake.nix.
+# Install: cp antigravity.container /etc/containers/systemd/
+# Activate: systemctl daemon-reload && systemctl start antigravity
+
+[Unit]
+Description=Antigravity AI Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/antigravity-manager:latest
+ContainerName=antigravity
+
+# Port mapping: host:container
+PublishPort=8045:8045
+
+# Persistent data volume
+Volume=/root/.antigravity_tools:/data:Z
+
+# Environment
+Environment=RUST_LOG=info
+Environment=ANTIGRAVITY_PORT=8045
+Environment=ANTIGRAVITY_STATIC_DIR=/app/dist
+Environment=ANTIGRAVITY_DATA_DIR=/data
+
+# Health check is built into container
+# Additional systemd-level check
+HealthCmd=curl -sf http://localhost:8045/api/health || exit 1
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=10s
+
+[Service]
+Restart=always
+RestartSec=5
+TimeoutStartSec=180
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

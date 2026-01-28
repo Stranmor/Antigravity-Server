@@ -108,6 +108,10 @@
             cargo check --workspace
           '';
 
+          deploy-vps = mkScript "deploy-vps" ''
+            exec ./deploy/deploy-vps.sh "$@"
+          '';
+
           deploy-local = mkScript "deploy-local" ''
             set -e
             echo "🚀 Full deploy: frontend + backend + service restart"
