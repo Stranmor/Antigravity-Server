@@ -495,7 +495,8 @@ impl TokenManager {
         if let Some(ref pref_id) = preferred_id {
             if let Some(preferred_token) = tokens_snapshot.iter().find(|t| &t.account_id == pref_id)
             {
-                let is_rate_limited = self.is_rate_limited(&preferred_token.account_id);
+                let is_rate_limited =
+                    self.is_rate_limited_for_model(&preferred_token.account_id, &normalized_target);
                 // [FIX #621] Check if model is quota-protected
                 let is_quota_protected = quota_protection_enabled
                     && preferred_token
@@ -657,11 +658,11 @@ impl TokenManager {
                 if let Some((account_id, last_time)) = &last_used_account_id {
                     if last_time.elapsed().as_secs() < 60 && !attempted.contains(account_id) {
                         // [FIX] Check rate limit BEFORE reusing account in 60s window
-                        // Bug: Mode B was missing rate limit check, causing infinite 429 loops
-                        if self.is_rate_limited(account_id) {
+                        if self.is_rate_limited_for_model(account_id, &normalized_target) {
                             tracing::debug!(
-                                "60s Window: Last account {} is rate-limited, skipping to round-robin",
-                                account_id
+                                "60s Window: Last account {} is rate-limited for {}, skipping",
+                                account_id,
+                                normalized_target
                             );
                         } else if let Some(found) =
                             tokens_snapshot.iter().find(|t| &t.account_id == account_id)
@@ -697,7 +698,8 @@ impl TokenManager {
                         }
 
                         // 【新增】主动避开限流或 5xx 锁定的账号 (来自 PR #28 的高可用思路)
-                        if self.is_rate_limited(&candidate.account_id) {
+                        if self.is_rate_limited_for_model(&candidate.account_id, &normalized_target)
+                        {
                             continue;
                         }
 
@@ -757,7 +759,7 @@ impl TokenManager {
                     }
 
                     // 【新增】主动避开限流或 5xx 锁定的账号
-                    if self.is_rate_limited(&candidate.account_id) {
+                    if self.is_rate_limited_for_model(&candidate.account_id, &normalized_target) {
                         continue;
                     }
 
@@ -1127,6 +1129,12 @@ impl TokenManager {
         self.rate_limit_tracker.is_rate_limited(account_id)
     }
 
+    /// Check if account is rate-limited for specific model (checks both levels)
+    pub fn is_rate_limited_for_model(&self, account_id: &str, model: &str) -> bool {
+        self.rate_limit_tracker
+            .is_rate_limited_for_model(account_id, model)
+    }
+
     pub fn rate_limit_tracker(&self) -> &RateLimitTracker {
         &self.rate_limit_tracker
     }
@@ -1321,99 +1329,92 @@ impl TokenManager {
         status: u16,
         retry_after_header: Option<&str>,
         error_body: &str,
-        model: Option<&str>, // 🆕 新增模型参数
+        model: Option<&str>,
     ) {
-        // [FIX] IMMEDIATELY set temporary rate limit to prevent race condition.
-        // Problem: async quota refresh takes 1-2 seconds, during which other requests
-        // can still use this account (they don't see it as rate-limited yet).
-        // Solution: Block the account NOW with 60s temporary lockout, then refine
-        // with precise reset time once we have it.
-        self.rate_limit_tracker.set_lockout_until(
-            account_id,
-            std::time::SystemTime::now() + std::time::Duration::from_secs(60),
-            crate::proxy::rate_limit::RateLimitReason::Unknown,
-            None,
-        );
-        tracing::debug!(
-            "⚡ Account {} immediately blocked (60s temporary) pending precise reset time",
-            account_id
-        );
+        // Parse error reason FIRST to choose strategy
+        let reason = self.rate_limit_tracker.parse_rate_limit_reason(error_body);
+        let model_str = model.unwrap_or("unknown");
 
-        // 检查 API 是否返回了精确的重试时间
+        // Check if API returned explicit retry time
         let has_explicit_retry_time =
             retry_after_header.is_some() || error_body.contains("quotaResetDelay");
 
         if has_explicit_retry_time {
-            // API 返回了精确时间(quotaResetDelay),直接使用,无需实时刷新
-            if let Some(m) = model {
-                tracing::debug!(
-                    "账号 {} 的模型 {} 的 429 响应包含 quotaResetDelay,直接使用 API 返回的时间",
-                    account_id,
-                    m
-                );
-            } else {
-                tracing::debug!(
-                    "账号 {} 的 429 响应包含 quotaResetDelay,直接使用 API 返回的时间",
-                    account_id
-                );
-            }
-            self.rate_limit_tracker.parse_from_error(
+            // API returned precise time — use it directly, set per-model lock
+            if let Some(info) = self.rate_limit_tracker.parse_from_error(
                 account_id,
                 status,
                 retry_after_header,
                 error_body,
-                None, // model
-            );
+                model.map(|s| s.to_string()),
+            ) {
+                // Also set model-specific lock
+                self.rate_limit_tracker.set_model_lockout(
+                    account_id,
+                    model_str,
+                    info.reset_time,
+                    reason,
+                );
+            }
             return;
         }
 
-        // 确定限流原因
-        let reason = if error_body.to_lowercase().contains("model_capacity") {
-            crate::proxy::rate_limit::RateLimitReason::ModelCapacityExhausted
-        } else if error_body.to_lowercase().contains("exhausted")
-            || error_body.to_lowercase().contains("quota")
-        {
-            crate::proxy::rate_limit::RateLimitReason::QuotaExhausted
-        } else {
-            crate::proxy::rate_limit::RateLimitReason::Unknown
-        };
-
-        // API 未返回 quotaResetDelay,需要实时刷新配额获取精确锁定时间
-        if let Some(m) = model {
-            tracing::info!(
-                "账号 {} 的模型 {} 的 429 响应未包含 quotaResetDelay,尝试实时刷新配额...",
-                account_id,
-                m
-            );
-        } else {
-            tracing::info!(
-                "账号 {} 的 429 响应未包含 quotaResetDelay,尝试实时刷新配额...",
-                account_id
-            );
+        // No explicit time — strategy depends on error type
+        match reason {
+            crate::proxy::rate_limit::RateLimitReason::QuotaExhausted => {
+                // QUOTA_EXHAUSTED: need precise reset time, set 5min temporary lock
+                // while we fetch it async
+                let lockout = std::time::Duration::from_secs(300);
+                self.rate_limit_tracker.set_model_lockout(
+                    account_id,
+                    model_str,
+                    std::time::SystemTime::now() + lockout,
+                    reason,
+                );
+                tracing::info!(
+                    "⏳ {}:{} QUOTA_EXHAUSTED, 5min lock pending precise reset time",
+                    account_id,
+                    model_str
+                );
+            }
+            _ => {
+                // RATE_LIMIT_EXCEEDED or other: adaptive short lockout (5→15→30→60s)
+                let lockout_secs = self
+                    .rate_limit_tracker
+                    .set_adaptive_model_lockout(account_id, model_str);
+                tracing::debug!(
+                    "⚡ {}:{} adaptive lockout: {}s",
+                    account_id,
+                    model_str,
+                    lockout_secs
+                );
+            }
         }
 
+        // Try to get precise reset time async
         if self
             .fetch_and_lock_with_realtime_quota(account_id, reason, model.map(|s| s.to_string()))
             .await
         {
-            tracing::info!("账号 {} 已使用实时配额精确锁定", account_id);
+            tracing::info!(
+                "{}:{} locked with precise reset time",
+                account_id,
+                model_str
+            );
             return;
         }
 
-        // 实时刷新失败,尝试使用本地缓存的配额刷新时间
+        // Fallback: try local cache
         if self.set_precise_lockout(account_id, reason, model.map(|s| s.to_string())) {
-            tracing::info!("账号 {} 已使用本地缓存配额锁定", account_id);
+            tracing::info!("{}:{} locked with cached reset time", account_id, model_str);
             return;
         }
 
-        // 都失败了,回退到指数退避策略
-        tracing::warn!("账号 {} 无法获取配额刷新时间,使用指数退避策略", account_id);
-        self.rate_limit_tracker.parse_from_error(
+        // All failed — keep the temporary lock set above
+        tracing::warn!(
+            "{}:{} no precise reset time available, using temporary lock",
             account_id,
-            status,
-            retry_after_header,
-            error_body,
-            None, // model
+            model_str
         );
     }
 

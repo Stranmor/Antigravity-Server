@@ -50,7 +50,7 @@ While [Antigravity Manager](https://github.com/lbjlaq/Antigravity-Manager) provi
 | **Architecture** | Monolithic | **Modular Crate Workspace** |
 | **Automation** | Frontend Polling (Open UI) | **Native Async Schedulers (Daemon)** |
 | **Persistence** | Direct File I/O | **Sequential Actor Loop (Race-free)** |
-| **Rate Limiting** | Reactive (Retry on 429) | **AIMD Predictive Algorithm** |
+| **Rate Limiting** | Reactive (Retry on 429) | **AIMD + Atomic Lockout** |
 | **Reliability** | Basic Failover | **Circuit Breakers + Health Scores** |
 | **Routing** | Silent Model Substitution | **Strict Routing + Preferred Account** |
 | **Isolation** | Shared IP | **WARP Proxy Support (Per-Account IP)** |
@@ -78,7 +78,11 @@ The server operates fully autonomously with a dedicated `Scheduler` system (port
 - **Self-Healing**: Periodic health checks monitor and reset circuit breakers.
 
 ### 🛡️ Circuit Breakers & Resilience
-Each account is protected by an independent circuit breaker and a dynamic **Health Score**. If an account starts failing, it's automatically isolated to prevent cascading failures. Monitor everything via the **Resilience API**:
+Each account is protected by an independent circuit breaker and a dynamic **Health Score**.
+- **Atomic 429 Lockout**: Instantly freezes an account for a 60s cooldown upon the first rate limit detection—*before* the async refresh cycle begins—preventing concurrent requests from hitting a dead account.
+- **Failover Isolation**: If an account starts failing, it's automatically isolated to prevent cascading failures.
+
+Monitor everything via the **Resilience API**:
 - `GET /api/resilience/health` — Real-time account availability.
 - `GET /api/resilience/circuits` — Circuit breaker states.
 - `GET /api/resilience/aimd` — Rate limiting telemetry.
@@ -355,7 +359,7 @@ This fork uses **Semantic Porting** — we don't blindly copy upstream changes. 
 
 **🔄 Active Sync**: We actively port useful upstream changes. Currently synced with **v4.0.4**, plus our exclusive additions: 
 
-- **Reliability**: AIMD predictive rate limiting, Circuit Breakers, sticky session rebind on 429.
+- **Reliability**: AIMD predictive rate limiting, Circuit Breakers, sticky session rebind on 429, atomic race condition prevention.
 - **Persistence**: Sequential actor-based file writing to eliminate race conditions.
 - **Security**: Hardened constant-time auth, WARP proxy isolation.
 - **Features**: Multimodal audio/video support, LRU schema caching, `preferred_account_id` routing, aspect ratio support, robust token rotation, and auto-refresh schedulers.

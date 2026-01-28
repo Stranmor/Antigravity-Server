@@ -128,6 +128,61 @@ impl RateLimitTracker {
         self.limits.remove(account_id);
     }
 
+    /// Set adaptive temporary lockout based on consecutive failure count.
+    /// Returns the lockout duration in seconds.
+    ///
+    /// Progression: 5s → 15s → 30s → 60s (max)
+    /// Resets on success (via mark_success)
+    pub fn set_adaptive_temporary_lockout(&self, account_id: &str) -> u64 {
+        let now = SystemTime::now();
+
+        let failure_count = {
+            let mut entry = self
+                .failure_counts
+                .entry(account_id.to_string())
+                .or_insert((0, now));
+
+            // Check expiry (1 hour)
+            let elapsed = now
+                .duration_since(entry.1)
+                .unwrap_or(Duration::from_secs(0))
+                .as_secs();
+            if elapsed > FAILURE_COUNT_EXPIRY_SECONDS {
+                *entry = (0, now);
+            }
+
+            entry.0 += 1;
+            entry.1 = now;
+            entry.0
+        };
+
+        let lockout_secs = match failure_count {
+            1 => 5,
+            2 => 15,
+            3 => 30,
+            _ => 60,
+        };
+
+        let info = RateLimitInfo {
+            reset_time: now + Duration::from_secs(lockout_secs),
+            retry_after_sec: lockout_secs,
+            detected_at: now,
+            reason: RateLimitReason::Unknown,
+            model: None,
+        };
+
+        self.limits.insert(account_id.to_string(), info);
+
+        tracing::debug!(
+            "⚡ Account {} adaptive lockout: {}s (attempt #{})",
+            account_id,
+            lockout_secs,
+            failure_count
+        );
+
+        lockout_secs
+    }
+
     /// 精确锁定账号到指定时间点
     ///
     /// 使用账号配额中的 reset_time 来精确锁定账号,
@@ -571,6 +626,121 @@ impl RateLimitTracker {
         } else {
             false
         }
+    }
+
+    /// Check if account is rate-limited for specific model.
+    /// Checks both account-level AND model-specific limits.
+    pub fn is_rate_limited_for_model(&self, account_id: &str, model: &str) -> bool {
+        let now = SystemTime::now();
+
+        // Check account-level limit
+        if let Some(info) = self.limits.get(account_id) {
+            if info.reset_time > now {
+                return true;
+            }
+        }
+
+        // Check model-specific limit
+        let model_key = format!("{}:{}", account_id, model);
+        if let Some(info) = self.limits.get(&model_key) {
+            if info.reset_time > now {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Set lockout for specific account:model pair
+    pub fn set_model_lockout(
+        &self,
+        account_id: &str,
+        model: &str,
+        reset_time: SystemTime,
+        reason: RateLimitReason,
+    ) {
+        let now = SystemTime::now();
+        let retry_sec = reset_time
+            .duration_since(now)
+            .map(|d| d.as_secs())
+            .unwrap_or(60);
+
+        let key = format!("{}:{}", account_id, model);
+        let info = RateLimitInfo {
+            reset_time,
+            retry_after_sec: retry_sec,
+            detected_at: now,
+            reason,
+            model: Some(model.to_string()),
+        };
+
+        self.limits.insert(key, info);
+        tracing::info!(
+            "🔒 Account {}:{} locked for {}s ({:?})",
+            account_id,
+            model,
+            retry_sec,
+            reason
+        );
+    }
+
+    /// Adaptive temporary lockout for specific model.
+    /// Returns lockout duration. Progression: 5s → 15s → 30s → 60s
+    pub fn set_adaptive_model_lockout(&self, account_id: &str, model: &str) -> u64 {
+        let now = SystemTime::now();
+        let key = format!("{}:{}", account_id, model);
+
+        let failure_count = {
+            let mut entry = self.failure_counts.entry(key.clone()).or_insert((0, now));
+
+            let elapsed = now
+                .duration_since(entry.1)
+                .unwrap_or(Duration::from_secs(0))
+                .as_secs();
+            if elapsed > FAILURE_COUNT_EXPIRY_SECONDS {
+                *entry = (0, now);
+            }
+
+            entry.0 += 1;
+            entry.1 = now;
+            entry.0
+        };
+
+        let lockout_secs = match failure_count {
+            1 => 5,
+            2 => 15,
+            3 => 30,
+            _ => 60,
+        };
+
+        let info = RateLimitInfo {
+            reset_time: now + Duration::from_secs(lockout_secs),
+            retry_after_sec: lockout_secs,
+            detected_at: now,
+            reason: RateLimitReason::RateLimitExceeded,
+            model: Some(model.to_string()),
+        };
+
+        self.limits.insert(key, info);
+
+        tracing::debug!(
+            "⚡ {}:{} adaptive lockout: {}s (attempt #{})",
+            account_id,
+            model,
+            lockout_secs,
+            failure_count
+        );
+
+        lockout_secs
+    }
+
+    /// Clear model-specific failure count on success
+    pub fn mark_model_success(&self, account_id: &str, model: &str) {
+        let key = format!("{}:{}", account_id, model);
+        if self.failure_counts.remove(&key).is_some() {
+            tracing::debug!("{}:{} success, reset failure count", account_id, model);
+        }
+        self.limits.remove(&key);
     }
 
     /// 获取距离限流重置还有多少秒
