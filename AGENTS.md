@@ -221,7 +221,7 @@ This fork uses **SEMANTIC PORTING** — we don't blindly copy upstream files, we
 
 - **Location:** `vendor/antigravity-upstream/` (git submodule)
 - **Upstream repo:** https://github.com/lbjlaq/Antigravity-Manager
-- **Current upstream:** v4.0.3
+- **Current upstream:** v4.0.4
 - **Our version:** v3.3.45 (with custom improvements)
 
 ### Intentional Divergences
@@ -267,7 +267,33 @@ cargo test -p antigravity-core --lib
 git add . && git commit -m "chore: sync upstream v3.3.XX changes"
 ```
 
-### Last Sync: 2026-01-27 (v4.0.3)
+### Last Sync: 2026-01-28 (v4.0.4)
+
+**Ported from v4.0.4:**
+- **`rate_limit.rs`** — Millisecond parsing with decimals
+  - Regex now supports `510.790006ms` format (was only integer ms)
+  - Default for `RateLimitExceeded` reduced 30s → 5s
+  - Milliseconds parsed as f64 for precision
+- **`token_manager.rs`** — Health score system
+  - New `health_score` field in `ProxyToken` (0.0-1.0)
+  - `health_scores: DashMap<String, f32>` in TokenManager
+  - Account sorting now: tier → quota → health_score
+  - `record_success()` +0.05, `record_failure()` -0.2
+- **`config.rs` (antigravity-types)** — Fixed account mode persistence
+  - Added `preferred_account_id: Option<String>` to ProxyConfig
+  - Persists fixed account setting between restarts
+- **`api.rs` (antigravity-server)** — OAuth code submission endpoint
+  - New `POST /api/oauth/submit-code` for manual code entry
+  - Accepts `{ code, state? }` and creates account
+- **`common_utils.rs`** — Image generation improvements
+  - New aspect ratios: `3:2`, `2:3`, `5:4`, `4:5`
+  - Direct string matching for ratio values (`"16:9"` → `"16:9"`)
+  - Quality mapping extended: `"standard"`/`"1k"` → `"1K"`
+  - Tolerance reduced 0.1 → 0.05 to avoid 3:4/2:3 confusion
+
+**NOT ported (intentionally):**
+- **wait_ms return value** — Upstream changed `get_token()` to return `(token, project, email, wait_ms)`. Too invasive for our handler architecture; requires updating all call sites.
+- **`add_account()` refactor** — Upstream delegated to `modules::account::add_account`. We have different module structure.
 
 **Ported from v4.0.3:**
 - **`common/schema_cache.rs`** — NEW: LRU cache for cleaned JSON schemas

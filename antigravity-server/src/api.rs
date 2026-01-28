@@ -1042,17 +1042,22 @@ struct SubmitCodeRequest {
     state: Option<String>,
 }
 
+#[derive(Serialize)]
+struct SubmitCodeResponse {
+    success: bool,
+    message: String,
+    email: Option<String>,
+}
+
 async fn submit_oauth_code(
     State(app_state): State<AppState>,
     Json(payload): Json<SubmitCodeRequest>,
-) -> Result<Json<AddAccountResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<SubmitCodeResponse>, (StatusCode, String)> {
     if let Some(ref s) = payload.state {
         if !app_state.validate_oauth_state(s) {
             return Err((
                 StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: "Invalid or expired OAuth state".to_string(),
-                }),
+                "Invalid or expired OAuth state".to_string(),
             ));
         }
     }
@@ -1065,9 +1070,7 @@ async fn submit_oauth_code(
         .map_err(|e| {
             (
                 StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: format!("Failed to exchange code: {}", e),
-                }),
+                format!("Failed to exchange code: {}", e),
             )
         })?;
 
@@ -1076,34 +1079,36 @@ async fn submit_oauth_code(
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Failed to get user info: {}", e),
-                }),
+                format!("Failed to get user info: {}", e),
             )
         })?;
 
-    let token_data = antigravity_types::TokenData::new(
+    let token_data = TokenData::new(
         token_res.access_token,
-        token_res.refresh_token,
+        token_res.refresh_token.ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                "No refresh token in response".to_string(),
+            )
+        })?,
         token_res.expires_in,
         Some(user_info.email.clone()),
         None,
         None,
     );
 
-    account::add_account(user_info.email.clone(), Some(user_info.name.clone()), token_data)
-        .map_err(|e| {
+    account::add_account(user_info.email.clone(), user_info.name.clone(), token_data).map_err(
+        |e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: format!("Failed to add account: {}", e),
-                }),
+                format!("Failed to add account: {}", e),
             )
-        })?;
+        },
+    )?;
 
     let _ = app_state.reload_accounts().await;
 
-    Ok(Json(AddAccountResponse {
+    Ok(Json(SubmitCodeResponse {
         success: true,
         message: format!("Account {} added successfully", user_info.email),
         email: Some(user_info.email),
