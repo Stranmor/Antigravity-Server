@@ -228,7 +228,14 @@ async fn add_account_by_token(
     State(state): State<AppState>,
     Json(payload): Json<AddByTokenRequest>,
 ) -> Result<Json<AddByTokenResponse>, (StatusCode, String)> {
-    let mut join_set: JoinSet<Result<antigravity_shared::models::Account, String>> = JoinSet::new();
+    // Return data for sequential upsert (avoid race condition on file storage)
+    struct TokenResult {
+        email: String,
+        name: Option<String>,
+        token_data: TokenData,
+    }
+
+    let mut join_set: JoinSet<Result<TokenResult, String>> = JoinSet::new();
 
     for token in payload.refresh_tokens {
         join_set.spawn(async move {
@@ -255,12 +262,11 @@ async fn add_account_by_token(
                 None,
             );
 
-            account::upsert_account(
-                user_info.email.clone(),
-                user_info.get_display_name(),
+            Ok(TokenResult {
+                name: user_info.get_display_name(),
+                email: user_info.email,
                 token_data,
-            )
-            .map_err(|e| format!("Upsert failed: {}", e))
+            })
         });
     }
 
@@ -271,20 +277,37 @@ async fn add_account_by_token(
 
     while let Some(result) = join_set.join_next().await {
         match result {
-            Ok(Ok(acc)) => {
-                success_count += 1;
-                added_accounts.push(AccountInfo {
-                    id: acc.id.clone(),
-                    email: acc.email.clone(),
-                    name: acc.name.clone(),
-                    disabled: acc.disabled,
-                    proxy_disabled: acc.proxy_disabled,
-                    is_current: false,
-                    gemini_quota: get_model_quota(&acc, "gemini"),
-                    claude_quota: get_model_quota(&acc, "claude"),
-                    subscription_tier: acc.quota.as_ref().and_then(|q| q.subscription_tier.clone()),
-                    quota: acc.quota.clone(),
-                });
+            Ok(Ok(token_result)) => {
+                // Sequential upsert to avoid race condition on file storage
+                match account::upsert_account(
+                    token_result.email.clone(),
+                    token_result.name,
+                    token_result.token_data,
+                ) {
+                    Ok(acc) => {
+                        success_count += 1;
+                        added_accounts.push(AccountInfo {
+                            id: acc.id.clone(),
+                            email: acc.email.clone(),
+                            name: acc.name.clone(),
+                            disabled: acc.disabled,
+                            proxy_disabled: acc.proxy_disabled,
+                            is_current: false,
+                            gemini_quota: get_model_quota(&acc, "gemini"),
+                            claude_quota: get_model_quota(&acc, "claude"),
+                            subscription_tier: acc
+                                .quota
+                                .as_ref()
+                                .and_then(|q| q.subscription_tier.clone()),
+                            quota: acc.quota.clone(),
+                        });
+                    }
+                    Err(e) => {
+                        fail_count += 1;
+                        errors.push(format!("{}: {}", token_result.email, e));
+                        tracing::warn!("Failed to upsert account: {}", errors.last().unwrap());
+                    }
+                }
             }
             Ok(Err(e)) => {
                 fail_count += 1;
@@ -507,7 +530,14 @@ async fn warmup_all_accounts(
     };
 
     let total = accounts.len();
-    let mut join_set: JoinSet<Result<String, String>> = JoinSet::new();
+
+    // Return data for sequential update (avoid race condition on file storage)
+    struct WarmupResult {
+        account_id: String,
+        quota: Option<antigravity_shared::models::QuotaData>,
+    }
+
+    let mut join_set: JoinSet<Result<WarmupResult, String>> = JoinSet::new();
 
     for mut acc in accounts {
         if acc.disabled || acc.proxy_disabled {
@@ -521,10 +551,10 @@ async fn warmup_all_accounts(
                 .await
                 .map_err(|e| format!("{}: {}", email, e))?;
 
-            if let Some(quota) = acc.quota.clone() {
-                let _ = account::update_account_quota(&account_id, quota);
-            }
-            Ok(email)
+            Ok(WarmupResult {
+                account_id,
+                quota: acc.quota,
+            })
         });
     }
 
@@ -533,7 +563,13 @@ async fn warmup_all_accounts(
 
     while let Some(result) = join_set.join_next().await {
         match result {
-            Ok(Ok(_)) => success += 1,
+            Ok(Ok(warmup_result)) => {
+                if let Some(quota) = warmup_result.quota {
+                    // Sequential update to avoid race condition on file storage
+                    let _ = account::update_account_quota(&warmup_result.account_id, quota);
+                }
+                success += 1;
+            }
             Ok(Err(e)) => {
                 tracing::warn!("Warmup failed: {}", e);
                 failed += 1;
