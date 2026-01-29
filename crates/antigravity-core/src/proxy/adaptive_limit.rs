@@ -728,4 +728,62 @@ mod tests {
         assert_eq!(aimd.penalize(8), 5);
         assert_eq!(aimd.reward(500), 500);
     }
+
+    #[test]
+    fn test_concurrent_expansion_no_double() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let tracker = Arc::new(AdaptiveLimitTracker::new(0.85, AIMDController::default()));
+        tracker.working_threshold.store(1, Ordering::Relaxed);
+        let initial = tracker.confirmed_limit();
+
+        let mut handles = vec![];
+        for _ in 0..10 {
+            let t = Arc::clone(&tracker);
+            handles.push(thread::spawn(move || {
+                for _ in 0..5 {
+                    t.record_success();
+                }
+            }));
+        }
+
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        let final_limit = tracker.confirmed_limit();
+        let expansion_count =
+            ((final_limit as f64 / initial as f64).ln() / (1.05_f64).ln()).round() as u32;
+
+        assert!(
+            expansion_count <= 20,
+            "Too many expansions: {} (limit went {} -> {})",
+            expansion_count,
+            initial,
+            final_limit
+        );
+    }
+
+    #[test]
+    fn test_concurrent_get_or_create_no_overwrite() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let manager = Arc::new(AdaptiveLimitManager::default());
+
+        let mut handles = vec![];
+        for _ in 0..10 {
+            let m = Arc::clone(&manager);
+            handles.push(thread::spawn(move || {
+                let _ = m.get_or_create("shared_account");
+            }));
+        }
+
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        assert_eq!(manager.len(), 1);
+    }
 }
