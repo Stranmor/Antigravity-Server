@@ -19,8 +19,8 @@ pub fn transform_openai_request(
         &request.model,
         &mapped_model_lower,
         &tools_val,
-        None,
-        None,
+        request.size.as_deref(),
+        request.quality.as_deref(),
     );
 
     // Detect thinking models early (needed for signature handling)
@@ -687,6 +687,9 @@ mod tests {
             instructions: None,
             input: None,
             prompt: None,
+            size: None,
+            quality: None,
+            person_generation: None,
         };
 
         let result = transform_openai_request(&req, "test-v", "gemini-1.5-flash");
@@ -742,6 +745,9 @@ mod tests {
             instructions: None,
             input: None,
             prompt: None,
+            size: None,
+            quality: None,
+            person_generation: None,
         };
 
         let result = transform_openai_request(&req, "test-v", "gemini-1.5-flash");
