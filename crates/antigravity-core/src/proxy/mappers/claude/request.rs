@@ -520,7 +520,11 @@ pub fn transform_claude_request_in(
         }
 
         if needs_signature_check
-            && !has_valid_signature_for_function_calls(&claude_req.messages, &global_sig)
+            && !has_valid_signature_for_function_calls(
+                &claude_req.messages,
+                &global_sig,
+                &session_id,
+            )
         {
             tracing::warn!(
                 "[Thinking-Mode] [FIX #295] No valid signature found for function calls. \
@@ -694,18 +698,38 @@ fn should_enable_thinking_by_default(model: &str) -> bool {
 
 /// [FIX #295] Check if we have any valid signature available for function calls
 /// This prevents Gemini 3 Pro from rejecting requests due to missing thought_signature
+/// Now also checks Session Cache to support retry scenarios.
 fn has_valid_signature_for_function_calls(
     messages: &[Message],
     global_sig: &Option<String>,
+    session_id: &str,
 ) -> bool {
     // 1. Check global store
     if let Some(sig) = global_sig {
         if sig.len() >= MIN_SIGNATURE_LENGTH {
+            tracing::debug!(
+                "[Signature-Check] Found valid signature in global store (len: {})",
+                sig.len()
+            );
             return true;
         }
     }
 
-    // 2. Check if any message has a thinking block with valid signature
+    // 2. Check Session Cache - critical for retry scenarios
+    if let Some(sig) =
+        crate::proxy::signature_cache::SignatureCache::global().get_session_signature(session_id)
+    {
+        if sig.len() >= MIN_SIGNATURE_LENGTH {
+            tracing::info!(
+                "[Signature-Check] Found valid signature in SESSION cache (session: {}, len: {})",
+                session_id,
+                sig.len()
+            );
+            return true;
+        }
+    }
+
+    // 3. Check if any message has a thinking block with valid signature
     for msg in messages.iter().rev() {
         if msg.role == "assistant" {
             if let MessageContent::Array(blocks) = &msg.content {
@@ -716,6 +740,10 @@ fn has_valid_signature_for_function_calls(
                     } = block
                     {
                         if sig.len() >= MIN_SIGNATURE_LENGTH {
+                            tracing::debug!(
+                                "[Signature-Check] Found valid signature in message history (len: {})",
+                                sig.len()
+                            );
                             return true;
                         }
                     }

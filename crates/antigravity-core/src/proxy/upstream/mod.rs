@@ -2,5 +2,6 @@
 // 对应上游通讯接口
 
 pub mod client;
+pub mod endpoint_health;
 pub mod models;
 pub mod retry;

@@ -5,6 +5,10 @@ use reqwest::{header, Client, Response, StatusCode};
 use serde_json::Value;
 use tokio::time::Duration;
 
+use super::endpoint_health::{
+    ENDPOINT_HEALTH, MAX_TRANSPORT_RETRIES_PER_ENDPOINT, TRANSPORT_RETRY_DELAY_MS,
+};
+
 // Cloud Code v1internal endpoints (fallback order: prod → daily)
 // 优先使用稳定的 prod 端点，避免影响缓存命中率
 const V1_INTERNAL_BASE_URL_PROD: &str = "https://cloudcode-pa.googleapis.com/v1internal";
@@ -151,52 +155,93 @@ impl UpstreamClient {
 
         // Iterate through all endpoints with fallback
         for (idx, base_url) in V1_INTERNAL_BASE_URL_FALLBACKS.iter().enumerate() {
+            // Circuit breaker: skip unhealthy endpoints
+            if ENDPOINT_HEALTH
+                .get(base_url)
+                .is_some_and(|h| h.should_skip())
+            {
+                tracing::debug!("Skipping unhealthy endpoint: {}", base_url);
+                continue;
+            }
+
             let url = Self::build_url(base_url, method, query_string);
             let has_next = idx + 1 < V1_INTERNAL_BASE_URL_FALLBACKS.len();
+            let mut transport_retries: u32 = 0;
 
-            let response = client
-                .post(&url)
-                .headers(headers.clone())
-                .json(&body)
-                .send()
-                .await;
+            loop {
+                let response = client
+                    .post(&url)
+                    .headers(headers.clone())
+                    .json(&body)
+                    .send()
+                    .await;
 
-            match response {
-                Ok(resp) => {
-                    let status = resp.status();
-                    if status.is_success() {
-                        if warp_proxy_url.is_some() {
-                            tracing::debug!(
-                                "✓ WARP request succeeded | Endpoint: {} | Status: {}",
-                                base_url,
-                                status
-                            );
+                match response {
+                    Ok(resp) => {
+                        let status = resp.status();
+                        // Record success for circuit breaker
+                        ENDPOINT_HEALTH
+                            .entry(base_url)
+                            .or_default()
+                            .record_success();
+
+                        if status.is_success() {
+                            if warp_proxy_url.is_some() {
+                                tracing::debug!(
+                                    "✓ WARP request succeeded | Endpoint: {} | Status: {}",
+                                    base_url,
+                                    status
+                                );
+                            }
+                            return Ok(resp);
                         }
+
+                        if has_next && Self::should_try_next_endpoint(status) {
+                            tracing::warn!(
+                                "Upstream endpoint returned {} at {} (method={}), trying next",
+                                status,
+                                base_url,
+                                method
+                            );
+                            last_err = Some(format!("Upstream {} returned {}", base_url, status));
+                            break; // Exit retry loop, try next endpoint
+                        }
+
                         return Ok(resp);
                     }
+                    Err(e) => {
+                        let msg = format!("HTTP request failed at {}: {}", base_url, e);
+                        tracing::debug!("{}", msg);
+                        last_err = Some(msg);
 
-                    if has_next && Self::should_try_next_endpoint(status) {
-                        tracing::warn!(
-                            "Upstream endpoint returned {} at {} (method={}), trying next",
-                            status,
-                            base_url,
-                            method
-                        );
-                        last_err = Some(format!("Upstream {} returned {}", base_url, status));
-                        continue;
+                        // Transport retry with delay
+                        if transport_retries < MAX_TRANSPORT_RETRIES_PER_ENDPOINT {
+                            transport_retries += 1;
+                            tracing::warn!(
+                                "Transport error at {}, retry {}/{} after {}ms",
+                                base_url,
+                                transport_retries,
+                                MAX_TRANSPORT_RETRIES_PER_ENDPOINT,
+                                TRANSPORT_RETRY_DELAY_MS
+                            );
+                            tokio::time::sleep(Duration::from_millis(TRANSPORT_RETRY_DELAY_MS))
+                                .await;
+                            continue; // Retry same endpoint
+                        }
+
+                        // Record failure for circuit breaker
+                        ENDPOINT_HEALTH
+                            .entry(base_url)
+                            .or_default()
+                            .record_failure();
+
+                        if !has_next {
+                            return Err(
+                                last_err.unwrap_or_else(|| "All endpoints failed".to_string())
+                            );
+                        }
+                        break; // Exit retry loop, try next endpoint
                     }
-
-                    return Ok(resp);
-                }
-                Err(e) => {
-                    let msg = format!("HTTP request failed at {}: {}", base_url, e);
-                    tracing::debug!("{}", msg);
-                    last_err = Some(msg);
-
-                    if !has_next {
-                        break;
-                    }
-                    continue;
                 }
             }
         }
@@ -242,64 +287,105 @@ impl UpstreamClient {
 
         // 遍历所有端点，失败时自动切换
         for (idx, base_url) in V1_INTERNAL_BASE_URL_FALLBACKS.iter().enumerate() {
+            // Circuit breaker: skip unhealthy endpoints
+            if ENDPOINT_HEALTH
+                .get(base_url)
+                .is_some_and(|h| h.should_skip())
+            {
+                tracing::debug!("Skipping unhealthy endpoint: {}", base_url);
+                continue;
+            }
+
             let url = Self::build_url(base_url, method, query_string);
             let has_next = idx + 1 < V1_INTERNAL_BASE_URL_FALLBACKS.len();
+            let mut transport_retries: u32 = 0;
 
-            let response = self
-                .http_client
-                .post(&url)
-                .headers(headers.clone())
-                .json(&body)
-                .send()
-                .await;
+            loop {
+                let response = self
+                    .http_client
+                    .post(&url)
+                    .headers(headers.clone())
+                    .json(&body)
+                    .send()
+                    .await;
 
-            match response {
-                Ok(resp) => {
-                    let status = resp.status();
-                    if status.is_success() {
-                        if idx > 0 {
-                            tracing::info!(
-                                "✓ Upstream fallback succeeded | Endpoint: {} | Status: {} | Attempt: {}/{}",
-                                base_url,
-                                status,
-                                idx + 1,
-                                V1_INTERNAL_BASE_URL_FALLBACKS.len()
-                            );
-                        } else {
-                            tracing::debug!(
-                                "✓ Upstream request succeeded | Endpoint: {} | Status: {}",
-                                base_url,
-                                status
-                            );
+                match response {
+                    Ok(resp) => {
+                        let status = resp.status();
+                        // Record success for circuit breaker
+                        ENDPOINT_HEALTH
+                            .entry(base_url)
+                            .or_default()
+                            .record_success();
+
+                        if status.is_success() {
+                            if idx > 0 {
+                                tracing::info!(
+                                    "✓ Upstream fallback succeeded | Endpoint: {} | Status: {} | Attempt: {}/{}",
+                                    base_url,
+                                    status,
+                                    idx + 1,
+                                    V1_INTERNAL_BASE_URL_FALLBACKS.len()
+                                );
+                            } else {
+                                tracing::debug!(
+                                    "✓ Upstream request succeeded | Endpoint: {} | Status: {}",
+                                    base_url,
+                                    status
+                                );
+                            }
+                            return Ok(resp);
                         }
+
+                        // 如果有下一个端点且当前错误可重试，则切换
+                        if has_next && Self::should_try_next_endpoint(status) {
+                            tracing::warn!(
+                                "Upstream endpoint returned {} at {} (method={}), trying next endpoint",
+                                status,
+                                base_url,
+                                method
+                            );
+                            last_err = Some(format!("Upstream {} returned {}", base_url, status));
+                            break; // Exit retry loop, try next endpoint
+                        }
+
+                        // 不可重试的错误或已是最后一个端点，直接返回
                         return Ok(resp);
                     }
+                    Err(e) => {
+                        let msg = format!("HTTP request failed at {}: {}", base_url, e);
+                        tracing::debug!("{}", msg);
+                        last_err = Some(msg);
 
-                    // 如果有下一个端点且当前错误可重试，则切换
-                    if has_next && Self::should_try_next_endpoint(status) {
-                        tracing::warn!(
-                            "Upstream endpoint returned {} at {} (method={}), trying next endpoint",
-                            status,
-                            base_url,
-                            method
-                        );
-                        last_err = Some(format!("Upstream {} returned {}", base_url, status));
-                        continue;
+                        // Transport retry with delay
+                        if transport_retries < MAX_TRANSPORT_RETRIES_PER_ENDPOINT {
+                            transport_retries += 1;
+                            tracing::warn!(
+                                "Transport error at {}, retry {}/{} after {}ms",
+                                base_url,
+                                transport_retries,
+                                MAX_TRANSPORT_RETRIES_PER_ENDPOINT,
+                                TRANSPORT_RETRY_DELAY_MS
+                            );
+                            tokio::time::sleep(Duration::from_millis(TRANSPORT_RETRY_DELAY_MS))
+                                .await;
+                            continue; // Retry same endpoint
+                        }
+
+                        // Record failure for circuit breaker
+                        ENDPOINT_HEALTH
+                            .entry(base_url)
+                            .or_default()
+                            .record_failure();
+
+                        // 如果是最后一个端点，退出循环
+                        if !has_next {
+                            return Err(
+                                last_err.unwrap_or_else(|| "All endpoints failed".to_string())
+                            );
+                        }
+                        break; // Exit retry loop, try next endpoint
                     }
-
-                    // 不可重试的错误或已是最后一个端点，直接返回
-                    return Ok(resp);
-                }
-                Err(e) => {
-                    let msg = format!("HTTP request failed at {}: {}", base_url, e);
-                    tracing::debug!("{}", msg);
-                    last_err = Some(msg);
-
-                    // 如果是最后一个端点，退出循环
-                    if !has_next {
-                        break;
-                    }
-                    continue;
                 }
             }
         }
@@ -336,64 +422,103 @@ impl UpstreamClient {
 
         // 遍历所有端点，失败时自动切换
         for (idx, base_url) in V1_INTERNAL_BASE_URL_FALLBACKS.iter().enumerate() {
+            // Circuit breaker: skip unhealthy endpoints
+            if ENDPOINT_HEALTH
+                .get(base_url)
+                .is_some_and(|h| h.should_skip())
+            {
+                tracing::debug!("Skipping unhealthy endpoint: {}", base_url);
+                continue;
+            }
+
             let url = Self::build_url(base_url, "fetchAvailableModels", None);
+            let has_next = idx + 1 < V1_INTERNAL_BASE_URL_FALLBACKS.len();
+            let mut transport_retries: u32 = 0;
 
-            let response = self
-                .http_client
-                .post(&url)
-                .headers(headers.clone())
-                .json(&serde_json::json!({}))
-                .send()
-                .await;
+            loop {
+                let response = self
+                    .http_client
+                    .post(&url)
+                    .headers(headers.clone())
+                    .json(&serde_json::json!({}))
+                    .send()
+                    .await;
 
-            match response {
-                Ok(resp) => {
-                    let status = resp.status();
-                    if status.is_success() {
-                        if idx > 0 {
-                            tracing::info!(
-                                "✓ Upstream fallback succeeded for fetchAvailableModels | Endpoint: {} | Status: {}",
-                                base_url,
-                                status
-                            );
-                        } else {
-                            tracing::debug!(
-                                "✓ fetchAvailableModels succeeded | Endpoint: {}",
+                match response {
+                    Ok(resp) => {
+                        let status = resp.status();
+                        // Record success for circuit breaker
+                        ENDPOINT_HEALTH
+                            .entry(base_url)
+                            .or_default()
+                            .record_success();
+
+                        if status.is_success() {
+                            if idx > 0 {
+                                tracing::info!(
+                                    "✓ Upstream fallback succeeded for fetchAvailableModels | Endpoint: {} | Status: {}",
+                                    base_url,
+                                    status
+                                );
+                            } else {
+                                tracing::debug!(
+                                    "✓ fetchAvailableModels succeeded | Endpoint: {}",
+                                    base_url
+                                );
+                            }
+                            let json: Value = resp
+                                .json()
+                                .await
+                                .map_err(|e| format!("Parse json failed: {}", e))?;
+                            return Ok(json);
+                        }
+
+                        // 如果有下一个端点且当前错误可重试，则切换
+                        if has_next && Self::should_try_next_endpoint(status) {
+                            tracing::warn!(
+                                "fetchAvailableModels returned {} at {}, trying next endpoint",
+                                status,
                                 base_url
                             );
+                            last_err = Some(format!("Upstream error: {}", status));
+                            break; // Exit retry loop, try next endpoint
                         }
-                        let json: Value = resp
-                            .json()
-                            .await
-                            .map_err(|e| format!("Parse json failed: {}", e))?;
-                        return Ok(json);
-                    }
 
-                    // 如果有下一个端点且当前错误可重试，则切换
-                    let has_next = idx + 1 < V1_INTERNAL_BASE_URL_FALLBACKS.len();
-                    if has_next && Self::should_try_next_endpoint(status) {
-                        tracing::warn!(
-                            "fetchAvailableModels returned {} at {}, trying next endpoint",
-                            status,
-                            base_url
-                        );
-                        last_err = Some(format!("Upstream error: {}", status));
-                        continue;
+                        // 不可重试的错误或已是最后一个端点
+                        return Err(format!("Upstream error: {}", status));
                     }
+                    Err(e) => {
+                        let msg = format!("Request failed at {}: {}", base_url, e);
+                        tracing::debug!("{}", msg);
+                        last_err = Some(msg);
 
-                    // 不可重试的错误或已是最后一个端点
-                    return Err(format!("Upstream error: {}", status));
-                }
-                Err(e) => {
-                    let msg = format!("Request failed at {}: {}", base_url, e);
-                    tracing::debug!("{}", msg);
-                    last_err = Some(msg);
+                        // Transport retry with delay
+                        if transport_retries < MAX_TRANSPORT_RETRIES_PER_ENDPOINT {
+                            transport_retries += 1;
+                            tracing::warn!(
+                                "Transport error at {}, retry {}/{} after {}ms",
+                                base_url,
+                                transport_retries,
+                                MAX_TRANSPORT_RETRIES_PER_ENDPOINT,
+                                TRANSPORT_RETRY_DELAY_MS
+                            );
+                            tokio::time::sleep(Duration::from_millis(TRANSPORT_RETRY_DELAY_MS))
+                                .await;
+                            continue; // Retry same endpoint
+                        }
 
-                    // 如果是最后一个端点，退出循环
-                    if idx + 1 >= V1_INTERNAL_BASE_URL_FALLBACKS.len() {
-                        break;
+                        // Record failure for circuit breaker
+                        ENDPOINT_HEALTH
+                            .entry(base_url)
+                            .or_default()
+                            .record_failure();
+
+                        // 如果是最后一个端点，退出循环
+                        if !has_next {
+                            break;
+                        }
+                        break; // Exit retry loop, try next endpoint
                     }
-                    continue;
                 }
             }
         }
