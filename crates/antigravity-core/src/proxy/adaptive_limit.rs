@@ -456,8 +456,8 @@ impl AdaptiveLimitManager {
         }
         self.trackers
             .entry(account_id.to_string())
-            .or_insert_with(|| AdaptiveLimitTracker::new(self.safety_margin, self.aimd.clone()));
-        self.trackers.get(account_id).expect("entry just inserted")
+            .or_insert_with(|| AdaptiveLimitTracker::new(self.safety_margin, self.aimd.clone()))
+            .downgrade()
     }
 
     /// Get tracker for account (if exists)
