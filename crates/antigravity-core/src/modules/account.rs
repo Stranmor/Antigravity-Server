@@ -111,13 +111,15 @@ pub fn save_account(account: &Account) -> Result<(), String> {
     let content = serde_json::to_string_pretty(account)
         .map_err(|e| format!("Failed to serialize account data: {}", e))?;
 
-    // Write to temp file first
-    fs::write(&temp_path, content)
-        .map_err(|e| format!("Failed to write temp account file: {}", e))?;
+    if let Err(e) = fs::write(&temp_path, content) {
+        let _ = fs::remove_file(&temp_path);
+        return Err(format!("Failed to write temp account file: {}", e));
+    }
 
-    // Atomic rename
-    fs::rename(&temp_path, &account_path)
-        .map_err(|e| format!("Failed to replace account file: {}", e))
+    fs::rename(&temp_path, &account_path).map_err(|e| {
+        let _ = fs::remove_file(&temp_path);
+        format!("Failed to replace account file: {}", e)
+    })
 }
 
 /// List all accounts.

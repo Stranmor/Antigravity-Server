@@ -206,7 +206,7 @@ impl AdaptiveLimitTracker {
             .minute_started_at
             .read()
             .map(|started| now.duration_since(*started) >= Duration::from_secs(60))
-            .unwrap_or(true);
+            .unwrap_or(false);
 
         if should_reset {
             self.requests_this_minute.store(0, Ordering::Relaxed);
