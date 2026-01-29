@@ -6,7 +6,7 @@
 
 <img src="public/icon.png" alt="Antigravity Logo" width="140" height="140" style="border-radius: 24px;">
 
-[![Upstream](https://img.shields.io/badge/Upstream-v4.0.5-888?style=for-the-badge&logo=github)](https://github.com/lbjlaq/Antigravity-Manager)
+[![Upstream](https://img.shields.io/badge/Upstream-v4.0.7-888?style=for-the-badge&logo=github)](https://github.com/lbjlaq/Antigravity-Manager)
 [![Rust](https://img.shields.io/badge/100%25_Rust-dea584?style=for-the-badge&logo=rust&logoColor=black)](https://www.rust-lang.org/)
 [![Leptos](https://img.shields.io/badge/Leptos-WASM-8B5CF6?style=for-the-badge)](https://leptos.dev/)
 [![Axum](https://img.shields.io/badge/Axum-Server-3B82F6?style=for-the-badge)](https://github.com/tokio-rs/axum)
@@ -55,7 +55,7 @@ While [Antigravity Manager](https://github.com/lbjlaq/Antigravity-Manager) provi
 | **Routing** | Silent Model Substitution | **Strict Routing + Preferred Account** |
 | **Isolation** | Shared IP | **WARP Proxy Support (Per-Account IP)** |
 | **Observability**| Local UI | **Resilience API & Prometheus Metrics** |
-| **Security** | Standard String Compare | **Constant-time Auth (Timing Safe)** |
+| **Security** | Standard String Compare | **Constant-time Auth + User-Agent** |
 | **Performance** | Standard | **LRU Schema Caching** |
 | **Audio in Chat** | ❌ Not implemented | **✅ Official `input_audio` format** |
 | **Video in Chat** | ❌ Not supported | **✅ Via `video_url` extension** |
@@ -78,9 +78,13 @@ The server operates fully autonomously with a dedicated `Scheduler` system (port
 - **Self-Healing**: Periodic health checks monitor and reset circuit breakers.
 
 ### 🛡️ Circuit Breakers & Resilience
-Each account is protected by an independent circuit breaker and a dynamic **Health Score**.
+Multi-layered protection prevents cascading failures at both the **Account** and **Network** levels.
+
 - **Atomic 429 Lockout**: Instantly freezes an account for a 60s cooldown upon the first rate limit detection—*before* the async refresh cycle begins—preventing concurrent requests from hitting a dead account.
-- **Failover Isolation**: If an account starts failing, it's automatically isolated to prevent cascading failures.
+- **Upstream Transport Health**: Intelligent network monitoring tracks connectivity to upstream providers.
+    - **Circuit Breaking**: Endpoints tripping 5 consecutive transport failures are automatically isolated for 30s to prevent latency pile-up.
+    - **Transient Retries**: Network glitches trigger an automatic, immediate retry with a 500ms backoff.
+- **Health Scores**: Dynamic scoring prevents routing traffic to unstable accounts or endpoints.
 
 Monitor everything via the **Resilience API**:
 - `GET /api/resilience/health` — Real-time account availability.
@@ -359,9 +363,9 @@ This fork uses **Semantic Porting** — we don't blindly copy upstream changes. 
 
 **🔄 Active Sync**: We actively port useful upstream changes. Currently synced with **v4.0.5**, plus our exclusive additions: 
 
-- **Reliability**: AIMD predictive rate limiting, Circuit Breakers, sticky session rebind on 429, atomic race condition prevention.
+- **Reliability**: AIMD predictive rate limiting, Upstream Circuit Breakers (30s cooldown after 5 failures), transport retries (500ms delay), and sticky session rebind on 429.
 - **Persistence**: Sequential actor-based file writing to eliminate race conditions.
-- **Security**: Hardened constant-time auth, WARP proxy isolation.
+- **Security**: Hardened constant-time auth, User-Agent masking, WARP proxy isolation.
 - **Features**: Multimodal audio/video support, LRU schema caching, `preferred_account_id` routing, aspect ratio support, robust token rotation, and auto-refresh schedulers.
 
 See [AGENTS.md](AGENTS.md) for detailed architecture documentation and sync workflow.

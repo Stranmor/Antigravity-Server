@@ -115,6 +115,27 @@ cargo build --release -p antigravity-server    # ✅ builds (1m 22s, 11MB)
 
 ---
 
+### Last Sync: 2026-01-29 (v4.0.7)
+
+**Ported from v4.0.7:**
+- **`mappers/openai/request.rs`** — OpenAI tool filtering and thinking detection fixes
+  - Skip tools without `name` field (prevents REQUIRED_FIELD_MISSING error)
+  - Remove `external_web_access` field injected by OpenAI Codex (#1278)
+  - Thinking detection: only models with explicit `-thinking` suffix (not `-high`, `-low`, `-pro`)
+  - Removed default 80k maxOutputTokens for non-thinking models (only set if user provides)
+  - Changed topP default: 1.0 → 0.95 (Gemini recommended)
+  - For thinking models: auto-bump maxOutputTokens if <= thinkingBudget
+
+**NOT ported (intentionally):**
+- **215088e** — Size-based log cleanup: we use `tracing` crate, not custom logger
+- **cb5ce6d** — spawn_blocking for DB operations: we don't have proxy_db/token_stats modules
+- **CircuitBreakerConfig** — Tauri-specific config hot-reload, we have different architecture
+
+**Already implemented:**
+- **7fd40bf** — Ghost accounts fix: `state.reload_accounts()` already called after delete
+
+---
+
 ## 📝 Changes Summary (2026-01-29)
 
 ### Endpoint Health Circuit Breaker
