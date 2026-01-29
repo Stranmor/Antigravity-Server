@@ -181,13 +181,14 @@ impl UpstreamClient {
                 match response {
                     Ok(resp) => {
                         let status = resp.status();
-                        // Record success for circuit breaker
-                        ENDPOINT_HEALTH
-                            .entry((*base_url).to_string())
-                            .or_default()
-                            .record_success();
 
                         if status.is_success() {
+                            // Record success for circuit breaker only on successful responses
+                            ENDPOINT_HEALTH
+                                .entry((*base_url).to_string())
+                                .or_default()
+                                .record_success();
+
                             if warp_proxy_url.is_some() {
                                 tracing::debug!(
                                     "✓ WARP request succeeded | Endpoint: {} | Status: {}",
@@ -314,13 +315,14 @@ impl UpstreamClient {
                 match response {
                     Ok(resp) => {
                         let status = resp.status();
-                        // Record success for circuit breaker
-                        ENDPOINT_HEALTH
-                            .entry((*base_url).to_string())
-                            .or_default()
-                            .record_success();
 
                         if status.is_success() {
+                            // Record success for circuit breaker only on successful responses
+                            ENDPOINT_HEALTH
+                                .entry((*base_url).to_string())
+                                .or_default()
+                                .record_success();
+
                             if idx > 0 {
                                 tracing::info!(
                                     "✓ Upstream fallback succeeded | Endpoint: {} | Status: {} | Attempt: {}/{}",
@@ -449,13 +451,14 @@ impl UpstreamClient {
                 match response {
                     Ok(resp) => {
                         let status = resp.status();
-                        // Record success for circuit breaker
-                        ENDPOINT_HEALTH
-                            .entry((*base_url).to_string())
-                            .or_default()
-                            .record_success();
 
                         if status.is_success() {
+                            // Record success for circuit breaker only on successful responses
+                            ENDPOINT_HEALTH
+                                .entry((*base_url).to_string())
+                                .or_default()
+                                .record_success();
+
                             if idx > 0 {
                                 tracing::info!(
                                     "✓ Upstream fallback succeeded for fetchAvailableModels | Endpoint: {} | Status: {}",
