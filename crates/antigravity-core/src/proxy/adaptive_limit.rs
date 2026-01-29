@@ -209,9 +209,11 @@ impl AdaptiveLimitTracker {
             .unwrap_or(false);
 
         if should_reset {
-            self.requests_this_minute.store(0, Ordering::Relaxed);
             if let Ok(mut guard) = self.minute_started_at.write() {
-                *guard = now;
+                if now.duration_since(*guard) >= Duration::from_secs(60) {
+                    self.requests_this_minute.store(0, Ordering::Relaxed);
+                    *guard = now;
+                }
             }
         }
     }
@@ -425,10 +427,17 @@ impl AdaptiveLimitManager {
         &self,
         account_id: &str,
     ) -> dashmap::mapref::one::Ref<'_, String, AdaptiveLimitTracker> {
+        let key = account_id.to_string();
         self.trackers
-            .entry(account_id.to_string())
+            .entry(key.clone())
             .or_insert_with(|| AdaptiveLimitTracker::new(self.safety_margin, self.aimd.clone()));
-        self.trackers.get(account_id).expect("just inserted")
+        self.trackers.get(&key).unwrap_or_else(|| {
+            self.trackers.insert(
+                key.clone(),
+                AdaptiveLimitTracker::new(self.safety_margin, self.aimd.clone()),
+            );
+            self.trackers.get(&key).expect("entry just inserted")
+        })
     }
 
     /// Get tracker for account (if exists)
