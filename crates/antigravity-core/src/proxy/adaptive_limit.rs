@@ -285,23 +285,25 @@ impl AdaptiveLimitTracker {
         let current = self.requests_this_minute.fetch_add(1, Ordering::Relaxed) + 1;
         let threshold = self.working_threshold.load(Ordering::Relaxed);
 
-        // If we succeeded above threshold, the limit might be higher
         if current > threshold {
-            // Take lock to prevent double-expansion race:
-            // Two threads seeing consecutive==3 simultaneously could both expand
-            let _lock = self
-                .limit_update_lock
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
-
             let consecutive = self
                 .consecutive_above_threshold
                 .fetch_add(1, Ordering::Relaxed)
                 + 1;
 
-            if consecutive == 3 {
-                self.expand_limit_inner();
-                self.consecutive_above_threshold.store(0, Ordering::Relaxed);
+            // Only take lock when expansion is potentially needed
+            if consecutive >= 3 {
+                let _lock = self
+                    .limit_update_lock
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+
+                // Re-check under lock to prevent double-expansion race
+                let current_consecutive = self.consecutive_above_threshold.load(Ordering::Relaxed);
+                if current_consecutive >= 3 {
+                    self.expand_limit_inner();
+                    self.consecutive_above_threshold.store(0, Ordering::Relaxed);
+                }
             }
         }
     }

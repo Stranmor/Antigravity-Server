@@ -129,7 +129,7 @@ pub fn transform_openai_request(
     }
 
     // 从全局存储获取 thoughtSignature (PR #93 支持)
-    let global_thought_sig = get_thought_signature();
+    // (Already fetched as global_thought_sig above)
     if let Some(ref sig) = global_thought_sig {
         tracing::debug!("从全局存储获取到 thoughtSignature (长度: {})", sig.len());
     }
