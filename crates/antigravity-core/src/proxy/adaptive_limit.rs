@@ -288,8 +288,7 @@ impl AdaptiveLimitTracker {
                 .fetch_add(1, Ordering::Relaxed)
                 + 1;
 
-            // After 3 consecutive successes above threshold, expand limit
-            if consecutive >= 3 {
+            if consecutive == 3 {
                 self.expand_limit();
                 self.consecutive_above_threshold.store(0, Ordering::Relaxed);
             }
@@ -427,17 +426,14 @@ impl AdaptiveLimitManager {
         &self,
         account_id: &str,
     ) -> dashmap::mapref::one::Ref<'_, String, AdaptiveLimitTracker> {
-        let key = account_id.to_string();
-        self.trackers
-            .entry(key.clone())
-            .or_insert_with(|| AdaptiveLimitTracker::new(self.safety_margin, self.aimd.clone()));
-        self.trackers.get(&key).unwrap_or_else(|| {
-            self.trackers.insert(
-                key.clone(),
-                AdaptiveLimitTracker::new(self.safety_margin, self.aimd.clone()),
-            );
-            self.trackers.get(&key).expect("entry just inserted")
-        })
+        if let Some(tracker) = self.trackers.get(account_id) {
+            return tracker;
+        }
+        self.trackers.insert(
+            account_id.to_string(),
+            AdaptiveLimitTracker::new(self.safety_margin, self.aimd.clone()),
+        );
+        self.trackers.get(account_id).expect("entry just inserted")
     }
 
     /// Get tracker for account (if exists)
