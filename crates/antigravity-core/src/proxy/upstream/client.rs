@@ -19,6 +19,8 @@ const V1_INTERNAL_BASE_URL_FALLBACKS: [&str; 2] = [
     V1_INTERNAL_BASE_URL_DAILY, // 备用测试环境（新功能）
 ];
 
+const USER_AGENT: &str = "antigravity/1.11.9 windows/amd64";
+
 pub struct UpstreamClient {
     http_client: Client,
 }
@@ -32,7 +34,7 @@ impl UpstreamClient {
             .pool_idle_timeout(Duration::from_secs(90)) // 空闲连接保持 90 秒
             .tcp_keepalive(Duration::from_secs(60)) // TCP 保活探测 60 秒
             .timeout(Duration::from_secs(600))
-            .user_agent("antigravity/1.11.9 windows/amd64");
+            .user_agent(USER_AGENT);
 
         if let Some(config) = proxy_config {
             if config.enabled && !config.url.is_empty() {
@@ -117,7 +119,7 @@ impl UpstreamClient {
                 .pool_idle_timeout(Duration::from_secs(30))
                 .tcp_keepalive(Duration::from_secs(60))
                 .timeout(Duration::from_secs(600))
-                .user_agent("antigravity/1.11.9 windows/amd64")
+                .user_agent(USER_AGENT)
                 .proxy(proxy)
                 .build()
                 .map_err(|e| format!("Failed to create WARP client: {}", e))?
@@ -139,7 +141,7 @@ impl UpstreamClient {
         );
         headers.insert(
             header::USER_AGENT,
-            header::HeaderValue::from_static("antigravity/1.11.9 windows/amd64"),
+            header::HeaderValue::from_static(USER_AGENT),
         );
 
         // Inject extra headers
@@ -157,7 +159,7 @@ impl UpstreamClient {
         for (idx, base_url) in V1_INTERNAL_BASE_URL_FALLBACKS.iter().enumerate() {
             // Circuit breaker: skip unhealthy endpoints
             if ENDPOINT_HEALTH
-                .get(base_url)
+                .get(*base_url)
                 .is_some_and(|h| h.should_skip())
             {
                 tracing::debug!("Skipping unhealthy endpoint: {}", base_url);
@@ -181,7 +183,7 @@ impl UpstreamClient {
                         let status = resp.status();
                         // Record success for circuit breaker
                         ENDPOINT_HEALTH
-                            .entry(base_url)
+                            .entry((*base_url).to_string())
                             .or_default()
                             .record_success();
 
@@ -231,7 +233,7 @@ impl UpstreamClient {
 
                         // Record failure for circuit breaker
                         ENDPOINT_HEALTH
-                            .entry(base_url)
+                            .entry((*base_url).to_string())
                             .or_default()
                             .record_failure();
 
@@ -271,7 +273,7 @@ impl UpstreamClient {
         );
         headers.insert(
             header::USER_AGENT,
-            header::HeaderValue::from_static("antigravity/1.11.9 windows/amd64"),
+            header::HeaderValue::from_static(USER_AGENT),
         );
 
         // 注入额外的 Headers (如 anthropic-beta)
@@ -289,7 +291,7 @@ impl UpstreamClient {
         for (idx, base_url) in V1_INTERNAL_BASE_URL_FALLBACKS.iter().enumerate() {
             // Circuit breaker: skip unhealthy endpoints
             if ENDPOINT_HEALTH
-                .get(base_url)
+                .get(*base_url)
                 .is_some_and(|h| h.should_skip())
             {
                 tracing::debug!("Skipping unhealthy endpoint: {}", base_url);
@@ -314,7 +316,7 @@ impl UpstreamClient {
                         let status = resp.status();
                         // Record success for circuit breaker
                         ENDPOINT_HEALTH
-                            .entry(base_url)
+                            .entry((*base_url).to_string())
                             .or_default()
                             .record_success();
 
@@ -374,7 +376,7 @@ impl UpstreamClient {
 
                         // Record failure for circuit breaker
                         ENDPOINT_HEALTH
-                            .entry(base_url)
+                            .entry((*base_url).to_string())
                             .or_default()
                             .record_failure();
 
@@ -415,7 +417,7 @@ impl UpstreamClient {
         );
         headers.insert(
             header::USER_AGENT,
-            header::HeaderValue::from_static("antigravity/1.11.9 windows/amd64"),
+            header::HeaderValue::from_static(USER_AGENT),
         );
 
         let mut last_err: Option<String> = None;
@@ -424,7 +426,7 @@ impl UpstreamClient {
         for (idx, base_url) in V1_INTERNAL_BASE_URL_FALLBACKS.iter().enumerate() {
             // Circuit breaker: skip unhealthy endpoints
             if ENDPOINT_HEALTH
-                .get(base_url)
+                .get(*base_url)
                 .is_some_and(|h| h.should_skip())
             {
                 tracing::debug!("Skipping unhealthy endpoint: {}", base_url);
@@ -449,7 +451,7 @@ impl UpstreamClient {
                         let status = resp.status();
                         // Record success for circuit breaker
                         ENDPOINT_HEALTH
-                            .entry(base_url)
+                            .entry((*base_url).to_string())
                             .or_default()
                             .record_success();
 
@@ -509,7 +511,7 @@ impl UpstreamClient {
 
                         // Record failure for circuit breaker
                         ENDPOINT_HEALTH
-                            .entry(base_url)
+                            .entry((*base_url).to_string())
                             .or_default()
                             .record_failure();
 

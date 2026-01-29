@@ -2,6 +2,9 @@
 //!
 //! Tracks health of upstream endpoints to skip unhealthy ones temporarily.
 //! After 5 consecutive failures, an endpoint is skipped for 30 seconds.
+//!
+//! Note: This map uses String keys and is bounded by the number of endpoints
+//! (currently 2 static URLs). No eviction is needed as entries are reused.
 
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
@@ -52,7 +55,7 @@ impl Default for EndpointHealth {
     }
 }
 
-pub static ENDPOINT_HEALTH: Lazy<DashMap<&'static str, EndpointHealth>> = Lazy::new(DashMap::new);
+pub static ENDPOINT_HEALTH: Lazy<DashMap<String, EndpointHealth>> = Lazy::new(DashMap::new);
 
 pub const TRANSPORT_RETRY_DELAY_MS: u64 = 500;
 pub const MAX_TRANSPORT_RETRIES_PER_ENDPOINT: u32 = 1;
