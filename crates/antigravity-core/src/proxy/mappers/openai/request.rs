@@ -106,6 +106,27 @@ pub fn transform_openai_request(
         }
     }
 
+    // [NEW] Build tool_name → schema mapping for argument type correction (upstream v4.0.5)
+    let mut tool_name_to_schema = std::collections::HashMap::new();
+    if let Some(tools) = &request.tools {
+        for tool in tools {
+            if let (Some(name), Some(params)) = (
+                tool.get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|v| v.as_str()),
+                tool.get("function").and_then(|f| f.get("parameters")),
+            ) {
+                tool_name_to_schema.insert(name.to_string(), params.clone());
+            } else if let (Some(name), Some(params)) = (
+                tool.get("name").and_then(|v| v.as_str()),
+                tool.get("parameters"),
+            ) {
+                // Handle simplified format some clients may use
+                tool_name_to_schema.insert(name.to_string(), params.clone());
+            }
+        }
+    }
+
     // 从全局存储获取 thoughtSignature (PR #93 支持)
     let global_thought_sig = get_thought_signature();
     if let Some(ref sig) = global_thought_sig {
@@ -305,6 +326,12 @@ pub fn transform_openai_request(
             if let Some(tool_calls) = &msg.tool_calls {
                 for tc in tool_calls.iter() {
                     let mut args = serde_json::from_str::<Value>(&tc.function.arguments).unwrap_or(json!({}));
+
+                    // [FIX] Fix tool call argument types using original schema
+                    // This converts string booleans/numbers to proper types: "true" → true, "123" → 123
+                    if let Some(original_schema) = tool_name_to_schema.get(&tc.function.name) {
+                        crate::proxy::common::json_schema::fix_tool_call_args(&mut args, original_schema);
+                    }
 
                     // Shell tool command must be an array of strings
                     if tc.function.name == "local_shell_call" {

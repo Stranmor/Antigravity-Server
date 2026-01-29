@@ -197,7 +197,7 @@ nix run .#build-server
 
 ### Manual Build
 
-Requires Rust toolchain and [Trunk](https://trunkrs.dev/) for the frontend:
+Requires Rust toolchain (stable 2021) and [Trunk](https://trunkrs.dev/) for the frontend:
 
 ```bash
 # Build the server (automatically builds the Leptos UI via build.rs)
@@ -339,11 +339,11 @@ antigravity-server config show --json
 
 ```
 crates/
-├── antigravity-types/      # Foundation types & error hierarchy
+├── antigravity-types/      # Shared types, API models, & error hierarchy
 ├── antigravity-core/       # Business logic (Proxy, AIMD, Circuits)
 └── antigravity-client/     # Rust SDK (auto-discovery, retry, streaming)
 
-antigravity-server/         # Axum HTTP Entry Point
+antigravity-server/         # Axum HTTP Entry Point & CLI
 src-leptos/                 # Pure Rust WASM Frontend
 vendor/antigravity-upstream/ # Upstream reference (Git Submodule)
 ```
@@ -357,7 +357,7 @@ This fork uses **Semantic Porting** — we don't blindly copy upstream changes. 
 - ✅ **Always Port**: Bug fixes, new model support, security patches, JSON schema improvements, background logic (like `BackgroundTaskRunner` behavior).
 - ❌ **Never Port**: React/Tauri code (we use Leptos/Axum), changes conflicting with our resilience layer
 
-**🔄 Active Sync**: We actively port useful upstream changes. Currently synced with **v4.0.4**, plus our exclusive additions: 
+**🔄 Active Sync**: We actively port useful upstream changes. Currently synced with **v4.0.5**, plus our exclusive additions: 
 
 - **Reliability**: AIMD predictive rate limiting, Circuit Breakers, sticky session rebind on 429, atomic race condition prevention.
 - **Persistence**: Sequential actor-based file writing to eliminate race conditions.
