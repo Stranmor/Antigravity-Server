@@ -142,7 +142,7 @@ pub struct AdaptiveLimitTracker {
 impl AdaptiveLimitTracker {
     /// Create new tracker with conservative defaults
     pub fn new(safety_margin: f64, aimd: AIMDController) -> Self {
-        let default_limit = 15;
+        let default_limit = aimd.min_limit.max(15).min(aimd.max_limit);
         Self {
             confirmed_limit: AtomicU64::new(default_limit),
             working_threshold: AtomicU64::new((default_limit as f64 * safety_margin) as u64),
@@ -180,7 +180,7 @@ impl AdaptiveLimitTracker {
         };
 
         let effective_limit = (confirmed_limit as f64 * confidence) as u64;
-        let effective_limit = effective_limit.max(aimd.min_limit);
+        let effective_limit = effective_limit.max(aimd.min_limit).min(aimd.max_limit);
 
         let tracker = Self::new(safety_margin, aimd);
         tracker
