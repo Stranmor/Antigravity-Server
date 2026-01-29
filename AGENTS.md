@@ -115,6 +115,34 @@ cargo build --release -p antigravity-server    # ✅ builds (1m 22s, 11MB)
 
 ---
 
+## 📝 Changes Summary (2026-01-29)
+
+### Endpoint Health Circuit Breaker
+
+Added circuit breaker for upstream Google API endpoints to handle transport errors gracefully.
+
+**New module:** `proxy/upstream/endpoint_health.rs`
+- `EndpointHealth` struct with atomic failure counter
+- `ENDPOINT_HEALTH` global DashMap for per-endpoint health tracking
+- Circuit trips after 5 consecutive transport failures → endpoint skipped for 30 seconds
+- Transport retry: 1 retry with 500ms delay before switching to next endpoint
+
+**Integration in `client.rs`:**
+- `call_v1_internal_with_headers` — circuit breaker + transport retry
+- `call_v1_internal_with_warp` — circuit breaker + transport retry
+- `fetch_available_models` — circuit breaker + transport retry
+
+**Bug fix:** `record_success()` now only called on HTTP 2xx responses (was incorrectly called on 429/503).
+
+**Constants:**
+- `TRANSPORT_RETRY_DELAY_MS = 500` — delay before retry on same endpoint
+- `MAX_TRANSPORT_RETRIES_PER_ENDPOINT = 1` — max retries per endpoint
+- `USER_AGENT` — centralized user agent string
+
+**Total tests:** 171 (was 170)
+
+---
+
 ## 📝 Changes Summary (2026-01-27)
 
 ### Integration Tests for HTTP Handlers
