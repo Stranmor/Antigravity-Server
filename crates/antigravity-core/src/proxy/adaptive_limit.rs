@@ -21,6 +21,7 @@
 use dashmap::DashMap;
 use serde::Serialize;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
@@ -134,12 +135,14 @@ pub struct AdaptiveLimitTracker {
     safety_margin: f64,
     /// AIMD controller
     aimd: AIMDController,
+    /// Mutex to synchronize limit updates (record_429/expand_limit)
+    limit_update_lock: Mutex<()>,
 }
 
 impl AdaptiveLimitTracker {
     /// Create new tracker with conservative defaults
     pub fn new(safety_margin: f64, aimd: AIMDController) -> Self {
-        let default_limit = 15; // Conservative default for unknown accounts
+        let default_limit = 15;
         Self {
             confirmed_limit: AtomicU64::new(default_limit),
             working_threshold: AtomicU64::new((default_limit as f64 * safety_margin) as u64),
@@ -154,6 +157,7 @@ impl AdaptiveLimitTracker {
             consecutive_above_threshold: AtomicU64::new(0),
             safety_margin,
             aimd,
+            limit_update_lock: Mutex::new(()),
         }
     }
 
@@ -317,25 +321,21 @@ impl AdaptiveLimitTracker {
 
     /// Record a 429 error - immediately contract limit
     pub fn record_429(&self) {
+        let _lock = self.limit_update_lock.lock().ok();
         self.maybe_reset_minute();
         let current_requests = self.requests_this_minute.load(Ordering::Relaxed);
         let old_limit = self.confirmed_limit.load(Ordering::Relaxed);
 
-        // The actual limit is what we just hit
-        let actual_limit = if current_requests > 0 {
-            current_requests
-        } else {
-            old_limit
-        };
+        // Use the higher of current_requests or old_limit to avoid volatility
+        // when 429 arrives early in the minute window
+        let actual_limit = current_requests.max(old_limit);
 
-        // Apply AIMD penalize
         let new_limit = self.aimd.penalize(actual_limit);
         let new_threshold = (new_limit as f64 * self.safety_margin) as u64;
 
         self.confirmed_limit.store(new_limit, Ordering::Relaxed);
         self.working_threshold
             .store(new_threshold, Ordering::Relaxed);
-        // Ceiling also contracts - limit might have decreased
         self.ceiling.store(actual_limit, Ordering::Relaxed);
         if let Ok(mut guard) = self.last_calibration.write() {
             *guard = Instant::now();
@@ -355,6 +355,7 @@ impl AdaptiveLimitTracker {
 
     /// Expand limit after successful probing
     fn expand_limit(&self) {
+        let _lock = self.limit_update_lock.lock().ok();
         let old_limit = self.confirmed_limit.load(Ordering::Relaxed);
         let new_limit = self.aimd.reward(old_limit);
         let new_threshold = (new_limit as f64 * self.safety_margin) as u64;
