@@ -8,6 +8,11 @@ use crate::proxy::session_manager::SessionManager;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
+/// Minimum signature length to be considered valid for thinking models.
+/// Signatures shorter than this are likely corrupted or incomplete.
+/// Upstream uses 50, we use same value for compatibility.
+const MIN_SIGNATURE_LENGTH: usize = 50;
+
 // ===== Safety Settings Configuration =====
 
 /// Safety threshold levels for Gemini API
@@ -687,9 +692,6 @@ fn should_enable_thinking_by_default(model: &str) -> bool {
     false
 }
 
-/// Minimum length for a valid thought_signature
-const MIN_SIGNATURE_LENGTH: usize = 50;
-
 /// [FIX #295] Check if we have any valid signature available for function calls
 /// This prevents Gemini 3 Pro from rejecting requests due to missing thought_signature
 fn has_valid_signature_for_function_calls(
@@ -997,7 +999,7 @@ fn build_contents(
                                 }
                                 None => {
                                     // Unknown origin: use if valid length (upstream v4.0.5 fix)
-                                    if sig.len() >= 100 {
+                                    if sig.len() >= MIN_SIGNATURE_LENGTH {
                                         tracing::debug!(
                                             "[Thinking-Signature] Unknown signature origin but valid length (len: {}), using as-is.",
                                             sig.len()
@@ -1183,7 +1185,7 @@ fn build_contents(
                                         }
                                         None => {
                                             // Unknown origin: use if valid length (upstream v4.0.5 fix)
-                                            if sig.len() >= 100 {
+                                            if sig.len() >= MIN_SIGNATURE_LENGTH {
                                                 tracing::debug!(
                                                     "[Tool-Signature] Unknown signature origin but valid length (len: {}) for tool_use: {}, using as-is.",
                                                     sig.len(),
