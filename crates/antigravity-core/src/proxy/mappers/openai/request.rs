@@ -23,11 +23,12 @@ pub fn transform_openai_request(
         request.quality.as_deref(),
     );
 
-    // Detect thinking models early (needed for signature handling)
-    let is_gemini_3_thinking = mapped_model_lower.contains("gemini-3")
-        && (mapped_model_lower.ends_with("-high")
-            || mapped_model_lower.ends_with("-low")
-            || mapped_model_lower.contains("-pro"));
+    // [FIX] Detect thinking models early (needed for signature handling)
+    // Only treat as Gemini thinking if model name explicitly contains "-thinking"
+    // Avoid injecting thinkingConfig for gemini-3-pro (preview) which doesn't support it
+    let is_gemini_3_thinking = mapped_model_lower.contains("gemini")
+        && mapped_model_lower.contains("-thinking")
+        && !mapped_model_lower.contains("claude");
     let is_claude_thinking = mapped_model_lower.ends_with("-thinking");
     let is_thinking_model = is_gemini_3_thinking || is_claude_thinking;
 
@@ -426,38 +427,42 @@ pub fn transform_openai_request(
 
     // 3. Build request body
     let thinking_budget: u32 = 16000;
-    let min_output_for_thinking = thinking_budget + 4000; // Claude requires max_tokens > budget_tokens
-
-    let max_output_tokens = if is_thinking_model {
-        // For thinking models, ensure max_tokens > thinking_budget
-        request
-            .max_tokens
-            .map(|t| t.max(min_output_for_thinking))
-            .unwrap_or(min_output_for_thinking)
-    } else {
-        request.max_tokens.unwrap_or(16384)
-    };
 
     let mut gen_config = json!({
-        "maxOutputTokens": max_output_tokens,
         "temperature": request.temperature.unwrap_or(1.0),
-        "topP": request.top_p.unwrap_or(1.0),
+        "topP": request.top_p.unwrap_or(0.95),
     });
+
+    if let Some(max_tokens) = request.max_tokens {
+        gen_config["maxOutputTokens"] = json!(max_tokens);
+    }
 
     if let Some(n) = request.n {
         gen_config["candidateCount"] = json!(n);
     }
 
     if actual_include_thinking {
+        let budget = thinking_budget;
         gen_config["thinkingConfig"] = json!({
             "includeThoughts": true,
-            "thinkingBudget": thinking_budget
+            "thinkingBudget": budget
         });
+
+        let current_max = gen_config["maxOutputTokens"].as_i64().unwrap_or(0);
+        if current_max <= budget as i64 {
+            let new_max = budget + 8192;
+            gen_config["maxOutputTokens"] = json!(new_max);
+            tracing::debug!(
+                "[OpenAI-Request] Adjusted maxOutputTokens to {} for thinking model (budget={})",
+                new_max,
+                budget
+            );
+        }
+
         tracing::debug!(
-            "[OpenAI-Request] Injected thinkingConfig for model {}: thinkingBudget={}, maxOutputTokens={}",
+            "[OpenAI-Request] Injected thinkingConfig for model {}: thinkingBudget={}",
             mapped_model,
-            thinking_budget,
-            max_output_tokens
+            budget
         );
     }
 
@@ -506,7 +511,12 @@ pub fn transform_openai_request(
                 func
             };
 
-            if let Some(name) = gemini_func.get("name").and_then(|v| v.as_str()) {
+            let name_opt = gemini_func
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
+            if let Some(name) = &name_opt {
                 // 跳过内置联网工具名称，避免重复定义
                 if name == "web_search" || name == "google_search" || name == "web_search_20250305"
                 {
@@ -518,6 +528,13 @@ pub fn transform_openai_request(
                         obj.insert("name".to_string(), json!("shell"));
                     }
                 }
+            } else {
+                // [FIX] Skip tools without name to prevent REQUIRED_FIELD_MISSING error
+                tracing::warn!(
+                    "[OpenAI-Request] Skipping tool without name: {:?}",
+                    gemini_func
+                );
+                continue;
             }
 
             // [NEW CRITICAL FIX] 清除函数定义根层级的非法字段 (解决报错持久化)
@@ -526,6 +543,7 @@ pub fn transform_openai_request(
                 obj.remove("strict");
                 obj.remove("additionalProperties");
                 obj.remove("type"); // [NEW] Gemini 不支持在 FunctionDeclaration 根层级出现 type: "function"
+                obj.remove("external_web_access"); // [FIX #1278] Remove invalid field injected by OpenAI Codex
             }
 
             if let Some(params) = gemini_func.get_mut("parameters") {

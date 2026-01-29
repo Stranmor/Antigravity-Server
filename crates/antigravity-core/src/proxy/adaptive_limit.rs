@@ -287,13 +287,20 @@ impl AdaptiveLimitTracker {
 
         // If we succeeded above threshold, the limit might be higher
         if current > threshold {
+            // Take lock to prevent double-expansion race:
+            // Two threads seeing consecutive==3 simultaneously could both expand
+            let _lock = self
+                .limit_update_lock
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+
             let consecutive = self
                 .consecutive_above_threshold
                 .fetch_add(1, Ordering::Relaxed)
                 + 1;
 
             if consecutive == 3 {
-                self.expand_limit();
+                self.expand_limit_inner();
                 self.consecutive_above_threshold.store(0, Ordering::Relaxed);
             }
         }
@@ -321,7 +328,10 @@ impl AdaptiveLimitTracker {
 
     /// Record a 429 error - immediately contract limit
     pub fn record_429(&self) {
-        let _lock = self.limit_update_lock.lock().ok();
+        let _lock = self
+            .limit_update_lock
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         self.maybe_reset_minute();
         let current_requests = self.requests_this_minute.load(Ordering::Relaxed);
         let old_limit = self.confirmed_limit.load(Ordering::Relaxed);
@@ -353,9 +363,17 @@ impl AdaptiveLimitTracker {
         );
     }
 
-    /// Expand limit after successful probing
+    /// Expand limit after successful probing (with lock)
     fn expand_limit(&self) {
-        let _lock = self.limit_update_lock.lock().ok();
+        let _lock = self
+            .limit_update_lock
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        self.expand_limit_inner();
+    }
+
+    /// Inner expand logic - caller must hold limit_update_lock
+    fn expand_limit_inner(&self) {
         let old_limit = self.confirmed_limit.load(Ordering::Relaxed);
         let new_limit = self.aimd.reward(old_limit);
         let new_threshold = (new_limit as f64 * self.safety_margin) as u64;
