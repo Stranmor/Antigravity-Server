@@ -373,6 +373,16 @@ pub fn transform_claude_request_in(
     // 用于存储 tool_use id -> name 映射
     let mut tool_id_to_name: HashMap<String, String> = HashMap::new();
 
+    // Build tool_name -> schema mapping for argument type correction (upstream v4.0.5)
+    let mut tool_name_to_schema: HashMap<String, Value> = HashMap::new();
+    if let Some(tools) = &claude_req.tools {
+        for tool in tools {
+            if let (Some(name), Some(schema)) = (&tool.name, &tool.input_schema) {
+                tool_name_to_schema.insert(name.clone(), schema.clone());
+            }
+        }
+    }
+
     // 检测是否有 mcp__ 开头的工具
     let has_mcp_tools = claude_req
         .tools
@@ -529,6 +539,7 @@ pub fn transform_claude_request_in(
         &mapped_model,
         &session_id,
         is_retry,
+        &tool_name_to_schema,
     )?;
 
     // 3. Tools
@@ -843,6 +854,7 @@ fn build_contents(
     last_user_task_text_normalized: &mut Option<String>,
     previous_was_tool_result: &mut bool,
     _existing_tool_result_ids: &std::collections::HashSet<String>,
+    tool_name_to_schema: &HashMap<String, Value>,
 ) -> Result<Vec<Value>, String> {
     let mut parts = Vec::new();
     // Track tool results in the current turn to identify missing ones
@@ -1054,6 +1066,14 @@ fn build_contents(
                                     *command = json!([s]);
                                 }
                             }
+                        }
+
+                        // Fix tool call argument types using original schema
+                        if let Some(original_schema) = tool_name_to_schema.get(name) {
+                            crate::proxy::common::json_schema::fix_tool_call_args(
+                                &mut final_input,
+                                original_schema,
+                            );
                         }
 
                         let mut part = json!({
@@ -1397,6 +1417,7 @@ fn build_google_content(
     last_user_task_text_normalized: &mut Option<String>,
     previous_was_tool_result: &mut bool,
     existing_tool_result_ids: &std::collections::HashSet<String>,
+    tool_name_to_schema: &HashMap<String, Value>,
 ) -> Result<Value, String> {
     let role = if msg.role == "assistant" {
         "model"
@@ -1456,6 +1477,7 @@ fn build_google_content(
         last_user_task_text_normalized,
         previous_was_tool_result,
         existing_tool_result_ids,
+        tool_name_to_schema,
     )?;
 
     if parts.is_empty() {
@@ -1478,6 +1500,7 @@ fn build_google_contents(
     mapped_model: &str,
     session_id: &str, // [NEW v3.3.17] Session ID for signature caching
     is_retry: bool,
+    tool_name_to_schema: &HashMap<String, Value>,
 ) -> Result<Value, String> {
     let mut contents = Vec::new();
     let mut last_thought_signature: Option<String> = None;
@@ -1519,6 +1542,7 @@ fn build_google_contents(
             &mut last_user_task_text_normalized,
             &mut previous_was_tool_result,
             &existing_tool_result_ids,
+            tool_name_to_schema,
         )?;
 
         if !google_content.is_null() {
