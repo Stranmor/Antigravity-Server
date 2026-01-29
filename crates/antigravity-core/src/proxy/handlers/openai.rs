@@ -238,9 +238,9 @@ pub async fn handle_chat_completions(
                                         Err(e) => {
                                             let err_str = e.to_string();
                                             let user_message = if err_str.contains("decoding") || err_str.contains("hyper") {
-                                                "Network connection unstable. Check your VPN/proxy settings or try a different node."
+                                                "Upstream server closed connection (overload). Retrying with different account..."
                                             } else {
-                                                "Stream interrupted due to network issue. Retry or check connection."
+                                                "Stream interrupted by upstream. Request will be retried automatically."
                                             };
                                             tracing::warn!("Stream error during transmission: {} (user msg: {})", err_str, user_message);
                                             Ok(Bytes::from(format!(
@@ -938,9 +938,9 @@ pub async fn handle_completions(
                                         Ok(b) => Ok(b),
                                         Err(e) => {
                                             let user_message = if e.contains("decoding") || e.contains("hyper") {
-                                                "Network connection unstable. Check your VPN/proxy settings or try a different node."
+                                                "Upstream server closed connection (overload). Retrying with different account..."
                                             } else {
-                                                "Stream interrupted due to network issue. Retry or check connection."
+                                                "Stream interrupted by upstream. Request will be retried automatically."
                                             };
                                             tracing::warn!("Stream error during transmission: {} (user msg: {})", e, user_message);
                                             Ok(Bytes::from(format!(
