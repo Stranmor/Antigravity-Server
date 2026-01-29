@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{OnceLock, RwLock};
 use std::time::{Duration, SystemTime};
 
 // Node.js proxy uses 2 hours TTL
@@ -39,26 +39,26 @@ pub struct SignatureCache {
     /// Layer 1: Tool Use ID -> Thinking Signature
     /// Key: tool_use_id (e.g., "toolu_01...")
     /// Value: The thought signature that generated this tool call
-    tool_signatures: Mutex<HashMap<String, CacheEntry<String>>>,
+    tool_signatures: RwLock<HashMap<String, CacheEntry<String>>>,
 
     /// Layer 2: Signature -> Model Family
     /// Key: thought signature string
     /// Value: Model family identifier (e.g., "claude-3-5-sonnet", "gemini-2.0-flash")
-    thinking_families: Mutex<HashMap<String, CacheEntry<String>>>,
+    thinking_families: RwLock<HashMap<String, CacheEntry<String>>>,
 
     /// Layer 3: Session ID -> Latest Thinking Signature (NEW)
     /// Key: session fingerprint (e.g., "sid-a1b2c3d4...")
     /// Value: The most recent valid thought signature for this session
     /// This prevents signature pollution between different conversations
-    session_signatures: Mutex<HashMap<String, CacheEntry<String>>>,
+    session_signatures: RwLock<HashMap<String, CacheEntry<String>>>,
 }
 
 impl SignatureCache {
     fn new() -> Self {
         Self {
-            tool_signatures: Mutex::new(HashMap::new()),
-            thinking_families: Mutex::new(HashMap::new()),
-            session_signatures: Mutex::new(HashMap::new()),
+            tool_signatures: RwLock::new(HashMap::new()),
+            thinking_families: RwLock::new(HashMap::new()),
+            session_signatures: RwLock::new(HashMap::new()),
         }
     }
 
@@ -74,7 +74,7 @@ impl SignatureCache {
             return;
         }
 
-        if let Ok(mut cache) = self.tool_signatures.lock() {
+        if let Ok(mut cache) = self.tool_signatures.write() {
             tracing::debug!(
                 "[SignatureCache] Caching tool signature for id: {}",
                 tool_use_id
@@ -99,7 +99,7 @@ impl SignatureCache {
 
     /// Retrieve a signature for a tool_use_id
     pub fn get_tool_signature(&self, tool_use_id: &str) -> Option<String> {
-        if let Ok(cache) = self.tool_signatures.lock() {
+        if let Ok(cache) = self.tool_signatures.read() {
             if let Some(entry) = cache.get(tool_use_id) {
                 if !entry.is_expired() {
                     tracing::debug!(
@@ -119,7 +119,7 @@ impl SignatureCache {
             return;
         }
 
-        if let Ok(mut cache) = self.thinking_families.lock() {
+        if let Ok(mut cache) = self.thinking_families.write() {
             tracing::debug!(
                 "[SignatureCache] Caching thinking family for sig (len={}): {}",
                 signature.len(),
@@ -144,7 +144,7 @@ impl SignatureCache {
 
     /// Get model family for a signature
     pub fn get_signature_family(&self, signature: &str) -> Option<String> {
-        if let Ok(cache) = self.thinking_families.lock() {
+        if let Ok(cache) = self.thinking_families.read() {
             if let Some(entry) = cache.get(signature) {
                 if !entry.is_expired() {
                     return Some(entry.data.clone());
@@ -169,7 +169,7 @@ impl SignatureCache {
             return;
         }
 
-        if let Ok(mut cache) = self.session_signatures.lock() {
+        if let Ok(mut cache) = self.session_signatures.write() {
             // Only update if new signature is longer (likely more complete)
             let should_store = match cache.get(session_id) {
                 None => true,
@@ -208,7 +208,7 @@ impl SignatureCache {
     /// Retrieve the latest thinking signature for a session.
     /// Returns None if not found or expired.
     pub fn get_session_signature(&self, session_id: &str) -> Option<String> {
-        if let Ok(cache) = self.session_signatures.lock() {
+        if let Ok(cache) = self.session_signatures.read() {
             if let Some(entry) = cache.get(session_id) {
                 if !entry.is_expired() {
                     tracing::debug!(
@@ -228,13 +228,13 @@ impl SignatureCache {
     /// Clear all caches (for testing or manual reset)
     #[allow(dead_code)] // Used in tests
     pub fn clear(&self) {
-        if let Ok(mut cache) = self.tool_signatures.lock() {
+        if let Ok(mut cache) = self.tool_signatures.write() {
             cache.clear();
         }
-        if let Ok(mut cache) = self.thinking_families.lock() {
+        if let Ok(mut cache) = self.thinking_families.write() {
             cache.clear();
         }
-        if let Ok(mut cache) = self.session_signatures.lock() {
+        if let Ok(mut cache) = self.session_signatures.write() {
             cache.clear();
         }
     }

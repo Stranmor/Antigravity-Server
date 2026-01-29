@@ -99,15 +99,25 @@ pub fn load_account(account_id: &str) -> Result<Account, String> {
     serde_json::from_str(&content).map_err(|e| format!("Failed to parse account data: {}", e))
 }
 
-/// Save a single account.
+/// Save a single account atomically.
+///
+/// Uses write-to-temp-file + atomic rename pattern to prevent data corruption
+/// on crash during write. This mirrors the safe behavior of `save_account_index`.
 pub fn save_account(account: &Account) -> Result<(), String> {
     let accounts_dir = get_accounts_dir()?;
     let account_path = accounts_dir.join(format!("{}.json", account.id));
+    let temp_path = accounts_dir.join(format!("{}.json.tmp", account.id));
 
     let content = serde_json::to_string_pretty(account)
         .map_err(|e| format!("Failed to serialize account data: {}", e))?;
 
-    fs::write(&account_path, content).map_err(|e| format!("Failed to save account data: {}", e))
+    // Write to temp file first
+    fs::write(&temp_path, content)
+        .map_err(|e| format!("Failed to write temp account file: {}", e))?;
+
+    // Atomic rename
+    fs::rename(&temp_path, &account_path)
+        .map_err(|e| format!("Failed to replace account file: {}", e))
 }
 
 /// List all accounts.

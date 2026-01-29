@@ -202,14 +202,17 @@ impl AdaptiveLimitTracker {
     /// Reset minute counter if minute has elapsed
     fn maybe_reset_minute(&self) {
         let now = Instant::now();
-        let should_reset = {
-            let started = self.minute_started_at.read().unwrap();
-            now.duration_since(*started) >= Duration::from_secs(60)
-        };
+        let should_reset = self
+            .minute_started_at
+            .read()
+            .map(|started| now.duration_since(*started) >= Duration::from_secs(60))
+            .unwrap_or(true);
 
         if should_reset {
             self.requests_this_minute.store(0, Ordering::Relaxed);
-            *self.minute_started_at.write().unwrap() = now;
+            if let Ok(mut guard) = self.minute_started_at.write() {
+                *guard = now;
+            }
         }
     }
 
@@ -253,10 +256,11 @@ impl AdaptiveLimitTracker {
     /// Determine probe strategy based on current state
     pub fn probe_strategy(&self) -> ProbeStrategy {
         let ratio = self.usage_ratio();
-        let time_since_calibration = {
-            let last = self.last_calibration.read().unwrap();
-            Instant::now().duration_since(*last)
-        };
+        let time_since_calibration = self
+            .last_calibration
+            .read()
+            .map(|last| Instant::now().duration_since(*last))
+            .unwrap_or(Duration::from_secs(3600));
 
         // If recently calibrated, be more conservative
         if time_since_calibration < Duration::from_secs(300) {
@@ -332,7 +336,9 @@ impl AdaptiveLimitTracker {
             .store(new_threshold, Ordering::Relaxed);
         // Ceiling also contracts - limit might have decreased
         self.ceiling.store(actual_limit, Ordering::Relaxed);
-        *self.last_calibration.write().unwrap() = Instant::now();
+        if let Ok(mut guard) = self.last_calibration.write() {
+            *guard = Instant::now();
+        }
         self.consecutive_above_threshold.store(0, Ordering::Relaxed);
 
         crate::proxy::prometheus::record_aimd_penalty();
@@ -356,7 +362,9 @@ impl AdaptiveLimitTracker {
         self.working_threshold
             .store(new_threshold, Ordering::Relaxed);
         self.ceiling.fetch_max(new_limit, Ordering::Relaxed);
-        *self.last_calibration.write().unwrap() = Instant::now();
+        if let Ok(mut guard) = self.last_calibration.write() {
+            *guard = Instant::now();
+        }
 
         crate::proxy::prometheus::record_aimd_reward();
 
@@ -375,16 +383,24 @@ impl AdaptiveLimitTracker {
 
     /// Get data for persistence
     pub fn to_persisted(&self) -> (u64, u64, u64) {
+        let elapsed = self
+            .last_calibration
+            .read()
+            .map(|t| t.elapsed().as_secs())
+            .unwrap_or(3600);
         (
             self.confirmed_limit.load(Ordering::Relaxed),
             self.ceiling.load(Ordering::Relaxed),
-            self.last_calibration.read().unwrap().elapsed().as_secs(),
+            elapsed,
         )
     }
 
     /// Time since last calibration
     pub fn time_since_calibration(&self) -> Duration {
-        self.last_calibration.read().unwrap().elapsed()
+        self.last_calibration
+            .read()
+            .map(|t| t.elapsed())
+            .unwrap_or(Duration::from_secs(3600))
     }
 }
 

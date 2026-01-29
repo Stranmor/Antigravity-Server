@@ -348,17 +348,32 @@ fn get_config_value(key: &str) -> Result<()> {
 }
 
 fn set_config_value(key: &str, value: &str) -> Result<()> {
+    match key {
+        "proxy.port" => {
+            value
+                .parse::<u16>()
+                .map_err(|_| anyhow::anyhow!("Invalid port number: {}", value))?;
+        }
+        "proxy.enable_logging" => {
+            value
+                .parse::<bool>()
+                .map_err(|_| anyhow::anyhow!("Invalid boolean: {}", value))?;
+        }
+        "proxy.api_key" => {}
+        _ => return Err(anyhow::anyhow!("Unknown config key: {}", key)),
+    }
+
     core_config::update_config(|config| match key {
         "proxy.port" => {
-            config.proxy.port = value.parse().expect("Invalid port number");
+            config.proxy.port = value.parse().unwrap();
         }
         "proxy.api_key" => {
             config.proxy.api_key = value.to_string();
         }
         "proxy.enable_logging" => {
-            config.proxy.enable_logging = value.parse().expect("Invalid boolean");
+            config.proxy.enable_logging = value.parse().unwrap();
         }
-        _ => panic!("Unknown config key: {}", key),
+        _ => {}
     })
     .map_err(|e| anyhow::anyhow!(e))?;
 
