@@ -450,10 +450,9 @@ impl AdaptiveLimitManager {
         if let Some(tracker) = self.trackers.get(account_id) {
             return tracker;
         }
-        self.trackers.insert(
-            account_id.to_string(),
-            AdaptiveLimitTracker::new(self.safety_margin, self.aimd.clone()),
-        );
+        self.trackers
+            .entry(account_id.to_string())
+            .or_insert_with(|| AdaptiveLimitTracker::new(self.safety_margin, self.aimd.clone()));
         self.trackers.get(account_id).expect("entry just inserted")
     }
 
