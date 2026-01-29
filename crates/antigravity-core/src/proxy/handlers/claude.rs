@@ -738,13 +738,16 @@ pub async fn handle_messages(
                                     match result {
                                         Ok(b) => Ok(b),
                                         Err(e) => {
-                                            // [FIX] Send Claude-compatible error event instead of raw JSON
-                                            // This prevents AI_TypeValidationError on client side
-                                            tracing::warn!("Stream error during transmission: {}", e);
-                                            // Send a proper Claude error event format
+                                            let err_str = e.to_string();
+                                            let user_message = if err_str.contains("decoding") || err_str.contains("hyper") {
+                                                "Network connection unstable. Check your VPN/proxy settings or try a different node."
+                                            } else {
+                                                "Stream interrupted due to network issue. Retry or check connection."
+                                            };
+                                            tracing::warn!("Stream error during transmission: {} (user msg: {})", err_str, user_message);
                                             Ok(Bytes::from(format!(
-                                                "event: error\ndata: {{\"type\":\"error\",\"error\":{{\"type\":\"overloaded_error\",\"message\":\"Stream interrupted: {}\"}}}}\n\n",
-                                                e.to_string().replace('"', "'").replace('\n', " ")
+                                                "event: error\ndata: {{\"type\":\"error\",\"error\":{{\"type\":\"overloaded_error\",\"message\":\"{}\"}}}}\n\n",
+                                                user_message
                                             )))
                                         }
                                     }

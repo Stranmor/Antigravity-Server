@@ -236,10 +236,16 @@ pub async fn handle_chat_completions(
                                     match result {
                                         Ok(b) => Ok(b),
                                         Err(e) => {
-                                            tracing::warn!("Stream error during transmission: {}", e);
+                                            let err_str = e.to_string();
+                                            let user_message = if err_str.contains("decoding") || err_str.contains("hyper") {
+                                                "Network connection unstable. Check your VPN/proxy settings or try a different node."
+                                            } else {
+                                                "Stream interrupted due to network issue. Retry or check connection."
+                                            };
+                                            tracing::warn!("Stream error during transmission: {} (user msg: {})", err_str, user_message);
                                             Ok(Bytes::from(format!(
-                                                "data: {{\"error\":{{\"message\":\"Stream interrupted: {}\",\"type\":\"server_error\"}}}}\n\n",
-                                                e.to_string().replace('"', "'").replace('\n', " ")
+                                                "data: {{\"error\":{{\"message\":\"{}\",\"type\":\"server_error\"}}}}\n\n",
+                                                user_message
                                             )))
                                         }
                                     }
@@ -931,10 +937,15 @@ pub async fn handle_completions(
                                     match result {
                                         Ok(b) => Ok(b),
                                         Err(e) => {
-                                            tracing::warn!("Stream error during transmission: {}", e);
+                                            let user_message = if e.contains("decoding") || e.contains("hyper") {
+                                                "Network connection unstable. Check your VPN/proxy settings or try a different node."
+                                            } else {
+                                                "Stream interrupted due to network issue. Retry or check connection."
+                                            };
+                                            tracing::warn!("Stream error during transmission: {} (user msg: {})", e, user_message);
                                             Ok(Bytes::from(format!(
-                                                "data: {{\"error\":{{\"message\":\"Stream interrupted: {}\",\"type\":\"server_error\"}}}}\n\n",
-                                                e.replace('"', "'").replace('\n', " ")
+                                                "data: {{\"error\":{{\"message\":\"{}\",\"type\":\"server_error\"}}}}\n\n",
+                                                user_message
                                             )))
                                         }
                                     }
