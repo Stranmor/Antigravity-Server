@@ -70,8 +70,8 @@ impl SessionManager {
         let hash = format!("{:x}", hasher.finalize());
         let sid = format!("sid-{}", &hash[..16]);
 
-        tracing::debug!(
-            "[SessionManager] Generated session_id: {} (content_found: {}, model: {})",
+        tracing::info!(
+            "[SessionManager] session_id={} content_found={} model={}",
             sid,
             content_found,
             request.model

@@ -75,6 +75,8 @@ pub fn map_claude_model_to_gemini(input: &str) -> String {
     // 3. Intelligent fallback based on model keywords
     let lower = input.to_lowercase();
     if lower.contains("opus") {
+        // [FIX] Map opus to stable backend ID to avoid 503 errors
+        // Was: "claude-opus-4-5-thinking" which might be invalid
         return "claude-opus-4-5-thinking".to_string();
     }
 

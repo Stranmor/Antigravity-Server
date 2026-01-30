@@ -235,7 +235,7 @@ pub enum UpstreamProxyMode {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, Validate)]
 pub struct QuotaProtectionConfig {
     /// Enable quota protection
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub enabled: bool,
     /// Threshold percentage (1-99) - accounts below this are considered low
     #[validate(range(min = 1, max = 99))]

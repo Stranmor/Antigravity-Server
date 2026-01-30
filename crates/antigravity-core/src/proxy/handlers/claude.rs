@@ -492,7 +492,7 @@ pub async fn handle_messages(
         let session_id = Some(session_id_str.as_str());
 
         let force_rotate_token = attempt > 0;
-        let (access_token, project_id, email) = match token_manager
+        let (access_token, project_id, email, _guard) = match token_manager
             .get_token(
                 &config.request_type,
                 force_rotate_token,
@@ -524,9 +524,6 @@ pub async fn handle_messages(
 
         last_email = Some(email.clone());
         info!("✓ Using account: {} (type: {})", email, config.request_type);
-
-        let _active_guard =
-            super::common::ActiveRequestGuard::new(token_manager.clone(), email.clone());
 
         let background_task_type = detect_background_task_type(&request_for_body);
 

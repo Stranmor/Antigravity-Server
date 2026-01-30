@@ -26,13 +26,13 @@ async fn atomic_write_json(path: &Path, content: &serde_json::Value) -> Result<(
 
 /// RAII guard for cancellation-safe increment/decrement of active_requests.
 /// Decrements on drop unless `release()` is called.
-struct IncrementGuard {
+pub struct ActiveRequestGuard {
     active_requests: Arc<DashMap<String, AtomicU32>>,
     key: String,
     released: bool,
 }
 
-impl IncrementGuard {
+impl ActiveRequestGuard {
     fn new(active_requests: Arc<DashMap<String, AtomicU32>>, key: String) -> Self {
         active_requests
             .entry(key.clone())
@@ -45,14 +45,12 @@ impl IncrementGuard {
         }
     }
 
-    /// Release the guard without decrementing on drop.
-    /// Call this when the request is successfully handed off to the caller.
-    fn release(mut self) {
+    pub fn release(mut self) {
         self.released = true;
     }
 }
 
-impl Drop for IncrementGuard {
+impl Drop for ActiveRequestGuard {
     fn drop(&mut self) {
         if !self.released {
             if let Some(counter) = self.active_requests.get(&self.key) {
@@ -95,7 +93,7 @@ pub struct SmartRoutingConfig {
 impl Default for SmartRoutingConfig {
     fn default() -> Self {
         Self {
-            max_concurrent_per_account: 3,
+            max_concurrent_per_account: 5,
             preemptive_throttle_ratio: 0.8,
             throttle_delay_ms: 100,
             enable_session_affinity: true,
@@ -458,7 +456,8 @@ impl TokenManager {
             .and_then(Self::calculate_max_quota_percentage);
 
         // [FIX #621] 提取受保护模型列表 (quota exhausted models)
-        let protected_models: HashSet<String> = account
+        // Also auto-populate from quota data - models with 0% should be protected
+        let mut protected_models: HashSet<String> = account
             .get("protected_models")
             .and_then(|v| v.as_array())
             .map(|arr| {
@@ -468,6 +467,34 @@ impl TokenManager {
                     .collect()
             })
             .unwrap_or_default();
+
+        // [FIX] Auto-add models with 0% quota to protected_models
+        if let Some(quota) = account.get("quota") {
+            if let Some(models) = quota.get("models").and_then(|m| m.as_array()) {
+                for model in models {
+                    if let (Some(name), Some(percentage)) = (
+                        model.get("name").and_then(|n| n.as_str()),
+                        model.get("percentage").and_then(|p| p.as_i64()),
+                    ) {
+                        if percentage == 0 && !protected_models.contains(name) {
+                            protected_models.insert(name.to_string());
+                            tracing::debug!(
+                                "🛡️ Auto-protected model {} for account (quota=0%)",
+                                name
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        if !protected_models.is_empty() {
+            tracing::info!(
+                "📋 Account has {} protected models: {:?}",
+                protected_models.len(),
+                protected_models
+            );
+        }
 
         let health_score = self
             .health_scores
@@ -523,9 +550,8 @@ impl TokenManager {
         quota_group: &str,
         force_rotate: bool,
         session_id: Option<&str>,
-        target_model: &str, // [FIX #621] Now used for quota protection
-    ) -> Result<(String, String, String), String> {
-        // 【优化 Issue #284】添加 5 秒超时，防止死锁
+        target_model: &str,
+    ) -> Result<(String, String, String, ActiveRequestGuard), String> {
         let timeout_duration = std::time::Duration::from_secs(5);
         match tokio::time::timeout(
             timeout_duration,
@@ -552,7 +578,7 @@ impl TokenManager {
 
         // Check if any account is available (not rate limited)
         for token in &tokens_snapshot {
-            if !self.is_rate_limited(&token.account_id) {
+            if !self.is_rate_limited(&token.email) {
                 return true;
             }
         }
@@ -618,7 +644,7 @@ impl TokenManager {
         force_rotate: bool,
         session_id: Option<&str>,
         target_model: &str,
-    ) -> Result<(String, String, String), String> {
+    ) -> Result<(String, String, String, ActiveRequestGuard), String> {
         let mut tokens_snapshot: Vec<ProxyToken> =
             self.tokens.iter().map(|e| e.value().clone()).collect();
         let total = tokens_snapshot.len();
@@ -631,11 +657,13 @@ impl TokenManager {
         // 理由: ULTRA/PRO 重置快，优先消耗；FREE 重置慢，用于兜底
         //       高配额账号优先使用，避免低配额账号被用光
         tokens_snapshot.sort_by(|a, b| {
+            // [FIX] Match actual tier strings from Google API
+            // Real values: "g1-ultra-tier", "ws-ai-ultra-business-tier", "g1-pro-tier", "free-tier"
             let tier_priority = |tier: &Option<String>| match tier.as_deref() {
-                Some("ULTRA") => 0,
-                Some("PRO") => 1,
-                Some("FREE") => 2,
-                _ => 3,
+                Some(t) if t.contains("ultra") => 0, // g1-ultra-tier, ws-ai-ultra-business-tier
+                Some(t) if t.contains("pro") => 1,   // g1-pro-tier
+                Some(t) if t.contains("free") => 2,  // free-tier
+                _ => 3,                              // unknown/null
             };
 
             // First: compare by subscription tier
@@ -675,13 +703,28 @@ impl TokenManager {
             crate::proxy::common::model_mapping::normalize_to_standard_id(target_model)
                 .unwrap_or_else(|| target_model.to_string());
 
+        // [ARCHITECTURE FIX] Pre-filter tokens_snapshot to exclude accounts with 0% quota for target model
+        // This is the SINGLE place where quota protection is enforced - all selection paths will only see eligible accounts
+        if quota_protection_enabled {
+            let original_count = tokens_snapshot.len();
+            tokens_snapshot.retain(|t| !t.protected_models.contains(&normalized_target));
+            let filtered_count = original_count - tokens_snapshot.len();
+            if filtered_count > 0 {
+                tracing::debug!(
+                    "🛡️ Quota protection: filtered out {} accounts with 0% quota for {}",
+                    filtered_count,
+                    normalized_target
+                );
+            }
+        }
+
         // ===== [FIX #820] Fixed Account Mode: prefer specified account =====
         let preferred_id = self.preferred_account_id.read().await.clone();
         if let Some(ref pref_id) = preferred_id {
             if let Some(preferred_token) = tokens_snapshot.iter().find(|t| &t.account_id == pref_id)
             {
                 let is_rate_limited =
-                    self.is_rate_limited_for_model(&preferred_token.account_id, &normalized_target);
+                    self.is_rate_limited_for_model(&preferred_token.email, &normalized_target);
                 // [FIX #621] Check if model is quota-protected
                 let is_quota_protected = quota_protection_enabled
                     && preferred_token
@@ -742,12 +785,12 @@ impl TokenManager {
                         }
                     };
 
-                    // Cancellation-safe: guard decrements on drop unless released
-                    let guard =
-                        IncrementGuard::new(Arc::clone(&self.active_requests), token.email.clone());
-                    guard.release();
+                    let guard = ActiveRequestGuard::new(
+                        Arc::clone(&self.active_requests),
+                        token.email.clone(),
+                    );
 
-                    return Ok((token.access_token, project_id, token.email));
+                    return Ok((token.access_token, project_id, token.email, guard));
                 } else if is_rate_limited {
                     tracing::warn!(
                         "🔒 [FIX #820] Preferred account {} is rate-limited, falling back to round-robin",
@@ -777,8 +820,8 @@ impl TokenManager {
         for attempt in 0..total {
             let rotate = force_rotate || attempt > 0;
 
-            // ===== 【核心】粘性会话与智能调度逻辑 =====
             let mut target_token: Option<ProxyToken> = None;
+            let mut active_guard: Option<ActiveRequestGuard> = None;
 
             // Check if session has too many consecutive failures - force unbind
             if let Some(sid) = session_id {
@@ -803,50 +846,60 @@ impl TokenManager {
                         let reset_sec = self
                             .rate_limit_tracker
                             .get_remaining_wait_for_model(&bound_id, &normalized_target);
+
+                        // [UPSTREAM-STYLE] Sticky session handling:
+                        // - Any lockout > 0: migrate THIS request to another account
+                        // - Long lockout (>60s): also unbind session for future requests
+                        // - Never block/wait - that causes client socket timeout
                         if reset_sec > 0 {
-                            if reset_sec > 300 {
+                            if reset_sec > 60 {
+                                // Long lockout = quota exhausted, unbind for future
                                 self.session_accounts.remove(sid);
                                 tracing::warn!(
-                                    "Session {} unbound from {} (quota exhausted, {}s lockout)",
-                                    sid,
+                                    "Sticky Session: {} rate-limited ({}s), unbinding session {}",
                                     bound_id,
-                                    reset_sec
+                                    reset_sec,
+                                    sid
                                 );
                             } else {
+                                // Short lockout = temporary, keep binding but migrate this request
                                 tracing::debug!(
-                                    "Session {} bound account {} rate-limited ({}s). Migrating THIS request only.",
-                                    sid, bound_id, reset_sec
+                                    "Sticky Session: {} rate-limited ({}s), migrating this request only",
+                                    bound_id, reset_sec
                                 );
                             }
+                            // Either way, don't use the bound account for THIS request
                         } else if !attempted.contains(&bound_id) {
+                            // Account is healthy, check quota protection
                             let is_quota_protected = quota_protection_enabled
                                 && tokens_snapshot
                                     .iter()
-                                    .find(|t| t.account_id == bound_id)
+                                    .find(|t| t.email == bound_id)
                                     .is_some_and(|t| {
                                         t.protected_models.contains(&normalized_target)
                                     });
 
                             if is_quota_protected {
                                 tracing::debug!(
-                                    "Sticky Session: Bound account {} is quota-protected for {}, unbinding",
-                                    bound_id, normalized_target
+                                    "Sticky Session: {} is quota-protected for {}, unbinding",
+                                    bound_id,
+                                    normalized_target
                                 );
                                 self.session_accounts.remove(sid);
                             } else if let Some(found) =
-                                tokens_snapshot.iter().find(|t| t.account_id == bound_id)
+                                tokens_snapshot.iter().find(|t| t.email == bound_id)
                             {
+                                // SUCCESS: reuse bound account
                                 tracing::debug!(
-                                    "Sticky Session: Successfully reusing bound account {} for session {}",
+                                    "Sticky Session: Reusing {} for session {}",
                                     found.email,
                                     sid
                                 );
                                 target_token = Some(found.clone());
-                                let guard = IncrementGuard::new(
+                                active_guard = Some(ActiveRequestGuard::new(
                                     Arc::clone(&self.active_requests),
                                     found.email.clone(),
-                                );
-                                guard.release();
+                                ));
                             }
                         }
                     }
@@ -863,17 +916,22 @@ impl TokenManager {
                 let mut equal_count: u32 = 0;
 
                 for candidate in &tokens_snapshot {
-                    if attempted.contains(&candidate.account_id) {
+                    if attempted.contains(&candidate.email) {
                         continue;
                     }
 
-                    if self.is_rate_limited_for_model(&candidate.account_id, &normalized_target) {
+                    if self.is_rate_limited_for_model(&candidate.email, &normalized_target) {
                         continue;
                     }
 
                     if quota_protection_enabled
                         && candidate.protected_models.contains(&normalized_target)
                     {
+                        tracing::debug!(
+                            "⛔ Skipping {} - model {} is protected (0% quota)",
+                            candidate.email,
+                            normalized_target
+                        );
                         continue;
                     }
 
@@ -883,7 +941,7 @@ impl TokenManager {
                     }
 
                     if let Some(aimd) = &aimd {
-                        if aimd.usage_ratio(&candidate.account_id) > 1.2 {
+                        if aimd.usage_ratio(&candidate.email) > 1.2 {
                             continue;
                         }
                     }
@@ -903,11 +961,10 @@ impl TokenManager {
 
                 if let Some(candidate) = best_candidate {
                     target_token = Some(candidate.clone());
-                    let guard = IncrementGuard::new(
+                    active_guard = Some(ActiveRequestGuard::new(
                         Arc::clone(&self.active_requests),
                         candidate.email.clone(),
-                    );
-                    guard.release();
+                    ));
                     if rotate {
                         tracing::debug!(
                             "Force Rotation: Switched to account {} (active: {})",
@@ -927,7 +984,7 @@ impl TokenManager {
                     // 计算最短等待时间
                     let min_wait = tokens_snapshot
                         .iter()
-                        .filter_map(|t| self.rate_limit_tracker.get_reset_seconds(&t.account_id))
+                        .filter_map(|t| self.rate_limit_tracker.get_reset_seconds(&t.email))
                         .min();
 
                     // Layer 1: 如果最短等待时间 <= 2秒,执行缓冲延迟
@@ -941,10 +998,10 @@ impl TokenManager {
                             // 缓冲延迟 500ms
                             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-                            // 重新尝试选择账号
+                            // 重新尝试选择账号 - [FIX] use model-specific check
                             let retry_token = tokens_snapshot.iter().find(|t| {
-                                !attempted.contains(&t.account_id)
-                                    && !self.is_rate_limited(&t.account_id)
+                                !attempted.contains(&t.email)
+                                    && !self.is_rate_limited_for_model(&t.email, &normalized_target)
                             });
 
                             if let Some(t) = retry_token {
@@ -952,11 +1009,10 @@ impl TokenManager {
                                     "✅ Buffer delay successful! Found available account: {}",
                                     t.email
                                 );
-                                let guard = IncrementGuard::new(
+                                active_guard = Some(ActiveRequestGuard::new(
                                     Arc::clone(&self.active_requests),
                                     t.email.clone(),
-                                );
-                                guard.release();
+                                ));
                                 t.clone()
                             } else {
                                 // Layer 2: 缓冲后仍无可用账号,执行乐观重置
@@ -971,18 +1027,17 @@ impl TokenManager {
                                 // 再次尝试选择账号
                                 let final_token = tokens_snapshot
                                     .iter()
-                                    .find(|t| !attempted.contains(&t.account_id));
+                                    .find(|t| !attempted.contains(&t.email));
 
                                 if let Some(t) = final_token {
                                     tracing::info!(
                                         "✅ Optimistic reset successful! Using account: {}",
                                         t.email
                                     );
-                                    let guard = IncrementGuard::new(
+                                    active_guard = Some(ActiveRequestGuard::new(
                                         Arc::clone(&self.active_requests),
                                         t.email.clone(),
-                                    );
-                                    guard.release();
+                                    ));
                                     t.clone()
                                 } else {
                                     // 所有策略都失败,返回错误
@@ -999,20 +1054,48 @@ impl TokenManager {
                             ));
                         }
                     } else {
-                        // 无限流记录但仍无可用账号,可能是其他问题
-                        return Err("All accounts failed or unhealthy.".to_string());
+                        // [FIX] No rate-limit records but all accounts busy (max_concurrent)
+                        // Wait and retry instead of immediate failure
+                        tracing::warn!(
+                            "All {} accounts at max concurrency. Waiting 500ms for availability...",
+                            tokens_snapshot.len()
+                        );
+                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+                        // Find any available account after wait
+                        #[allow(clippy::nonminimal_bool)]
+                        let retry_token = tokens_snapshot.iter().find(|t| {
+                            !attempted.contains(&t.email)
+                                && !self.is_rate_limited_for_model(&t.email, &normalized_target)
+                                && self.get_active_requests(&t.email) < routing.max_concurrent_per_account
+                                // [FIX] Also check protected_models in fallback path
+                                && !(quota_protection_enabled && t.protected_models.contains(&normalized_target))
+                        });
+
+                        if let Some(t) = retry_token {
+                            tracing::info!("✅ Found available account after wait: {}", t.email);
+                            active_guard = Some(ActiveRequestGuard::new(
+                                Arc::clone(&self.active_requests),
+                                t.email.clone(),
+                            ));
+                            t.clone()
+                        } else {
+                            return Err(
+                                "All accounts at maximum capacity. Please retry later.".to_string()
+                            );
+                        }
                     }
                 }
             };
 
-            // Ensure session is always bound to the selected account
+            // Ensure session is always bound to the selected account (by email)
             // This covers all selection paths: rotation, fallback, optimistic reset
             if let Some(sid) = session_id {
                 if routing.enable_session_affinity {
                     let current_binding = self.session_accounts.get(sid).map(|v| v.clone());
-                    if current_binding.as_ref() != Some(&token.account_id) {
+                    if current_binding.as_ref() != Some(&token.email) {
                         self.session_accounts
-                            .insert(sid.to_string(), token.account_id.clone());
+                            .insert(sid.to_string(), token.email.clone());
                         if current_binding.is_some() {
                             tracing::info!(
                                 "Sticky Session: Rebound session {} from {} to {} (cache continuity)",
@@ -1072,8 +1155,7 @@ impl TokenManager {
                         }
                         // Avoid leaking account emails to API clients; details are still in logs.
                         last_error = Some(format!("Token refresh failed: {}", e));
-                        attempted.insert(token.account_id.clone());
-                        self.decrement_active_requests(&token.email);
+                        attempted.insert(token.email.clone());
                         continue;
                     }
                 }
@@ -1098,14 +1180,17 @@ impl TokenManager {
                             "Failed to fetch project_id for {}: {}",
                             token.email, e
                         ));
-                        attempted.insert(token.account_id.clone());
-                        self.decrement_active_requests(&token.email);
+                        attempted.insert(token.email.clone());
                         continue;
                     }
                 }
             };
 
-            return Ok((token.access_token, project_id, token.email));
+            let guard = active_guard.unwrap_or_else(|| {
+                ActiveRequestGuard::new(Arc::clone(&self.active_requests), token.email.clone())
+            });
+
+            return Ok((token.access_token, project_id, token.email, guard));
         }
 
         Err(last_error.unwrap_or_else(|| "All accounts failed".to_string()))
@@ -1430,6 +1515,17 @@ impl TokenManager {
         // Normalize model to match get_token() check (prevents key mismatch)
         let model_str = crate::proxy::common::model_mapping::normalize_to_standard_id(raw_model)
             .unwrap_or_else(|| raw_model.to_string());
+
+        // [FIX] ModelCapacityExhausted = temporary GPU overload, NOT quota exhaustion
+        // Don't lock the account - handler will retry with exponential backoff
+        if reason == crate::proxy::rate_limit::RateLimitReason::ModelCapacityExhausted {
+            tracing::debug!(
+                "⚡ {}:{} ModelCapacityExhausted - NOT locking, handler will retry",
+                account_id,
+                model_str
+            );
+            return; // Exit early - no lockout
+        }
 
         // Immediately set temporary lockout BEFORE any async operations (race condition fix)
         let immediate_lockout = std::time::Duration::from_secs(60);

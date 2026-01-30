@@ -70,7 +70,7 @@ pub async fn handle_generate(
         );
         let session_id = SessionManager::extract_gemini_session_id(&body, &model_name);
 
-        let (access_token, project_id, email) = match token_manager
+        let (access_token, project_id, email, _guard) = match token_manager
             .get_token(
                 &config.request_type,
                 attempt > 0,
@@ -235,7 +235,7 @@ pub async fn handle_count_tokens(
     Path(_model_name): Path<String>,
     Json(_body): Json<Value>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let _ = state
+    let (_access_token, _project_id, _email, _guard) = state
         .token_manager
         .get_token("gemini", false, None, "gemini")
         .await

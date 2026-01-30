@@ -62,6 +62,72 @@ pub enum RateLimitReason {
     Unknown,
 }
 
+/// Type-safe key for rate limit tracking.
+///
+/// This enum prevents the bug where model-level lockouts were accidentally
+/// stored as account-level lockouts due to incorrect string key construction.
+///
+/// # Variants
+/// - `Account(email)` - Account-level lockout, blocks all models for this account
+/// - `Model { account, model }` - Model-specific lockout, only blocks specific model
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub enum RateLimitKey {
+    /// Account-level lockout (blocks all models)
+    Account(String),
+    /// Model-specific lockout (only blocks this model for this account)
+    Model { account: String, model: String },
+}
+
+impl RateLimitKey {
+    /// Create an account-level key
+    pub fn account(account_id: &str) -> Self {
+        RateLimitKey::Account(account_id.to_string())
+    }
+
+    /// Create a model-specific key
+    pub fn model(account_id: &str, model: &str) -> Self {
+        RateLimitKey::Model {
+            account: account_id.to_string(),
+            model: model.to_string(),
+        }
+    }
+
+    /// Create key from account_id and optional model
+    /// - None model → Account-level key
+    /// - Some(model) → Model-specific key
+    pub fn from_optional_model(account_id: &str, model: Option<&str>) -> Self {
+        match model {
+            Some(m) => RateLimitKey::model(account_id, m),
+            None => RateLimitKey::account(account_id),
+        }
+    }
+
+    /// Get the account ID from this key
+    pub fn account_id(&self) -> &str {
+        match self {
+            RateLimitKey::Account(acc) => acc,
+            RateLimitKey::Model { account, .. } => account,
+        }
+    }
+
+    /// Get the model if this is a model-specific key
+    pub fn model_name(&self) -> Option<&str> {
+        match self {
+            RateLimitKey::Account(_) => None,
+            RateLimitKey::Model { model, .. } => Some(model),
+        }
+    }
+}
+
+impl std::fmt::Display for RateLimitKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RateLimitKey::Account(acc) => write!(f, "{}", acc),
+            RateLimitKey::Model { account, model } => write!(f, "{}:{}", account, model),
+        }
+    }
+}
+
 /// 限流信息
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -88,9 +154,9 @@ const FAILURE_COUNT_EXPIRY_SECONDS: u64 = 3600;
 
 /// 限流跟踪器
 pub struct RateLimitTracker {
-    limits: DashMap<String, RateLimitInfo>,
+    limits: DashMap<RateLimitKey, RateLimitInfo>,
     /// 连续失败计数（用于智能指数退避），带时间戳用于自动过期
-    failure_counts: DashMap<String, (u32, SystemTime)>,
+    failure_counts: DashMap<RateLimitKey, (u32, SystemTime)>,
 }
 
 impl RateLimitTracker {
@@ -103,7 +169,8 @@ impl RateLimitTracker {
 
     /// 获取账号剩余的等待时间(秒)
     pub fn get_remaining_wait(&self, account_id: &str) -> u64 {
-        if let Some(info) = self.limits.get(account_id) {
+        let key = RateLimitKey::account(account_id);
+        if let Some(info) = self.limits.get(&key) {
             let now = SystemTime::now();
             if info.reset_time > now {
                 return info
@@ -121,11 +188,12 @@ impl RateLimitTracker {
     /// 当账号成功完成请求后调用此方法，将其失败计数归零，
     /// 这样下次失败时会从最短的锁定时间（60秒）开始。
     pub fn mark_success(&self, account_id: &str) {
-        if self.failure_counts.remove(account_id).is_some() {
+        let key = RateLimitKey::account(account_id);
+        if self.failure_counts.remove(&key).is_some() {
             tracing::debug!("账号 {} 请求成功，已重置失败计数", account_id);
         }
         // 同时清除限流记录（如果有）
-        self.limits.remove(account_id);
+        self.limits.remove(&key);
     }
 
     /// Set adaptive temporary lockout based on consecutive failure count.
@@ -135,12 +203,10 @@ impl RateLimitTracker {
     /// Resets on success (via mark_success)
     pub fn set_adaptive_temporary_lockout(&self, account_id: &str) -> u64 {
         let now = SystemTime::now();
+        let key = RateLimitKey::account(account_id);
 
         let failure_count = {
-            let mut entry = self
-                .failure_counts
-                .entry(account_id.to_string())
-                .or_insert((0, now));
+            let mut entry = self.failure_counts.entry(key.clone()).or_insert((0, now));
 
             // Check expiry (1 hour)
             let elapsed = now
@@ -171,7 +237,7 @@ impl RateLimitTracker {
             model: None,
         };
 
-        self.limits.insert(account_id.to_string(), info);
+        self.limits.insert(key, info);
 
         tracing::debug!(
             "⚡ Account {} adaptive lockout: {}s (attempt #{})",
@@ -208,10 +274,12 @@ impl RateLimitTracker {
             retry_after_sec: retry_sec,
             detected_at: now,
             reason,
-            model: model.clone(), // 🆕 支持模型级别限流
+            model: model.clone(),
         };
 
-        self.limits.insert(account_id.to_string(), info);
+        // Type-safe key construction via RateLimitKey
+        let key = RateLimitKey::from_optional_model(account_id, model.as_deref());
+        self.limits.insert(key, info);
 
         if let Some(m) = &model {
             tracing::info!(
@@ -289,6 +357,17 @@ impl RateLimitTracker {
             RateLimitReason::ServerError
         };
 
+        // [FIX] ModelCapacityExhausted: НЕ блокируем аккаунт вообще!
+        // Это временная перегрузка GPU, handler должен просто сделать retry с задержкой
+        if reason == RateLimitReason::ModelCapacityExhausted {
+            tracing::debug!(
+                "MODEL_CAPACITY_EXHAUSTED для {}: НЕ блокируем, handler сделает retry",
+                account_id
+            );
+            // Возвращаем None — аккаунт остаётся доступным для retry
+            return None;
+        }
+
         let mut retry_after_sec = None;
 
         // 2. 从 Retry-After header 提取
@@ -317,10 +396,8 @@ impl RateLimitTracker {
                 // 获取连续失败次数，用于指数退避（带自动过期逻辑）
                 let failure_count = {
                     let now = SystemTime::now();
-                    let mut entry = self
-                        .failure_counts
-                        .entry(account_id.to_string())
-                        .or_insert((0, now));
+                    let key = RateLimitKey::from_optional_model(account_id, model.as_deref());
+                    let mut entry = self.failure_counts.entry(key).or_insert((0, now));
                     // 检查是否超过过期时间，如果是则重置计数
                     let elapsed = now
                         .duration_since(entry.1)
@@ -380,12 +457,13 @@ impl RateLimitTracker {
                         5
                     }
                     RateLimitReason::ModelCapacityExhausted => {
-                        // 模型容量耗尽：服务端暂时无可用 GPU 实例
-                        // 这是临时性问题，使用较短的重试时间（15秒）
-                        tracing::warn!(
-                            "检测到模型容量不足 (MODEL_CAPACITY_EXHAUSTED)，服务端暂无可用实例，15秒后重试"
+                        // [FIX] ModelCapacityExhausted = временная нехватка GPU, НЕ исчерпание квоты
+                        // Retry-After от Google слишком агрессивен (59s), игнорируем его
+                        // Ultra-tier аккаунты восстанавливаются быстро, пробуем через 2 секунды
+                        tracing::debug!(
+                            "MODEL_CAPACITY_EXHAUSTED: временная перегрузка GPU, минимальный lockout 2s"
                         );
-                        15
+                        2
                     }
                     RateLimitReason::ServerError => {
                         // 服务器错误：执行"软避让"，默认锁定 20 秒
@@ -406,11 +484,12 @@ impl RateLimitTracker {
             retry_after_sec: retry_sec,
             detected_at: SystemTime::now(),
             reason,
-            model,
+            model: model.clone(),
         };
 
-        // 存储
-        self.limits.insert(account_id.to_string(), info.clone());
+        // Type-safe key construction via RateLimitKey
+        let key = RateLimitKey::from_optional_model(account_id, model.as_deref());
+        self.limits.insert(key, info.clone());
 
         tracing::warn!(
             "账号 {} [{}] 限流类型: {:?}, 重置延时: {}秒",
@@ -616,7 +695,8 @@ impl RateLimitTracker {
 
     /// 获取账号的限流信息
     pub fn get(&self, account_id: &str) -> Option<RateLimitInfo> {
-        self.limits.get(account_id).map(|r| r.clone())
+        let key = RateLimitKey::account(account_id);
+        self.limits.get(&key).map(|r| r.clone())
     }
 
     /// 检查账号是否仍在限流中
@@ -634,14 +714,15 @@ impl RateLimitTracker {
         let now = SystemTime::now();
 
         // Check account-level limit
-        if let Some(info) = self.limits.get(account_id) {
+        let account_key = RateLimitKey::account(account_id);
+        if let Some(info) = self.limits.get(&account_key) {
             if info.reset_time > now {
                 return true;
             }
         }
 
         // Check model-specific limit
-        let model_key = format!("{}:{}", account_id, model);
+        let model_key = RateLimitKey::model(account_id, model);
         if let Some(info) = self.limits.get(&model_key) {
             if info.reset_time > now {
                 return true;
@@ -655,7 +736,8 @@ impl RateLimitTracker {
         let now = SystemTime::now();
         let mut max_wait: u64 = 0;
 
-        if let Some(info) = self.limits.get(account_id) {
+        let account_key = RateLimitKey::account(account_id);
+        if let Some(info) = self.limits.get(&account_key) {
             if info.reset_time > now {
                 let wait = info
                     .reset_time
@@ -666,7 +748,7 @@ impl RateLimitTracker {
             }
         }
 
-        let model_key = format!("{}:{}", account_id, model);
+        let model_key = RateLimitKey::model(account_id, model);
         if let Some(info) = self.limits.get(&model_key) {
             if info.reset_time > now {
                 let wait = info
@@ -695,7 +777,7 @@ impl RateLimitTracker {
             .map(|d| d.as_secs())
             .unwrap_or(60);
 
-        let key = format!("{}:{}", account_id, model);
+        let key = RateLimitKey::model(account_id, model);
         let info = RateLimitInfo {
             reset_time,
             retry_after_sec: retry_sec,
@@ -718,7 +800,7 @@ impl RateLimitTracker {
     /// Returns lockout duration. Progression: 5s → 15s → 30s → 60s
     pub fn set_adaptive_model_lockout(&self, account_id: &str, model: &str) -> u64 {
         let now = SystemTime::now();
-        let key = format!("{}:{}", account_id, model);
+        let key = RateLimitKey::model(account_id, model);
 
         let failure_count = {
             let mut entry = self.failure_counts.entry(key.clone()).or_insert((0, now));
@@ -766,7 +848,7 @@ impl RateLimitTracker {
 
     /// Clear model-specific failure count on success
     pub fn mark_model_success(&self, account_id: &str, model: &str) {
-        let key = format!("{}:{}", account_id, model);
+        let key = RateLimitKey::model(account_id, model);
         if self.failure_counts.remove(&key).is_some() {
             tracing::debug!("{}:{} success, reset failure count", account_id, model);
         }
@@ -809,7 +891,8 @@ impl RateLimitTracker {
 
     /// 清除指定账号的限流记录
     pub fn clear(&self, account_id: &str) -> bool {
-        self.limits.remove(account_id).is_some()
+        let key = RateLimitKey::account(account_id);
+        self.limits.remove(&key).is_some()
     }
 
     /// 清除所有限流记录 (乐观重置策略)
@@ -935,7 +1018,7 @@ mod tests {
         let tracker = RateLimitTracker::new();
         let past = SystemTime::now() - Duration::from_secs(10);
         tracker.limits.insert(
-            "expired".to_string(),
+            RateLimitKey::Account("expired".to_string()),
             RateLimitInfo {
                 reset_time: past,
                 retry_after_sec: 60,
@@ -946,7 +1029,7 @@ mod tests {
         );
         let future = SystemTime::now() + Duration::from_secs(60);
         tracker.limits.insert(
-            "active".to_string(),
+            RateLimitKey::Account("active".to_string()),
             RateLimitInfo {
                 reset_time: future,
                 retry_after_sec: 60,

@@ -13,7 +13,7 @@ use crate::proxy::mappers::openai::{
 };
 use crate::proxy::server::AppState;
 
-const MAX_RETRY_ATTEMPTS: usize = 3;
+const MAX_RETRY_ATTEMPTS: usize = 8;
 use crate::proxy::session_manager::SessionManager;
 
 pub async fn handle_chat_completions(
@@ -101,6 +101,7 @@ pub async fn handle_chat_completions(
     let mut last_email: Option<String> = None;
     let trace_id = format!("oai_{}", chrono::Utc::now().timestamp_subsec_millis());
     let mut grace_retry_used = false;
+    let mut server_overload_retries = 0u8; // [FIX] Track 503 retries separately
 
     for attempt in 0..max_attempts {
         // 2. 模型路由解析
@@ -123,7 +124,7 @@ pub async fn handle_chat_completions(
 
         // 4. 获取 Token (使用准确的 request_type)
         // 关键：在重试尝试 (attempt > 0) 时强制轮换账号
-        let (access_token, project_id, email) = match token_manager
+        let (access_token, project_id, email, _active_guard) = match token_manager
             .get_token(
                 &config.request_type,
                 attempt > 0,
@@ -143,9 +144,6 @@ pub async fn handle_chat_completions(
 
         last_email = Some(email.clone());
         info!("✓ Using account: {} (type: {})", email, config.request_type);
-
-        let _active_guard =
-            super::common::ActiveRequestGuard::new(token_manager.clone(), email.clone());
 
         let gemini_body = transform_openai_request(&openai_req, &project_id, &mapped_model);
 
@@ -174,29 +172,61 @@ pub async fn handle_chat_completions(
         // Get per-account WARP proxy for IP isolation
         let warp_proxy = state.warp_isolation.get_proxy_for_email(&email).await;
 
-        let response = match upstream
-            .call_v1_internal_with_warp(
-                method,
-                &access_token,
-                gemini_body,
-                query_string,
-                std::collections::HashMap::new(),
-                warp_proxy.as_deref(),
-            )
-            .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                last_error = e.clone();
-                debug!(
-                    "OpenAI Request failed on attempt {}/{}: {}",
-                    attempt + 1,
-                    max_attempts,
-                    e
-                );
-                continue;
+        // [ARCH FIX] Inner retry loop for transient errors (503)
+        // This doesn't consume main attempt counter - retries on same account
+        let mut inner_retries = 0u8;
+        let response = loop {
+            let gemini_body_clone = gemini_body.clone();
+            match upstream
+                .call_v1_internal_with_warp(
+                    method,
+                    &access_token,
+                    gemini_body_clone,
+                    query_string,
+                    std::collections::HashMap::new(),
+                    warp_proxy.as_deref(),
+                )
+                .await
+            {
+                Ok(r) => {
+                    let status = r.status();
+                    // 503 = server overload, retry on same account
+                    if status.as_u16() == 503 && inner_retries < 5 {
+                        inner_retries += 1;
+                        let delay = 300 * (1u64 << inner_retries.min(3)); // 600, 1200, 2400, 2400, 2400
+                        tracing::warn!(
+                            "503 server overload on {}, inner retry {}/5 in {}ms",
+                            email,
+                            inner_retries,
+                            delay
+                        );
+                        tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+                        continue;
+                    }
+                    break r;
+                }
+                Err(e) => {
+                    last_error = e.clone();
+                    debug!(
+                        "OpenAI Request failed on attempt {}/{}: {}",
+                        attempt + 1,
+                        max_attempts,
+                        e
+                    );
+                    break reqwest::Response::from(
+                        http::Response::builder()
+                            .status(500)
+                            .body(format!("Connection error: {}", e))
+                            .unwrap(),
+                    );
+                }
             }
         };
+
+        // Check if we got a fake error response from connection failure
+        if response.status().as_u16() == 500 && !last_error.is_empty() {
+            continue; // Rotate to next account
+        }
 
         let status = response.status();
         if status.is_success() {
@@ -364,6 +394,32 @@ pub async fn handle_chat_completions(
 
         // 429/529/503 智能处理
         if status_code == 429 || status_code == 529 || status_code == 503 || status_code == 500 {
+            // [FIX] 503 = Google server overload, NOT account issue
+            // Retry on same account with exponential backoff, up to 5 times
+            if status_code == 503 {
+                server_overload_retries += 1;
+                if server_overload_retries <= 5 {
+                    let delay_ms = 300 * (1 << (server_overload_retries - 1)).min(8); // 300, 600, 1200, 2400, 2400
+                    tracing::warn!(
+                        "OpenAI Upstream 503 (server overload) on {} retry {}/5, waiting {}ms",
+                        email,
+                        server_overload_retries,
+                        delay_ms
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                    // Don't increase attempt counter - stay on same account
+                    continue;
+                } else {
+                    tracing::warn!(
+                        "OpenAI Upstream 503: {} failed {} retries, rotating to different account",
+                        email,
+                        server_overload_retries
+                    );
+                    server_overload_retries = 0; // Reset for next account
+                                                 // Fall through to rotation logic
+                }
+            }
+
             token_manager
                 .mark_rate_limited_async(
                     &email,
@@ -422,8 +478,15 @@ pub async fn handle_chat_completions(
 
         // 只有 403 (权限/地区限制) 和 401 (认证失效) 触发账号轮换
         if status_code == 403 || status_code == 401 {
+            // [FIX] Temporarily lock this account for this model so retry picks different account
+            token_manager.rate_limit_tracker().set_model_lockout(
+                &email,
+                &config.final_model,
+                std::time::SystemTime::now() + std::time::Duration::from_secs(30),
+                crate::proxy::rate_limit::RateLimitReason::ServerError,
+            );
             tracing::warn!(
-                "OpenAI Upstream {} on account {} attempt {}/{}, rotating account",
+                "OpenAI Upstream {} on account {} attempt {}/{}, locking for 30s and rotating",
                 status_code,
                 email,
                 attempt + 1,
@@ -825,7 +888,7 @@ pub async fn handle_completions(
         // 重试时强制轮换，除非只是简单的网络抖动但 Claude 逻辑里 attempt > 0 总是 force_rotate
         let force_rotate = attempt > 0;
 
-        let (access_token, project_id, email) = match token_manager
+        let (access_token, project_id, email, _guard) = match token_manager
             .get_token(
                 &config.request_type,
                 force_rotate,
@@ -845,9 +908,6 @@ pub async fn handle_completions(
 
         last_email = Some(email.clone());
         info!("✓ Using account: {} (type: {})", email, config.request_type);
-
-        let _active_guard =
-            super::common::ActiveRequestGuard::new(token_manager.clone(), email.clone());
 
         let gemini_body = transform_openai_request(&openai_req, &project_id, &mapped_model);
 
@@ -1199,7 +1259,7 @@ pub async fn handle_images_generations(
     let upstream = state.upstream.clone();
     let token_manager = state.token_manager;
 
-    let (access_token, project_id, email) = match token_manager
+    let (access_token, project_id, email, _guard) = match token_manager
         .get_token("image_gen", false, None, "dall-e-3")
         .await
     {
@@ -1467,7 +1527,7 @@ pub async fn handle_images_edits(
     let upstream = state.upstream.clone();
     let token_manager = state.token_manager;
     // Fix: Proper get_token call with correct signature and unwrap (using image_gen quota)
-    let (access_token, project_id, email) = match token_manager
+    let (access_token, project_id, email, _active_guard) = match token_manager
         .get_token("image_gen", false, None, "dall-e-3")
         .await
     {

@@ -1,36 +1,12 @@
 use crate::proxy::server::AppState;
-use crate::proxy::token_manager::TokenManager;
 use axum::{extract::Json, extract::State, http::StatusCode, response::IntoResponse};
 use bytes::Bytes;
 use futures::Stream;
 use serde_json::{json, Value};
 use std::pin::Pin;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use tracing::{debug, info};
-
-pub struct ActiveRequestGuard {
-    token_manager: Arc<TokenManager>,
-    account_id: String,
-}
-
-impl ActiveRequestGuard {
-    pub fn new(token_manager: Arc<TokenManager>, account_id: String) -> Self {
-        // Increment done atomically in get_token() - prevents race condition
-        Self {
-            token_manager,
-            account_id,
-        }
-    }
-}
-
-impl Drop for ActiveRequestGuard {
-    fn drop(&mut self) {
-        self.token_manager
-            .decrement_active_requests(&self.account_id);
-    }
-}
 
 #[derive(Debug, Clone)]
 pub enum RetryStrategy {
