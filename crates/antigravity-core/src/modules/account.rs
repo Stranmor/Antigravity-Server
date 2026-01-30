@@ -19,9 +19,17 @@ const ACCOUNTS_INDEX: &str = "accounts.json";
 const ACCOUNTS_DIR: &str = "accounts";
 
 /// Get the data directory path.
+///
+/// Priority:
+/// 1. `ANTIGRAVITY_DATA_DIR` environment variable (for container deployments)
+/// 2. `~/.antigravity_tools` (default for desktop usage)
 pub fn get_data_dir() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or("Cannot get home directory")?;
-    let data_dir = home.join(DATA_DIR);
+    let data_dir = if let Ok(custom_dir) = std::env::var("ANTIGRAVITY_DATA_DIR") {
+        PathBuf::from(custom_dir)
+    } else {
+        let home = dirs::home_dir().ok_or("Cannot get home directory")?;
+        home.join(DATA_DIR)
+    };
 
     if !data_dir.exists() {
         fs::create_dir_all(&data_dir)
