@@ -300,12 +300,21 @@ impl StreamingState {
             return Bytes::new();
         }
 
+        // [FIX] Always include usage field - clients (e.g., OpenCode) expect message.usage to be an object
+        // If usageMetadata is missing, use default values (0 tokens)
         let usage = raw_json
             .get("usageMetadata")
             .and_then(|u| serde_json::from_value::<UsageMetadata>(u.clone()).ok())
-            .map(|u| to_claude_usage(&u, self.scaling_enabled, self.context_limit));
+            .map(|u| to_claude_usage(&u, self.scaling_enabled, self.context_limit))
+            .unwrap_or(Usage {
+                input_tokens: 0,
+                output_tokens: 0,
+                cache_read_input_tokens: None,
+                cache_creation_input_tokens: None,
+                server_tool_use: None,
+            });
 
-        let mut message = json!({
+        let message = json!({
             "id": raw_json.get("responseId")
                 .and_then(|v| v.as_str())
                 .unwrap_or("msg_unknown"),
@@ -317,15 +326,12 @@ impl StreamingState {
                 .unwrap_or(""),
             "stop_reason": null,
             "stop_sequence": null,
+            "usage": usage,
         });
 
         // Capture model name for signature cache
         if let Some(m) = raw_json.get("modelVersion").and_then(|v| v.as_str()) {
             self.model_name = Some(m.to_string());
-        }
-
-        if let Some(u) = usage {
-            message["usage"] = json!(u);
         }
 
         let result = self.emit(

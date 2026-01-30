@@ -50,7 +50,7 @@ While [Antigravity Manager](https://github.com/lbjlaq/Antigravity-Manager) provi
 | **Architecture** | Monolithic | **Modular Crate Workspace** |
 | **Automation** | Frontend Polling (Open UI) | **Native Async Schedulers (Daemon)** |
 | **Persistence** | Direct File I/O | **Sequential Actor Loop (Race-free)** |
-| **Rate Limiting** | Reactive (Retry on 429) | **AIMD + Atomic Lockout** |
+| **Rate Limiting** | Reactive (Retry on 429) | **AIMD + Atomic Lockout (Thread-safe)** |
 | **Reliability** | Basic Failover | **Circuit Breakers + Health Scores** |
 | **Routing** | Silent Model Substitution | **Strict Routing + Preferred Account** |
 | **Isolation** | Shared IP | **WARP Proxy Support (Per-Account IP)** |
@@ -69,6 +69,10 @@ No X server, no GUI required. Deploy `antigravity-server` as a lightweight daemo
 
 ### 📊 AIMD Predictive Rate Limiting (Killer Feature #2)
 Using the **Additive Increase / Multiplicative Decrease** algorithm (similar to TCP congestion control), the gateway learns the optimal request rate for each account. It predicts quota exhaustion *before* it happens, ensuring zero wasted requests and smoother failover.
+
+- **Thread-Safe Architecture**: New atomic `get_or_create` logic with lock downgrading ensures stable performance under high concurrency stress tests.
+- **Bounded Stability**: Limits are rigorously clamped to safe min/max bounds to prevent volatility.
+- **Poison-Resilient**: Robust `RwLock`/`Mutex` handling prevents server crashes even during panic recovery in worker threads.
 
 ### 🔄 Integrated Background Schedulers
 The server operates fully autonomously with a dedicated `Scheduler` system (ported and enhanced from upstream logic). Independent async tasks handle:
@@ -361,9 +365,9 @@ This fork uses **Semantic Porting** — we don't blindly copy upstream changes. 
 - ✅ **Always Port**: Bug fixes, new model support, security patches, JSON schema improvements, background logic (like `BackgroundTaskRunner` behavior).
 - ❌ **Never Port**: React/Tauri code (we use Leptos/Axum), changes conflicting with our resilience layer
 
-**🔄 Active Sync**: We actively port useful upstream changes. Currently synced with **v4.0.5**, plus our exclusive additions: 
+**🔄 Active Sync**: We actively port useful upstream changes. Currently synced with **v4.0.7**, plus our exclusive additions: 
 
-- **Reliability**: AIMD predictive rate limiting, Upstream Circuit Breakers (30s cooldown after 5 failures), transport retries (500ms delay), and sticky session rebind on 429.
+- **Reliability**: AIMD predictive rate limiting (with atomic concurrency protection), Upstream Circuit Breakers (30s cooldown after 5 failures), transport retries (500ms delay), and sticky session rebind on 429.
 - **Persistence**: Sequential actor-based file writing to eliminate race conditions.
 - **Security**: Hardened constant-time auth, User-Agent masking, WARP proxy isolation.
 - **Features**: Multimodal audio/video support, LRU schema caching, `preferred_account_id` routing, aspect ratio support, robust token rotation, and auto-refresh schedulers.

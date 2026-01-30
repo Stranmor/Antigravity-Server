@@ -740,13 +740,13 @@ pub async fn handle_messages(
                                         Err(e) => {
                                             let err_str = e.to_string();
                                             let user_message = if err_str.contains("decoding") || err_str.contains("hyper") {
-                                                "Upstream server closed connection (overload). Retrying with different account..."
+                                                "Upstream server closed connection (overload). Please retry your request."
                                             } else {
-                                                "Stream interrupted by upstream. Request will be retried automatically."
+                                                "Stream interrupted by upstream. Please retry your request."
                                             };
                                             tracing::warn!("Stream error during transmission: {} (user msg: {})", err_str, user_message);
                                             Ok(Bytes::from(format!(
-                                                "event: error\ndata: {{\"type\":\"error\",\"error\":{{\"type\":\"overloaded_error\",\"message\":\"{}\"}}}}\n\n",
+                                                "event: error\ndata: {{\"type\":\"error\",\"error\":{{\"type\":\"overloaded_error\",\"code\":\"stream_interrupted\",\"message\":\"{}\"}}}}\n\nevent: message_stop\ndata: {{\"type\":\"message_stop\"}}\n\n",
                                                 user_message
                                             )))
                                         }

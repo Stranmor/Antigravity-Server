@@ -85,6 +85,63 @@ vendor/
 
 ---
 
+## 🧠 SMART ROUTING ARCHITECTURE [2026-01-30]
+
+**Replaces:** Old 3-mode system (CacheFirst/Balance/PerformanceFirst)
+
+### Problem Solved
+
+Thundering herd + cache destruction pattern:
+```
+10 concurrent requests → Account A
+   ↓
+Account A: 429 (rate limit)
+   ↓
+ALL 10 requests switch to Account B
+   ↓
+Account B: instant 429 (thundering herd)
+   ↓
+Cache on A — lost, Cache on B — never built
+   ↓
+cache_hit ≈ 0%
+```
+
+### Solution: Unified Smart Routing
+
+| Component | Description |
+|-----------|-------------|
+| **Least-Connections Selection** | Route to account with fewest active requests (not round-robin) |
+| **Per-Account Concurrency Limit** | Max N concurrent requests per account (default: 3) |
+| **Isolated Session Migration** | On 429: migrate THIS request only, keep session binding intact |
+| **AIMD Pre-emptive Check** | Skip accounts with usage_ratio > 1.2 |
+
+### Configuration (`SmartRoutingConfig`)
+
+```rust
+pub struct SmartRoutingConfig {
+    pub max_concurrent_per_account: u32,  // default: 3
+    pub preemptive_throttle_ratio: f32,   // default: 0.8
+    pub throttle_delay_ms: u64,           // default: 100
+    pub enable_session_affinity: bool,    // default: true
+}
+```
+
+### Key Behavioral Changes
+
+| Before | After |
+|--------|-------|
+| 429 → unbind session → ALL requests migrate | 429 → keep binding → only THIS request migrates |
+| Round-robin account selection | Least-connections (min active requests) |
+| 3 manual modes to choose | 1 unified algorithm with tunable params |
+| No concurrency limit | Max N per account prevents thundering herd |
+
+### Files Changed
+
+- `crates/antigravity-core/src/proxy/token_manager.rs` — Core smart routing implementation
+- `crates/antigravity-types/src/models/config.rs` — SchedulingMode kept for config compat
+
+---
+
 ## 🔧 API Endpoints
 
 ```bash

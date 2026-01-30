@@ -238,13 +238,14 @@ pub async fn handle_chat_completions(
                                         Err(e) => {
                                             let err_str = e.to_string();
                                             let user_message = if err_str.contains("decoding") || err_str.contains("hyper") {
-                                                "Upstream server closed connection (overload). Retrying with different account..."
+                                                "Upstream server closed connection (overload). Please retry your request."
                                             } else {
-                                                "Stream interrupted by upstream. Request will be retried automatically."
+                                                "Stream interrupted by upstream. Please retry your request."
                                             };
                                             tracing::warn!("Stream error during transmission: {} (user msg: {})", err_str, user_message);
+                                            // Return error in OpenAI format + [DONE] to signal stream end
                                             Ok(Bytes::from(format!(
-                                                "data: {{\"error\":{{\"message\":\"{}\",\"type\":\"server_error\"}}}}\n\n",
+                                                "data: {{\"error\":{{\"message\":\"{}\",\"type\":\"server_error\",\"code\":\"stream_interrupted\"}}}}\n\ndata: [DONE]\n\n",
                                                 user_message
                                             )))
                                         }
@@ -938,13 +939,13 @@ pub async fn handle_completions(
                                         Ok(b) => Ok(b),
                                         Err(e) => {
                                             let user_message = if e.contains("decoding") || e.contains("hyper") {
-                                                "Upstream server closed connection (overload). Retrying with different account..."
+                                                "Upstream server closed connection (overload). Please retry your request."
                                             } else {
-                                                "Stream interrupted by upstream. Request will be retried automatically."
+                                                "Stream interrupted by upstream. Please retry your request."
                                             };
                                             tracing::warn!("Stream error during transmission: {} (user msg: {})", e, user_message);
                                             Ok(Bytes::from(format!(
-                                                "data: {{\"error\":{{\"message\":\"{}\",\"type\":\"server_error\"}}}}\n\n",
+                                                "data: {{\"error\":{{\"message\":\"{}\",\"type\":\"server_error\",\"code\":\"stream_interrupted\"}}}}\n\ndata: [DONE]\n\n",
                                                 user_message
                                             )))
                                         }

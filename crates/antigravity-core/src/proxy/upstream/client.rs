@@ -19,7 +19,7 @@ const V1_INTERNAL_BASE_URL_FALLBACKS: [&str; 2] = [
     V1_INTERNAL_BASE_URL_DAILY, // 备用测试环境（新功能）
 ];
 
-const USER_AGENT: &str = "antigravity/1.11.9 windows/amd64";
+const USER_AGENT: &str = "antigravity/4.0.8 windows/amd64";
 
 pub struct UpstreamClient {
     http_client: Client,

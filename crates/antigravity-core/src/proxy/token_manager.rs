@@ -3,13 +3,46 @@ use crate::modules::{config, oauth, quota};
 use dashmap::DashMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::proxy::rate_limit::RateLimitTracker;
 use crate::proxy::AdaptiveLimitManager;
-use antigravity_types::models::SchedulingMode;
-use antigravity_types::models::StickySessionConfig;
+
+// ============================================================================
+// Smart Routing Configuration (replaces SchedulingMode enum)
+// ============================================================================
+
+/// Unified smart routing configuration.
+/// Replaces the old 3-mode system (CacheFirst/Balance/PerformanceFirst) with
+/// a single algorithm that maximizes cache hits while preventing thundering herd.
+#[derive(Debug, Clone)]
+pub struct SmartRoutingConfig {
+    /// Maximum concurrent requests per account (prevents thundering herd)
+    /// Default: 3
+    pub max_concurrent_per_account: u32,
+    /// AIMD usage ratio threshold for pre-emptive queueing
+    /// When ratio > threshold, wait instead of switching accounts
+    /// Default: 0.8
+    pub preemptive_throttle_ratio: f32,
+    /// Minimum delay (ms) before retrying same account after soft throttle
+    /// Default: 100
+    pub throttle_delay_ms: u64,
+    /// Enable session affinity (sticky sessions for cache optimization)
+    /// Default: true
+    pub enable_session_affinity: bool,
+}
+
+impl Default for SmartRoutingConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent_per_account: 3,
+            preemptive_throttle_ratio: 0.8,
+            throttle_delay_ms: 100,
+            enable_session_affinity: true,
+        }
+    }
+}
 
 /// Token representing an authenticated account with OAuth credentials.
 ///
@@ -31,29 +64,30 @@ pub struct ProxyToken {
     pub health_score: f32,            // [NEW v4.0.4] Health score (0.0 - 1.0)
 }
 
-/// Manages OAuth tokens for multiple accounts with rate limiting and session affinity.
+/// Manages OAuth tokens for multiple accounts with smart routing and session affinity.
 ///
 /// Key responsibilities:
 /// - Load/reload accounts from disk
-/// - Token selection based on scheduling mode (CacheFirst, Balance, PerformanceFirst)
+/// - Smart token selection with least-connections algorithm
+/// - Per-account concurrency limiting (prevents thundering herd)
 /// - Rate limit tracking per account
 /// - Session-to-account binding for cache optimization
 /// - AIMD predictive rate limiting integration
 pub struct TokenManager {
-    tokens: Arc<DashMap<String, ProxyToken>>, // account_id -> ProxyToken
+    tokens: Arc<DashMap<String, ProxyToken>>,
     current_index: Arc<AtomicUsize>,
     last_used_account: Arc<tokio::sync::Mutex<Option<(String, std::time::Instant)>>>,
     data_dir: PathBuf,
-    rate_limit_tracker: Arc<RateLimitTracker>, // 新增: 限流跟踪器
-    sticky_config: Arc<tokio::sync::RwLock<StickySessionConfig>>, // 新增：调度配置
-    session_accounts: Arc<DashMap<String, String>>, // 新增：会话与账号映射 (SessionID -> AccountID)
-    adaptive_limits: Arc<tokio::sync::RwLock<Option<Arc<AdaptiveLimitManager>>>>, // AIMD integration
-    preferred_account_id: Arc<tokio::sync::RwLock<Option<String>>>, // [FIX #820] Fixed account mode
-    health_scores: Arc<DashMap<String, f32>>, // [NEW v4.0.4] account_id -> health_score
+    rate_limit_tracker: Arc<RateLimitTracker>,
+    routing_config: Arc<tokio::sync::RwLock<SmartRoutingConfig>>,
+    session_accounts: Arc<DashMap<String, String>>,
+    adaptive_limits: Arc<tokio::sync::RwLock<Option<Arc<AdaptiveLimitManager>>>>,
+    preferred_account_id: Arc<tokio::sync::RwLock<Option<String>>>,
+    health_scores: Arc<DashMap<String, f32>>,
+    active_requests: Arc<DashMap<String, AtomicU32>>,
 }
 
 impl TokenManager {
-    /// 创建新的 TokenManager
     pub fn new(data_dir: PathBuf) -> Self {
         Self {
             tokens: Arc::new(DashMap::new()),
@@ -61,12 +95,45 @@ impl TokenManager {
             last_used_account: Arc::new(tokio::sync::Mutex::new(None)),
             data_dir,
             rate_limit_tracker: Arc::new(RateLimitTracker::new()),
-            sticky_config: Arc::new(tokio::sync::RwLock::new(StickySessionConfig::default())),
+            routing_config: Arc::new(tokio::sync::RwLock::new(SmartRoutingConfig::default())),
             session_accounts: Arc::new(DashMap::new()),
             adaptive_limits: Arc::new(tokio::sync::RwLock::new(None)),
             preferred_account_id: Arc::new(tokio::sync::RwLock::new(None)),
             health_scores: Arc::new(DashMap::new()),
+            active_requests: Arc::new(DashMap::new()),
         }
+    }
+
+    pub async fn set_routing_config(&self, config: SmartRoutingConfig) {
+        let mut guard = self.routing_config.write().await;
+        *guard = config;
+    }
+
+    pub fn increment_active_requests(&self, account_id: &str) -> u32 {
+        self.active_requests
+            .entry(account_id.to_string())
+            .or_insert_with(|| AtomicU32::new(0))
+            .fetch_add(1, Ordering::SeqCst)
+            + 1
+    }
+
+    pub fn decrement_active_requests(&self, account_id: &str) {
+        if let Some(counter) = self.active_requests.get(account_id) {
+            let _ = counter.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+                if v > 0 {
+                    Some(v - 1)
+                } else {
+                    None
+                }
+            });
+        }
+    }
+
+    pub fn get_active_requests(&self, account_id: &str) -> u32 {
+        self.active_requests
+            .get(account_id)
+            .map(|c| c.load(Ordering::SeqCst))
+            .unwrap_or(0)
     }
 
     /// Inject AIMD tracker for predictive rate limiting
@@ -476,8 +543,8 @@ impl TokenManager {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        // 0. 读取当前调度配置
-        let scheduling = self.sticky_config.read().await.clone();
+        // 0. Load smart routing configuration
+        let routing = self.routing_config.read().await.clone();
 
         // [FIX #621] Load quota protection config
         let quota_protection_enabled = config::load_config()
@@ -604,7 +671,7 @@ impl TokenManager {
 
             // 模式 A: 粘性会话处理 (CacheFirst 或 Balance 且有 session_id)
             if let Some(sid) = session_id {
-                if !rotate && scheduling.mode != SchedulingMode::PerformanceFirst {
+                if !rotate && routing.enable_session_affinity {
                     // 1. 检查会话是否已绑定账号
                     if let Some(bound_id) = self.session_accounts.get(sid).map(|v| v.clone()) {
                         // 2. 检查绑定的账号是否限流 (使用精准的剩余时间接口)
@@ -612,13 +679,16 @@ impl TokenManager {
                         if reset_sec > 0 {
                             // 【修复 Issue #284】立即解绑并切换账号，不再阻塞等待
                             // 原因：阻塞等待会导致并发请求时客户端 socket 超时 (UND_ERR_SOCKET)
-                            tracing::warn!(
-                                "Session {} bound account {} is rate-limited ({}s remaining). Unbinding and switching to next available account.",
+                            // Rate-limited: DON'T unbind session (preserves cache affinity)
+                            // Just let this request fall through to least-connections selection
+                            // Next request will try bound account again (may have recovered)
+                            tracing::debug!(
+                                "Session {} bound account {} is rate-limited ({}s). Migrating THIS request only.",
                                 sid,
                                 bound_id,
                                 reset_sec
                             );
-                            self.session_accounts.remove(sid);
+                            // target_token stays None, falls through to least-connections
                         } else if !attempted.contains(&bound_id) {
                             // 3. 账号可用且未被标记为尝试失败
                             // [FIX #621] Also check quota protection
@@ -686,38 +756,41 @@ impl TokenManager {
                     }
                 }
 
-                // 若无锁定，则轮询选择新账号
+                // Select account using least-connections algorithm (prevents thundering herd)
                 if target_token.is_none() {
-                    let start_idx = self.current_index.fetch_add(1, Ordering::SeqCst) % total;
-                    for offset in 0..total {
-                        let idx = (start_idx + offset) % total;
-                        let candidate = &tokens_snapshot[idx];
+                    let mut best_candidate: Option<&ProxyToken> = None;
+                    let mut min_active = u32::MAX;
+
+                    for candidate in &tokens_snapshot {
                         if attempted.contains(&candidate.account_id) {
                             continue;
                         }
 
-                        // 【新增】主动避开限流或 5xx 锁定的账号 (来自 PR #28 的高可用思路)
                         if self.is_rate_limited_for_model(&candidate.account_id, &normalized_target)
                         {
                             continue;
                         }
 
-                        // [FIX #621] Skip quota-protected accounts for target model
                         if quota_protection_enabled
                             && candidate.protected_models.contains(&normalized_target)
                         {
+                            continue;
+                        }
+
+                        // Check concurrency limit
+                        let active = self.get_active_requests(&candidate.account_id);
+                        if active >= routing.max_concurrent_per_account {
                             tracing::debug!(
-                                "Account {} is quota-protected for model {}, skipping",
+                                "Account {} at concurrency limit ({}/{}), skipping",
                                 candidate.email,
-                                normalized_target
+                                active,
+                                routing.max_concurrent_per_account
                             );
                             continue;
                         }
 
-                        // 【新增】AIMD 预测性检查
+                        // AIMD predictive check
                         if let Some(aimd) = &aimd {
-                            // usage_ratio > 1.0 means we are over the confirmed safe limit
-                            // But we might want to probe. For now, strict check if significantly over.
                             if aimd.usage_ratio(&candidate.account_id) > 1.2 {
                                 tracing::debug!(
                                     "AIMD: Skipping account {} (usage ratio > 1.2)",
@@ -727,70 +800,78 @@ impl TokenManager {
                             }
                         }
 
+                        // Least-connections selection
+                        if active < min_active {
+                            min_active = active;
+                            best_candidate = Some(candidate);
+                        }
+                    }
+
+                    if let Some(candidate) = best_candidate {
                         target_token = Some(candidate.clone());
-                        // 【优化】标记需要更新，稍后统一写回
                         need_update_last_used =
                             Some((candidate.account_id.clone(), std::time::Instant::now()));
 
-                        // 如果是会话首次分配且需要粘性，在此建立绑定
                         if let Some(sid) = session_id {
-                            if scheduling.mode != SchedulingMode::PerformanceFirst {
+                            if routing.enable_session_affinity {
                                 self.session_accounts
                                     .insert(sid.to_string(), candidate.account_id.clone());
                                 tracing::debug!(
-                                    "Sticky Session: Bound new account {} to session {}",
+                                    "Sticky Session: Bound new account {} to session {} (active: {})",
                                     candidate.email,
-                                    sid
+                                    sid,
+                                    min_active
                                 );
                             }
                         }
-                        break;
                     }
                 }
             } else if target_token.is_none() {
-                // 模式 C: 纯轮询模式 (Round-robin) 或强制轮换
-                let start_idx = self.current_index.fetch_add(1, Ordering::SeqCst) % total;
-                for offset in 0..total {
-                    let idx = (start_idx + offset) % total;
-                    let candidate = &tokens_snapshot[idx];
+                // Force rotation or no session affinity - use least-connections
+                let mut best_candidate: Option<&ProxyToken> = None;
+                let mut min_active = u32::MAX;
+
+                for candidate in &tokens_snapshot {
                     if attempted.contains(&candidate.account_id) {
                         continue;
                     }
 
-                    // 【新增】主动避开限流或 5xx 锁定的账号
                     if self.is_rate_limited_for_model(&candidate.account_id, &normalized_target) {
                         continue;
                     }
 
-                    // [FIX #621] Skip quota-protected accounts for target model
                     if quota_protection_enabled
                         && candidate.protected_models.contains(&normalized_target)
                     {
-                        tracing::debug!(
-                            "Account {} is quota-protected for model {}, skipping",
-                            candidate.email,
-                            normalized_target
-                        );
                         continue;
                     }
 
-                    // 【新增】AIMD 预测性检查
+                    let active = self.get_active_requests(&candidate.account_id);
+                    if active >= routing.max_concurrent_per_account {
+                        continue;
+                    }
+
                     if let Some(aimd) = &aimd {
                         if aimd.usage_ratio(&candidate.account_id) > 1.2 {
-                            tracing::debug!(
-                                "AIMD: Skipping account {} (usage ratio > 1.2)",
-                                candidate.email
-                            );
                             continue;
                         }
                     }
 
-                    target_token = Some(candidate.clone());
-
-                    if rotate {
-                        tracing::debug!("Force Rotation: Switched to account: {}", candidate.email);
+                    if active < min_active {
+                        min_active = active;
+                        best_candidate = Some(candidate);
                     }
-                    break;
+                }
+
+                if let Some(candidate) = best_candidate {
+                    target_token = Some(candidate.clone());
+                    if rotate {
+                        tracing::debug!(
+                            "Force Rotation: Switched to account {} (active: {})",
+                            candidate.email,
+                            min_active
+                        );
+                    }
                 }
             }
 
@@ -871,10 +952,10 @@ impl TokenManager {
                 }
             };
 
-            // 【FIX】Ensure session is always bound to the selected account
+            // Ensure session is always bound to the selected account
             // This covers all selection paths: rotation, fallback, optimistic reset
             if let Some(sid) = session_id {
-                if scheduling.mode != SchedulingMode::PerformanceFirst {
+                if routing.enable_session_affinity {
                     let current_binding = self.session_accounts.get(sid).map(|v| v.clone());
                     if current_binding.as_ref() != Some(&token.account_id) {
                         self.session_accounts
@@ -1417,18 +1498,16 @@ impl TokenManager {
         );
     }
 
-    // ===== 调度配置相关方法 =====
+    // ===== Smart Routing Configuration Methods =====
 
-    /// 获取当前调度配置
-    pub async fn get_sticky_config(&self) -> StickySessionConfig {
-        self.sticky_config.read().await.clone()
+    pub async fn get_routing_config(&self) -> SmartRoutingConfig {
+        self.routing_config.read().await.clone()
     }
 
-    /// 更新调度配置
-    pub async fn update_sticky_config(&self, new_config: StickySessionConfig) {
-        let mut config = self.sticky_config.write().await;
+    pub async fn update_routing_config(&self, new_config: SmartRoutingConfig) {
+        let mut config = self.routing_config.write().await;
         *config = new_config;
-        tracing::debug!("Scheduling configuration updated: {:?}", *config);
+        tracing::debug!("Smart routing configuration updated: {:?}", *config);
     }
 
     /// 清除特定会话的粘性映射
@@ -1556,20 +1635,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_sticky_config_update() {
+    async fn test_routing_config_update() {
         let manager = create_test_manager();
 
-        let initial = manager.get_sticky_config().await;
-        assert_eq!(initial.mode, SchedulingMode::Balance);
+        let initial = manager.get_routing_config().await;
+        assert!(initial.enable_session_affinity);
+        assert_eq!(initial.max_concurrent_per_account, 3);
 
-        let new_config = StickySessionConfig {
-            mode: SchedulingMode::PerformanceFirst,
+        let new_config = SmartRoutingConfig {
+            enable_session_affinity: false,
+            max_concurrent_per_account: 5,
             ..Default::default()
         };
-        manager.update_sticky_config(new_config).await;
+        manager.update_routing_config(new_config).await;
 
-        let updated = manager.get_sticky_config().await;
-        assert_eq!(updated.mode, SchedulingMode::PerformanceFirst);
+        let updated = manager.get_routing_config().await;
+        assert!(!updated.enable_session_affinity);
+        assert_eq!(updated.max_concurrent_per_account, 5);
     }
 
     #[test]

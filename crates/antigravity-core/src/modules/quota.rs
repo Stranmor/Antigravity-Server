@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 const QUOTA_API_URL: &str = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
-const USER_AGENT: &str = "antigravity/1.11.3 Darwin/arm64";
+const USER_AGENT: &str = "antigravity/4.0.8 Darwin/arm64";
 
 #[derive(Debug, Serialize, Deserialize)]
 struct QuotaResponse {
@@ -66,7 +66,10 @@ async fn fetch_project_id(access_token: &str, email: &str) -> (Option<String>, O
             format!("Bearer {}", access_token),
         )
         .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .header(reqwest::header::USER_AGENT, "antigravity/windows/amd64")
+        .header(
+            reqwest::header::USER_AGENT,
+            "antigravity/4.0.8 windows/amd64",
+        )
         .json(&meta)
         .send()
         .await;
