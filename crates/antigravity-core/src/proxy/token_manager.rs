@@ -848,8 +848,9 @@ impl TokenManager {
                             }
                         }
 
-                        // Least-connections selection
-                        if active < min_active {
+                        // Least-connections selection with random tiebreaker
+                        // When active counts are equal, randomly decide to prevent always picking first
+                        if active < min_active || (active == min_active && rand::random::<bool>()) {
                             min_active = active;
                             best_candidate = Some(candidate);
                         }
@@ -905,7 +906,8 @@ impl TokenManager {
                         }
                     }
 
-                    if active < min_active {
+                    // Least-connections with random tiebreaker
+                    if active < min_active || (active == min_active && rand::random::<bool>()) {
                         min_active = active;
                         best_candidate = Some(candidate);
                     }
