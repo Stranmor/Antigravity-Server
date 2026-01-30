@@ -228,7 +228,8 @@ async fn refresh_quota(identifier: &str) -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
-    account::update_account_quota(&acc.id, acc.quota.clone().unwrap_or_default())
+    account::update_account_quota_async(acc.id.clone(), acc.quota.clone().unwrap_or_default())
+        .await
         .map_err(|e| anyhow::anyhow!(e))?;
     println!("{} Quota refreshed for {}", "✓".green(), acc.email.green());
     Ok(())
@@ -249,7 +250,7 @@ async fn refresh_all_quotas() -> Result<()> {
             Ok(_) => {
                 // Use update_account_quota to properly populate protected_models
                 if let Some(quota) = acc.quota.clone() {
-                    let _ = account::update_account_quota(&acc.id, quota);
+                    let _ = account::update_account_quota_async(acc.id.clone(), quota).await;
                 }
                 println!("{}", "✓".green());
                 success += 1;
@@ -283,7 +284,9 @@ async fn warmup_account(email: &str) -> Result<()> {
 
     // Use update_account_quota to properly populate protected_models
     if let Some(quota) = acc.quota.clone() {
-        account::update_account_quota(&acc.id, quota).map_err(|e| anyhow::anyhow!(e))?;
+        account::update_account_quota_async(acc.id.clone(), quota)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
     }
     println!("{} Account {} warmed up", "✓".green(), acc.email.green());
     Ok(())
@@ -305,7 +308,7 @@ async fn warmup_all() -> Result<()> {
             Ok(_) => {
                 // Use update_account_quota to properly populate protected_models
                 if let Some(quota) = acc.quota.clone() {
-                    let _ = account::update_account_quota(&acc.id, quota);
+                    let _ = account::update_account_quota_async(acc.id.clone(), quota).await;
                 }
                 println!("{}", "✓".green());
                 success += 1;

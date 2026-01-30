@@ -356,7 +356,9 @@ async fn refresh_account_quota(
     // Fetch quota with retry
     match account::fetch_quota_with_retry(&mut acc).await {
         Ok(quota) => {
-            if let Err(e) = account::update_account_quota(&payload.account_id, quota.clone()) {
+            if let Err(e) =
+                account::update_account_quota_async(payload.account_id.clone(), quota.clone()).await
+            {
                 tracing::warn!("Failed to update quota protection: {}", e);
                 let _ = account::save_account(&acc);
             }
@@ -404,7 +406,8 @@ async fn refresh_all_quotas(
     while let Some(result) = join_set.join_next().await {
         match result {
             Ok(Ok((account_id, quota))) => {
-                if let Err(e) = account::update_account_quota(&account_id, quota) {
+                if let Err(e) = account::update_account_quota_async(account_id.clone(), quota).await
+                {
                     tracing::warn!("Quota protection update failed for {}: {}", account_id, e);
                 }
                 success += 1;
@@ -510,7 +513,7 @@ async fn warmup_account(
         Ok(_) => {
             // Use update_account_quota to properly populate protected_models
             if let Some(quota) = acc.quota.clone() {
-                let _ = account::update_account_quota(&acc.id, quota);
+                let _ = account::update_account_quota_async(acc.id.clone(), quota).await;
             }
             let _ = state.reload_accounts().await;
 
@@ -568,7 +571,11 @@ async fn warmup_all_accounts(
             Ok(Ok(warmup_result)) => {
                 if let Some(quota) = warmup_result.quota {
                     // Sequential update to avoid race condition on file storage
-                    let _ = account::update_account_quota(&warmup_result.account_id, quota);
+                    let _ = account::update_account_quota_async(
+                        warmup_result.account_id.clone(),
+                        quota,
+                    )
+                    .await;
                 }
                 success += 1;
             }

@@ -293,7 +293,9 @@ pub fn start(state: AppState) {
                     match account::fetch_quota_with_retry(&mut acc).await {
                         Ok(_) => {
                             if let Some(quota) = acc.quota.clone() {
-                                if let Err(e) = account::update_account_quota(&acc.id, quota) {
+                                if let Err(e) =
+                                    account::update_account_quota_async(acc.id.clone(), quota).await
+                                {
                                     tracing::warn!(
                                         "[Warmup] Failed to update quota for {}: {}",
                                         email,
@@ -406,7 +408,9 @@ pub fn start_quota_refresh(state: AppState) {
                 match account::fetch_quota_with_retry(&mut acc).await {
                     Ok(_) => {
                         if let Some(quota) = acc.quota.clone() {
-                            if let Err(e) = account::update_account_quota(&acc.id, quota) {
+                            if let Err(e) =
+                                account::update_account_quota_async(acc.id.clone(), quota).await
+                            {
                                 tracing::warn!(
                                     "[QuotaRefresh] Failed to update quota for {}: {}",
                                     acc.email,
