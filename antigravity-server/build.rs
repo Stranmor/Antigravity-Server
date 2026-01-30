@@ -35,8 +35,16 @@ fn main() {
     }
 
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-    let workspace_root = Path::new(&manifest_dir).parent().unwrap();
-    let leptos_dir = workspace_root.join("src-leptos");
+    let manifest_path = Path::new(&manifest_dir);
+    let leptos_dir = manifest_path
+        .join("../src-leptos")
+        .canonicalize()
+        .unwrap_or_else(|_| {
+            panic!(
+                "src-leptos directory not found relative to {}",
+                manifest_dir
+            );
+        });
     let dist_dir = leptos_dir.join("dist");
 
     if should_skip_trunk_build(&leptos_dir, &dist_dir) {
@@ -54,11 +62,13 @@ fn main() {
     println!("cargo:warning=Building Leptos frontend with trunk...");
 
     let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+    let trunk_target_dir = leptos_dir.join("target");
     let mut cmd = Command::new("trunk");
     cmd.arg("build")
         .current_dir(&leptos_dir)
         .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .env_remove("RUSTFLAGS")
+        .env("CARGO_TARGET_DIR", &trunk_target_dir)
         .env("CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER", "rust-lld");
 
     if profile == "release" {
