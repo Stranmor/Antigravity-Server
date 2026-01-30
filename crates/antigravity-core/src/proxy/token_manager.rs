@@ -24,6 +24,50 @@ async fn atomic_write_json(path: &Path, content: &serde_json::Value) -> Result<(
     Ok(())
 }
 
+/// RAII guard for cancellation-safe increment/decrement of active_requests.
+/// Decrements on drop unless `release()` is called.
+struct IncrementGuard {
+    active_requests: Arc<DashMap<String, AtomicU32>>,
+    key: String,
+    released: bool,
+}
+
+impl IncrementGuard {
+    fn new(active_requests: Arc<DashMap<String, AtomicU32>>, key: String) -> Self {
+        active_requests
+            .entry(key.clone())
+            .or_insert_with(|| AtomicU32::new(0))
+            .fetch_add(1, Ordering::SeqCst);
+        Self {
+            active_requests,
+            key,
+            released: false,
+        }
+    }
+
+    /// Release the guard without decrementing on drop.
+    /// Call this when the request is successfully handed off to the caller.
+    fn release(mut self) {
+        self.released = true;
+    }
+}
+
+impl Drop for IncrementGuard {
+    fn drop(&mut self) {
+        if !self.released {
+            if let Some(counter) = self.active_requests.get(&self.key) {
+                let _ = counter.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+                    if v > 0 {
+                        Some(v - 1)
+                    } else {
+                        None
+                    }
+                });
+            }
+        }
+    }
+}
+
 // ============================================================================
 // Smart Routing Configuration (replaces SchedulingMode enum)
 // ============================================================================
@@ -101,6 +145,7 @@ pub struct TokenManager {
     health_scores: Arc<DashMap<String, f32>>,
     active_requests: Arc<DashMap<String, AtomicU32>>,
     session_failures: Arc<DashMap<String, AtomicU32>>,
+    file_locks: Arc<DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl TokenManager {
@@ -118,6 +163,7 @@ impl TokenManager {
             health_scores: Arc::new(DashMap::new()),
             active_requests: Arc::new(DashMap::new()),
             session_failures: Arc::new(DashMap::new()),
+            file_locks: Arc::new(DashMap::new()),
         }
     }
 
@@ -170,6 +216,13 @@ impl TokenManager {
             .get(session_id)
             .map(|c| c.load(Ordering::SeqCst))
             .unwrap_or(0)
+    }
+
+    fn get_file_lock(&self, account_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.file_locks
+            .entry(account_id.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
     }
 
     /// Inject AIMD tracker for predictive rate limiting
@@ -561,10 +614,10 @@ impl TokenManager {
     /// 内部实现：获取 Token 的核心逻辑
     async fn get_token_internal(
         &self,
-        quota_group: &str,
+        _quota_group: &str,
         force_rotate: bool,
         session_id: Option<&str>,
-        target_model: &str, // [FIX #621] Used for quota protection
+        target_model: &str,
     ) -> Result<(String, String, String), String> {
         let mut tokens_snapshot: Vec<ProxyToken> =
             self.tokens.iter().map(|e| e.value().clone()).collect();
@@ -689,8 +742,10 @@ impl TokenManager {
                         }
                     };
 
-                    // Use email for increment - Guard uses email for decrement
-                    self.increment_active_requests(&token.email);
+                    // Cancellation-safe: guard decrements on drop unless released
+                    let guard =
+                        IncrementGuard::new(Arc::clone(&self.active_requests), token.email.clone());
+                    guard.release();
 
                     return Ok((token.access_token, project_id, token.email));
                 } else if is_rate_limited {
@@ -713,21 +768,8 @@ impl TokenManager {
         }
         // ===== [END FIX #820] =====
 
-        // 【优化 Issue #284】将锁操作移到循环外，避免重复获取锁
-        // 预先获取 last_used_account 的快照，避免在循环中多次加锁
-        // 【FIX TOCTOU】保存原始快照用于 Compare-And-Swap 验证
-        let last_used_account_snapshot = if quota_group != "image_gen" {
-            let last_used = self.last_used_account.lock().await;
-            last_used.clone()
-        } else {
-            None
-        };
-        // Clone for loop usage (immutable reference)
-        let last_used_account_id = last_used_account_snapshot.clone();
-
         let mut attempted: HashSet<String> = HashSet::new();
         let mut last_error: Option<String> = None;
-        let mut need_update_last_used: Option<(String, std::time::Instant)> = None;
 
         // 获取 AIMD tracker 引用 (避免在循环中多次获取锁)
         let aimd = self.adaptive_limits.read().await.clone();
@@ -800,7 +842,11 @@ impl TokenManager {
                                     sid
                                 );
                                 target_token = Some(found.clone());
-                                self.increment_active_requests(&found.email);
+                                let guard = IncrementGuard::new(
+                                    Arc::clone(&self.active_requests),
+                                    found.email.clone(),
+                                );
+                                guard.release();
                             }
                         }
                     }
@@ -857,7 +903,11 @@ impl TokenManager {
 
                 if let Some(candidate) = best_candidate {
                     target_token = Some(candidate.clone());
-                    self.increment_active_requests(&candidate.email);
+                    let guard = IncrementGuard::new(
+                        Arc::clone(&self.active_requests),
+                        candidate.email.clone(),
+                    );
+                    guard.release();
                     if rotate {
                         tracing::debug!(
                             "Force Rotation: Switched to account {} (active: {})",
@@ -902,7 +952,11 @@ impl TokenManager {
                                     "✅ Buffer delay successful! Found available account: {}",
                                     t.email
                                 );
-                                self.increment_active_requests(&t.email);
+                                let guard = IncrementGuard::new(
+                                    Arc::clone(&self.active_requests),
+                                    t.email.clone(),
+                                );
+                                guard.release();
                                 t.clone()
                             } else {
                                 // Layer 2: 缓冲后仍无可用账号,执行乐观重置
@@ -924,7 +978,11 @@ impl TokenManager {
                                         "✅ Optimistic reset successful! Using account: {}",
                                         t.email
                                     );
-                                    self.increment_active_requests(&t.email);
+                                    let guard = IncrementGuard::new(
+                                        Arc::clone(&self.active_requests),
+                                        t.email.clone(),
+                                    );
+                                    guard.release();
                                     t.clone()
                                 } else {
                                     // 所有策略都失败,返回错误
@@ -1015,15 +1073,6 @@ impl TokenManager {
                         // Avoid leaking account emails to API clients; details are still in logs.
                         last_error = Some(format!("Token refresh failed: {}", e));
                         attempted.insert(token.account_id.clone());
-
-                        // 【优化】标记需要清除锁定，避免在循环内加锁
-                        if quota_group != "image_gen"
-                            && matches!(&last_used_account_id, Some((id, _)) if id == &token.account_id)
-                        {
-                            need_update_last_used =
-                                Some((String::new(), std::time::Instant::now()));
-                            // 空字符串表示需要清除
-                        }
                         self.decrement_active_requests(&token.email);
                         continue;
                     }
@@ -1050,33 +1099,11 @@ impl TokenManager {
                             token.email, e
                         ));
                         attempted.insert(token.account_id.clone());
-
-                        // 【优化】标记需要清除锁定，避免在循环内加锁
-                        if quota_group != "image_gen"
-                            && matches!(&last_used_account_id, Some((id, _)) if id == &token.account_id)
-                        {
-                            need_update_last_used =
-                                Some((String::new(), std::time::Instant::now()));
-                            // 空字符串表示需要清除
-                        }
                         self.decrement_active_requests(&token.email);
                         continue;
                     }
                 }
             };
-
-            // 【优化】在成功返回前，统一更新 last_used_account（如果需要）
-            if let Some((new_account_id, new_time)) = need_update_last_used {
-                if quota_group != "image_gen" {
-                    let mut last_used = self.last_used_account.lock().await;
-                    if new_account_id.is_empty() {
-                        // 空字符串表示需要清除锁定
-                        *last_used = None;
-                    } else {
-                        *last_used = Some((new_account_id, new_time));
-                    }
-                }
-            }
 
             return Ok((token.access_token, project_id, token.email));
         }
@@ -1092,6 +1119,9 @@ impl TokenManager {
                 .join("accounts")
                 .join(format!("{}.json", account_id))
         };
+
+        let lock = self.get_file_lock(account_id);
+        let _guard = lock.lock().await;
 
         let content_str = tokio::fs::read_to_string(&path)
             .await
@@ -1116,6 +1146,9 @@ impl TokenManager {
         let path = entry.account_path.clone();
         drop(entry);
 
+        let lock = self.get_file_lock(account_id);
+        let _guard = lock.lock().await;
+
         let content_str = tokio::fs::read_to_string(&path)
             .await
             .map_err(|e| format!("读取文件失败: {}", e))?;
@@ -1139,6 +1172,9 @@ impl TokenManager {
         let entry = self.tokens.get(account_id).ok_or("账号不存在")?;
         let path = entry.account_path.clone();
         drop(entry);
+
+        let lock = self.get_file_lock(account_id);
+        let _guard = lock.lock().await;
 
         let content_str = tokio::fs::read_to_string(&path)
             .await
