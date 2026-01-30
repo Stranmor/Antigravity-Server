@@ -70,8 +70,32 @@ bytes = "1.5"
 pin-project = "1.1"
 eventsource-stream = "0.2"
 
+# ============================================================================
+# BUILD PROFILES - Optimized for fast iteration
+# ============================================================================
+
+# Dev profile: FAST compilation, slow runtime
+[profile.dev]
+opt-level = 0
+debug = true
+incremental = true
+codegen-units = 256  # Maximum parallelism
+
+# Dev dependencies: optimize for faster test runs
+[profile.dev.package."*"]
+opt-level = 2  # Dependencies optimized even in dev
+
+# Release profile: balanced speed vs optimization
 [profile.release]
 opt-level = 3
-lto = true
-codegen-units = 1
+lto = "thin"       # thin LTO: 80% benefit, 20% time (was: full LTO)
+codegen-units = 16 # Parallel codegen (was: 1 = sequential)
 strip = true
+incremental = false
+
+# Production profile: maximum optimization (use for final deploy)
+[profile.production]
+inherits = "release"
+lto = "fat"        # Full LTO for final binary
+codegen-units = 1  # Single codegen unit for best optimization
+panic = "abort"    # Smaller binary, no unwinding

@@ -1,9 +1,10 @@
 use std::env;
+use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::time::SystemTime;
 
 fn main() {
-    // Git version for runtime display
     println!("cargo:rerun-if-changed=../.git/HEAD");
     println!("cargo:rerun-if-changed=../.git/refs/tags");
 
@@ -18,7 +19,6 @@ fn main() {
 
     println!("cargo:rustc-env=GIT_VERSION={}", version);
 
-    // Build timestamp
     let build_time = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     println!("cargo:rustc-env=BUILD_TIME={}", build_time);
 
@@ -37,6 +37,12 @@ fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let workspace_root = Path::new(&manifest_dir).parent().unwrap();
     let leptos_dir = workspace_root.join("src-leptos");
+    let dist_dir = leptos_dir.join("dist");
+
+    if should_skip_trunk_build(&leptos_dir, &dist_dir) {
+        println!("cargo:warning=Frontend up-to-date, skipping trunk build");
+        return;
+    }
 
     let trunk_check = Command::new("trunk").arg("--version").output();
     if trunk_check.is_err() {
@@ -49,7 +55,11 @@ fn main() {
 
     let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
     let mut cmd = Command::new("trunk");
-    cmd.arg("build").current_dir(&leptos_dir);
+    cmd.arg("build")
+        .current_dir(&leptos_dir)
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        .env_remove("RUSTFLAGS")
+        .env("CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_LINKER", "rust-lld");
 
     if profile == "release" {
         cmd.arg("--release");
@@ -67,4 +77,73 @@ fn main() {
             panic!("Failed to run trunk: {}", e);
         }
     }
+}
+
+fn should_skip_trunk_build(leptos_dir: &Path, dist_dir: &Path) -> bool {
+    let wasm_mtime = match find_newest_wasm(dist_dir) {
+        Some(t) => t,
+        None => return false,
+    };
+
+    let sources = [
+        leptos_dir.join("src"),
+        leptos_dir.join("styles"),
+        leptos_dir.join("index.html"),
+        leptos_dir.join("Cargo.toml"),
+        leptos_dir.join("Trunk.toml"),
+    ];
+
+    for source in &sources {
+        if let Some(source_mtime) = get_newest_mtime(source) {
+            if source_mtime > wasm_mtime {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
+fn find_newest_wasm(dist_dir: &Path) -> Option<SystemTime> {
+    let entries = fs::read_dir(dist_dir).ok()?;
+    let mut newest: Option<SystemTime> = None;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "wasm") {
+            if let Ok(mtime) = fs::metadata(&path).and_then(|m| m.modified()) {
+                newest = Some(match newest {
+                    Some(n) if mtime > n => mtime,
+                    Some(n) => n,
+                    None => mtime,
+                });
+            }
+        }
+    }
+
+    newest
+}
+
+fn get_newest_mtime(path: &Path) -> Option<SystemTime> {
+    if path.is_file() {
+        return fs::metadata(path).and_then(|m| m.modified()).ok();
+    }
+
+    if path.is_dir() {
+        let mut newest: Option<SystemTime> = None;
+        if let Ok(entries) = fs::read_dir(path) {
+            for entry in entries.flatten() {
+                if let Some(mtime) = get_newest_mtime(&entry.path()) {
+                    newest = Some(match newest {
+                        Some(n) if mtime > n => mtime,
+                        Some(n) => n,
+                        None => mtime,
+                    });
+                }
+            }
+        }
+        return newest;
+    }
+
+    None
 }

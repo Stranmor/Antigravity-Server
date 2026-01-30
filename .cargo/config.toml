@@ -1,0 +1,13 @@
+[build]
+jobs = 16
+
+[net]
+git-fetch-with-cli = true
+
+[registries.crates-io]
+protocol = "sparse"
+
+[alias]
+b = "build"
+br = "build --release"
+bp = "build --profile production"

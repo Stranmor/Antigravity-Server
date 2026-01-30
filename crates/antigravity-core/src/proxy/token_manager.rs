@@ -655,6 +655,9 @@ impl TokenManager {
                         }
                     };
 
+                    // Atomically increment for preferred account path
+                    self.increment_active_requests(&token.account_id);
+
                     return Ok((token.access_token, project_id, token.email));
                 } else if is_rate_limited {
                     tracing::warn!(
@@ -763,122 +766,21 @@ impl TokenManager {
                                     sid
                                 );
                                 target_token = Some(found.clone());
+                                self.increment_active_requests(&found.account_id);
                             }
                         }
                     }
                 }
             }
 
-            // 模式 B: 原子化 60s 全局锁定 (针对无 session_id 情况的默认保护)
-            if target_token.is_none() && !rotate && quota_group != "image_gen" {
-                // 【优化】使用预先获取的快照，不再在循环内加锁
-                if let Some((account_id, last_time)) = &last_used_account_id {
-                    if last_time.elapsed().as_secs() < 60 && !attempted.contains(account_id) {
-                        // [FIX] Check rate limit BEFORE reusing account in 60s window
-                        if self.is_rate_limited_for_model(account_id, &normalized_target) {
-                            tracing::debug!(
-                                "60s Window: Last account {} is rate-limited for {}, skipping",
-                                account_id,
-                                normalized_target
-                            );
-                        } else if let Some(found) =
-                            tokens_snapshot.iter().find(|t| &t.account_id == account_id)
-                        {
-                            // [FIX #621] Check quota protection before reusing
-                            let is_quota_protected = quota_protection_enabled
-                                && found.protected_models.contains(&normalized_target);
+            // Mode B (60s global lock) REMOVED: conflicts with Smart Routing distribution
+            // Session affinity (Mode A) handles per-session consistency instead
 
-                            if !is_quota_protected {
-                                tracing::debug!(
-                                    "60s Window: Force reusing last account: {}",
-                                    found.email
-                                );
-                                target_token = Some(found.clone());
-                            } else {
-                                tracing::debug!(
-                                    "60s Window: Last account {} is quota-protected for {}, skipping",
-                                    found.email, normalized_target
-                                );
-                            }
-                        }
-                    }
-                }
-
-                // Select account using least-connections algorithm (prevents thundering herd)
-                if target_token.is_none() {
-                    let mut best_candidate: Option<&ProxyToken> = None;
-                    let mut min_active = u32::MAX;
-
-                    for candidate in &tokens_snapshot {
-                        if attempted.contains(&candidate.account_id) {
-                            continue;
-                        }
-
-                        if self.is_rate_limited_for_model(&candidate.account_id, &normalized_target)
-                        {
-                            continue;
-                        }
-
-                        if quota_protection_enabled
-                            && candidate.protected_models.contains(&normalized_target)
-                        {
-                            continue;
-                        }
-
-                        // Check concurrency limit
-                        let active = self.get_active_requests(&candidate.account_id);
-                        if active >= routing.max_concurrent_per_account {
-                            tracing::debug!(
-                                "Account {} at concurrency limit ({}/{}), skipping",
-                                candidate.email,
-                                active,
-                                routing.max_concurrent_per_account
-                            );
-                            continue;
-                        }
-
-                        // AIMD predictive check
-                        if let Some(aimd) = &aimd {
-                            if aimd.usage_ratio(&candidate.account_id) > 1.2 {
-                                tracing::debug!(
-                                    "AIMD: Skipping account {} (usage ratio > 1.2)",
-                                    candidate.email
-                                );
-                                continue;
-                            }
-                        }
-
-                        // Least-connections selection with random tiebreaker
-                        // When active counts are equal, randomly decide to prevent always picking first
-                        if active < min_active || (active == min_active && rand::random::<bool>()) {
-                            min_active = active;
-                            best_candidate = Some(candidate);
-                        }
-                    }
-
-                    if let Some(candidate) = best_candidate {
-                        target_token = Some(candidate.clone());
-                        need_update_last_used =
-                            Some((candidate.account_id.clone(), std::time::Instant::now()));
-
-                        if let Some(sid) = session_id {
-                            if routing.enable_session_affinity {
-                                self.session_accounts
-                                    .insert(sid.to_string(), candidate.account_id.clone());
-                                tracing::debug!(
-                                    "Sticky Session: Bound new account {} to session {} (active: {})",
-                                    candidate.email,
-                                    sid,
-                                    min_active
-                                );
-                            }
-                        }
-                    }
-                }
-            } else if target_token.is_none() {
+            if target_token.is_none() {
                 // Force rotation or no session affinity - use least-connections
                 let mut best_candidate: Option<&ProxyToken> = None;
                 let mut min_active = u32::MAX;
+                let mut equal_count: u32 = 0;
 
                 for candidate in &tokens_snapshot {
                     if attempted.contains(&candidate.account_id) {
@@ -906,15 +808,22 @@ impl TokenManager {
                         }
                     }
 
-                    // Least-connections with random tiebreaker
-                    if active < min_active || (active == min_active && rand::random::<bool>()) {
+                    // Reservoir sampling for uniform distribution
+                    if active < min_active {
                         min_active = active;
                         best_candidate = Some(candidate);
+                        equal_count = 1;
+                    } else if active == min_active {
+                        equal_count += 1;
+                        if rand::random::<u32>().is_multiple_of(equal_count) {
+                            best_candidate = Some(candidate);
+                        }
                     }
                 }
 
                 if let Some(candidate) = best_candidate {
                     target_token = Some(candidate.clone());
+                    self.increment_active_requests(&candidate.account_id);
                     if rotate {
                         tracing::debug!(
                             "Force Rotation: Switched to account {} (active: {})",

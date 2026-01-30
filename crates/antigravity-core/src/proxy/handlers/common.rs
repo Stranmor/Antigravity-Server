@@ -17,7 +17,7 @@ pub struct ActiveRequestGuard {
 
 impl ActiveRequestGuard {
     pub fn new(token_manager: Arc<TokenManager>, account_id: String) -> Self {
-        token_manager.increment_active_requests(&account_id);
+        // Increment done atomically in get_token() - prevents race condition
         Self {
             token_manager,
             account_id,
