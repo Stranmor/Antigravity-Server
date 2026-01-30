@@ -718,16 +718,13 @@ impl TokenManager {
                 }
             }
 
-            // 模式 A: 粘性会话处理 (CacheFirst 或 Balance 且有 session_id)
             if let Some(sid) = session_id {
                 if !rotate && routing.enable_session_affinity {
-                    // 1. 检查会话是否已绑定账号
                     if let Some(bound_id) = self.session_accounts.get(sid).map(|v| v.clone()) {
-                        // 2. 检查绑定的账号是否限流 (使用精准的剩余时间接口)
-                        let reset_sec = self.rate_limit_tracker.get_remaining_wait(&bound_id);
+                        let reset_sec = self
+                            .rate_limit_tracker
+                            .get_remaining_wait_for_model(&bound_id, &normalized_target);
                         if reset_sec > 0 {
-                            // Long lockout (>5min) = QUOTA_EXHAUSTED, unbind session
-                            // Short lockout = temporary rate limit, keep session for cache affinity
                             if reset_sec > 300 {
                                 self.session_accounts.remove(sid);
                                 tracing::warn!(
@@ -742,10 +739,7 @@ impl TokenManager {
                                     sid, bound_id, reset_sec
                                 );
                             }
-                            // target_token stays None, falls through to least-connections
                         } else if !attempted.contains(&bound_id) {
-                            // 3. 账号可用且未被标记为尝试失败
-                            // [FIX #621] Also check quota protection
                             let is_quota_protected = quota_protection_enabled
                                 && tokens_snapshot
                                     .iter()
@@ -1465,27 +1459,42 @@ impl TokenManager {
         error_body: &str,
         model: Option<&str>,
     ) {
-        // Parse error reason FIRST to choose strategy
         let reason = self.rate_limit_tracker.parse_rate_limit_reason(error_body);
-        let model_str = model.unwrap_or("unknown");
+        let raw_model = model.unwrap_or("unknown");
+
+        // Normalize model to match get_token() check (prevents key mismatch)
+        let model_str = crate::proxy::common::model_mapping::normalize_to_standard_id(raw_model)
+            .unwrap_or_else(|| raw_model.to_string());
+
+        // Immediately set temporary lockout BEFORE any async operations (race condition fix)
+        let immediate_lockout = std::time::Duration::from_secs(60);
+        self.rate_limit_tracker.set_model_lockout(
+            account_id,
+            &model_str,
+            std::time::SystemTime::now() + immediate_lockout,
+            reason,
+        );
+        tracing::debug!(
+            "🔒 {}:{} immediate 60s lockout (pending precise time)",
+            account_id,
+            model_str
+        );
 
         // Check if API returned explicit retry time
         let has_explicit_retry_time =
             retry_after_header.is_some() || error_body.contains("quotaResetDelay");
 
         if has_explicit_retry_time {
-            // API returned precise time — use it directly, set per-model lock
             if let Some(info) = self.rate_limit_tracker.parse_from_error(
                 account_id,
                 status,
                 retry_after_header,
                 error_body,
-                model.map(|s| s.to_string()),
+                Some(model_str.clone()),
             ) {
-                // Also set model-specific lock
                 self.rate_limit_tracker.set_model_lockout(
                     account_id,
-                    model_str,
+                    &model_str,
                     info.reset_time,
                     reason,
                 );
@@ -1493,14 +1502,11 @@ impl TokenManager {
             return;
         }
 
-        // No explicit time — strategy depends on error type
         match reason {
             crate::proxy::rate_limit::RateLimitReason::QuotaExhausted => {
-                // QUOTA_EXHAUSTED: permanent block until quota refresh
-                // Dynamically add model to protected_models in memory
                 if let Some(mut token) = self.tokens.get_mut(account_id) {
-                    if !token.protected_models.contains(model_str) {
-                        token.protected_models.insert(model_str.to_string());
+                    if !token.protected_models.contains(&model_str) {
+                        token.protected_models.insert(model_str.clone());
                         tracing::warn!(
                             "🛡️ {}:{} added to protected_models (quota exhausted)",
                             account_id,
@@ -1509,11 +1515,10 @@ impl TokenManager {
                     }
                 }
 
-                // Temporary lockout while fetching precise reset time
                 let lockout = std::time::Duration::from_secs(600);
                 self.rate_limit_tracker.set_model_lockout(
                     account_id,
-                    model_str,
+                    &model_str,
                     std::time::SystemTime::now() + lockout,
                     reason,
                 );
@@ -1524,10 +1529,9 @@ impl TokenManager {
                 );
             }
             _ => {
-                // RATE_LIMIT_EXCEEDED or other: adaptive short lockout (5→15→30→60s)
                 let lockout_secs = self
                     .rate_limit_tracker
-                    .set_adaptive_model_lockout(account_id, model_str);
+                    .set_adaptive_model_lockout(account_id, &model_str);
                 tracing::debug!(
                     "⚡ {}:{} adaptive lockout: {}s",
                     account_id,
@@ -1537,9 +1541,8 @@ impl TokenManager {
             }
         }
 
-        // Try to get precise reset time async
         if self
-            .fetch_and_lock_with_realtime_quota(account_id, reason, model.map(|s| s.to_string()))
+            .fetch_and_lock_with_realtime_quota(account_id, reason, Some(model_str.clone()))
             .await
         {
             tracing::info!(

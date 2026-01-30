@@ -144,7 +144,9 @@ pub async fn handle_chat_completions(
         last_email = Some(email.clone());
         info!("✓ Using account: {} (type: {})", email, config.request_type);
 
-        // 4. 转换请求
+        let _active_guard =
+            super::common::ActiveRequestGuard::new(token_manager.clone(), email.clone());
+
         let gemini_body = transform_openai_request(&openai_req, &project_id, &mapped_model);
 
         // [New] 打印转换后的报文 (Gemini Body) 供调试
@@ -842,8 +844,10 @@ pub async fn handle_completions(
         };
 
         last_email = Some(email.clone());
-
         info!("✓ Using account: {} (type: {})", email, config.request_type);
+
+        let _active_guard =
+            super::common::ActiveRequestGuard::new(token_manager.clone(), email.clone());
 
         let gemini_body = transform_openai_request(&openai_req, &project_id, &mapped_model);
 

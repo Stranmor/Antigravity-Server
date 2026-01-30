@@ -651,6 +651,36 @@ impl RateLimitTracker {
         false
     }
 
+    pub fn get_remaining_wait_for_model(&self, account_id: &str, model: &str) -> u64 {
+        let now = SystemTime::now();
+        let mut max_wait: u64 = 0;
+
+        if let Some(info) = self.limits.get(account_id) {
+            if info.reset_time > now {
+                let wait = info
+                    .reset_time
+                    .duration_since(now)
+                    .unwrap_or(Duration::from_secs(0))
+                    .as_secs();
+                max_wait = max_wait.max(wait);
+            }
+        }
+
+        let model_key = format!("{}:{}", account_id, model);
+        if let Some(info) = self.limits.get(&model_key) {
+            if info.reset_time > now {
+                let wait = info
+                    .reset_time
+                    .duration_since(now)
+                    .unwrap_or(Duration::from_secs(0))
+                    .as_secs();
+                max_wait = max_wait.max(wait);
+            }
+        }
+
+        max_wait
+    }
+
     /// Set lockout for specific account:model pair
     pub fn set_model_lockout(
         &self,

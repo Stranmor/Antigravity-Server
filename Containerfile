@@ -5,7 +5,7 @@
 # =============================================================================
 # Stage 1: Build Frontend (Leptos WASM)
 # =============================================================================
-FROM docker.io/rust:1.84-bookworm AS frontend-builder
+FROM docker.io/rust:1.88-bookworm AS frontend-builder
 
 # Install trunk and wasm target
 RUN cargo install trunk --locked \
@@ -13,10 +13,12 @@ RUN cargo install trunk --locked \
 
 WORKDIR /build
 
-# Copy frontend source
+# Copy frontend source and workspace files
 COPY src-leptos/ src-leptos/
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
+COPY antigravity-server/ antigravity-server/
+COPY antigravity-vps-cli/ antigravity-vps-cli/
 
 # Build frontend
 WORKDIR /build/src-leptos
@@ -25,7 +27,7 @@ RUN trunk build --release
 # =============================================================================
 # Stage 2: Build Backend (Rust Binary)
 # =============================================================================
-FROM docker.io/rust:1.84-bookworm AS backend-builder
+FROM docker.io/rust:1.88-bookworm AS backend-builder
 
 WORKDIR /build
 

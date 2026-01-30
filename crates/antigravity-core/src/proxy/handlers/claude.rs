@@ -525,8 +525,9 @@ pub async fn handle_messages(
         last_email = Some(email.clone());
         info!("✓ Using account: {} (type: {})", email, config.request_type);
 
-        // ===== 【优化】后台任务智能检测与降级 =====
-        // 使用新的检测系统，支持 5 大类关键词和多 Flash 模型策略
+        let _active_guard =
+            super::common::ActiveRequestGuard::new(token_manager.clone(), email.clone());
+
         let background_task_type = detect_background_task_type(&request_for_body);
 
         // 传递映射后的模型名
