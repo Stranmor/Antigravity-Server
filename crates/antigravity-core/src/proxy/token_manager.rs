@@ -1,13 +1,28 @@
 use crate::modules::{config, oauth, quota};
-// 移除冗余的顶层导入，因为这些在代码中已由 full path 或局部导入处理
 use dashmap::DashMap;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use crate::proxy::rate_limit::RateLimitTracker;
 use crate::proxy::AdaptiveLimitManager;
+
+async fn atomic_write_json(path: &Path, content: &serde_json::Value) -> Result<(), String> {
+    let temp_path = path.with_extension("json.tmp");
+    let json_str =
+        serde_json::to_string_pretty(content).map_err(|e| format!("JSON serialize: {}", e))?;
+
+    tokio::fs::write(&temp_path, &json_str)
+        .await
+        .map_err(|e| format!("写入临时文件失败: {}", e))?;
+
+    tokio::fs::rename(&temp_path, path)
+        .await
+        .map_err(|e| format!("重命名文件失败: {}", e))?;
+
+    Ok(())
+}
 
 // ============================================================================
 // Smart Routing Configuration (replaces SchedulingMode enum)
@@ -674,8 +689,8 @@ impl TokenManager {
                         }
                     };
 
-                    // Atomically increment for preferred account path
-                    self.increment_active_requests(&token.account_id);
+                    // Use email for increment - Guard uses email for decrement
+                    self.increment_active_requests(&token.email);
 
                     return Ok((token.access_token, project_id, token.email));
                 } else if is_rate_limited {
@@ -785,7 +800,7 @@ impl TokenManager {
                                     sid
                                 );
                                 target_token = Some(found.clone());
-                                self.increment_active_requests(&found.account_id);
+                                self.increment_active_requests(&found.email);
                             }
                         }
                     }
@@ -816,7 +831,7 @@ impl TokenManager {
                         continue;
                     }
 
-                    let active = self.get_active_requests(&candidate.account_id);
+                    let active = self.get_active_requests(&candidate.email);
                     if active >= routing.max_concurrent_per_account {
                         continue;
                     }
@@ -842,7 +857,7 @@ impl TokenManager {
 
                 if let Some(candidate) = best_candidate {
                     target_token = Some(candidate.clone());
-                    self.increment_active_requests(&candidate.account_id);
+                    self.increment_active_requests(&candidate.email);
                     if rotate {
                         tracing::debug!(
                             "Force Rotation: Switched to account {} (active: {})",
@@ -887,6 +902,7 @@ impl TokenManager {
                                     "✅ Buffer delay successful! Found available account: {}",
                                     t.email
                                 );
+                                self.increment_active_requests(&t.email);
                                 t.clone()
                             } else {
                                 // Layer 2: 缓冲后仍无可用账号,执行乐观重置
@@ -908,6 +924,7 @@ impl TokenManager {
                                         "✅ Optimistic reset successful! Using account: {}",
                                         t.email
                                     );
+                                    self.increment_active_requests(&t.email);
                                     t.clone()
                                 } else {
                                     // 所有策略都失败,返回错误
@@ -1007,6 +1024,7 @@ impl TokenManager {
                                 Some((String::new(), std::time::Instant::now()));
                             // 空字符串表示需要清除
                         }
+                        self.decrement_active_requests(&token.account_id);
                         continue;
                     }
                 }
@@ -1041,6 +1059,7 @@ impl TokenManager {
                                 Some((String::new(), std::time::Instant::now()));
                             // 空字符串表示需要清除
                         }
+                        self.decrement_active_requests(&token.account_id);
                         continue;
                     }
                 }
@@ -1085,9 +1104,7 @@ impl TokenManager {
         content["disabled_at"] = serde_json::Value::Number(now.into());
         content["disabled_reason"] = serde_json::Value::String(truncate_reason(reason, 800));
 
-        tokio::fs::write(&path, serde_json::to_string_pretty(&content).unwrap())
-            .await
-            .map_err(|e| format!("写入文件失败: {}", e))?;
+        atomic_write_json(&path, &content).await?;
 
         tracing::warn!("Account disabled: {} ({:?})", account_id, path);
         Ok(())
@@ -1107,9 +1124,7 @@ impl TokenManager {
 
         content["token"]["project_id"] = serde_json::Value::String(project_id.to_string());
 
-        tokio::fs::write(&path, serde_json::to_string_pretty(&content).unwrap())
-            .await
-            .map_err(|e| format!("写入文件失败: {}", e))?;
+        atomic_write_json(&path, &content).await?;
 
         tracing::debug!("已保存 project_id 到账号 {}", account_id);
         Ok(())
@@ -1140,9 +1155,7 @@ impl TokenManager {
         content["token"]["expiry_timestamp"] =
             serde_json::Value::Number((now + token_response.expires_in).into());
 
-        tokio::fs::write(&path, serde_json::to_string_pretty(&content).unwrap())
-            .await
-            .map_err(|e| format!("写入文件失败: {}", e))?;
+        atomic_write_json(&path, &content).await?;
 
         tracing::debug!("已保存刷新后的 token 到账号 {}", account_id);
         Ok(())
