@@ -78,7 +78,7 @@ Using the **Additive Increase / Multiplicative Decrease** algorithm (similar to 
 The server operates fully autonomously with a dedicated `Scheduler` system (ported and enhanced from upstream logic). Independent async tasks handle:
 - **Auto Quota Refresh**: Automatically updates account capabilities and quotas as they reset, without manual intervention.
 - **Active Warmup**: Periodic background requests keep sessions alive and validate cookie integrity, ensuring accounts are ready when needed.
-- **Non-blocking Persistence**: Chat history and state are saved asynchronously, ensuring the main request loop handles traffic with zero I/O jitter.
+- **Non-blocking Persistence**: Chat history, account quotas, and state are saved asynchronously, ensuring the main request loop handles traffic with zero I/O jitter.
 - **Self-Healing**: Periodic health checks monitor and reset circuit breakers.
 
 ### 🛡️ Circuit Breakers & Resilience
@@ -368,7 +368,7 @@ This fork uses **Semantic Porting** — we don't blindly copy upstream changes. 
 **🔄 Active Sync**: We actively port useful upstream changes. Currently synced with **v4.0.7**, plus our exclusive additions: 
 
 - **Reliability**: AIMD predictive rate limiting (with atomic concurrency protection), Upstream Circuit Breakers (30s cooldown after 5 failures), transport retries (500ms delay), and sticky session rebind on 429.
-- **Persistence**: Sequential actor-based file writing to eliminate race conditions.
+- **Persistence**: Sequential actor-based file writing to eliminate race conditions and prevent runtime starvation.
 - **Security**: Hardened constant-time auth, User-Agent masking, WARP proxy isolation.
 - **Features**: Multimodal audio/video support, LRU schema caching, `preferred_account_id` routing, aspect ratio support, robust token rotation, and auto-refresh schedulers.
 

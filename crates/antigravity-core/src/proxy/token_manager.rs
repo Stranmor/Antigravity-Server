@@ -232,13 +232,17 @@ impl TokenManager {
             *last_used = None;
         }
 
-        let entries =
-            std::fs::read_dir(&accounts_dir).map_err(|e| format!("读取账号目录失败: {}", e))?;
+        let mut entries = tokio::fs::read_dir(&accounts_dir)
+            .await
+            .map_err(|e| format!("读取账号目录失败: {}", e))?;
 
         let mut count = 0;
 
-        for entry in entries {
-            let entry = entry.map_err(|e| format!("读取目录项失败: {}", e))?;
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| format!("读取目录项失败: {}", e))?
+        {
             let path = entry.path();
 
             if path.extension().and_then(|s| s.to_str()) != Some("json") {
@@ -294,7 +298,9 @@ impl TokenManager {
 
     /// 加载单个账号
     async fn load_single_account(&self, path: &PathBuf) -> Result<Option<ProxyToken>, String> {
-        let content = std::fs::read_to_string(path).map_err(|e| format!("读取文件失败: {}", e))?;
+        let content = tokio::fs::read_to_string(path)
+            .await
+            .map_err(|e| format!("读取文件失败: {}", e))?;
 
         let account: serde_json::Value =
             serde_json::from_str(&content).map_err(|e| format!("解析 JSON 失败: {}", e))?;
@@ -1055,17 +1061,19 @@ impl TokenManager {
                 .join(format!("{}.json", account_id))
         };
 
-        let mut content: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(&path).map_err(|e| format!("读取文件失败: {}", e))?,
-        )
-        .map_err(|e| format!("解析 JSON 失败: {}", e))?;
+        let content_str = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| format!("读取文件失败: {}", e))?;
+        let mut content: serde_json::Value =
+            serde_json::from_str(&content_str).map_err(|e| format!("解析 JSON 失败: {}", e))?;
 
         let now = chrono::Utc::now().timestamp();
         content["disabled"] = serde_json::Value::Bool(true);
         content["disabled_at"] = serde_json::Value::Number(now.into());
         content["disabled_reason"] = serde_json::Value::String(truncate_reason(reason, 800));
 
-        std::fs::write(&path, serde_json::to_string_pretty(&content).unwrap())
+        tokio::fs::write(&path, serde_json::to_string_pretty(&content).unwrap())
+            .await
             .map_err(|e| format!("写入文件失败: {}", e))?;
 
         tracing::warn!("Account disabled: {} ({:?})", account_id, path);
@@ -1075,17 +1083,19 @@ impl TokenManager {
     /// 保存 project_id 到账号文件
     async fn save_project_id(&self, account_id: &str, project_id: &str) -> Result<(), String> {
         let entry = self.tokens.get(account_id).ok_or("账号不存在")?;
+        let path = entry.account_path.clone();
+        drop(entry);
 
-        let path = &entry.account_path;
-
-        let mut content: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(path).map_err(|e| format!("读取文件失败: {}", e))?,
-        )
-        .map_err(|e| format!("解析 JSON 失败: {}", e))?;
+        let content_str = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| format!("读取文件失败: {}", e))?;
+        let mut content: serde_json::Value =
+            serde_json::from_str(&content_str).map_err(|e| format!("解析 JSON 失败: {}", e))?;
 
         content["token"]["project_id"] = serde_json::Value::String(project_id.to_string());
 
-        std::fs::write(path, serde_json::to_string_pretty(&content).unwrap())
+        tokio::fs::write(&path, serde_json::to_string_pretty(&content).unwrap())
+            .await
             .map_err(|e| format!("写入文件失败: {}", e))?;
 
         tracing::debug!("已保存 project_id 到账号 {}", account_id);
@@ -1099,13 +1109,14 @@ impl TokenManager {
         token_response: &oauth::TokenResponse,
     ) -> Result<(), String> {
         let entry = self.tokens.get(account_id).ok_or("账号不存在")?;
+        let path = entry.account_path.clone();
+        drop(entry);
 
-        let path = &entry.account_path;
-
-        let mut content: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(path).map_err(|e| format!("读取文件失败: {}", e))?,
-        )
-        .map_err(|e| format!("解析 JSON 失败: {}", e))?;
+        let content_str = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| format!("读取文件失败: {}", e))?;
+        let mut content: serde_json::Value =
+            serde_json::from_str(&content_str).map_err(|e| format!("解析 JSON 失败: {}", e))?;
 
         let now = chrono::Utc::now().timestamp();
 
@@ -1116,7 +1127,8 @@ impl TokenManager {
         content["token"]["expiry_timestamp"] =
             serde_json::Value::Number((now + token_response.expires_in).into());
 
-        std::fs::write(path, serde_json::to_string_pretty(&content).unwrap())
+        tokio::fs::write(&path, serde_json::to_string_pretty(&content).unwrap())
+            .await
             .map_err(|e| format!("写入文件失败: {}", e))?;
 
         tracing::debug!("已保存刷新后的 token 到账号 {}", account_id);
@@ -1210,48 +1222,28 @@ impl TokenManager {
     /// 从账号文件获取配额刷新时间
     ///
     /// 返回该账号最近的配额刷新时间字符串（ISO 8601 格式）
-    pub fn get_quota_reset_time(&self, email: &str) -> Option<String> {
-        // 尝试从账号文件读取配额信息
-        let accounts_dir = self.data_dir.join("accounts");
+    /// Optimized: uses in-memory token lookup instead of O(N) disk scan
+    pub async fn get_quota_reset_time(&self, email: &str) -> Option<String> {
+        let account_path = self
+            .tokens
+            .iter()
+            .find(|entry| entry.value().email == email)
+            .map(|entry| entry.value().account_path.clone())?;
 
-        // 遍历账号文件查找对应的 email
-        if let Ok(entries) = std::fs::read_dir(&accounts_dir) {
-            for entry in entries.flatten() {
-                if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                    if let Ok(account) = serde_json::from_str::<serde_json::Value>(&content) {
-                        // 检查 email 是否匹配
-                        if account.get("email").and_then(|e| e.as_str()) == Some(email) {
-                            // 获取 quota.models 中最早的 reset_time
-                            if let Some(models) = account
-                                .get("quota")
-                                .and_then(|q| q.get("models"))
-                                .and_then(|m| m.as_array())
-                            {
-                                // 找到最早的 reset_time（最保守的锁定策略）
-                                let mut earliest_reset: Option<&str> = None;
-                                for model in models {
-                                    if let Some(reset_time) =
-                                        model.get("reset_time").and_then(|r| r.as_str())
-                                    {
-                                        if !reset_time.is_empty()
-                                            && earliest_reset
-                                                .as_ref()
-                                                .is_none_or(|earliest| reset_time < *earliest)
-                                        {
-                                            earliest_reset = Some(reset_time);
-                                        }
-                                    }
-                                }
-                                if let Some(reset) = earliest_reset {
-                                    return Some(reset.to_string());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        None
+        let content = tokio::fs::read_to_string(&account_path).await.ok()?;
+        let account: serde_json::Value = serde_json::from_str(&content).ok()?;
+
+        let models = account
+            .get("quota")
+            .and_then(|q| q.get("models"))
+            .and_then(|m| m.as_array())?;
+
+        models
+            .iter()
+            .filter_map(|model| model.get("reset_time").and_then(|r| r.as_str()))
+            .filter(|s| !s.is_empty())
+            .min()
+            .map(|s| s.to_string())
     }
 
     /// 使用配额刷新时间精确锁定账号
@@ -1260,13 +1252,13 @@ impl TokenManager {
     ///
     /// # 参数
     /// - `model`: 可选的模型名称,用于模型级别限流
-    pub fn set_precise_lockout(
+    pub async fn set_precise_lockout(
         &self,
         email: &str,
         reason: crate::proxy::rate_limit::RateLimitReason,
         model: Option<String>,
     ) -> bool {
-        if let Some(reset_time_str) = self.get_quota_reset_time(email) {
+        if let Some(reset_time_str) = self.get_quota_reset_time(email).await {
             tracing::info!("找到账号 {} 的配额刷新时间: {}", email, reset_time_str);
             self.rate_limit_tracker
                 .set_lockout_until_iso(email, &reset_time_str, reason, model)
@@ -1465,7 +1457,10 @@ impl TokenManager {
         }
 
         // Fallback: try local cache
-        if self.set_precise_lockout(account_id, reason, model.map(|s| s.to_string())) {
+        if self
+            .set_precise_lockout(account_id, reason, model.map(|s| s.to_string()))
+            .await
+        {
             tracing::info!("{}:{} locked with cached reset time", account_id, model_str);
             return;
         }
