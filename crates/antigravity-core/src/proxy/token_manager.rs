@@ -1024,7 +1024,7 @@ impl TokenManager {
                                 Some((String::new(), std::time::Instant::now()));
                             // 空字符串表示需要清除
                         }
-                        self.decrement_active_requests(&token.account_id);
+                        self.decrement_active_requests(&token.email);
                         continue;
                     }
                 }
@@ -1059,7 +1059,7 @@ impl TokenManager {
                                 Some((String::new(), std::time::Instant::now()));
                             // 空字符串表示需要清除
                         }
-                        self.decrement_active_requests(&token.account_id);
+                        self.decrement_active_requests(&token.email);
                         continue;
                     }
                 }
