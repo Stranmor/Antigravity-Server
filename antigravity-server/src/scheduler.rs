@@ -27,8 +27,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
-use tokio::time::{interval, Duration};
+use tokio::time::interval;
 
 use crate::state::AppState;
 use antigravity_core::modules::{account, config};
