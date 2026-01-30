@@ -425,6 +425,11 @@ pub fn update_account_quota(account_id: &str, quota: QuotaData) -> Result<(), St
     use crate::modules::config::load_config;
     use crate::proxy::common::model_mapping::normalize_to_standard_id;
 
+    // Hold lock during read-modify-write to prevent race conditions
+    let _lock = ACCOUNT_INDEX_LOCK
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+
     let mut account = load_account(account_id)?;
     account.update_quota(quota.clone());
 
@@ -529,7 +534,8 @@ pub async fn switch_account(account_id: &str) -> Result<(), String> {
         return Err(format!("Account not found: {}", account_id));
     }
 
-    let mut account = load_account(account_id)?;
+    let account_id_owned = account_id.to_string();
+    let mut account = load_account_async(account_id_owned.clone()).await?;
     logger::log_info(&format!(
         "Switching to account: {} (ID: {})",
         account.email, account.id
@@ -542,46 +548,67 @@ pub async fn switch_account(account_id: &str) -> Result<(), String> {
 
     if fresh_token.access_token != account.token.access_token {
         account.token = fresh_token.clone();
-        save_account(&account)?;
+        save_account_async(account.clone()).await?;
     }
 
-    // 3. Close Antigravity (timeout 20s)
-    if process::is_antigravity_running() {
-        process::close_antigravity(20)?;
+    // 3. Close Antigravity (timeout 20s) - blocking operation
+    let is_running = tokio::task::spawn_blocking(process::is_antigravity_running)
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?;
+    if is_running {
+        tokio::task::spawn_blocking(|| process::close_antigravity(20))
+            .await
+            .map_err(|e| format!("Task join error: {}", e))??;
     }
 
-    // 4. Backup and Inject DB
-    let db_path = vscode::get_vscode_db_path()?;
+    // 4. Backup and Inject DB - blocking operations
+    let db_path = tokio::task::spawn_blocking(vscode::get_vscode_db_path)
+        .await
+        .map_err(|e| format!("Task join error: {}", e))??;
+
     if db_path.exists() {
         let backup_path = db_path.with_extension("vscdb.backup");
-        fs::copy(&db_path, &backup_path).map_err(|e| format!("Backup DB failed: {}", e))?;
+        let db_path_clone = db_path.clone();
+        tokio::task::spawn_blocking(move || fs::copy(&db_path_clone, &backup_path))
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?
+            .map_err(|e| format!("Backup DB failed: {}", e))?;
     } else {
         logger::log_info("DB not found, skipping backup");
     }
 
     logger::log_info("Injecting token to DB...");
-    vscode::inject_token(
-        &db_path,
-        &account.token.access_token,
-        &account.token.refresh_token,
-        account.token.expiry_timestamp,
-    )?;
+    let access_token = account.token.access_token.clone();
+    let refresh_token = account.token.refresh_token.clone();
+    let expiry = account.token.expiry_timestamp;
+    tokio::task::spawn_blocking(move || {
+        vscode::inject_token(&db_path, &access_token, &refresh_token, expiry)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))??;
 
     // 5. Update internal state
     {
-        let _lock = ACCOUNT_INDEX_LOCK
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        let mut index = load_account_index()?;
-        index.current_account_id = Some(account_id.to_string());
-        save_account_index(&index)?;
+        let account_id_str = account_id_owned.clone();
+        tokio::task::spawn_blocking(move || {
+            let _lock = ACCOUNT_INDEX_LOCK
+                .lock()
+                .map_err(|e| format!("Lock error: {}", e))?;
+            let mut index = load_account_index()?;
+            index.current_account_id = Some(account_id_str);
+            save_account_index(&index)
+        })
+        .await
+        .map_err(|e| format!("Task join error: {}", e))??;
     }
 
     account.update_last_used();
-    save_account(&account)?;
+    save_account_async(account.clone()).await?;
 
     // 6. Restart Antigravity
-    process::start_antigravity()?;
+    tokio::task::spawn_blocking(process::start_antigravity)
+        .await
+        .map_err(|e| format!("Task join error: {}", e))??;
     logger::log_info(&format!("Account switch complete: {}", account.email));
 
     Ok(())
@@ -605,7 +632,7 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> crate::error::AppR
                 account.disabled = true;
                 account.disabled_at = Some(chrono::Utc::now().timestamp());
                 account.disabled_reason = Some(format!("invalid_grant: {}", e));
-                let _ = save_account(account);
+                let _ = save_account_async(account.clone()).await;
             }
             return Err(AppError::OAuth(e));
         }
@@ -627,7 +654,9 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> crate::error::AppR
         };
 
         account.name = name.clone();
-        upsert_account(account.email.clone(), name, token.clone()).map_err(AppError::Account)?;
+        upsert_account_async(account.email.clone(), name, token.clone())
+            .await
+            .map_err(AppError::Account)?;
     }
 
     // 0. Fill missing username
@@ -642,7 +671,8 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> crate::error::AppR
                 logger::log_info(&format!("Got name: {:?}", display_name));
                 account.name = display_name.clone();
                 if let Err(e) =
-                    upsert_account(account.email.clone(), display_name, account.token.clone())
+                    upsert_account_async(account.email.clone(), display_name, account.token.clone())
+                        .await
                 {
                     logger::log_warn(&format!("Failed to save name: {}", e));
                 }
@@ -670,12 +700,17 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> crate::error::AppR
             account.token.project_id = project_id.clone();
         }
 
-        // Save account with updated quota
-        if let Err(e) = save_account(account) {
+        // Save account with updated quota using quota protection logic
+        if let Err(e) = update_account_quota_async(account.id.clone(), quota_data.clone()).await {
             logger::log_warn(&format!(
                 "Failed to save quota for {}: {}",
                 account.email, e
             ));
+        } else {
+            // Reload account to get updated protected_models
+            if let Ok(updated) = load_account_async(account.id.clone()).await {
+                *account = updated;
+            }
         }
     }
 
@@ -700,7 +735,7 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> crate::error::AppR
                                 account.disabled = true;
                                 account.disabled_at = Some(chrono::Utc::now().timestamp());
                                 account.disabled_reason = Some(format!("invalid_grant: {}", e));
-                                let _ = save_account(account);
+                                let _ = save_account_async(account.clone()).await;
                             }
                             return Err(AppError::OAuth(e));
                         }
@@ -728,7 +763,8 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> crate::error::AppR
 
                 account.token = new_token.clone();
                 account.name = name.clone();
-                upsert_account(account.email.clone(), name, new_token.clone())
+                upsert_account_async(account.email.clone(), name, new_token.clone())
+                    .await
                     .map_err(AppError::Account)?;
 
                 // Retry
@@ -736,8 +772,6 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> crate::error::AppR
                     quota::fetch_quota(&new_token.access_token, &account.email).await;
 
                 if let Ok((ref quota_data, ref project_id)) = retry_result {
-                    account.update_quota(quota_data.clone());
-
                     if project_id.is_some() && *project_id != account.token.project_id {
                         logger::log_info(&format!(
                             "Project ID updated after retry ({}), saving...",
@@ -746,7 +780,11 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> crate::error::AppR
                         account.token.project_id = project_id.clone();
                     }
 
-                    let _ = save_account(account);
+                    let _ =
+                        update_account_quota_async(account.id.clone(), quota_data.clone()).await;
+                    if let Ok(updated) = load_account_async(account.id.clone()).await {
+                        *account = updated;
+                    }
                 }
 
                 if let Err(AppError::Network(ref e)) = retry_result {
