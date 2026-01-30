@@ -686,6 +686,7 @@ pub async fn handle_messages(
         if status.is_success() {
             // [智能限流] 请求成功，重置该账号的连续失败计数
             token_manager.mark_account_success(&email);
+            token_manager.clear_session_failures(&session_id_str);
 
             // [AIMD] 记录成功，用于预测性限流调整
             state.adaptive_limits.record_success(&email);
@@ -952,8 +953,9 @@ pub async fn handle_messages(
                 )
                 .await;
 
-            // [AIMD] 记录错误，触发限流预测调整
+            // Record session failure for consecutive failure tracking
             if status_code == 429 {
+                token_manager.record_session_failure(&session_id_str);
                 state.adaptive_limits.record_429(&email);
             } else {
                 state.adaptive_limits.record_error(&email, status_code);

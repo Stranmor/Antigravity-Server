@@ -85,6 +85,7 @@ pub struct TokenManager {
     preferred_account_id: Arc<tokio::sync::RwLock<Option<String>>>,
     health_scores: Arc<DashMap<String, f32>>,
     active_requests: Arc<DashMap<String, AtomicU32>>,
+    session_failures: Arc<DashMap<String, AtomicU32>>,
 }
 
 impl TokenManager {
@@ -101,6 +102,7 @@ impl TokenManager {
             preferred_account_id: Arc::new(tokio::sync::RwLock::new(None)),
             health_scores: Arc::new(DashMap::new()),
             active_requests: Arc::new(DashMap::new()),
+            session_failures: Arc::new(DashMap::new()),
         }
     }
 
@@ -136,6 +138,25 @@ impl TokenManager {
             .unwrap_or(0)
     }
 
+    pub fn record_session_failure(&self, session_id: &str) -> u32 {
+        self.session_failures
+            .entry(session_id.to_string())
+            .or_insert_with(|| AtomicU32::new(0))
+            .fetch_add(1, Ordering::SeqCst)
+            + 1
+    }
+
+    pub fn clear_session_failures(&self, session_id: &str) {
+        self.session_failures.remove(session_id);
+    }
+
+    pub fn get_session_failures(&self, session_id: &str) -> u32 {
+        self.session_failures
+            .get(session_id)
+            .map(|c| c.load(Ordering::SeqCst))
+            .unwrap_or(0)
+    }
+
     /// Inject AIMD tracker for predictive rate limiting
     pub async fn set_adaptive_limits(&self, tracker: Arc<AdaptiveLimitManager>) {
         let mut guard = self.adaptive_limits.write().await;
@@ -144,6 +165,7 @@ impl TokenManager {
 
     pub fn start_auto_cleanup(&self) {
         let tracker = self.rate_limit_tracker.clone();
+        let session_failures = self.session_failures.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
             loop {
@@ -153,6 +175,16 @@ impl TokenManager {
                     tracing::info!(
                         "🧹 Auto-cleanup: Removed {} expired rate limit record(s)",
                         cleaned
+                    );
+                }
+                // Cleanup stale session failures (retain only non-zero counts)
+                let before = session_failures.len();
+                session_failures.retain(|_, v| v.load(Ordering::Relaxed) > 0);
+                let cleaned_sessions = before - session_failures.len();
+                if cleaned_sessions > 0 {
+                    tracing::debug!(
+                        "🧹 Cleaned {} stale session failure record(s)",
+                        cleaned_sessions
                     );
                 }
             }
@@ -669,6 +701,23 @@ impl TokenManager {
             // ===== 【核心】粘性会话与智能调度逻辑 =====
             let mut target_token: Option<ProxyToken> = None;
 
+            // Check if session has too many consecutive failures - force unbind
+            if let Some(sid) = session_id {
+                let failures = self.get_session_failures(sid);
+                if failures >= 3 {
+                    if let Some(bound_id) = self.session_accounts.get(sid).map(|v| v.clone()) {
+                        self.session_accounts.remove(sid);
+                        self.clear_session_failures(sid);
+                        tracing::warn!(
+                            "Session {} unbound from {} after {} consecutive failures",
+                            sid,
+                            bound_id,
+                            failures
+                        );
+                    }
+                }
+            }
+
             // 模式 A: 粘性会话处理 (CacheFirst 或 Balance 且有 session_id)
             if let Some(sid) = session_id {
                 if !rotate && routing.enable_session_affinity {
@@ -677,17 +726,22 @@ impl TokenManager {
                         // 2. 检查绑定的账号是否限流 (使用精准的剩余时间接口)
                         let reset_sec = self.rate_limit_tracker.get_remaining_wait(&bound_id);
                         if reset_sec > 0 {
-                            // 【修复 Issue #284】立即解绑并切换账号，不再阻塞等待
-                            // 原因：阻塞等待会导致并发请求时客户端 socket 超时 (UND_ERR_SOCKET)
-                            // Rate-limited: DON'T unbind session (preserves cache affinity)
-                            // Just let this request fall through to least-connections selection
-                            // Next request will try bound account again (may have recovered)
-                            tracing::debug!(
-                                "Session {} bound account {} is rate-limited ({}s). Migrating THIS request only.",
-                                sid,
-                                bound_id,
-                                reset_sec
-                            );
+                            // Long lockout (>5min) = QUOTA_EXHAUSTED, unbind session
+                            // Short lockout = temporary rate limit, keep session for cache affinity
+                            if reset_sec > 300 {
+                                self.session_accounts.remove(sid);
+                                tracing::warn!(
+                                    "Session {} unbound from {} (quota exhausted, {}s lockout)",
+                                    sid,
+                                    bound_id,
+                                    reset_sec
+                                );
+                            } else {
+                                tracing::debug!(
+                                    "Session {} bound account {} rate-limited ({}s). Migrating THIS request only.",
+                                    sid, bound_id, reset_sec
+                                );
+                            }
                             // target_token stays None, falls through to least-connections
                         } else if !attempted.contains(&bound_id) {
                             // 3. 账号可用且未被标记为尝试失败
@@ -1442,9 +1496,21 @@ impl TokenManager {
         // No explicit time — strategy depends on error type
         match reason {
             crate::proxy::rate_limit::RateLimitReason::QuotaExhausted => {
-                // QUOTA_EXHAUSTED: need precise reset time, set 5min temporary lock
-                // while we fetch it async
-                let lockout = std::time::Duration::from_secs(300);
+                // QUOTA_EXHAUSTED: permanent block until quota refresh
+                // Dynamically add model to protected_models in memory
+                if let Some(mut token) = self.tokens.get_mut(account_id) {
+                    if !token.protected_models.contains(model_str) {
+                        token.protected_models.insert(model_str.to_string());
+                        tracing::warn!(
+                            "🛡️ {}:{} added to protected_models (quota exhausted)",
+                            account_id,
+                            model_str
+                        );
+                    }
+                }
+
+                // Temporary lockout while fetching precise reset time
+                let lockout = std::time::Duration::from_secs(600);
                 self.rate_limit_tracker.set_model_lockout(
                     account_id,
                     model_str,
@@ -1452,7 +1518,7 @@ impl TokenManager {
                     reason,
                 );
                 tracing::info!(
-                    "⏳ {}:{} QUOTA_EXHAUSTED, 5min lock pending precise reset time",
+                    "⏳ {}:{} QUOTA_EXHAUSTED, 10min fallback lock (fetching precise time)",
                     account_id,
                     model_str
                 );
@@ -1652,6 +1718,39 @@ mod tests {
         let updated = manager.get_routing_config().await;
         assert!(!updated.enable_session_affinity);
         assert_eq!(updated.max_concurrent_per_account, 5);
+    }
+
+    #[test]
+    fn test_active_requests_increment_decrement() {
+        let manager = create_test_manager();
+
+        assert_eq!(manager.get_active_requests("account_a"), 0);
+
+        let count = manager.increment_active_requests("account_a");
+        assert_eq!(count, 1);
+        assert_eq!(manager.get_active_requests("account_a"), 1);
+
+        let count = manager.increment_active_requests("account_a");
+        assert_eq!(count, 2);
+
+        manager.decrement_active_requests("account_a");
+        assert_eq!(manager.get_active_requests("account_a"), 1);
+
+        manager.decrement_active_requests("account_a");
+        assert_eq!(manager.get_active_requests("account_a"), 0);
+    }
+
+    #[test]
+    fn test_active_requests_underflow_protection() {
+        let manager = create_test_manager();
+
+        manager.decrement_active_requests("nonexistent");
+        assert_eq!(manager.get_active_requests("nonexistent"), 0);
+
+        manager.increment_active_requests("account_b");
+        manager.decrement_active_requests("account_b");
+        manager.decrement_active_requests("account_b");
+        assert_eq!(manager.get_active_requests("account_b"), 0);
     }
 
     #[test]

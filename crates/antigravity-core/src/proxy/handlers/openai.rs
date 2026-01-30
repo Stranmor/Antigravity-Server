@@ -200,6 +200,7 @@ pub async fn handle_chat_completions(
         if status.is_success() {
             // [AIMD] 记录成功，用于预测性限流调整
             state.adaptive_limits.record_success(&email);
+            token_manager.clear_session_failures(&session_id);
 
             // 5. 处理流式 vs 非流式
             if actual_stream {
@@ -361,16 +362,18 @@ pub async fn handle_chat_completions(
 
         // 429/529/503 智能处理
         if status_code == 429 || status_code == 529 || status_code == 503 || status_code == 500 {
-            // 记录限流信息 (全局同步)
-            token_manager.mark_rate_limited(
-                &email,
-                status_code,
-                retry_after.as_deref(),
-                &error_text,
-            );
+            token_manager
+                .mark_rate_limited_async(
+                    &email,
+                    status_code,
+                    retry_after.as_deref(),
+                    &error_text,
+                    Some(&config.final_model),
+                )
+                .await;
 
-            // [AIMD] 记录错误，触发限流预测调整
             if status_code == 429 {
+                token_manager.record_session_failure(&session_id);
                 state.adaptive_limits.record_429(&email);
             } else {
                 state.adaptive_limits.record_error(&email, status_code);
@@ -893,6 +896,7 @@ pub async fn handle_completions(
         if status.is_success() {
             // [智能限流] 请求成功，重置该账号的连续失败计数
             token_manager.mark_account_success(&email);
+            token_manager.clear_session_failures(&session_id_str);
 
             // [AIMD] 记录成功，用于预测性限流调整
             state.adaptive_limits.record_success(&email);
@@ -1054,8 +1058,9 @@ pub async fn handle_completions(
                 )
                 .await;
 
-            // [AIMD] 记录错误，触发限流预测调整
+            // Record session failure for consecutive failure tracking
             if status_code == 429 {
+                token_manager.record_session_failure(&session_id_str);
                 state.adaptive_limits.record_429(&email);
             } else {
                 state.adaptive_limits.record_error(&email, status_code);

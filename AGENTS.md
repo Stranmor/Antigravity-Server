@@ -131,14 +131,17 @@ pub struct SmartRoutingConfig {
 | Before | After |
 |--------|-------|
 | 429 → unbind session → ALL requests migrate | 429 → keep binding → only THIS request migrates |
+| QUOTA_EXHAUSTED: 5min lockout | QUOTA_EXHAUSTED: 10min fallback + dynamic protected_models |
+| Session stuck on exhausted account | Unbind after 3 consecutive failures OR lockout > 5min |
 | Round-robin account selection | Least-connections (min active requests) |
 | 3 manual modes to choose | 1 unified algorithm with tunable params |
 | No concurrency limit | Max N per account prevents thundering herd |
 
 ### Files Changed
 
-- `crates/antigravity-core/src/proxy/token_manager.rs` — Core smart routing implementation
-- `crates/antigravity-types/src/models/config.rs` — SchedulingMode kept for config compat
+- `crates/antigravity-core/src/proxy/token_manager.rs` — Core smart routing + session_failures tracking
+- `crates/antigravity-core/src/proxy/handlers/claude.rs` — record/clear session failures
+- `crates/antigravity-core/src/proxy/handlers/openai.rs` — record/clear session failures
 
 ---
 
