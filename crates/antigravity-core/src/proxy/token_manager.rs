@@ -224,19 +224,12 @@ impl TokenManager {
             return Err(format!("账号目录不存在: {:?}", accounts_dir));
         }
 
-        // Reload should reflect current on-disk state (accounts can be added/removed/disabled).
-        self.tokens.clear();
-        self.current_index.store(0, Ordering::SeqCst);
-        {
-            let mut last_used = self.last_used_account.lock().await;
-            *last_used = None;
-        }
+        // Stage 1: Load all accounts into temporary storage first
+        let mut new_tokens: Vec<(String, ProxyToken)> = Vec::new();
 
         let mut entries = tokio::fs::read_dir(&accounts_dir)
             .await
             .map_err(|e| format!("读取账号目录失败: {}", e))?;
-
-        let mut count = 0;
 
         while let Some(entry) = entries
             .next_entry()
@@ -249,20 +242,40 @@ impl TokenManager {
                 continue;
             }
 
-            // 尝试加载账号
             match self.load_single_account(&path).await {
                 Ok(Some(token)) => {
                     let account_id = token.account_id.clone();
-                    self.tokens.insert(account_id, token);
-                    count += 1;
+                    new_tokens.push((account_id, token));
                 }
-                Ok(None) => {
-                    // 跳过无效账号
-                }
+                Ok(None) => {}
                 Err(e) => {
                     tracing::debug!("加载账号失败 {:?}: {}", path, e);
                 }
             }
+        }
+
+        // Stage 2: Atomic swap - collect old keys, remove stale, insert new
+        let old_keys: Vec<String> = self.tokens.iter().map(|e| e.key().clone()).collect();
+        let new_keys: std::collections::HashSet<String> =
+            new_tokens.iter().map(|(k, _)| k.clone()).collect();
+
+        // Remove accounts no longer on disk
+        for old_key in &old_keys {
+            if !new_keys.contains(old_key) {
+                self.tokens.remove(old_key);
+            }
+        }
+
+        // Insert/update accounts from disk
+        let count = new_tokens.len();
+        for (account_id, token) in new_tokens {
+            self.tokens.insert(account_id, token);
+        }
+
+        self.current_index.store(0, Ordering::SeqCst);
+        {
+            let mut last_used = self.last_used_account.lock().await;
+            *last_used = None;
         }
 
         Ok(count)
@@ -280,8 +293,6 @@ impl TokenManager {
         match self.load_single_account(&path).await {
             Ok(Some(token)) => {
                 self.tokens.insert(account_id.to_string(), token);
-                // [v4.0.5] Auto-clear rate limit when reloading account
-                self.clear_rate_limit(account_id);
                 Ok(())
             }
             Ok(None) => Err("账号加载失败".to_string()),
@@ -290,10 +301,7 @@ impl TokenManager {
     }
 
     pub async fn reload_all_accounts(&self) -> Result<usize, String> {
-        let count = self.load_accounts().await?;
-        // [v4.0.5] Auto-clear all rate limits when reloading all accounts
-        self.clear_all_rate_limits();
-        Ok(count)
+        self.load_accounts().await
     }
 
     /// 加载单个账号
@@ -519,6 +527,11 @@ impl TokenManager {
                         entry.expires_in = token.expires_in;
                         entry.timestamp = token.timestamp;
                     }
+
+                    // Persist to disk
+                    let _ = self
+                        .save_refreshed_token(&token.account_id, &token_response)
+                        .await;
                 }
                 Err(e) => {
                     return Err(format!("Token refresh failed for {}: {}", email, e));
