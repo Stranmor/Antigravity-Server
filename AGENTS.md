@@ -96,10 +96,11 @@ vendor/
 ### ⏭️ Remaining Tasks
 
 - [x] **Phase 4:** VPS deployment ✅ [2026-01-19] — `https://antigravity.quantumind.ru`
-- [ ] **Phase 5:** Extract `antigravity-proxy` crate (optional cleanup)
+- [ ] **Phase 5:** Module Size Compliance [IN PROGRESS] — see table above
 - [x] **Phase 6:** CLI Management — full headless control without Web UI ✅ [2026-01-19]
 - [x] **Phase 7:** Rust SDK (`antigravity-client`) — auto-discovery, retry, streaming ✅ [2026-01-19]
 - [x] **Phase 7b:** Account auto-sync (60s interval) ✅ [2026-01-19]
+- [ ] **Phase 8:** Extract `antigravity-proxy` crate (optional cleanup)
 
 ---
 
@@ -398,7 +399,7 @@ cargo test -p antigravity-core --lib
 git add . && git commit -m "chore: sync upstream v3.3.XX changes"
 ```
 
-### Last Sync: 2026-01-28 (v4.0.5)
+### Sync History: 2026-01-28 (v4.0.5)
 
 **Ported from v4.0.5:**
 - **`token_manager.rs`** — Auto-clear rate limits on reload
