@@ -46,10 +46,10 @@
 | `claude/streaming.rs` | 1177 | TBD | ⏳ |
 | `openai/streaming.rs` | 1092 | TBD | ⏳ |
 
-**Banned filenames to rename:**
-- `crates/antigravity-client/src/types.rs` → `messages.rs`
-- `src-leptos/src/types.rs` → `api_models.rs`
-- `src-leptos/src/utils.rs` → `formatters.rs`
+**Banned filenames renamed:** ✅ [2026-01-31]
+- `crates/antigravity-client/src/types.rs` → `messages.rs` ✅
+- `src-leptos/src/types.rs` → `api_models.rs` ✅
+- `src-leptos/src/utils.rs` → `formatters.rs` ✅
 
 ### 📊 Architecture (Current)
 
@@ -70,7 +70,7 @@ crates/
 │   └── src/
 │       ├── client.rs           # AntigravityClient with auto_discover()
 │       ├── error.rs            # ClientError enum
-│       └── types.rs            # ChatRequest, ChatResponse, StreamChunk (SDK-specific)
+│       └── messages.rs         # ChatRequest, ChatResponse, StreamChunk (SDK-specific)
 ├── antigravity-core/           # 🟢 BUSINESS LOGIC (all clippy-clean!)
 │   └── src/proxy/
 │       └── 23 modules          # ALL modules now clippy-clean
