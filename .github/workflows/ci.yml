@@ -117,8 +117,7 @@ jobs:
           key: trunk-${{ runner.os }}-v1
 
       - name: Install Trunk
-        if: steps.trunk-cache.outputs.cache-hit != 'true'
-        run: cargo install trunk --locked
+        run: command -v trunk || cargo install trunk --locked
 
       - name: Build Leptos frontend
         working-directory: src-leptos
