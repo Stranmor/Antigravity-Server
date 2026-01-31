@@ -276,9 +276,9 @@ pub async fn handle_chat_completions(
                                                 "Stream interrupted by upstream. Please retry your request."
                                             };
                                             tracing::warn!("Stream error during transmission: {} (user msg: {})", err_str, user_message);
-                                            // Return error in OpenAI format + [DONE] to signal stream end
+                                            // Return error in OpenAI format with retriable code + [DONE]
                                             Ok(Bytes::from(format!(
-                                                "data: {{\"error\":{{\"message\":\"{}\",\"type\":\"server_error\",\"code\":\"stream_interrupted\"}}}}\n\ndata: [DONE]\n\n",
+                                                "data: {{\"error\":{{\"message\":\"{}\",\"type\":\"server_error\",\"code\":\"overloaded\",\"param\":null}}}}\n\ndata: [DONE]\n\n",
                                                 user_message
                                             )))
                                         }
@@ -1013,7 +1013,7 @@ pub async fn handle_completions(
                                             };
                                             tracing::warn!("Stream error during transmission: {} (user msg: {})", e, user_message);
                                             Ok(Bytes::from(format!(
-                                                "data: {{\"error\":{{\"message\":\"{}\",\"type\":\"server_error\",\"code\":\"stream_interrupted\"}}}}\n\ndata: [DONE]\n\n",
+                                                "data: {{\"error\":{{\"message\":\"{}\",\"type\":\"server_error\",\"code\":\"overloaded\",\"param\":null}}}}\n\ndata: [DONE]\n\n",
                                                 user_message
                                             )))
                                         }
