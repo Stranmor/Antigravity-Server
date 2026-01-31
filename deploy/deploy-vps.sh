@@ -59,7 +59,8 @@ fi
 
 # Step 2: Save image to tarball
 log "💾 Saving image to tarball..."
-podman save -o "/tmp/${IMAGE_NAME}.tar" "${IMAGE_NAME}:${IMAGE_TAG}" || error "Failed to save image"
+rm -f "/tmp/${IMAGE_NAME}.tar"
+podman save --format docker-archive -o "/tmp/${IMAGE_NAME}.tar" "${IMAGE_NAME}:${IMAGE_TAG}" || error "Failed to save image"
 success "Image saved: /tmp/${IMAGE_NAME}.tar ($(du -h /tmp/${IMAGE_NAME}.tar | cut -f1))"
 
 # Step 3: Ship to VPS
