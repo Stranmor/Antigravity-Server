@@ -1750,9 +1750,9 @@ fn build_generation_config(
 
             if let Some(budget_tokens) = thinking.budget_tokens {
                 let mut budget = budget_tokens;
-                // gemini-2.5-flash 上限 24576
+                // [FIX] Broaden check to support all Flash thinking models (e.g. gemini-2.0-flash-thinking)
                 let is_flash_model =
-                    has_web_search || claude_req.model.contains("gemini-2.5-flash");
+                    has_web_search || claude_req.model.to_lowercase().contains("flash");
                 if is_flash_model {
                     budget = budget.min(24576);
                 }
