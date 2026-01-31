@@ -1,9 +1,9 @@
 //! API Proxy page with full parity
 
 use crate::api::commands;
+use crate::api_models::{Protocol, ProxyAuthMode, ZaiDispatchMode};
 use crate::app::AppState;
 use crate::components::{Button, ButtonVariant, CollapsibleCard, Select};
-use crate::types::{Protocol, ProxyAuthMode, ZaiDispatchMode};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use std::collections::HashMap;

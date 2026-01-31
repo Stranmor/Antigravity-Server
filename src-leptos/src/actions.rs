@@ -5,7 +5,7 @@
 
 use crate::app::AppState;
 use crate::api::commands;
-use crate::types::Account;
+use crate::api_models::Account;
 use leptos::task::spawn_local;
 
 /// Account-related actions

@@ -42,7 +42,7 @@ where
 // Re-export common command wrappers
 pub mod commands {
     use super::*;
-    use crate::types::*;
+    use crate::api_models::*;
 
     // ========== Config ==========
 

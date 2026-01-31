@@ -1,9 +1,9 @@
 //! Settings page
 
 use crate::api::commands;
+use crate::api_models::UpdateInfo;
 use crate::app::AppState;
 use crate::components::{Button, ButtonVariant};
-use crate::types::UpdateInfo;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
@@ -387,9 +387,9 @@ pub fn Settings() -> impl IntoView {
                         prop:value=move || {
                             state.config.get()
                                 .map(|c| match c.proxy.upstream_proxy.mode {
-                                    crate::types::UpstreamProxyMode::Direct => "direct",
-                                    crate::types::UpstreamProxyMode::System => "system",
-                                    crate::types::UpstreamProxyMode::Custom => "custom",
+                                    crate::api_models::UpstreamProxyMode::Direct => "direct",
+                                    crate::api_models::UpstreamProxyMode::System => "system",
+                                    crate::api_models::UpstreamProxyMode::Custom => "custom",
                                 })
                                 .unwrap_or("direct")
                                 .to_string()
@@ -399,13 +399,13 @@ pub fn Settings() -> impl IntoView {
                             state.config.update(|c| {
                                 if let Some(config) = c.as_mut() {
                                     config.proxy.upstream_proxy.mode = match value.as_str() {
-                                        "system" => crate::types::UpstreamProxyMode::System,
-                                        "custom" => crate::types::UpstreamProxyMode::Custom,
-                                        _ => crate::types::UpstreamProxyMode::Direct,
+                                        "system" => crate::api_models::UpstreamProxyMode::System,
+                                        "custom" => crate::api_models::UpstreamProxyMode::Custom,
+                                        _ => crate::api_models::UpstreamProxyMode::Direct,
                                     };
                                     // Sync legacy enabled field
                                     config.proxy.upstream_proxy.enabled =
-                                        !matches!(config.proxy.upstream_proxy.mode, crate::types::UpstreamProxyMode::Direct);
+                                        !matches!(config.proxy.upstream_proxy.mode, crate::api_models::UpstreamProxyMode::Direct);
                                 }
                             });
                         }
@@ -418,7 +418,7 @@ pub fn Settings() -> impl IntoView {
 
                 <Show when=move || {
                     state.config.get()
-                        .map(|c| matches!(c.proxy.upstream_proxy.mode, crate::types::UpstreamProxyMode::Custom))
+                        .map(|c| matches!(c.proxy.upstream_proxy.mode, crate::api_models::UpstreamProxyMode::Custom))
                         .unwrap_or(false)
                 }>
                     <div class="setting-row">

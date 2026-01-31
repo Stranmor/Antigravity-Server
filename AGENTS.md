@@ -33,6 +33,24 @@
 | **4** | Edition alignment: 2024 → 2021 for stable Rust compat | ✅ |
 | **4** | Make models submodules public in antigravity-types | ✅ |
 
+### 🔄 Phase 5: Module Size Compliance [IN PROGRESS - 2026-01-31]
+
+**Goal:** Split all files exceeding 300 lines to comply with Single Responsibility Module principle.
+
+| File | Lines | Target Split | Status |
+|------|-------|--------------|--------|
+| `handlers/openai.rs` | 1728 | `chat.rs`, `images.rs`, `models.rs` | ⏳ |
+| `handlers/claude.rs` | 1464 | `messages.rs`, `retry.rs`, `background_detection.rs` | ⏳ |
+| `token_manager.rs` | 1870 | `selection.rs`, `state.rs`, `concurrency.rs` | ⏳ |
+| `claude/request.rs` | 2509 | `transform.rs`, `tools.rs`, `generation_config.rs` | ⏳ |
+| `claude/streaming.rs` | 1177 | TBD | ⏳ |
+| `openai/streaming.rs` | 1092 | TBD | ⏳ |
+
+**Banned filenames to rename:**
+- `crates/antigravity-client/src/types.rs` → `messages.rs`
+- `src-leptos/src/types.rs` → `api_models.rs`
+- `src-leptos/src/utils.rs` → `formatters.rs`
+
 ### 📊 Architecture (Current)
 
 ```

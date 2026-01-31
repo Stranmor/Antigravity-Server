@@ -1,10 +1,10 @@
 //! Dashboard page with full features
 
 use crate::api::commands;
+use crate::api_models::DashboardStats;
 use crate::app::AppState;
 use crate::components::{Button, ButtonVariant, StatsCard};
-use crate::types::DashboardStats;
-use crate::utils::{format_time_remaining, get_time_remaining_color};
+use crate::formatters::{format_time_remaining, get_time_remaining_color};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 

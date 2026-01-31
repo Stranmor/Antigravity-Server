@@ -1,13 +1,13 @@
 //! Accounts page with full parity
 
 use crate::api::commands;
+use crate::api_models::Account;
 use crate::app::AppState;
 use crate::components::{
     AccountCard, AccountDetailsModal, AddAccountModal, Button, ButtonVariant, Modal, ModalType,
     Pagination,
 };
-use crate::types::Account;
-use crate::utils::{format_time_remaining, get_time_remaining_color};
+use crate::formatters::{format_time_remaining, get_time_remaining_color};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use std::collections::HashSet;
@@ -80,7 +80,7 @@ pub fn Accounts() -> impl IntoView {
                 a.quota
                     .as_ref()
                     .and_then(|q| q.subscription_tier.as_ref())
-                    .is_some_and(|t| t.to_lowercase().contains("pro"))
+                    .is_some_and(|t: &String| t.to_lowercase().contains("pro"))
             })
             .count();
         let ultra = accounts
@@ -89,7 +89,7 @@ pub fn Accounts() -> impl IntoView {
                 a.quota
                     .as_ref()
                     .and_then(|q| q.subscription_tier.as_ref())
-                    .is_some_and(|t| t.to_lowercase().contains("ultra"))
+                    .is_some_and(|t: &String| t.to_lowercase().contains("ultra"))
             })
             .count();
         let free = all - pro - ultra;
@@ -116,18 +116,18 @@ pub fn Accounts() -> impl IntoView {
                         .quota
                         .as_ref()
                         .and_then(|q| q.subscription_tier.as_ref())
-                        .is_some_and(|t| t.to_lowercase().contains("pro")),
+                        .is_some_and(|t: &String| t.to_lowercase().contains("pro")),
                     FilterType::Ultra => a
                         .quota
                         .as_ref()
                         .and_then(|q| q.subscription_tier.as_ref())
-                        .is_some_and(|t| t.to_lowercase().contains("ultra")),
+                        .is_some_and(|t: &String| t.to_lowercase().contains("ultra")),
                     FilterType::Free => {
                         let tier = a
                             .quota
                             .as_ref()
                             .and_then(|q| q.subscription_tier.as_ref())
-                            .map(|t| t.to_lowercase())
+                            .map(|t: &String| t.to_lowercase())
                             .unwrap_or_default();
                         !tier.contains("pro") && !tier.contains("ultra")
                     }
@@ -351,7 +351,7 @@ pub fn Accounts() -> impl IntoView {
         let s = state_view.clone();
         move |account_id: String| {
             let accounts = s.accounts.get();
-            if let Some(account) = accounts.iter().find(|a| a.id == account_id) {
+            if let Some(account) = accounts.iter().find(|a: &&Account| a.id == account_id) {
                 details_account.set(Some(account.clone()));
             }
         }

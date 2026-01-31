@@ -1,5 +1,5 @@
 use crate::error::ClientError;
-use crate::types::*;
+use crate::messages::*;
 use futures::Stream;
 use reqwest::Client;
 use std::pin::Pin;

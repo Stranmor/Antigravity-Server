@@ -1,9 +1,9 @@
 //! Monitor page - Real-time request logging with detailed view
 
 use crate::api::commands;
+use crate::api_models::{ProxyRequestLog, ProxyStats};
 use crate::app::AppState;
 use crate::components::{Button, ButtonVariant};
-use crate::types::{ProxyRequestLog, ProxyStats};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 

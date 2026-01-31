@@ -1,7 +1,7 @@
 //! Account card component for grid view
 
-use crate::types::Account;
-use crate::utils::{format_time_remaining, get_time_remaining_color};
+use crate::api_models::Account;
+use crate::formatters::{format_time_remaining, get_time_remaining_color};
 use leptos::prelude::*;
 
 #[component]

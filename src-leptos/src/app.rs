@@ -13,10 +13,10 @@ use log;
 /// Global application state
 #[derive(Clone)]
 pub struct AppState {
-    pub accounts: RwSignal<Vec<crate::types::Account>>,
+    pub accounts: RwSignal<Vec<crate::api_models::Account>>,
     pub current_account_id: RwSignal<Option<String>>,
-    pub config: RwSignal<Option<crate::types::AppConfig>>,
-    pub proxy_status: RwSignal<crate::types::ProxyStatus>,
+    pub config: RwSignal<Option<crate::api_models::AppConfig>>,
+    pub proxy_status: RwSignal<crate::api_models::ProxyStatus>,
     pub loading: RwSignal<bool>,
 }
 

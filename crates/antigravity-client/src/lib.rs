@@ -2,8 +2,8 @@
 
 mod client;
 mod error;
-mod types;
+mod messages;
 
 pub use client::AntigravityClient;
 pub use error::ClientError;
-pub use types::*;
+pub use messages::*;
