@@ -584,22 +584,14 @@ impl TokenManager {
         }
 
         // ===== 【优化】根据订阅等级和剩余配额排序 =====
-        // [FIX #563] 优先级: ULTRA > PRO > FREE, 同tier内优先高配额账号
+        // [FIX #563] 优先级: ULTRA-BUSINESS > ULTRA > PRO > FREE, 同tier内优先高配额账号
         // 理由: ULTRA/PRO 重置快，优先消耗；FREE 重置慢，用于兜底
         //       高配额账号优先使用，避免低配额账号被用光
         tokens_snapshot.sort_by(|a, b| {
-            // [FIX] Match actual tier strings from Google API
-            // Real values: "g1-ultra-tier", "ws-ai-ultra-business-tier", "g1-pro-tier", "free-tier"
-            let tier_priority = |tier: &Option<String>| match tier.as_deref() {
-                Some(t) if t.contains("ultra") => 0, // g1-ultra-tier, ws-ai-ultra-business-tier
-                Some(t) if t.contains("pro") => 1,   // g1-pro-tier
-                Some(t) if t.contains("free") => 2,  // free-tier
-                _ => 3,                              // unknown/null
-            };
-
+            // [FIX] Use ProxyToken::tier_priority() method for consistent tier ordering
+            // Priority: 0=ultra-business, 1=ultra, 2=pro, 3=free, 4=unknown
             // First: compare by subscription tier
-            let tier_cmp =
-                tier_priority(&a.subscription_tier).cmp(&tier_priority(&b.subscription_tier));
+            let tier_cmp = a.tier_priority().cmp(&b.tier_priority());
 
             if tier_cmp != std::cmp::Ordering::Equal {
                 return tier_cmp;
