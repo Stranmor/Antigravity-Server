@@ -799,10 +799,22 @@ impl TokenManager {
             // Session affinity (Mode A) handles per-session consistency instead
 
             if target_token.is_none() {
-                // Force rotation or no session affinity - use least-connections
+                // Force rotation or no session affinity - use least-connections with tier weighting
+                // [FIX] Ultra/Pro accounts get priority via lower effective score
                 let mut best_candidate: Option<&ProxyToken> = None;
-                let mut min_active = u32::MAX;
+                let mut min_score = f32::MAX;
                 let mut equal_count: u32 = 0;
+
+                // Tier weight function: lower = higher priority
+                // Ultra accounts effectively appear to have fewer active requests
+                let tier_weight = |tier: &Option<String>| -> f32 {
+                    match tier.as_deref() {
+                        Some(t) if t.contains("ultra") => 0.25, // Ultra: 4x priority boost
+                        Some(t) if t.contains("pro") => 0.8,    // Pro: 1.25x priority boost
+                        Some(t) if t.contains("free") => 1.0,   // Free: baseline
+                        _ => 1.25,                              // Unknown: slightly deprioritized
+                    }
+                };
 
                 for candidate in &tokens_snapshot {
                     if attempted.contains(&candidate.email) {
@@ -835,12 +847,17 @@ impl TokenManager {
                         }
                     }
 
-                    // Reservoir sampling for uniform distribution
-                    if active < min_active {
-                        min_active = active;
+                    // Weighted score: base_weight + (active * weight)
+                    // This ensures tier matters even when active=0
+                    let weight = tier_weight(&candidate.subscription_tier);
+                    let effective_score = weight + (active as f32) * weight;
+
+                    // Reservoir sampling for uniform distribution among equal scores
+                    if effective_score < min_score {
+                        min_score = effective_score;
                         best_candidate = Some(candidate);
                         equal_count = 1;
-                    } else if active == min_active {
+                    } else if (effective_score - min_score).abs() < 0.001 {
                         equal_count += 1;
                         if rand::random::<u32>().is_multiple_of(equal_count) {
                             best_candidate = Some(candidate);
@@ -854,13 +871,15 @@ impl TokenManager {
                         Arc::clone(&self.active_requests),
                         candidate.email.clone(),
                     ));
-                    if rotate {
-                        tracing::debug!(
-                            "Force Rotation: Switched to account {} (active: {})",
-                            candidate.email,
-                            min_active
-                        );
-                    }
+                    let tier_info = candidate.subscription_tier.as_deref().unwrap_or("unknown");
+                    let active = self.get_active_requests(&candidate.email);
+                    tracing::debug!(
+                        "🎯 Selected {} (tier={}, active={}, score={:.2})",
+                        candidate.email,
+                        tier_info,
+                        active,
+                        min_score
+                    );
                 }
             }
 
@@ -1749,5 +1768,36 @@ mod tests {
             let guard = manager.adaptive_limits.read().await;
             assert!(guard.is_some());
         }
+    }
+
+    #[test]
+    fn test_tier_weight_scoring() {
+        let tier_weight = |tier: &Option<String>| -> f32 {
+            match tier.as_deref() {
+                Some(t) if t.contains("ultra") => 0.25,
+                Some(t) if t.contains("pro") => 0.8,
+                Some(t) if t.contains("free") => 1.0,
+                _ => 1.25,
+            }
+        };
+
+        let score = |tier: Option<&str>, active: u32| -> f32 {
+            let t = tier.map(String::from);
+            let w = tier_weight(&t);
+            w + (active as f32) * w
+        };
+
+        assert_eq!(
+            tier_weight(&Some("ws-ai-ultra-business-tier".to_string())),
+            0.25
+        );
+        assert_eq!(tier_weight(&Some("g1-pro-tier".to_string())), 0.8);
+        assert_eq!(tier_weight(&Some("free-tier".to_string())), 1.0);
+        assert_eq!(tier_weight(&None), 1.25);
+
+        assert!(score(Some("ultra"), 0) < score(Some("free"), 0));
+        assert!(score(Some("ultra"), 0) < score(Some("pro"), 0));
+        assert!(score(Some("ultra"), 1) < score(Some("free"), 1));
+        assert!(score(Some("ultra"), 4) < score(Some("free"), 1));
     }
 }
