@@ -45,10 +45,10 @@ static CLAUDE_TO_GEMINI: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|
     // Gemini 协议映射表
     m.insert("gemini-2.5-flash-lite", "gemini-2.5-flash-lite");
     m.insert("gemini-2.5-flash-thinking", "gemini-2.5-flash-thinking");
-    m.insert("gemini-3-pro-low", "gemini-3-pro-preview");
-    m.insert("gemini-3-pro-high", "gemini-3-pro-preview");
-    m.insert("gemini-3-pro-preview", "gemini-3-pro-preview");
-    m.insert("gemini-3-pro", "gemini-3-pro-preview"); // [FIX PR #368] 统一映射到 preview
+    m.insert("gemini-3-pro-low", "gemini-3-pro-high");
+    m.insert("gemini-3-pro-high", "gemini-3-pro-high");
+    m.insert("gemini-3-pro-preview", "gemini-3-pro-high"); // legacy alias
+    m.insert("gemini-3-pro", "gemini-3-pro-high");
     m.insert("gemini-2.5-flash", "gemini-2.5-flash");
     m.insert("gemini-3-flash", "gemini-3-flash");
     m.insert("gemini-3-flash-high", "gemini-3-flash"); // [DEFAULT] flash-high → flash
@@ -213,10 +213,10 @@ mod tests {
             "claude-sonnet-4-5"
         );
 
-        // Test gemini-3-pro → gemini-3-pro-preview mapping (required for audio transcription)
+        // Test gemini-3-pro → gemini-3-pro-high mapping
         assert_eq!(
             map_claude_model_to_gemini("gemini-3-pro"),
-            "gemini-3-pro-preview"
+            "gemini-3-pro-high"
         );
     }
 

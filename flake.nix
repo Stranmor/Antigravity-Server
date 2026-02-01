@@ -170,22 +170,42 @@
 
         antigravity-server-bin = pkgs.rustPlatform.buildRustPackage {
           pname = "antigravity-server";
-          version = self.rev or "dirty"; # Use the version from flake.nix metadata
-          src = ./.; # The entire repository is the source
+          version = self.rev or "dirty";
+          src = ./.;
 
           cargoLock = {
             lockFile = ./Cargo.lock;
           };
 
-          # Explicitly build the antigravity-server package
           cargoBuildFlags = [ "-p" "antigravity-server" ];
-          cargoInstallFlags = [ "-p" "antigravity-server" ];
+          cargoTestFlags = [ "-p" "antigravity-server" ];
 
-          # Frontend must be built before the server if it serves static files
+          nativeBuildInputs = with pkgs; [
+            pkg-config
+          ];
+
+          buildInputs = with pkgs; [
+            openssl
+          ];
+
+          # Skip trunk build in nix - frontend must be pre-built
+          # Set env var so build.rs skips trunk
+          SKIP_TRUNK_BUILD = "1";
+
+          # Copy pre-built frontend dist if it exists
           preBuild = ''
-            cd src-leptos && trunk build --release
-            cd $OLDPWD
+            if [ -d "src-leptos/dist" ]; then
+              echo "Using pre-built frontend from src-leptos/dist"
+            else
+              echo "WARNING: src-leptos/dist not found. Build frontend first with: cd src-leptos && trunk build --release"
+            fi
           '';
+
+          meta = with pkgs.lib; {
+            description = "Antigravity AI Gateway - Headless Server";
+            license = licenses.unfree;
+            mainProgram = "antigravity-server";
+          };
         };
 
         antigravity-server-image = pkgs.dockerTools.buildLayeredImage {
@@ -255,6 +275,7 @@
       {
         packages = scripts // {
           default = scripts.build-server;
+          antigravity-server = antigravity-server-bin; # Native binary for direct deployment
           antigravity-server-image = antigravity-server-image; # Add the image to packages
           antigravity-manager-quadlet = antigravity-manager-quadlet; # Add the quadlet file to packages
         };

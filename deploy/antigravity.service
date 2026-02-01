@@ -1,0 +1,21 @@
+[Unit]
+Description=Antigravity AI Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/antigravity
+ExecStart=/opt/antigravity/antigravity-server
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+Environment=RUST_LOG=info
+Environment=ANTIGRAVITY_PORT=8045
+Environment=ANTIGRAVITY_STATIC_DIR=/opt/antigravity/dist
+Environment=ANTIGRAVITY_DATA_DIR=/root/.antigravity_tools
+
+[Install]
+WantedBy=multi-user.target
