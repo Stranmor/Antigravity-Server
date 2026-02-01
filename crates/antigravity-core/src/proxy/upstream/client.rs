@@ -8,6 +8,7 @@ use tokio::time::Duration;
 use super::endpoint_health::{
     ENDPOINT_HEALTH, MAX_TRANSPORT_RETRIES_PER_ENDPOINT, TRANSPORT_RETRY_DELAY_MS,
 };
+use super::user_agent::DEFAULT_USER_AGENT;
 
 // Cloud Code v1internal endpoints (fallback order: prod → daily)
 // 优先使用稳定的 prod 端点，避免影响缓存命中率
@@ -18,8 +19,6 @@ const V1_INTERNAL_BASE_URL_FALLBACKS: [&str; 2] = [
     V1_INTERNAL_BASE_URL_PROD,  // 优先使用生产环境（稳定）
     V1_INTERNAL_BASE_URL_DAILY, // 备用测试环境（新功能）
 ];
-
-const USER_AGENT: &str = "antigravity/4.0.8 windows/amd64";
 
 pub struct UpstreamClient {
     http_client: Client,
@@ -34,7 +33,7 @@ impl UpstreamClient {
             .pool_idle_timeout(Duration::from_secs(90)) // 空闲连接保持 90 秒
             .tcp_keepalive(Duration::from_secs(60)) // TCP 保活探测 60 秒
             .timeout(Duration::from_secs(600))
-            .user_agent(USER_AGENT);
+            .user_agent(DEFAULT_USER_AGENT);
 
         if let Some(config) = proxy_config {
             if config.enabled && !config.url.is_empty() {
@@ -119,7 +118,7 @@ impl UpstreamClient {
                 .pool_idle_timeout(Duration::from_secs(30))
                 .tcp_keepalive(Duration::from_secs(60))
                 .timeout(Duration::from_secs(600))
-                .user_agent(USER_AGENT)
+                .user_agent(DEFAULT_USER_AGENT)
                 .proxy(proxy)
                 .build()
                 .map_err(|e| format!("Failed to create WARP client: {}", e))?
@@ -141,7 +140,7 @@ impl UpstreamClient {
         );
         headers.insert(
             header::USER_AGENT,
-            header::HeaderValue::from_static(USER_AGENT),
+            header::HeaderValue::from_static(DEFAULT_USER_AGENT),
         );
 
         // Inject extra headers
@@ -274,7 +273,7 @@ impl UpstreamClient {
         );
         headers.insert(
             header::USER_AGENT,
-            header::HeaderValue::from_static(USER_AGENT),
+            header::HeaderValue::from_static(DEFAULT_USER_AGENT),
         );
 
         // 注入额外的 Headers (如 anthropic-beta)
@@ -419,7 +418,7 @@ impl UpstreamClient {
         );
         headers.insert(
             header::USER_AGENT,
-            header::HeaderValue::from_static(USER_AGENT),
+            header::HeaderValue::from_static(DEFAULT_USER_AGENT),
         );
 
         let mut last_err: Option<String> = None;
