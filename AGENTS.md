@@ -4,34 +4,12 @@
 
 **Current Status:** PHASE 4 COMPLETE — antigravity-shared eliminated, direct imports from antigravity-types
 
-### ✅ Completed Phases
+### ✅ Completed Phases (1-4)
 
-| Phase | Task | Status |
-|-------|------|--------|
-| **1** | Created `antigravity-types` crate (foundation types, error hierarchy) | ✅ |
-| **1** | Typed Errors (`AccountError`, `ProxyError`, `ConfigError` + `TypedError`) | ✅ |
-| **1** | Protocol types (`OpenAI`, `Claude`, `Gemini` message types) | ✅ |
-| **1** | Unit tests for types crate (7 tests passing) | ✅ |
-| **1** | Clippy Compliance — workspace passes `-D warnings` | ✅ |
-| **1** | Resilience API (`/api/resilience/*`) | ✅ |
-| **1** | Prometheus Metrics (`/api/metrics`) | ✅ |
-| **2** | Replace symlinks with local copies | ✅ |
-| **2** | Remove `#[path]` includes from common/ | ✅ |
-| **3a** | Add `validator::Validate` to all config types in `antigravity-types` | ✅ |
-| **3a** | Replace `antigravity-shared/src/models/*` with re-exports | ✅ |
-| **3a** | Replace `antigravity-shared/src/error.rs` with re-exports | ✅ |
-| **3a** | Replace `antigravity-shared/src/proxy/config.rs` with re-exports | ✅ |
-| **3a** | Update `antigravity-core/src/lib.rs` docstring | ✅ |
-| **3b** | Clean `sticky_config.rs` → re-export layer | ✅ |
-| **3b** | Add `warp_isolation.rs` module | ✅ |
-| **3b** | Reorganize `proxy/mod.rs` into STRICT/CLEANUP sections | ✅ |
-| **3b** | Fix flaky test in `error_classifier.rs` | ✅ |
-| **3c** | Remove `#[allow(warnings)]` from all 11 modules | ✅ |
-| **3c** | Fix ~58 Rust 1.92+ clippy lints in upstream copies | ✅ |
-| **3c** | Deploy updated binary to local service | ✅ |
-| **4** | **Eliminate antigravity-shared crate** — direct imports from antigravity-types | ✅ |
-| **4** | Edition alignment: 2024 → 2021 for stable Rust compat | ✅ |
-| **4** | Make models submodules public in antigravity-types | ✅ |
+- **Phase 1:** `antigravity-types` crate, Typed Errors, Protocol types, Resilience API, Prometheus Metrics
+- **Phase 2:** Replace symlinks with local copies, Remove `#[path]` includes
+- **Phase 3:** Validator integration, Re-exports cleanup, Clippy compliance (all 23 modules clean)
+- **Phase 4:** Eliminate `antigravity-shared`, Edition 2021 alignment
 
 ### 🔄 Phase 5: Module Size Compliance [IN PROGRESS - 2026-01-31]
 
@@ -156,11 +134,31 @@ pub struct SmartRoutingConfig {
 | 3 manual modes to choose | 1 unified algorithm with tunable params |
 | No concurrency limit | Max N per account prevents thundering herd |
 
-### Files Changed
+---
 
-- `crates/antigravity-core/src/proxy/token_manager.rs` — Core smart routing + session_failures tracking
-- `crates/antigravity-core/src/proxy/handlers/claude.rs` — record/clear session failures
-- `crates/antigravity-core/src/proxy/handlers/openai.rs` — record/clear session failures
+## 🛡️ FINGERPRINT PROTECTION [2026-02-01]
+
+### User-Agent Rotation
+
+**Status:** IMPLEMENTED
+
+Each account gets a deterministic User-Agent from a pool of 16 realistic browser strings (Chrome/Firefox/Edge/Safari on Windows/macOS/Linux). Hash-based selection ensures consistency within account sessions.
+
+| Component | Location |
+|-----------|----------|
+| UA Pool | `proxy/upstream/user_agent.rs` |
+| Selection | `get_user_agent_for_account(email)` |
+| Integration | `call_v1_internal_with_warp(..., account_email)` |
+
+### Known Limitations
+
+| Protection | Status | Notes |
+|------------|--------|-------|
+| User-Agent rotation | ✅ | 16 realistic UAs, per-account deterministic |
+| WARP IP isolation | ❌ DISABLED | Google detects WARP → stricter rate limits |
+| Device fingerprints | ❌ NOT PORTED | Exists in upstream Tauri, not in headless server |
+| TLS/JA3 fingerprint | ❌ MISSING | Would require custom TLS config |
+| HTTP header randomization | ❌ MISSING | Accept-Language, etc. |
 
 ---
 
@@ -256,126 +254,23 @@ cargo test -p antigravity-core --lib
 git add . && git commit -m "chore: sync upstream v3.3.XX changes"
 ```
 
-### Sync History: 2026-01-28 (v4.0.5)
+> **Note:** Detailed sync history moved to git commits. See `git log --grep="sync upstream"` for changelog.
 
-**Ported from v4.0.5:**
-- **`token_manager.rs`** — Auto-clear rate limits on reload
-  - `reload_account()` now clears rate limit for that account
-  - `reload_all_accounts()` now clears all rate limits
-- **`api.rs` (antigravity-server)** — Rate limit clearing endpoints
-  - New `DELETE /api/proxy/rate-limits` clears all rate limit records
-  - New `DELETE /api/proxy/rate-limits/:account_id` clears rate limit for specific account
-- **`state.rs`** — Added `clear_all_rate_limits()` and `clear_rate_limit()` methods
-
-**NOT ported (intentionally):**
-- **Arabic + RTL layout** — React UI changes, we use Leptos
-- **Effra fonts** — UI assets, not applicable
-
-**Ported from v4.0.4:**
-- **`rate_limit.rs`** — Millisecond parsing with decimals
-  - Regex now supports `510.790006ms` format (was only integer ms)
-  - Default for `RateLimitExceeded` reduced 30s → 5s
-  - Milliseconds parsed as f64 for precision
-- **`token_manager.rs`** — Health score system
-  - New `health_score` field in `ProxyToken` (0.0-1.0)
-  - `health_scores: DashMap<String, f32>` in TokenManager
-  - Account sorting now: tier → quota → health_score
-  - `record_success()` +0.05, `record_failure()` -0.2
-- **`config.rs` (antigravity-types)** — Fixed account mode persistence
-  - Added `preferred_account_id: Option<String>` to ProxyConfig
-  - Persists fixed account setting between restarts
-- **`api.rs` (antigravity-server)** — OAuth code submission endpoint
-  - New `POST /api/oauth/submit-code` for manual code entry
-  - Accepts `{ code, state? }` and creates account
-- **`common_utils.rs`** — Image generation improvements
-  - New aspect ratios: `3:2`, `2:3`, `5:4`, `4:5`
-  - Direct string matching for ratio values (`"16:9"` → `"16:9"`)
-  - Quality mapping extended: `"standard"`/`"1k"` → `"1K"`
-  - Tolerance reduced 0.1 → 0.05 to avoid 3:4/2:3 confusion
-
-**NOT ported (intentionally):**
-- **wait_ms return value** — Upstream changed `get_token()` to return `(token, project, email, wait_ms)`. Too invasive for our handler architecture; requires updating all call sites.
-- **`add_account()` refactor** — Upstream delegated to `modules::account::add_account`. We have different module structure.
-
-**Ported from v4.0.3:**
-- **`common/schema_cache.rs`** — NEW: LRU cache for cleaned JSON schemas
-  - SHA-256 hash-based cache keys
-  - Max 1000 entries with LRU eviction
-  - `clean_json_schema_cached()` — cached entry point for schema cleaning
-  - `get_cache_stats()` — hit rate monitoring
-- **`common/tool_adapter.rs`** — NEW: MCP tool adapter trait
-  - `ToolAdapter` trait with `matches()`, `pre_process()`, `post_process()`
-  - `append_hint_to_schema()` helper
-- **`common/tool_adapters/pencil.rs`** — NEW: Pencil MCP adapter
-  - Handles visual properties (cornerRadius, strokeWidth, etc.)
-  - Optimizes file path parameter descriptions
-- **`json_schema.rs`** — Added `clean_json_schema_for_tool()` function
-  - Applies tool-specific adapters before/after generic cleaning
-  - Global `TOOL_ADAPTERS` registry
-- **`middleware/auth.rs`** — Fix #1163: 401 auth loop
-  - Added `admin_auth_middleware()` for admin routes
-  - Extended health check paths: `/healthz`, `/api/health`, `/health`, `/api/status`
-  - Refactored to `auth_middleware_internal()` with `force_strict` parameter
-
-**OUR SECURITY ENHANCEMENTS (not in upstream):**
-- **Constant-time API key comparison** — uses `subtle::ConstantTimeEq` to prevent timing attacks
-  - Upstream uses simple `==` comparison (vulnerable to timing analysis)
-  - Our `constant_time_compare()` function in `auth.rs` lines 30-35
-- **`/api/status` health path** — added for load balancer compatibility (upstream only has `/healthz`, `/api/health`, `/health`)
-
-**NOT ported (intentionally):**
-- **Body limit 50MB** — we already have 100MB, no need to reduce
-- **`admin_password` field** — we use single `api_key` for simplicity
-- **`server.rs` admin API routes** — we have our own Axum-based admin API
-
-**Ported from v4.0.1:**
-- **`gemini/collector.rs`** — NEW: Stream collector for Gemini SSE → JSON conversion
-  - Collects streaming responses into complete JSON for non-stream requests
-  - Signature caching side-effect during collection
-  - Adjacent text part merging for optimization
-- **`middleware/service_status.rs`** — NEW: Service status middleware (stub)
-  - Placeholder for `is_running` state control (requires AppState extension)
-- **`handlers/common.rs` RetryStrategy** — Unified retry logic
-  - `RetryStrategy` enum: NoRetry, FixedDelay, LinearBackoff, ExponentialBackoff
-  - `determine_retry_strategy()` with thinking signature error detection
-  - `apply_retry_strategy()` async execution with logging
-  - `should_rotate_account()` for 429/401/403/500 errors
-- **`model_mapping.rs` improvements:**
-  - `internal-background-task` → `gemini-2.5-flash` mapping for background tasks
+**Our Key Additions (not in upstream):**
+- Constant-time API key comparison (timing attack prevention)
+- AIMD predictive rate limiting
+- Circuit breakers per account
+- Prometheus metrics endpoint
+- Resilience API endpoints
+- WARP proxy support for per-account IP isolation
+- Sticky session rebind on 429
   - Intelligent opus fallback → `gemini-3-pro-preview`
   - Multi-wildcard matching (`a*b*c` patterns)
-- **`handlers/openai.rs` refactoring:**
-  - Removed local RetryStrategy duplicate, now uses `super::common`
 
 **OUR BUG FIXES (not in upstream):**
-- **[FIX] Race condition in rate limit recording** (2026-01-28)
-  - **Root cause:** `mark_rate_limited_async()` didn't record rate limit until async quota refresh completed (1-2 seconds). During this window, other concurrent requests could still use the rate-limited account.
-  - **Symptom:** Same account hammered with 429s repeatedly because each new request didn't see the account as blocked yet.
-  - **Fix:** Immediately set 60s temporary lockout at the START of `mark_rate_limited_async()`, BEFORE any async operations. The precise reset time updates this lockout once available.
-  - **Affected file:** `crates/antigravity-core/src/proxy/token_manager.rs`
-
-- **[FIX] 60s Global Lock missing rate limit check** (2026-01-26)
-  - **Root cause:** TokenManager has 3 account selection modes:
-    - Mode A: Sticky session (checks rate limit ✓)
-    - Mode B: 60s global lock (MISSING rate limit check ✗)
-    - Mode C: Round-robin (checks rate limit ✓)
-  - **Symptom:** When account gets 429, Mode B still reuses it for 60 seconds because it only checked `attempted.contains()` and quota protection, NOT rate limit status.
-  - **Result:** Infinite 429 loop — same account hammered for minutes despite being rate-limited.
-  - **Fix:** Added `is_rate_limited()` check before reusing account in 60s window (line 637).
-  - **Affected file:** `crates/antigravity-core/src/proxy/token_manager.rs`
-
-- **[FIX] protected_models not populated in headless server** (2026-01-26)
-  - **Root cause:** Headless server (`antigravity-server`) used `save_account()` after quota refresh, but this function does NOT check quota thresholds and does NOT populate `protected_models`. The correct function is `update_account_quota()` which contains the protection logic.
-  - **Affected files:** `antigravity-server/src/api.rs`, `antigravity-server/src/commands.rs`
-  - **Fix:** Replaced `save_account()` with `update_account_quota()` in:
-    - `refresh_account_quota()` API handler
-    - `refresh_all_quotas()` API handler
-    - `refresh_quota()` CLI command
-    - `refresh_all_quotas()` CLI command
-  - **Additional fixes:** Fixed Rust 1.92 clippy warnings in `token_manager.rs`:
-    - `collapsible_else_if` → collapsed nested else-if blocks
-    - `map_or(false, ...)` → `is_some_and(...)`
-  - **Important note:** Config is read from `~/.antigravity_tools/gui_config.json` (NOT `config.json`). The `quota_protection.enabled` must be `true` in this file for model protection to work.
+- **Race condition in rate limit recording** — fixed immediate lockout in `mark_rate_limited_async()`
+- **60s Global Lock missing rate limit check** — added `is_rate_limited()` check
+- **protected_models not populated** — replaced `save_account()` with `update_account_quota()`
 
 - **[FEATURE] Smart Warmup Scheduler enabled** (2026-01-26)
   - **Purpose:** Automatically warms up accounts to prevent staleness and maintain active sessions.
@@ -415,222 +310,22 @@ git add . && git commit -m "chore: sync upstream v3.3.XX changes"
   - **Implementation:** `scheduler::start_quota_refresh()` in `antigravity-server/src/scheduler.rs`
   - **Note:** This was missing in headless server while upstream Tauri had it via `BackgroundTaskRunner.tsx`
 
-**Ported from v3.3.49:**
-- **`estimation_calibrator.rs`** — New module for token estimation calibration
-  - Learns from actual API responses using exponential moving average
-  - `record(estimated, actual)` → refines future predictions
-  - `calibrate(estimated)` → applies learned correction factor
-  - Global singleton via `OnceCell` for cross-request learning
-- **[FIX #952] Nested `$defs` collection** — `collect_all_defs()` function
-  - Recursively collects `$defs` from all schema levels
-  - Fixes unresolved `$ref` fallback → converts to string type with hint
-- **Stop sequences improvement** — removed from request transformation
-  - Upstream removed `stop` field handling (models handle natively)
-- **`common_utils.rs` OpenAI Image Parameters** — Extended API for image generation
-  - `resolve_request_config()` now accepts `size: Option<&str>` and `quality: Option<&str>`
-  - `parse_image_config_with_params()` — converts OpenAI size/quality to Gemini config
-  - `calculate_aspect_ratio_from_size()` — "1024x1024" → "1:1", "1792x1024" → "16:9"
-  - Quality mapping: "hd" → 4K, "medium" → 2K
-- **`context_manager.rs` Multi-Language Token Estimation** — Improved accuracy
-  - ASCII text: ~4 chars/token
-  - CJK (Chinese, Japanese, Korean): ~1.5 chars/token
-  - +15% safety margin for worst-case scenarios
-  - Layer 1/2/3 compression hierarchy for thinking blocks
-
-**Ported from v3.3.45:**
-- **[FIX #820] Fixed Account Mode** — `preferred_account_id` in token_manager.rs
-  - `set_preferred_account(Some(account_id))` — pins all requests to specific account
-  - `set_preferred_account(None)` — returns to round-robin mode
-  - Falls back to round-robin if preferred account is rate-limited or not found
-- **ContextManager module** — Dynamic Thinking Stripping to prevent "Prompt is too long" and "Invalid signature" errors
-  - `PurificationStrategy::None | Soft | Aggressive`
-  - Token estimation based on 3.5 chars/token
-  - Purifies history by removing old thinking blocks
-- **SSE Peek Fix (Issue #859)** — Enhanced peek logic with:
-  - Loop to skip heartbeat SSE comments (`:` prefix)
-  - 60s timeout for first meaningful data (Claude), 30s for OpenAI
-  - Retry on empty response or timeout during peek phase
-  - **Applied to both `claude.rs` AND `openai.rs` handlers** (upstream only has it in claude.rs)
-  - **[2026-01-20] OUR ENHANCEMENT:** Added total peek phase limits to prevent infinite hanging:
-    - `MAX_PEEK_DURATION`: 120s (Claude) / 90s (OpenAI) — total time limit for peek phase
-    - `MAX_HEARTBEATS`: 20 — limit on consecutive heartbeats without real data
-    - If limits exceeded, request retries with account rotation (prevents client from hanging forever when model generates very large output)
-
-**Ported from v3.3.43:**
-- Shell command array fix (`local_shell_call` command → array)
-- Thinking model signature handling (`skip_thought_signature_validator`)
-- `clean_json_schema` for function call args
-- `x-goog-api-key` header support in auth middleware
-- Full `json_schema.rs` update (flatten_refs, merge_all_of, score_schema_option)
-- `maxOutputTokens` default 64000 → 16384
-- **[FIX #563]** `remaining_quota` field in `ProxyToken` + sorting by quota percentage
-- **`start_auto_cleanup()`** — background task for expired rate limit cleanup (every 60s)
-- **`reload_account()` / `reload_all_accounts()`** — hot-reload account configs
-- **[FIX v3.3.36]** `close_tool_loop_for_thinking()` call after fallback retry — heals session to prevent "naked ToolResult" rejection
-- **`is_retry` parameter** in `transform_claude_request_in()` — enables signature stripping on retry
-- **`merge_consecutive_messages()`** — merges consecutive same-role messages for Gemini compatibility
-- **`filter_invalid_thinking_blocks_with_family()`** — cross-model signature validation
-
-**NOT ported (intentionally):**
-- `protected_models` / quota protection system — requires `QuotaProtectionConfig` infrastructure that we don't have; our AIMD provides similar functionality
-- `cli_sync.rs` module — Tauri-specific CLI config synchronization, not needed for headless server
-
-**Our additions (not in upstream):**
-- `tool_result_compressor` in OpenAI mapper (upstream only has it for Claude)
-- AIMD predictive rate limiting
-- Circuit breakers per account
-- Prometheus metrics endpoint
-- Resilience API endpoints
-- WARP proxy support for per-account IP isolation (`call_v1_internal_with_warp`)
-- **Sticky session rebind on 429** — preserves prompt cache after rate limit failover (see below)
-
-**Dead Code Cleanup (2026-01-26):**
-- **`smart_prober.rs`** — DELETED (entire module, 14 pub functions, never called from anywhere)
-- **`prometheus.rs`** — Removed 6 dead functions:
-  - `record_log_rotation`, `record_log_cleanup`, `record_adaptive_probe`
-  - `record_hedge_win`, `record_primary_win`, `update_adaptive_limit_gauge`
-- **`src-tauri/`** — DELETED (6.5MB obsolete v3.3.20 copy, real upstream is `vendor/antigravity-upstream/` v4.0.1)
-- **Commit:** `89abe947` — 154 files changed, 26,994 lines deleted
-
-**API Architecture Fixes (2026-01-26):**
-- **Concurrent batch operations** — `refresh_all_quotas`, `warmup_all_accounts`, `add_account_by_token` now use `JoinSet` for parallel execution instead of sequential loops
-- **OAuth CSRF protection** — Added `state` parameter generation and validation in OAuth flow (`generate_oauth_state`, `validate_oauth_state` in AppState)
-- **Port resolution from AppState** — OAuth redirect URI now uses actual server port from `AppState::get_proxy_port()` instead of `ANTIGRAVITY_PORT` env var
-- **Error logging in batch operations** — Failed operations now log specific error messages via `tracing::warn!`
-
----
-
-## ✅ FIX: Sticky Session Rebind on 429 [2026-01-19]
-
-### The Problem (Both Upstream & Fork Had This Bug)
-
-When a 429 rate limit triggers account switch, the session was NOT rebound to the new account:
-
-```
-1. Session X → Account A (bound via session_accounts map)
-2. Request fails with 429 → token_manager switches to Account B
-3. Session X still bound to Account A (BUG!)
-4. Next request → system might return to Account A (if recovered)
-5. Result: Prompt cache broken on BOTH accounts
-```
-
-Google caches prompts per `project_id`. Each account has unique project (e.g., `optimum-cell-kvmxc`, `original-diagram-4l9f4`). Switching back and forth destroys cache continuity.
-
-### The Fix
-
-Added central rebind logic in `token_manager.rs` (lines 651-671) after token selection:
-
-```rust
-// After token is selected, ensure session is bound to it
-if let Some(sid) = session_id {
-    if scheduling.mode != SchedulingMode::PerformanceFirst {
-        let current_binding = self.session_accounts.get(sid).map(|v| v.clone());
-        if current_binding.as_ref() != Some(&token.account_id) {
-            self.session_accounts.insert(sid.to_string(), token.account_id.clone());
-            tracing::debug!(
-                "[Session Rebind] {} rebound: {:?} → {}",
-                sid, current_binding, token.account_id
-            );
-        }
-    }
-}
-```
-
-This covers ALL token selection paths:
-- **Mode A (Cache First):** Existing binding → fallback on 429 → rebind
-- **Mode B (Balance):** Least-used selection → rebind if different
-- **Mode C (Rotation):** Round-robin → rebind on each request
-- **60s optimistic reset:** When rate limit expires → rebind to recovered account
-
-### Why This Matters
-
-- **Prompt cache preserved:** Session stays on new account, cache builds there
-- **No ping-pong:** Session doesn't return to original account after 429
-- **Upstream still has this bug:** They don't rebind after failover
-
-### Verification
-
-```bash
-# Watch for rebind logs
-journalctl --user -u antigravity-manager -f | grep "Session Rebind"
-```
-
 ---
 
 ## ⚠️ KNOWN ARCHITECTURAL QUIRK: Shared Project Rate Limits [2026-01-18]
 
-### The Issue
+Rate limits are tracked per **account_id**, but Google Cloud quotas are enforced per **project_id**. If two accounts share the same project, switching between them won't help — both will hit 429.
 
-Rate limits are tracked per **account_id**, but Google Cloud quotas are enforced per **project_id**.
-
-If two accounts share the same Google Cloud Project:
-1. Account A gets 429 → marked as rate-limited
-2. System switches to Account B (same project)
-3. Account B immediately gets 429 (shared project quota)
-4. System incorrectly considers B as "fresh" account
-
-### Current Implementation (Both Upstream & Fork)
-
-```rust
-// rate_limit.rs
-pub struct RateLimitTracker {
-    limits: DashMap<String, RateLimitInfo>,  // Key = account_id, NOT project_id
-}
-```
-
-The `project_id` is only used in API request payloads, not in rate limit tracking.
-
-### Why We DON'T Fix This (Yet)
-
-**Prompt caching benefit:** Google's prompt caching is tied to `project_id`. If we start tracking rate limits per project and avoiding all accounts in a rate-limited project, we might break the caching optimization that upstream designed around.
-
-The current behavior may be intentional — when one account hits 429, switching to another account in the same project might still benefit from cached prompts, and the 429 on the second account could be shorter.
-
-### Potential Future Fix
-
-If caching proves not valuable for our use case:
-
-```rust
-// Add project-level tracking:
-project_limits: DashMap<String, RateLimitInfo>  // project_id → info
-
-fn is_rate_limited(&self, account_id: &str, project_id: &str) -> bool {
-    self.limits.get(account_id).is_some() 
-    || self.project_limits.get(project_id).is_some()
-}
-```
-
-### How to Verify Shared Project
+**Why We DON'T Fix This (Yet):** Google's prompt caching is tied to `project_id`. Switching to another account in the same project might still benefit from cached prompts.
 
 ```bash
+# Check for shared projects:
 cat ~/.antigravity_tools/accounts/*.json | jq -r '.token.project_id' | sort | uniq -c
 ```
-
-If multiple accounts show the same project_id, they share quota.
 
 ---
 
 ## 🔍 BACKEND DISCOVERY: Model Routing [2026-01-18]
-
-### What Google Antigravity Actually Is
-
-**Google Antigravity** (antigravity.google) is Google's new AI IDE — a competitor to Cursor/Windsurf.
-
-Antigravity Manager exploits the API that powers this IDE:
-
-```
-Your Client (OpenCode, Cursor, etc.)
-    ↓
-Antigravity Manager (localhost:8045)
-    ↓ pretends to be Antigravity IDE client
-Google Antigravity API (antigravity.google)
-    ↓
-Backend (Gemini / Claude via Vertex)
-```
-
-### Model Backend Discovery (Verified 2026-01-18)
-
-Tested by asking models "What model are you?":
 
 | Model Alias | Actual Backend | Evidence |
 |-------------|----------------|----------|
@@ -638,18 +333,7 @@ Tested by asking models "What model are you?":
 | `gemini-3-pro`, `gemini-*` | **Gemini** (native) | Responds with Antigravity system prompt |
 | `claude-opus-4-5`, `claude-*` | **Claude via Vertex AI** | Error contains `req_vrtx_*` request ID |
 
-### Key Insights
-
-1. **GPT models are fake** — they're just Gemini with OpenAI-compatible response format
-2. **Claude models are REAL** — Google has Vertex AI partnership with Anthropic, routes to actual Claude
-3. **Why GPT aliases exist** — Backend is shared with AI Studio/Vertex which supports OpenAI format for migration ease
-
-### Why Google Allows This
-
-- Antigravity IDE = user acquisition strategy (compete with Cursor)
-- Free tier attracts developers → converts to paid Vertex AI enterprise
-- Market share now, monetization later
-- Rate limits are their protection (Antigravity Manager rotates accounts to bypass)
+**Key Insights:** GPT models are fake (Gemini with OpenAI format). Claude models are REAL (Vertex AI partnership).
 
 ---
 
@@ -684,12 +368,6 @@ For large files, use incremental approach:
 2. Fill each section with separate Edit calls
 3. Each operation <100 lines
 
-### Future Fix Ideas
-
-1. **Auto-continue in proxy** — detect truncated stream (no valid stop_reason), auto-send "continue" request, splice responses
-2. **Output size estimation** — before sending request, estimate expected output size, warn if >4K tokens
-3. **Paid API fallback** — route large-output requests to OpenRouter/direct Anthropic API
-
 **Status:** No fix implemented. Using system prompt workaround (see global AGENTS.md rule 20).
 
 ---
@@ -718,24 +396,6 @@ Server uses **SO_REUSEPORT** + **Graceful Shutdown** for zero-downtime binary re
 
 ### Deployment Workflow
 
-```bash
-# 1. Build new binary (includes frontend via build.rs)
-cargo build --release -p antigravity-server
-
-# 2. Start new instance (binds alongside old via SO_REUSEPORT)
-ANTIGRAVITY_STATIC_DIR=... ~/.local/bin/antigravity-server.new &
-sleep 3  # Wait for initialization
-
-# 3. Stop old instance (graceful drain)
-systemctl --user stop antigravity-manager
-
-# 4. Replace binary
-mv ~/.local/bin/antigravity-server.new ~/.local/bin/antigravity-server
-
-# 5. Start via systemd
-systemctl --user start antigravity-manager
-```
-
 Or use: `./scripts/zero-downtime-deploy.sh`
 
 ### Container Deployment (Recommended) [2026-01-28]
@@ -746,13 +406,6 @@ For production VPS, use containerized deployment via Podman:
 # From project root:
 ./deploy/deploy-vps.sh
 ```
-
-This script:
-1. Builds container image locally via `podman build`
-2. Saves and ships image to VPS via SSH
-3. Loads image on VPS
-4. Installs Quadlet systemd unit (`/etc/containers/systemd/antigravity.container`)
-5. Restarts service via `systemctl restart antigravity.service`
 
 **Files:**
 - `Containerfile` — Multi-stage build (Rust + Trunk frontend)
@@ -765,52 +418,15 @@ This script:
 
 **Backend and frontend are built together** via `build.rs`:
 
-```rust
-// antigravity-server/build.rs
-// Automatically runs `trunk build` when compiling server
-```
-
 This means `cargo build -p antigravity-server` builds BOTH:
 - Rust backend binary
 - Leptos WASM frontend (via trunk)
 
 **DO NOT deploy backend without rebuilding frontend** — they share the same release cycle.
 
-### Systemd Configuration
-
-```ini
-# ~/.config/systemd/user/antigravity-manager.service
-[Service]
-ExecStart=/home/stranmor/.local/bin/antigravity-server
-TimeoutStopSec=35  # Allow graceful drain
-Restart=always
-```
-
-Socket activation (`antigravity-manager.socket`) is **disabled** — SO_REUSEPORT replaces it.
-
 ---
 
 ## 📦 BUILD SYSTEM [2026-01-19]
-
-### Unified Build Architecture
-
-```
-cargo build -p antigravity-server
-    ↓
-build.rs executes
-    ↓
-trunk build (compiles Leptos → WASM)
-    ↓
-WASM artifacts → src-leptos/dist/
-    ↓
-Server binary embeds path to dist/
-```
-
-### Why Unified Build Matters
-
-1. **Atomic deploys** — frontend and backend always match
-2. **No forgotten rebuilds** — one command builds everything
-3. **Version consistency** — both use same git commit
 
 ### Build Commands
 
@@ -867,23 +483,6 @@ Deletions use **tombstones** (soft delete) to prevent "zombie resurrection" duri
 - Tombstones propagate via LWW like regular entries
 - `get()`, `len()`, `to_simple_map()` exclude tombstones
 - `total_entries()` includes tombstones (for debugging)
-
-### Data Structures
-
-```rust
-// crates/antigravity-types/src/models/sync.rs
-
-pub struct MappingEntry {
-    pub target: String,      // e.g., "gemini-3-pro-high"
-    pub updated_at: i64,     // Unix timestamp (ms)
-    pub deleted: bool,       // Tombstone flag
-}
-
-pub struct SyncableMapping {
-    pub entries: HashMap<String, MappingEntry>,
-    pub instance_id: Option<String>,
-}
-```
 
 ### API Endpoints
 

@@ -19,7 +19,7 @@ const V1_INTERNAL_BASE_URL_FALLBACKS: [&str; 2] = [
     V1_INTERNAL_BASE_URL_DAILY, // 备用测试环境（新功能）
 ];
 
-const USER_AGENT: &str = "antigravity/4.0.8 windows/amd64";
+use super::user_agent::{get_user_agent_for_account, DEFAULT_USER_AGENT};
 
 pub struct UpstreamClient {
     http_client: Client,
@@ -34,7 +34,7 @@ impl UpstreamClient {
             .pool_idle_timeout(Duration::from_secs(90)) // 空闲连接保持 90 秒
             .tcp_keepalive(Duration::from_secs(60)) // TCP 保活探测 60 秒
             .timeout(Duration::from_secs(600))
-            .user_agent(USER_AGENT);
+            .user_agent(DEFAULT_USER_AGENT);
 
         if let Some(config) = proxy_config {
             if config.enabled && !config.url.is_empty() {
@@ -99,6 +99,9 @@ impl UpstreamClient {
     ///
     /// When `warp_proxy_url` is Some, a new HTTP client is built with that SOCKS5 proxy
     /// for this specific request, enabling per-account IP isolation.
+    ///
+    /// When `account_email` is Some, a deterministic User-Agent is selected based on
+    /// the email hash for fingerprint consistency.
     pub async fn call_v1_internal_with_warp(
         &self,
         method: &str,
@@ -107,7 +110,12 @@ impl UpstreamClient {
         query_string: Option<&str>,
         extra_headers: std::collections::HashMap<String, String>,
         warp_proxy_url: Option<&str>,
+        account_email: Option<&str>,
     ) -> Result<Response, String> {
+        let user_agent = account_email
+            .map(get_user_agent_for_account)
+            .unwrap_or(DEFAULT_USER_AGENT);
+
         // If WARP proxy is specified, create a new client with that proxy
         let client = if let Some(proxy_url) = warp_proxy_url {
             let proxy = reqwest::Proxy::all(proxy_url)
@@ -119,7 +127,7 @@ impl UpstreamClient {
                 .pool_idle_timeout(Duration::from_secs(30))
                 .tcp_keepalive(Duration::from_secs(60))
                 .timeout(Duration::from_secs(600))
-                .user_agent(USER_AGENT)
+                .user_agent(user_agent)
                 .proxy(proxy)
                 .build()
                 .map_err(|e| format!("Failed to create WARP client: {}", e))?
@@ -141,7 +149,8 @@ impl UpstreamClient {
         );
         headers.insert(
             header::USER_AGENT,
-            header::HeaderValue::from_static(USER_AGENT),
+            header::HeaderValue::from_str(user_agent)
+                .unwrap_or_else(|_| header::HeaderValue::from_static(DEFAULT_USER_AGENT)),
         );
 
         // Inject extra headers
@@ -274,7 +283,7 @@ impl UpstreamClient {
         );
         headers.insert(
             header::USER_AGENT,
-            header::HeaderValue::from_static(USER_AGENT),
+            header::HeaderValue::from_static(DEFAULT_USER_AGENT),
         );
 
         // 注入额外的 Headers (如 anthropic-beta)
@@ -419,7 +428,7 @@ impl UpstreamClient {
         );
         headers.insert(
             header::USER_AGENT,
-            header::HeaderValue::from_static(USER_AGENT),
+            header::HeaderValue::from_static(DEFAULT_USER_AGENT),
         );
 
         let mut last_err: Option<String> = None;
