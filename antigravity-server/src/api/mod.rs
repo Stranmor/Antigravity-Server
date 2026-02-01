@@ -2,6 +2,9 @@
 //!
 //! REST API endpoints that mirror the Tauri IPC commands.
 
+mod device;
+mod resilience;
+
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -13,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 
 use antigravity_core::models::AppConfig;
-use antigravity_core::modules::{account, config as core_config, device, oauth};
+use antigravity_core::modules::{account, config as core_config, oauth};
 use antigravity_types::models::TokenData;
 
 use crate::state::{get_model_quota, AppState};
@@ -57,16 +60,16 @@ pub fn router() -> Router<AppState> {
         .route("/config/mapping", get(get_syncable_mapping))
         .route("/config/mapping", post(merge_remote_mapping))
         // Device Fingerprint
-        .route("/device/profile", get(get_device_profile))
-        .route("/device/profile", post(create_device_profile))
-        .route("/device/backup", post(backup_device_storage))
-        .route("/device/baseline", get(get_device_baseline))
+        .route("/device/profile", get(device::get_device_profile))
+        .route("/device/profile", post(device::create_device_profile))
+        .route("/device/backup", post(device::backup_device_storage))
+        .route("/device/baseline", get(device::get_device_baseline))
         // Resilience (AIMD, Circuit Breaker, Health)
-        .route("/resilience/health", get(get_health_status))
-        .route("/resilience/circuits", get(get_circuit_status))
-        .route("/resilience/aimd", get(get_aimd_status))
+        .route("/resilience/health", get(resilience::get_health_status))
+        .route("/resilience/circuits", get(resilience::get_circuit_status))
+        .route("/resilience/aimd", get(resilience::get_aimd_status))
         // Prometheus metrics
-        .route("/metrics", get(get_metrics))
+        .route("/metrics", get(resilience::get_metrics))
         // API fallback: return 404 for unknown API endpoints
         .fallback(api_not_found)
 }
@@ -771,181 +774,6 @@ async fn merge_remote_mapping(
         updated_count: updated,
         total_count: total,
     })
-}
-
-#[derive(Serialize)]
-struct DeviceProfileResponse {
-    profile: antigravity_types::models::DeviceProfile,
-    storage_path: String,
-}
-
-async fn get_device_profile() -> Result<Json<DeviceProfileResponse>, (StatusCode, String)> {
-    let storage_path = device::get_storage_path()
-        .map_err(|e| (StatusCode::NOT_FOUND, format!("storage_not_found: {}", e)))?;
-
-    let profile = device::read_profile(&storage_path).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("read_failed: {}", e),
-        )
-    })?;
-
-    Ok(Json(DeviceProfileResponse {
-        profile,
-        storage_path: storage_path.display().to_string(),
-    }))
-}
-
-#[derive(Serialize)]
-struct CreateProfileResponse {
-    profile: antigravity_types::models::DeviceProfile,
-    backup_path: Option<String>,
-}
-
-async fn create_device_profile() -> Result<Json<CreateProfileResponse>, (StatusCode, String)> {
-    let storage_path = device::get_storage_path()
-        .map_err(|e| (StatusCode::NOT_FOUND, format!("storage_not_found: {}", e)))?;
-
-    let backup_path = device::backup_storage(&storage_path).ok();
-
-    let profile = device::generate_profile();
-    device::write_profile(&storage_path, &profile).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("write_failed: {}", e),
-        )
-    })?;
-
-    let _ = device::save_global_original(&profile);
-
-    Ok(Json(CreateProfileResponse {
-        profile,
-        backup_path: backup_path.map(|p| p.display().to_string()),
-    }))
-}
-
-#[derive(Serialize)]
-struct BackupResponse {
-    backup_path: String,
-}
-
-async fn backup_device_storage() -> Result<Json<BackupResponse>, (StatusCode, String)> {
-    let storage_path = device::get_storage_path()
-        .map_err(|e| (StatusCode::NOT_FOUND, format!("storage_not_found: {}", e)))?;
-
-    let backup_path = device::backup_storage(&storage_path).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("backup_failed: {}", e),
-        )
-    })?;
-
-    Ok(Json(BackupResponse {
-        backup_path: backup_path.display().to_string(),
-    }))
-}
-
-#[derive(Serialize)]
-struct BaselineResponse {
-    baseline: Option<antigravity_types::models::DeviceProfile>,
-}
-
-async fn get_device_baseline() -> Json<BaselineResponse> {
-    Json(BaselineResponse {
-        baseline: device::load_global_original(),
-    })
-}
-
-// ============ Resilience (AIMD/Circuit Breaker/Health) ============
-
-#[derive(Serialize)]
-struct HealthStatusResponse {
-    healthy_accounts: usize,
-    disabled_accounts: usize,
-    overall_healthy: bool,
-}
-
-async fn get_health_status(State(state): State<AppState>) -> Json<HealthStatusResponse> {
-    let health_monitor = state.health_monitor();
-
-    let healthy = health_monitor.healthy_count();
-    let disabled = health_monitor.disabled_count();
-
-    Json(HealthStatusResponse {
-        healthy_accounts: healthy,
-        disabled_accounts: disabled,
-        overall_healthy: healthy > 0,
-    })
-}
-
-#[derive(Serialize)]
-struct CircuitStatusResponse {
-    circuits: std::collections::HashMap<String, String>,
-}
-
-async fn get_circuit_status(State(state): State<AppState>) -> Json<CircuitStatusResponse> {
-    let circuit_breaker = state.circuit_breaker();
-
-    let mut circuits = std::collections::HashMap::new();
-    for provider in ["anthropic", "google", "openai"] {
-        let state_str = match circuit_breaker.get_state(provider) {
-            antigravity_core::proxy::CircuitState::Closed => "closed",
-            antigravity_core::proxy::CircuitState::Open => "open",
-            antigravity_core::proxy::CircuitState::HalfOpen => "half_open",
-        };
-        circuits.insert(provider.to_string(), state_str.to_string());
-    }
-
-    Json(CircuitStatusResponse { circuits })
-}
-
-#[derive(Serialize)]
-struct AimdStatusResponse {
-    tracked_accounts: usize,
-    accounts: Vec<antigravity_core::proxy::AimdAccountStats>,
-}
-
-async fn get_aimd_status(State(state): State<AppState>) -> Json<AimdStatusResponse> {
-    let adaptive_limits = state.adaptive_limits();
-    let accounts = adaptive_limits.all_stats();
-
-    Json(AimdStatusResponse {
-        tracked_accounts: adaptive_limits.len(),
-        accounts,
-    })
-}
-
-// ============ Prometheus Metrics ============
-
-/// Get Prometheus metrics in text format.
-/// Returns metrics compatible with Prometheus/OpenMetrics format.
-async fn get_metrics(State(state): State<AppState>) -> axum::response::Response<axum::body::Body> {
-    use axum::http::header;
-    use axum::response::IntoResponse;
-
-    // Update account gauges before rendering
-    let accounts = state.list_accounts().unwrap_or_default();
-    let available = accounts
-        .iter()
-        .filter(|a| !a.disabled && !a.proxy_disabled)
-        .count();
-    antigravity_core::proxy::prometheus::update_account_gauges(accounts.len(), available);
-
-    // Update uptime
-    antigravity_core::proxy::prometheus::update_uptime_gauge();
-
-    // Render metrics
-    let metrics = antigravity_core::proxy::prometheus::render_metrics();
-
-    // Return with proper content type for Prometheus
-    (
-        [(
-            header::CONTENT_TYPE,
-            "text/plain; version=0.0.4; charset=utf-8",
-        )],
-        metrics,
-    )
-        .into_response()
 }
 
 // ============ OAuth (Headless Flow) ============
