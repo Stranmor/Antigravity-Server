@@ -1,161 +1,15 @@
+mod parser;
+mod types;
+
+pub use types::{RateLimitInfo, RateLimitKey, RateLimitReason};
+
 use dashmap::DashMap;
-use regex::Regex;
-use std::sync::OnceLock;
 use std::time::{Duration, SystemTime};
 
-static DURATION_REGEX: OnceLock<Regex> = OnceLock::new();
-static RETRY_M_S_REGEX: OnceLock<Regex> = OnceLock::new();
-static RETRY_S_REGEX: OnceLock<Regex> = OnceLock::new();
-static QUOTA_RESET_REGEX: OnceLock<Regex> = OnceLock::new();
-static RETRY_AFTER_REGEX: OnceLock<Regex> = OnceLock::new();
-static WAIT_PAREN_REGEX: OnceLock<Regex> = OnceLock::new();
-
-fn get_duration_regex() -> &'static Regex {
-    DURATION_REGEX.get_or_init(|| {
-        Regex::new(r"(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+(?:\.\d+)?)\s*s)?\s*(?:(\d+(?:\.\d+)?)\s*ms)?")
-            .expect("Duration regex is valid")
-    })
-}
-
-fn get_retry_m_s_regex() -> &'static Regex {
-    RETRY_M_S_REGEX.get_or_init(|| {
-        Regex::new(r"(?i)try again in (\d+)m\s*(\d+)s").expect("Retry m s regex is valid")
-    })
-}
-
-fn get_retry_s_regex() -> &'static Regex {
-    RETRY_S_REGEX.get_or_init(|| {
-        Regex::new(r"(?i)(?:try again in|backoff for|wait)\s*(\d+)s")
-            .expect("Retry s regex is valid")
-    })
-}
-
-fn get_quota_reset_regex() -> &'static Regex {
-    QUOTA_RESET_REGEX.get_or_init(|| {
-        Regex::new(r"(?i)quota will reset in (\d+) second").expect("Quota reset regex is valid")
-    })
-}
-
-fn get_retry_after_regex() -> &'static Regex {
-    RETRY_AFTER_REGEX.get_or_init(|| {
-        Regex::new(r"(?i)retry after (\d+) second").expect("Retry after regex is valid")
-    })
-}
-
-fn get_wait_paren_regex() -> &'static Regex {
-    WAIT_PAREN_REGEX
-        .get_or_init(|| Regex::new(r"\(wait (\d+)s\)").expect("Wait paren regex is valid"))
-}
-
-/// 限流原因类型
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum RateLimitReason {
-    /// 配额耗尽 (QUOTA_EXHAUSTED)
-    QuotaExhausted,
-    /// 速率限制 (RATE_LIMIT_EXCEEDED)
-    RateLimitExceeded,
-    /// 模型容量耗尽 (MODEL_CAPACITY_EXHAUSTED)
-    ModelCapacityExhausted,
-    /// 服务器错误 (5xx)
-    ServerError,
-    /// 未知原因
-    Unknown,
-}
-
-/// Type-safe key for rate limit tracking.
-///
-/// This enum prevents the bug where model-level lockouts were accidentally
-/// stored as account-level lockouts due to incorrect string key construction.
-///
-/// # Variants
-/// - `Account(email)` - Account-level lockout, blocks all models for this account
-/// - `Model { account, model }` - Model-specific lockout, only blocks specific model
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub enum RateLimitKey {
-    /// Account-level lockout (blocks all models)
-    Account(String),
-    /// Model-specific lockout (only blocks this model for this account)
-    Model { account: String, model: String },
-}
-
-impl RateLimitKey {
-    /// Create an account-level key
-    pub fn account(account_id: &str) -> Self {
-        RateLimitKey::Account(account_id.to_string())
-    }
-
-    /// Create a model-specific key
-    pub fn model(account_id: &str, model: &str) -> Self {
-        RateLimitKey::Model {
-            account: account_id.to_string(),
-            model: model.to_string(),
-        }
-    }
-
-    /// Create key from account_id and optional model
-    /// - None model → Account-level key
-    /// - Some(model) → Model-specific key
-    pub fn from_optional_model(account_id: &str, model: Option<&str>) -> Self {
-        match model {
-            Some(m) => RateLimitKey::model(account_id, m),
-            None => RateLimitKey::account(account_id),
-        }
-    }
-
-    /// Get the account ID from this key
-    pub fn account_id(&self) -> &str {
-        match self {
-            RateLimitKey::Account(acc) => acc,
-            RateLimitKey::Model { account, .. } => account,
-        }
-    }
-
-    /// Get the model if this is a model-specific key
-    pub fn model_name(&self) -> Option<&str> {
-        match self {
-            RateLimitKey::Account(_) => None,
-            RateLimitKey::Model { model, .. } => Some(model),
-        }
-    }
-}
-
-impl std::fmt::Display for RateLimitKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RateLimitKey::Account(acc) => write!(f, "{}", acc),
-            RateLimitKey::Model { account, model } => write!(f, "{}:{}", account, model),
-        }
-    }
-}
-
-/// 限流信息
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct RateLimitInfo {
-    /// 限流重置时间
-    pub reset_time: SystemTime,
-    /// 重试间隔(秒)
-    #[allow(dead_code)]
-    pub retry_after_sec: u64,
-    /// 检测时间
-    #[allow(dead_code)]
-    pub detected_at: SystemTime,
-    /// 限流原因
-    #[allow(dead_code)] // Used for logging and diagnostics
-    pub reason: RateLimitReason,
-    /// 关联的模型 (用于模型级别限流)
-    /// None 表示账号级别限流,Some(model) 表示特定模型限流
-    #[allow(dead_code)] // Used for model-level rate limiting
-    pub model: Option<String>,
-}
-
-/// 失败计数过期时间：1小时（超过此时间未失败则重置计数）
 const FAILURE_COUNT_EXPIRY_SECONDS: u64 = 3600;
 
-/// 限流跟踪器
 pub struct RateLimitTracker {
     limits: DashMap<RateLimitKey, RateLimitInfo>,
-    /// 连续失败计数（用于智能指数退避），带时间戳用于自动过期
     failure_counts: DashMap<RateLimitKey, (u32, SystemTime)>,
 }
 
@@ -379,7 +233,7 @@ impl RateLimitTracker {
 
         // 3. 从错误消息提取 (优先尝试 JSON 解析，再试正则)
         if retry_after_sec.is_none() {
-            retry_after_sec = self.parse_retry_time_from_body(body);
+            retry_after_sec = parser::parse_retry_time_from_body(body);
         }
 
         // 4. 处理默认值与软避让逻辑（根据限流类型设置不同默认值）
@@ -552,148 +406,6 @@ impl RateLimitTracker {
         }
     }
 
-    /// 通用时间解析函数：支持 \"2h1m1s\", \"1m 30s\" 等所有格式组合
-    fn parse_duration_string(&self, s: &str) -> Option<u64> {
-        tracing::debug!("[时间解析] 尝试解析: '{}'", s);
-
-        let re = get_duration_regex();
-        let caps = match re.captures(s) {
-            Some(c) => c,
-            None => {
-                tracing::warn!("[时间解析] 正则未匹配: '{}'", s);
-                return None;
-            }
-        };
-
-        let hours = caps
-            .get(1)
-            .and_then(|m| m.as_str().parse::<u64>().ok())
-            .unwrap_or(0);
-        let minutes = caps
-            .get(2)
-            .and_then(|m| m.as_str().parse::<u64>().ok())
-            .unwrap_or(0);
-        let seconds = caps
-            .get(3)
-            .and_then(|m| m.as_str().parse::<f64>().ok())
-            .unwrap_or(0.0);
-        let milliseconds = caps
-            .get(4)
-            .and_then(|m| m.as_str().parse::<f64>().ok())
-            .unwrap_or(0.0);
-
-        // Check if any component was actually matched
-        let any_matched = caps.get(1).is_some()
-            || caps.get(2).is_some()
-            || caps.get(3).is_some()
-            || caps.get(4).is_some();
-
-        if !any_matched {
-            tracing::warn!("[时间解析] 失败: '{}' (无匹配组件)", s);
-            return None;
-        }
-
-        tracing::debug!(
-            "[时间解析] 提取结果: {}h {}m {:.3}s {:.3}ms",
-            hours,
-            minutes,
-            seconds,
-            milliseconds
-        );
-
-        let total_seconds = hours * 3600
-            + minutes * 60
-            + seconds.ceil() as u64
-            + (milliseconds / 1000.0).ceil() as u64;
-
-        tracing::info!(
-            "[时间解析] ✓ 成功: '{}' => {}秒 ({}h {}m {:.1}s {:.1}ms)",
-            s,
-            total_seconds,
-            hours,
-            minutes,
-            seconds,
-            milliseconds
-        );
-        Some(total_seconds)
-    }
-
-    /// 从错误消息 body 中解析重置时间
-    fn parse_retry_time_from_body(&self, body: &str) -> Option<u64> {
-        // A. 优先尝试 JSON 精准解析 (借鉴 PR #28)
-        let trimmed = body.trim();
-        if trimmed.starts_with('{') || trimmed.starts_with('[') {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                // 1. Google 常见的 quotaResetDelay 格式 (支持所有格式："2h1m1s", "1h30m", "42s", "500ms" 等)
-                // 路径: error.details[0].metadata.quotaResetDelay
-                if let Some(delay_str) = json
-                    .get("error")
-                    .and_then(|e| e.get("details"))
-                    .and_then(|d| d.as_array())
-                    .and_then(|a| a.first())
-                    .and_then(|o| o.get("metadata")) // 添加 metadata 层级
-                    .and_then(|m| m.get("quotaResetDelay"))
-                    .and_then(|v| v.as_str())
-                {
-                    tracing::debug!("[JSON解析] 找到 quotaResetDelay: '{}'", delay_str);
-
-                    // 使用通用时间解析函数
-                    if let Some(seconds) = self.parse_duration_string(delay_str) {
-                        return Some(seconds);
-                    }
-                }
-
-                // 2. OpenAI 常见的 retry_after 字段 (数字)
-                if let Some(retry) = json
-                    .get("error")
-                    .and_then(|e| e.get("retry_after"))
-                    .and_then(|v| v.as_u64())
-                {
-                    return Some(retry);
-                }
-            }
-        }
-
-        // B. 正则匹配模式 (兜底) - use precompiled regexes
-        // 模式 1: "Try again in 2m 30s"
-        if let Some(caps) = get_retry_m_s_regex().captures(body) {
-            if let (Ok(m), Ok(s)) = (caps[1].parse::<u64>(), caps[2].parse::<u64>()) {
-                return Some(m * 60 + s);
-            }
-        }
-
-        // 模式 2: "Try again in 30s" 或 "backoff for 42s"
-        if let Some(caps) = get_retry_s_regex().captures(body) {
-            if let Ok(s) = caps[1].parse::<u64>() {
-                return Some(s);
-            }
-        }
-
-        // 模式 3: "quota will reset in X seconds"
-        if let Some(caps) = get_quota_reset_regex().captures(body) {
-            if let Ok(s) = caps[1].parse::<u64>() {
-                return Some(s);
-            }
-        }
-
-        // 模式 4: OpenAI 风格的 "Retry after (\d+) seconds"
-        if let Some(caps) = get_retry_after_regex().captures(body) {
-            if let Ok(s) = caps[1].parse::<u64>() {
-                return Some(s);
-            }
-        }
-
-        // 模式 5: 括号形式 "(wait (\d+)s)"
-        if let Some(caps) = get_wait_paren_regex().captures(body) {
-            if let Ok(s) = caps[1].parse::<u64>() {
-                return Some(s);
-            }
-        }
-
-        None
-    }
-
-    /// 获取账号的限流信息
     pub fn get(&self, account_id: &str) -> Option<RateLimitInfo> {
         let key = RateLimitKey::account(account_id);
         self.limits.get(&key).map(|r| r.clone())
@@ -926,15 +638,13 @@ mod tests {
 
     #[test]
     fn test_parse_retry_time_minutes_seconds() {
-        let tracker = RateLimitTracker::new();
         let body = "Rate limit exceeded. Try again in 2m 30s";
-        let time = tracker.parse_retry_time_from_body(body);
+        let time = parser::parse_retry_time_from_body(body);
         assert_eq!(time, Some(150));
     }
 
     #[test]
     fn test_parse_google_json_delay() {
-        let tracker = RateLimitTracker::new();
         let body = r#"{
             "error": {
                 "details": [
@@ -946,15 +656,14 @@ mod tests {
                 ]
             }
         }"#;
-        let time = tracker.parse_retry_time_from_body(body);
+        let time = parser::parse_retry_time_from_body(body);
         assert_eq!(time, Some(42));
     }
 
     #[test]
     fn test_parse_retry_after_ignore_case() {
-        let tracker = RateLimitTracker::new();
         let body = "Quota limit hit. Retry After 99 Seconds";
-        let time = tracker.parse_retry_time_from_body(body);
+        let time = parser::parse_retry_time_from_body(body);
         assert_eq!(time, Some(99));
     }
 
@@ -1010,12 +719,11 @@ mod tests {
 
     #[test]
     fn test_parse_duration_string_variants() {
-        let tracker = RateLimitTracker::new();
-        assert_eq!(tracker.parse_duration_string("1h30m"), Some(5400));
-        assert_eq!(tracker.parse_duration_string("2h1m1s"), Some(7261));
-        assert_eq!(tracker.parse_duration_string("5m"), Some(300));
-        assert_eq!(tracker.parse_duration_string("30s"), Some(30));
-        assert_eq!(tracker.parse_duration_string("1h"), Some(3600));
+        assert_eq!(parser::parse_duration_string("1h30m"), Some(5400));
+        assert_eq!(parser::parse_duration_string("2h1m1s"), Some(7261));
+        assert_eq!(parser::parse_duration_string("5m"), Some(300));
+        assert_eq!(parser::parse_duration_string("30s"), Some(30));
+        assert_eq!(parser::parse_duration_string("1h"), Some(3600));
     }
 
     #[test]

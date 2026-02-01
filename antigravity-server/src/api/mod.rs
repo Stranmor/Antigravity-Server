@@ -3,6 +3,7 @@
 //! REST API endpoints that mirror the Tauri IPC commands.
 
 mod device;
+mod oauth;
 mod resilience;
 
 use axum::{
@@ -16,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 
 use antigravity_core::models::AppConfig;
-use antigravity_core::modules::{account, config as core_config, oauth};
+use antigravity_core::modules::{account, config as core_config, oauth as core_oauth};
 use antigravity_types::models::TokenData;
 
 use crate::state::{get_model_quota, AppState};
@@ -38,10 +39,10 @@ pub fn router() -> Router<AppState> {
         .route("/accounts/warmup", post(warmup_account))
         .route("/accounts/warmup-all", post(warmup_all_accounts))
         // OAuth (headless flow)
-        .route("/oauth/url", get(get_oauth_url))
-        .route("/oauth/callback", get(handle_oauth_callback))
-        .route("/oauth/login", post(start_oauth_login))
-        .route("/oauth/submit-code", post(submit_oauth_code))
+        .route("/oauth/url", get(oauth::get_oauth_url))
+        .route("/oauth/callback", get(oauth::handle_oauth_callback))
+        .route("/oauth/login", post(oauth::start_oauth_login))
+        .route("/oauth/submit-code", post(oauth::submit_oauth_code))
         // Proxy
         .route("/proxy/status", get(get_proxy_status))
         .route("/proxy/generate-key", post(generate_api_key))
@@ -249,11 +250,11 @@ async fn add_account_by_token(
 
     for token in payload.refresh_tokens {
         join_set.spawn(async move {
-            let token_response = oauth::refresh_access_token(&token)
+            let token_response = core_oauth::refresh_access_token(&token)
                 .await
                 .map_err(|e| format!("Token refresh failed: {}", e))?;
 
-            let user_info = oauth::get_user_info(&token_response.access_token)
+            let user_info = core_oauth::get_user_info(&token_response.access_token)
                 .await
                 .map_err(|e| format!("User info failed: {}", e))?;
 
@@ -774,329 +775,4 @@ async fn merge_remote_mapping(
         updated_count: updated,
         total_count: total,
     })
-}
-
-// ============ OAuth (Headless Flow) ============
-
-#[derive(Serialize)]
-struct OAuthUrlResponse {
-    url: String,
-    redirect_uri: String,
-    state: String,
-}
-
-async fn get_oauth_url(State(state): State<AppState>) -> Json<OAuthUrlResponse> {
-    let port = state.get_bound_port();
-    let redirect_uri = get_oauth_redirect_uri_with_port(port);
-    let oauth_state = state.generate_oauth_state();
-    let url = oauth::get_auth_url_with_state(&redirect_uri, &oauth_state);
-
-    Json(OAuthUrlResponse {
-        url,
-        redirect_uri,
-        state: oauth_state,
-    })
-}
-
-fn get_oauth_redirect_uri_with_port(port: u16) -> String {
-    if let Ok(host) = std::env::var("ANTIGRAVITY_OAUTH_HOST") {
-        format!("{}/api/oauth/callback", host)
-    } else {
-        format!("http://127.0.0.1:{}/api/oauth/callback", port)
-    }
-}
-
-#[derive(Deserialize)]
-struct OAuthCallbackQuery {
-    code: Option<String>,
-    error: Option<String>,
-    state: Option<String>,
-}
-
-/// OAuth callback handler.
-/// Google redirects here after user authorizes the app.
-async fn handle_oauth_callback(
-    State(app_state): State<AppState>,
-    axum::extract::Query(query): axum::extract::Query<OAuthCallbackQuery>,
-) -> impl IntoResponse {
-    use axum::response::Html;
-
-    // Validate CSRF state token
-    let _oauth_state = match query.state {
-        Some(s) if app_state.validate_oauth_state(&s) => s,
-        Some(_) => {
-            return Html(
-                r#"<!DOCTYPE html>
-                <html>
-                <head><meta charset="utf-8"><title>OAuth Error</title></head>
-                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                    <h1 style="color: red;">❌ Invalid State Token</h1>
-                    <p>CSRF validation failed. Please try again.</p>
-                </body>
-                </html>"#
-                    .to_string(),
-            )
-            .into_response();
-        }
-        None => {
-            return Html(
-                r#"<!DOCTYPE html>
-                <html>
-                <head><meta charset="utf-8"><title>OAuth Error</title></head>
-                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                    <h1 style="color: red;">❌ Missing State Token</h1>
-                    <p>No state parameter received. Please try again.</p>
-                </body>
-                </html>"#
-                    .to_string(),
-            )
-            .into_response();
-        }
-    };
-
-    // Check for error
-    if let Some(error) = query.error {
-        return Html(format!(
-            r#"<!DOCTYPE html>
-            <html>
-            <head><meta charset="utf-8"><title>OAuth Error</title></head>
-            <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                <h1 style="color: red;">❌ Authorization Failed</h1>
-                <p>Error: {}</p>
-                <p>Please close this window and try again.</p>
-            </body>
-            </html>"#,
-            error
-        ))
-        .into_response();
-    }
-
-    // Check for code
-    let Some(code) = query.code else {
-        return Html(
-            r#"<!DOCTYPE html>
-            <html>
-            <head><meta charset="utf-8"><title>OAuth Error</title></head>
-            <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                <h1 style="color: red;">❌ Missing Authorization Code</h1>
-                <p>No authorization code received.</p>
-            </body>
-            </html>"#
-                .to_string(),
-        )
-        .into_response();
-    };
-
-    let port = app_state.get_bound_port();
-    let redirect_uri = get_oauth_redirect_uri_with_port(port);
-
-    // Exchange code for tokens
-    let token_res = match oauth::exchange_code(&code, &redirect_uri).await {
-        Ok(t) => t,
-        Err(e) => {
-            return Html(format!(
-                r#"<!DOCTYPE html>
-                <html>
-                <head><meta charset="utf-8"><title>OAuth Error</title></head>
-                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                    <h1 style="color: red;">❌ Token Exchange Failed</h1>
-                    <p>Error: {}</p>
-                </body>
-                </html>"#,
-                e
-            ))
-            .into_response();
-        }
-    };
-
-    // Check refresh token
-    let Some(refresh_token) = token_res.refresh_token else {
-        return Html(r#"<!DOCTYPE html>
-            <html>
-            <head><meta charset="utf-8"><title>OAuth Error</title></head>
-            <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                <h1 style="color: orange;">⚠️ No Refresh Token</h1>
-                <p>Google didn't return a refresh token.</p>
-                <p>This usually happens if you've authorized this app before.</p>
-                <p><strong>Solution:</strong></p>
-                <ol style="text-align: left; display: inline-block;">
-                    <li>Go to <a href="https://myaccount.google.com/permissions" target="_blank">Google Account Permissions</a></li>
-                    <li>Find and revoke "Antigravity Tools"</li>
-                    <li>Try authorization again</li>
-                </ol>
-            </body>
-            </html>"#.to_string()).into_response();
-    };
-
-    // Get user info
-    let user_info = match oauth::get_user_info(&token_res.access_token).await {
-        Ok(u) => u,
-        Err(e) => {
-            return Html(format!(
-                r#"<!DOCTYPE html>
-                <html>
-                <head><meta charset="utf-8"><title>OAuth Error</title></head>
-                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                    <h1 style="color: red;">❌ Failed to Get User Info</h1>
-                    <p>Error: {}</p>
-                </body>
-                </html>"#,
-                e
-            ))
-            .into_response();
-        }
-    };
-
-    // Create TokenData
-    let token_data = TokenData::new(
-        token_res.access_token,
-        refresh_token,
-        token_res.expires_in,
-        Some(user_info.email.clone()),
-        None, // project_id - will be fetched lazily
-        None, // session_id
-    );
-
-    // Upsert account
-    match account::upsert_account(
-        user_info.email.clone(),
-        user_info.get_display_name(),
-        token_data,
-    ) {
-        Ok(acc) => {
-            let _ = app_state.reload_accounts().await;
-
-            Html(format!(
-                r#"<!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="utf-8">
-                    <title>Authorization Successful</title>
-                </head>
-                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                    <h1 style="color: green;">✅ Authorization Successful!</h1>
-                    <p>Account added: <strong>{}</strong></p>
-                    <p>You can close this window and return to the app.</p>
-                    <script>setTimeout(function() {{ window.close(); }}, 3000);</script>
-                </body>
-                </html>"#,
-                acc.email
-            ))
-            .into_response()
-        }
-        Err(e) => Html(format!(
-            r#"<!DOCTYPE html>
-                <html>
-                <head><meta charset="utf-8"><title>OAuth Error</title></head>
-                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                    <h1 style="color: red;">❌ Failed to Save Account</h1>
-                    <p>Error: {}</p>
-                </body>
-                </html>"#,
-            e
-        ))
-        .into_response(),
-    }
-}
-
-/// POST endpoint for frontend to initiate OAuth login.
-/// Returns the OAuth URL for the frontend to redirect/open.
-#[derive(Serialize)]
-struct OAuthLoginResponse {
-    url: String,
-    message: String,
-    state: String,
-}
-
-async fn start_oauth_login(State(state): State<AppState>) -> Json<OAuthLoginResponse> {
-    let port = state.get_bound_port();
-    let redirect_uri = get_oauth_redirect_uri_with_port(port);
-    let oauth_state = state.generate_oauth_state();
-    let url = oauth::get_auth_url_with_state(&redirect_uri, &oauth_state);
-
-    Json(OAuthLoginResponse {
-        url,
-        message: "Open this URL in your browser to authorize".to_string(),
-        state: oauth_state,
-    })
-}
-
-#[derive(Deserialize)]
-struct SubmitCodeRequest {
-    code: String,
-    state: Option<String>,
-}
-
-#[derive(Serialize)]
-struct SubmitCodeResponse {
-    success: bool,
-    message: String,
-    email: Option<String>,
-}
-
-async fn submit_oauth_code(
-    State(app_state): State<AppState>,
-    Json(payload): Json<SubmitCodeRequest>,
-) -> Result<Json<SubmitCodeResponse>, (StatusCode, String)> {
-    if let Some(ref s) = payload.state {
-        if !app_state.validate_oauth_state(s) {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                "Invalid or expired OAuth state".to_string(),
-            ));
-        }
-    }
-
-    let port = app_state.get_bound_port();
-    let redirect_uri = get_oauth_redirect_uri_with_port(port);
-
-    let token_res = oauth::exchange_code(&payload.code, &redirect_uri)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                format!("Failed to exchange code: {}", e),
-            )
-        })?;
-
-    let user_info = oauth::get_user_info(&token_res.access_token)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to get user info: {}", e),
-            )
-        })?;
-
-    let token_data = TokenData::new(
-        token_res.access_token,
-        token_res.refresh_token.ok_or_else(|| {
-            (
-                StatusCode::BAD_REQUEST,
-                "No refresh token in response".to_string(),
-            )
-        })?,
-        token_res.expires_in,
-        Some(user_info.email.clone()),
-        None,
-        None,
-    );
-
-    // Use upsert to support re-authentication (consistent with handle_oauth_callback)
-    account::upsert_account(user_info.email.clone(), user_info.name.clone(), token_data).map_err(
-        |e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to add account: {}", e),
-            )
-        },
-    )?;
-
-    let _ = app_state.reload_accounts().await;
-
-    Ok(Json(SubmitCodeResponse {
-        success: true,
-        message: format!("Account {} added successfully", user_info.email),
-        email: Some(user_info.email),
-    }))
 }
