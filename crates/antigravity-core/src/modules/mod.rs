@@ -1,5 +1,6 @@
 pub mod account;
 pub mod config;
+pub mod device;
 pub mod logger;
 pub mod migration;
 pub mod oauth;

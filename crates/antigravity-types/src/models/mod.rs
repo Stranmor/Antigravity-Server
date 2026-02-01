@@ -4,6 +4,7 @@
 
 pub mod account;
 pub mod config;
+pub mod device;
 pub mod quota;
 pub mod stats;
 pub mod sync;
@@ -16,6 +17,7 @@ pub use config::{
     SchedulingMode, SmartWarmupConfig, StickySessionConfig, UpstreamProxyConfig, UpstreamProxyMode,
     ZaiConfig, ZaiDispatchMode, ZaiMcpConfig, ZaiModelDefaults,
 };
+pub use device::{DeviceProfile, DeviceProfileVersion, DeviceProfiles};
 pub use quota::{ModelQuota, QuotaData};
 pub use stats::{
     DashboardStats, ProxyRequestLog, ProxyStats, ProxyStatus, RefreshStats, UpdateInfo,
