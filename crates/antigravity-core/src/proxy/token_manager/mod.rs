@@ -537,6 +537,7 @@ impl TokenManager {
         let mut tokens_snapshot: Vec<ProxyToken> =
             self.tokens.iter().map(|e| e.value().clone()).collect();
         let total = tokens_snapshot.len();
+
         if total == 0 {
             return Err("Token pool is empty".to_string());
         }
@@ -731,23 +732,23 @@ impl TokenManager {
 
             if let Some(sid) = session_id {
                 if !rotate && routing.enable_session_affinity {
-                    // [ULTRA-FIRST] Try ultra accounts BEFORE using sticky binding
-                    // This ensures premium accounts are utilized even with session affinity
+                    // [ULTRA-FIRST] Ultra accounts: 100% quota but strict RPM limits
+                    // Always try ultra first, let 429 trigger natural fallback
                     let best_ultra = tokens_snapshot.iter().find(|t| {
                         t.subscription_tier
                             .as_ref()
                             .is_some_and(|tier| tier.contains("ultra"))
-                            && !self.is_rate_limited_for_model(&t.email, &normalized_target)
                             && !attempted.contains(&t.email)
                             && self.get_active_requests(&t.email)
                                 < routing.max_concurrent_per_account
                             && !(quota_protection_enabled
                                 && t.protected_models.contains(&normalized_target))
+                        // Ultra: skip rate-limit check — 100% quota, strict RPM, keep trying
                     });
 
                     if let Some(ultra) = best_ultra {
-                        tracing::debug!(
-                            "🚀 Ultra-First: Using {} instead of sticky binding",
+                        tracing::info!(
+                            "🚀 Ultra-First: Trying {} (ignoring RPM cooldown)",
                             ultra.email
                         );
                         target_token = Some(ultra.clone());
@@ -763,7 +764,7 @@ impl TokenManager {
                             .get_remaining_wait_for_model(&bound_id, &normalized_target);
 
                         if reset_sec > 0 {
-                            if reset_sec > 60 {
+                            if reset_sec > 15 {
                                 self.session_accounts.remove(sid);
                                 tracing::warn!(
                                     "Sticky Session: {} rate-limited ({}s), unbinding session {}",
@@ -838,7 +839,15 @@ impl TokenManager {
                         continue;
                     }
 
-                    if self.is_rate_limited_for_model(&candidate.email, &normalized_target) {
+                    let is_ultra = candidate
+                        .subscription_tier
+                        .as_ref()
+                        .is_some_and(|t| t.contains("ultra"));
+
+                    // Ultra: skip rate-limit check (100% quota, strict RPM, keep trying)
+                    if !is_ultra
+                        && self.is_rate_limited_for_model(&candidate.email, &normalized_target)
+                    {
                         continue;
                     }
 
@@ -1453,7 +1462,7 @@ impl TokenManager {
         }
 
         // Immediately set temporary lockout BEFORE any async operations (race condition fix)
-        let immediate_lockout = std::time::Duration::from_secs(60);
+        let immediate_lockout = std::time::Duration::from_secs(15);
         self.rate_limit_tracker.set_model_lockout(
             account_id,
             &model_str,
@@ -1461,7 +1470,7 @@ impl TokenManager {
             reason,
         );
         tracing::debug!(
-            "🔒 {}:{} immediate 60s lockout (pending precise time)",
+            "🔒 {}:{} immediate 15s lockout (pending precise time)",
             account_id,
             model_str
         );
