@@ -7,6 +7,7 @@
 use antigravity_types::models::DeviceProfile;
 use chrono::Local;
 use rand::Rng;
+use rusqlite::Connection;
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -58,17 +59,83 @@ fn get_data_dir() -> Result<PathBuf, String> {
 
 pub fn get_storage_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("failed_to_get_home_dir")?;
-    let path = home.join(".cursor/User/globalStorage/storage.json");
-    if path.exists() {
-        return Ok(path);
+
+    // Linux paths
+    let linux_path = home.join(".cursor/User/globalStorage/storage.json");
+    if linux_path.exists() {
+        return Ok(linux_path);
+    }
+    let linux_config = home.join(".config/Cursor/User/globalStorage/storage.json");
+    if linux_config.exists() {
+        return Ok(linux_config);
     }
 
-    let config_path = home.join(".config/Cursor/User/globalStorage/storage.json");
-    if config_path.exists() {
-        return Ok(config_path);
+    // macOS path (Library/Application Support)
+    #[cfg(target_os = "macos")]
+    {
+        let macos_path =
+            home.join("Library/Application Support/Cursor/User/globalStorage/storage.json");
+        if macos_path.exists() {
+            return Ok(macos_path);
+        }
+    }
+
+    // Windows path (APPDATA)
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(appdata) = dirs::config_dir() {
+            let win_path = appdata.join("Cursor/User/globalStorage/storage.json");
+            if win_path.exists() {
+                return Ok(win_path);
+            }
+        }
     }
 
     Err("storage_json_not_found".to_string())
+}
+
+/// Get the directory containing storage.json
+fn get_storage_dir() -> Result<PathBuf, String> {
+    let path = get_storage_path()?;
+    path.parent()
+        .map(|p| p.to_path_buf())
+        .ok_or_else(|| "failed_to_get_storage_parent_dir".to_string())
+}
+
+/// Get state.vscdb path (same directory as storage.json)
+pub fn get_state_db_path() -> Result<PathBuf, String> {
+    let dir = get_storage_dir()?;
+    Ok(dir.join("state.vscdb"))
+}
+
+/// Core SQLite sync logic - testable with any db_path
+fn sync_to_state_db(db_path: &Path, service_id: &str) -> Result<(), String> {
+    if !db_path.exists() {
+        tracing::warn!("state_db_missing: {:?}", db_path);
+        return Ok(());
+    }
+
+    let conn = Connection::open(db_path).map_err(|e| format!("db_open_failed: {}", e))?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS ItemTable (key TEXT PRIMARY KEY, value TEXT);",
+        [],
+    )
+    .map_err(|e| format!("failed_to_create_item_table: {}", e))?;
+    conn.execute(
+        "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('storage.serviceMachineId', ?1);",
+        [service_id],
+    )
+    .map_err(|e| format!("failed_to_write_to_db: {}", e))?;
+
+    tracing::info!("service_machine_id_synced_to_db");
+    Ok(())
+}
+
+/// Sync serviceMachineId to state.vscdb SQLite database
+/// Cursor/VSCode may read this value from SQLite, not from storage.json
+fn sync_state_service_machine_id_value(service_id: &str) -> Result<(), String> {
+    let db_path = get_state_db_path()?;
+    sync_to_state_db(&db_path, service_id)
 }
 
 pub fn backup_storage(storage_path: &Path) -> Result<PathBuf, String> {
@@ -179,6 +246,12 @@ pub fn write_profile(storage_path: &Path, profile: &DeviceProfile) -> Result<(),
         .map_err(|e| format!("write_failed ({:?}): {}", storage_path, e))?;
 
     tracing::info!("device_profile_written to {:?}", storage_path);
+
+    // Sync to SQLite for Cursor/VSCode compatibility
+    if let Err(e) = sync_state_service_machine_id_value(&profile.dev_device_id) {
+        tracing::warn!("sqlite_sync_failed: {}", e);
+    }
+
     Ok(())
 }
 
@@ -268,5 +341,29 @@ mod tests {
         assert_ne!(p1.mac_machine_id, p2.mac_machine_id);
         assert_ne!(p1.dev_device_id, p2.dev_device_id);
         assert_ne!(p1.sqm_id, p2.sqm_id);
+    }
+
+    #[test]
+    fn test_sync_to_state_db() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("state.vscdb");
+
+        // Create empty DB file (sync_to_state_db checks exists())
+        Connection::open(&db_path).unwrap();
+
+        let service_id = "test-service-id-12345";
+        sync_to_state_db(&db_path, service_id).unwrap();
+
+        // Verify written value
+        let conn = Connection::open(&db_path).unwrap();
+        let result: String = conn
+            .query_row(
+                "SELECT value FROM ItemTable WHERE key = 'storage.serviceMachineId'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(result, service_id);
     }
 }
