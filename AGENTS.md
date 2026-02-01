@@ -147,6 +147,24 @@ pub struct SmartRoutingConfig {
 | 3 manual modes to choose | 1 unified algorithm with tunable params |
 | No concurrency limit | Max N per account prevents thundering herd |
 
+### Business Ultra Tier Priority [2026-02-01]
+
+**Tier:** `ws-ai-ultra-business-tier`
+
+**Behavior:** Business Ultra accounts have HIGH daily quotas but VERY LOW per-second/per-minute RPM limits. This means:
+- Frequent 429 errors are NORMAL and EXPECTED
+- Do NOT stop trying after 429 — keep hammering
+- These accounts should be tried FIRST on EVERY request, regardless of sticky session binding
+- Let 429 trigger natural fallback to other accounts, then retry ultra on next request
+
+**Implementation:**
+- `Business-Ultra-First` check runs BEFORE sticky session lookup
+- Matches `tier.contains("ultra-business")` — not plain "ultra"
+- Bypasses `is_rate_limited_for_model` check (RPM limits don't mean quota exhausted)
+- Still respects: `max_concurrent_per_account`, `protected_models`, `attempted` set
+
+**Why this matters:** Business Ultra has 10x+ daily quota compared to Pro tier. Wasting this quota because of conservative RPM handling = losing capacity.
+
 ---
 
 ## 🛡️ FINGERPRINT PROTECTION [2026-02-01]

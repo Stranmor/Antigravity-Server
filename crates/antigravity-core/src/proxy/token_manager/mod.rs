@@ -32,6 +32,36 @@ pub struct ProxyToken {
     pub health_score: f32,            // [NEW v4.0.4] Health score (0.0 - 1.0)
 }
 
+impl ProxyToken {
+    /// Business Ultra tier: high daily quota, strict RPM limits
+    /// These accounts should be tried first on every request
+    pub fn is_business_ultra(&self) -> bool {
+        self.subscription_tier
+            .as_ref()
+            .is_some_and(|t| t.contains("ultra-business"))
+    }
+
+    pub fn tier_priority(&self) -> u8 {
+        match self.subscription_tier.as_deref() {
+            Some(t) if t.contains("ultra-business") => 0,
+            Some(t) if t.contains("ultra") => 1,
+            Some(t) if t.contains("pro") => 2,
+            Some(t) if t.contains("free") => 3,
+            _ => 4,
+        }
+    }
+
+    pub fn tier_weight(&self) -> f32 {
+        match self.subscription_tier.as_deref() {
+            Some(t) if t.contains("ultra-business") => 0.1,
+            Some(t) if t.contains("ultra") => 0.25,
+            Some(t) if t.contains("pro") => 0.8,
+            Some(t) if t.contains("free") => 1.0,
+            _ => 1.25,
+        }
+    }
+}
+
 /// Manages OAuth tokens for multiple accounts with smart routing and session affinity.
 ///
 /// Key responsibilities:
@@ -413,6 +443,17 @@ impl TokenManager {
             .map(|v| *v)
             .unwrap_or(1.0);
 
+        if subscription_tier
+            .as_ref()
+            .is_some_and(|t| t.contains("ultra-business"))
+        {
+            tracing::info!(
+                "🚀 Loaded Business-Ultra account: {} (tier={})",
+                email,
+                subscription_tier.as_deref().unwrap_or("?")
+            );
+        }
+
         Ok(Some(ProxyToken {
             account_id,
             access_token,
@@ -730,83 +771,78 @@ impl TokenManager {
                 }
             }
 
-            if let Some(sid) = session_id {
-                if !rotate && routing.enable_session_affinity {
-                    // [ULTRA-FIRST] Ultra accounts: 100% quota but strict RPM limits
-                    // Always try ultra first, let 429 trigger natural fallback
-                    let best_ultra = tokens_snapshot.iter().find(|t| {
-                        t.subscription_tier
-                            .as_ref()
-                            .is_some_and(|tier| tier.contains("ultra"))
-                            && !attempted.contains(&t.email)
-                            && self.get_active_requests(&t.email)
-                                < routing.max_concurrent_per_account
-                            && !(quota_protection_enabled
-                                && t.protected_models.contains(&normalized_target))
-                        // Ultra: skip rate-limit check — 100% quota, strict RPM, keep trying
-                    });
+            // Business-Ultra-First: always try before sticky session
+            let business_ultra = tokens_snapshot.iter().find(|t| {
+                t.is_business_ultra()
+                    && !attempted.contains(&t.email)
+                    && self.get_active_requests(&t.email) < routing.max_concurrent_per_account
+                    && !(quota_protection_enabled
+                        && t.protected_models.contains(&normalized_target))
+            });
 
-                    if let Some(ultra) = best_ultra {
-                        tracing::info!(
-                            "🚀 Ultra-First: Trying {} (ignoring RPM cooldown)",
-                            ultra.email
-                        );
-                        target_token = Some(ultra.clone());
-                        active_guard = Some(ActiveRequestGuard::new(
-                            Arc::clone(&self.active_requests),
-                            ultra.email.clone(),
-                        ));
-                    } else if let Some(bound_id) = self.session_accounts.get(sid).map(|v| v.clone())
-                    {
-                        // No ultra available, fall back to sticky binding
-                        let reset_sec = self
-                            .rate_limit_tracker
-                            .get_remaining_wait_for_model(&bound_id, &normalized_target);
+            if let Some(ultra) = business_ultra {
+                tracing::info!("🚀 Business-Ultra-First: {}", ultra.email);
+                target_token = Some(ultra.clone());
+                active_guard = Some(ActiveRequestGuard::new(
+                    Arc::clone(&self.active_requests),
+                    ultra.email.clone(),
+                ));
+            }
 
-                        if reset_sec > 0 {
-                            if reset_sec > 15 {
-                                self.session_accounts.remove(sid);
-                                tracing::warn!(
-                                    "Sticky Session: {} rate-limited ({}s), unbinding session {}",
-                                    bound_id,
-                                    reset_sec,
-                                    sid
-                                );
-                            } else {
-                                tracing::debug!(
-                                    "Sticky Session: {} rate-limited ({}s), migrating this request only",
-                                    bound_id, reset_sec
-                                );
-                            }
-                        } else if !attempted.contains(&bound_id) {
-                            let is_quota_protected = quota_protection_enabled
-                                && tokens_snapshot
-                                    .iter()
-                                    .find(|t| t.email == bound_id)
-                                    .is_some_and(|t| {
-                                        t.protected_models.contains(&normalized_target)
-                                    });
+            // Sticky session handling (only if business-ultra not selected)
+            if target_token.is_none() {
+                if let Some(sid) = session_id {
+                    if !rotate && routing.enable_session_affinity {
+                        if let Some(bound_id) = self.session_accounts.get(sid).map(|v| v.clone()) {
+                            let reset_sec = self
+                                .rate_limit_tracker
+                                .get_remaining_wait_for_model(&bound_id, &normalized_target);
 
-                            if is_quota_protected {
-                                tracing::debug!(
-                                    "Sticky Session: {} is quota-protected for {}, unbinding",
-                                    bound_id,
-                                    normalized_target
-                                );
-                                self.session_accounts.remove(sid);
-                            } else if let Some(found) =
-                                tokens_snapshot.iter().find(|t| t.email == bound_id)
-                            {
-                                tracing::debug!(
-                                    "Sticky Session: Reusing {} for session {} (no ultra available)",
-                                    found.email,
-                                    sid
-                                );
-                                target_token = Some(found.clone());
-                                active_guard = Some(ActiveRequestGuard::new(
-                                    Arc::clone(&self.active_requests),
-                                    found.email.clone(),
-                                ));
+                            if reset_sec > 0 {
+                                if reset_sec > 15 {
+                                    self.session_accounts.remove(sid);
+                                    tracing::warn!(
+                                        "Sticky Session: {} rate-limited ({}s), unbinding session {}",
+                                        bound_id,
+                                        reset_sec,
+                                        sid
+                                    );
+                                } else {
+                                    tracing::debug!(
+                                        "Sticky Session: {} rate-limited ({}s), migrating this request only",
+                                        bound_id, reset_sec
+                                    );
+                                }
+                            } else if !attempted.contains(&bound_id) {
+                                let is_quota_protected = quota_protection_enabled
+                                    && tokens_snapshot
+                                        .iter()
+                                        .find(|t| t.email == bound_id)
+                                        .is_some_and(|t| {
+                                            t.protected_models.contains(&normalized_target)
+                                        });
+
+                                if is_quota_protected {
+                                    tracing::debug!(
+                                        "Sticky Session: {} is quota-protected for {}, unbinding",
+                                        bound_id,
+                                        normalized_target
+                                    );
+                                    self.session_accounts.remove(sid);
+                                } else if let Some(found) =
+                                    tokens_snapshot.iter().find(|t| t.email == bound_id)
+                                {
+                                    tracing::debug!(
+                                        "Sticky Session: Reusing {} for session {}",
+                                        found.email,
+                                        sid
+                                    );
+                                    target_token = Some(found.clone());
+                                    active_guard = Some(ActiveRequestGuard::new(
+                                        Arc::clone(&self.active_requests),
+                                        found.email.clone(),
+                                    ));
+                                }
                             }
                         }
                     }
@@ -817,35 +853,17 @@ impl TokenManager {
             // Session affinity (Mode A) handles per-session consistency instead
 
             if target_token.is_none() {
-                // Force rotation or no session affinity - use least-connections with tier weighting
-                // [FIX] Ultra/Pro accounts get priority via lower effective score
                 let mut best_candidate: Option<&ProxyToken> = None;
                 let mut min_score = f32::MAX;
                 let mut equal_count: u32 = 0;
-
-                // Tier weight function: lower = higher priority
-                // Ultra accounts effectively appear to have fewer active requests
-                let tier_weight = |tier: &Option<String>| -> f32 {
-                    match tier.as_deref() {
-                        Some(t) if t.contains("ultra") => 0.25, // Ultra: 4x priority boost
-                        Some(t) if t.contains("pro") => 0.8,    // Pro: 1.25x priority boost
-                        Some(t) if t.contains("free") => 1.0,   // Free: baseline
-                        _ => 1.25,                              // Unknown: slightly deprioritized
-                    }
-                };
 
                 for candidate in &tokens_snapshot {
                     if attempted.contains(&candidate.email) {
                         continue;
                     }
 
-                    let is_ultra = candidate
-                        .subscription_tier
-                        .as_ref()
-                        .is_some_and(|t| t.contains("ultra"));
-
-                    // Ultra: skip rate-limit check (100% quota, strict RPM, keep trying)
-                    if !is_ultra
+                    // Business-ultra: skip rate-limit check (high quota, strict RPM)
+                    if !candidate.is_business_ultra()
                         && self.is_rate_limited_for_model(&candidate.email, &normalized_target)
                     {
                         continue;
@@ -854,11 +872,6 @@ impl TokenManager {
                     if quota_protection_enabled
                         && candidate.protected_models.contains(&normalized_target)
                     {
-                        tracing::debug!(
-                            "⛔ Skipping {} - model {} is protected (0% quota)",
-                            candidate.email,
-                            normalized_target
-                        );
                         continue;
                     }
 
@@ -873,12 +886,9 @@ impl TokenManager {
                         }
                     }
 
-                    // Weighted score: base_weight + (active * weight)
-                    // This ensures tier matters even when active=0
-                    let weight = tier_weight(&candidate.subscription_tier);
+                    let weight = candidate.tier_weight();
                     let effective_score = weight + (active as f32) * weight;
 
-                    // Reservoir sampling for uniform distribution among equal scores
                     if effective_score < min_score {
                         min_score = effective_score;
                         best_candidate = Some(candidate);
@@ -897,15 +907,6 @@ impl TokenManager {
                         Arc::clone(&self.active_requests),
                         candidate.email.clone(),
                     ));
-                    let tier_info = candidate.subscription_tier.as_deref().unwrap_or("unknown");
-                    let active = self.get_active_requests(&candidate.email);
-                    tracing::debug!(
-                        "🎯 Selected {} (tier={}, active={}, score={:.2})",
-                        candidate.email,
-                        tier_info,
-                        active,
-                        min_score
-                    );
                 }
             }
 
