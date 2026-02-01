@@ -716,12 +716,17 @@ impl TokenManager {
                         }
                     };
 
-                    let guard = ActiveRequestGuard::new(
+                    if let Some(guard) = ActiveRequestGuard::try_new(
                         Arc::clone(&self.active_requests),
                         token.email.clone(),
+                        routing.max_concurrent_per_account,
+                    ) {
+                        return Ok((token.access_token, project_id, token.email, guard));
+                    }
+                    tracing::debug!(
+                        "Preferred account {} at max concurrency, falling back",
+                        token.email
                     );
-
-                    return Ok((token.access_token, project_id, token.email, guard));
                 } else if is_rate_limited {
                     tracing::warn!(
                         "🔒 [FIX #820] Preferred account {} is rate-limited, falling back to round-robin",
@@ -833,16 +838,19 @@ impl TokenManager {
                                 } else if let Some(found) =
                                     tokens_snapshot.iter().find(|t| t.email == bound_id)
                                 {
-                                    tracing::debug!(
-                                        "Sticky Session: Reusing {} for session {}",
-                                        found.email,
-                                        sid
-                                    );
-                                    target_token = Some(found.clone());
-                                    active_guard = Some(ActiveRequestGuard::new(
+                                    if let Some(guard) = ActiveRequestGuard::try_new(
                                         Arc::clone(&self.active_requests),
                                         found.email.clone(),
-                                    ));
+                                        routing.max_concurrent_per_account,
+                                    ) {
+                                        tracing::debug!(
+                                            "Sticky Session: Reusing {} for session {}",
+                                            found.email,
+                                            sid
+                                        );
+                                        target_token = Some(found.clone());
+                                        active_guard = Some(guard);
+                                    }
                                 }
                             }
                         }
@@ -854,16 +862,14 @@ impl TokenManager {
             // Session affinity (Mode A) handles per-session consistency instead
 
             if target_token.is_none() {
-                let mut best_candidate: Option<&ProxyToken> = None;
-                let mut min_score = f32::MAX;
-                let mut equal_count: u32 = 0;
+                // Collect eligible candidates with their scores
+                let mut scored_candidates: Vec<(&ProxyToken, f32)> = Vec::new();
 
                 for candidate in &tokens_snapshot {
                     if attempted.contains(&candidate.email) {
                         continue;
                     }
 
-                    // Business-ultra: skip rate-limit check (high quota, strict RPM)
                     if !candidate.is_business_ultra()
                         && self.is_rate_limited_for_model(&candidate.email, &normalized_target)
                     {
@@ -876,38 +882,33 @@ impl TokenManager {
                         continue;
                     }
 
-                    let active = self.get_active_requests(&candidate.email);
-                    if active >= routing.max_concurrent_per_account {
-                        continue;
-                    }
-
                     if let Some(aimd) = &aimd {
                         if aimd.usage_ratio(&candidate.email) > 1.2 {
                             continue;
                         }
                     }
 
+                    let active = self.get_active_requests(&candidate.email);
                     let weight = candidate.tier_weight();
                     let effective_score = weight + (active as f32) * weight;
-
-                    if effective_score < min_score {
-                        min_score = effective_score;
-                        best_candidate = Some(candidate);
-                        equal_count = 1;
-                    } else if (effective_score - min_score).abs() < 0.001 {
-                        equal_count += 1;
-                        if rand::random::<u32>().is_multiple_of(equal_count) {
-                            best_candidate = Some(candidate);
-                        }
-                    }
+                    scored_candidates.push((candidate, effective_score));
                 }
 
-                if let Some(candidate) = best_candidate {
-                    target_token = Some(candidate.clone());
-                    active_guard = Some(ActiveRequestGuard::new(
+                // Sort by score (lower is better)
+                scored_candidates
+                    .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+                // Try to reserve slot atomically for each candidate in order
+                for (candidate, _score) in scored_candidates {
+                    if let Some(guard) = ActiveRequestGuard::try_new(
                         Arc::clone(&self.active_requests),
                         candidate.email.clone(),
-                    ));
+                        routing.max_concurrent_per_account,
+                    ) {
+                        target_token = Some(candidate.clone());
+                        active_guard = Some(guard);
+                        break;
+                    }
                 }
             }
 
