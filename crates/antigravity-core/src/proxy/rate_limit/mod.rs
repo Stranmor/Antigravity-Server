@@ -311,13 +311,8 @@ impl RateLimitTracker {
                         5
                     }
                     RateLimitReason::ModelCapacityExhausted => {
-                        // [FIX] ModelCapacityExhausted = временная нехватка GPU, НЕ исчерпание квоты
-                        // Retry-After от Google слишком агрессивен (59s), игнорируем его
-                        // Ultra-tier аккаунты восстанавливаются быстро, пробуем через 2 секунды
-                        tracing::debug!(
-                            "MODEL_CAPACITY_EXHAUSTED: временная перегрузка GPU, минимальный lockout 2s"
-                        );
-                        2
+                        // Unreachable: early return at line 215 handles this case
+                        unreachable!("ModelCapacityExhausted should be handled by early return")
                     }
                     RateLimitReason::ServerError => {
                         // 服务器错误：执行"软避让"，默认锁定 20 秒
@@ -753,8 +748,12 @@ mod tests {
         );
         let cleaned = tracker.cleanup_expired();
         assert_eq!(cleaned, 1);
-        assert!(!tracker.is_rate_limited("expired"));
-        assert!(tracker.is_rate_limited("active"));
+        assert!(!tracker
+            .limits
+            .contains_key(&RateLimitKey::account("expired")));
+        assert!(tracker
+            .limits
+            .contains_key(&RateLimitKey::account("active")));
     }
 
     #[test]

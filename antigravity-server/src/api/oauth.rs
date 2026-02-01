@@ -13,6 +13,14 @@ use antigravity_types::models::TokenData;
 
 use crate::state::AppState;
 
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#x27;")
+}
+
 /// Get OAuth redirect URI based on port and optional host override.
 pub fn get_oauth_redirect_uri_with_port(port: u16) -> String {
     if let Ok(host) = std::env::var("ANTIGRAVITY_OAUTH_HOST") {
@@ -57,7 +65,7 @@ pub struct OAuthCallbackQuery {
 #[derive(Deserialize)]
 pub struct SubmitCodeRequest {
     pub code: String,
-    pub state: Option<String>,
+    pub state: String,
 }
 
 // ============ Handlers ============
@@ -133,7 +141,7 @@ pub async fn handle_oauth_callback(
                 <p>Please close this window and try again.</p>
             </body>
             </html>"#,
-            error
+            escape_html(&error)
         ))
         .into_response();
     }
@@ -168,7 +176,7 @@ pub async fn handle_oauth_callback(
                     <p>Error: {}</p>
                 </body>
                 </html>"#,
-                e
+                escape_html(&e)
             ))
             .into_response();
         }
@@ -204,7 +212,7 @@ pub async fn handle_oauth_callback(
                     <p>Error: {}</p>
                 </body>
                 </html>"#,
-                e
+                escape_html(&e)
             ))
             .into_response();
         }
@@ -241,7 +249,7 @@ pub async fn handle_oauth_callback(
                     <script>setTimeout(function() {{ window.close(); }}, 3000);</script>
                 </body>
                 </html>"#,
-                acc.email
+                escape_html(&acc.email)
             ))
             .into_response()
         }
@@ -254,7 +262,7 @@ pub async fn handle_oauth_callback(
                     <p>Error: {}</p>
                 </body>
                 </html>"#,
-            e
+            escape_html(&e)
         ))
         .into_response(),
     }
@@ -266,13 +274,11 @@ pub async fn submit_oauth_code(
 ) -> Result<Json<SubmitCodeResponse>, (axum::http::StatusCode, String)> {
     use axum::http::StatusCode;
 
-    if let Some(ref s) = payload.state {
-        if !app_state.validate_oauth_state(s) {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                "Invalid or expired OAuth state".to_string(),
-            ));
-        }
+    if !app_state.validate_oauth_state(&payload.state) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Invalid or expired OAuth state".to_string(),
+        ));
     }
 
     let port = app_state.get_bound_port();
