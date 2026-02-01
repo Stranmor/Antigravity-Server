@@ -653,11 +653,8 @@ impl TokenManager {
             {
                 let is_rate_limited =
                     self.is_rate_limited_for_model(&preferred_token.email, &normalized_target);
-                // [FIX #621] Check if model is quota-protected
                 let is_quota_protected = quota_protection_enabled
-                    && preferred_token
-                        .protected_models
-                        .contains(&normalized_target);
+                    && self.is_model_protected(&preferred_token.account_id, &normalized_target);
 
                 if !is_rate_limited && !is_quota_protected {
                     tracing::info!(
