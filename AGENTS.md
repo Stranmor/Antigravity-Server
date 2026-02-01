@@ -138,25 +138,26 @@ pub struct SmartRoutingConfig {
 
 ## 🛡️ FINGERPRINT PROTECTION [2026-02-01]
 
-### User-Agent Rotation
+### Device Fingerprint API
 
 **Status:** IMPLEMENTED
 
-Each account gets a deterministic User-Agent from a pool of 16 realistic browser strings (Chrome/Firefox/Edge/Safari on Windows/macOS/Linux). Hash-based selection ensures consistency within account sessions.
+REST API for managing Cursor/VSCode device fingerprints (storage.json):
 
-| Component | Location |
-|-----------|----------|
-| UA Pool | `proxy/upstream/user_agent.rs` |
-| Selection | `get_user_agent_for_account(email)` |
-| Integration | `call_v1_internal_with_warp(..., account_email)` |
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/device/profile` | GET | Read current device profile from storage.json |
+| `/api/device/profile` | POST | Generate new profile and write to storage.json |
+| `/api/device/backup` | POST | Create timestamped backup of storage.json |
+| `/api/device/baseline` | GET | Get original baseline profile |
 
 ### Known Limitations
 
 | Protection | Status | Notes |
 |------------|--------|-------|
-| User-Agent rotation | ✅ | 16 realistic UAs, per-account deterministic |
+| Device fingerprint API | ✅ IMPLEMENTED | REST endpoints for profile management |
+| User-Agent rotation | ❌ REVERTED | Caused CONSUMER_INVALID errors from Google |
 | WARP IP isolation | ❌ DISABLED | Google detects WARP → stricter rate limits |
-| Device fingerprints | ❌ NOT PORTED | Exists in upstream Tauri, not in headless server |
 | TLS/JA3 fingerprint | ❌ MISSING | Would require custom TLS config |
 | HTTP header randomization | ❌ MISSING | Accept-Language, etc. |
 
