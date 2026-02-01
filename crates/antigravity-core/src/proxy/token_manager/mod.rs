@@ -1,105 +1,16 @@
 use crate::modules::{config, oauth, quota};
+use crate::proxy::active_request_guard::ActiveRequestGuard;
+use crate::proxy::rate_limit::RateLimitTracker;
+use crate::proxy::routing_config::SmartRoutingConfig;
+use crate::proxy::AdaptiveLimitManager;
 use dashmap::DashMap;
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use crate::proxy::rate_limit::RateLimitTracker;
-use crate::proxy::AdaptiveLimitManager;
-
-async fn atomic_write_json(path: &Path, content: &serde_json::Value) -> Result<(), String> {
-    let temp_path = path.with_extension("json.tmp");
-    let json_str =
-        serde_json::to_string_pretty(content).map_err(|e| format!("JSON serialize: {}", e))?;
-
-    tokio::fs::write(&temp_path, &json_str)
-        .await
-        .map_err(|e| format!("写入临时文件失败: {}", e))?;
-
-    tokio::fs::rename(&temp_path, path)
-        .await
-        .map_err(|e| format!("重命名文件失败: {}", e))?;
-
-    Ok(())
-}
-
-/// RAII guard for cancellation-safe increment/decrement of active_requests.
-/// Decrements on drop unless `release()` is called.
-pub struct ActiveRequestGuard {
-    active_requests: Arc<DashMap<String, AtomicU32>>,
-    key: String,
-    released: bool,
-}
-
-impl ActiveRequestGuard {
-    fn new(active_requests: Arc<DashMap<String, AtomicU32>>, key: String) -> Self {
-        active_requests
-            .entry(key.clone())
-            .or_insert_with(|| AtomicU32::new(0))
-            .fetch_add(1, Ordering::SeqCst);
-        Self {
-            active_requests,
-            key,
-            released: false,
-        }
-    }
-
-    pub fn release(mut self) {
-        self.released = true;
-    }
-}
-
-impl Drop for ActiveRequestGuard {
-    fn drop(&mut self) {
-        if !self.released {
-            if let Some(counter) = self.active_requests.get(&self.key) {
-                let _ = counter.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
-                    if v > 0 {
-                        Some(v - 1)
-                    } else {
-                        None
-                    }
-                });
-            }
-        }
-    }
-}
-
-// ============================================================================
-// Smart Routing Configuration (replaces SchedulingMode enum)
-// ============================================================================
-
-/// Unified smart routing configuration.
-/// Replaces the old 3-mode system (CacheFirst/Balance/PerformanceFirst) with
-/// a single algorithm that maximizes cache hits while preventing thundering herd.
-#[derive(Debug, Clone)]
-pub struct SmartRoutingConfig {
-    /// Maximum concurrent requests per account (prevents thundering herd)
-    /// Default: 3
-    pub max_concurrent_per_account: u32,
-    /// AIMD usage ratio threshold for pre-emptive queueing
-    /// When ratio > threshold, wait instead of switching accounts
-    /// Default: 0.8
-    pub preemptive_throttle_ratio: f32,
-    /// Minimum delay (ms) before retrying same account after soft throttle
-    /// Default: 100
-    pub throttle_delay_ms: u64,
-    /// Enable session affinity (sticky sessions for cache optimization)
-    /// Default: true
-    pub enable_session_affinity: bool,
-}
-
-impl Default for SmartRoutingConfig {
-    fn default() -> Self {
-        Self {
-            max_concurrent_per_account: 5,
-            preemptive_throttle_ratio: 0.8,
-            throttle_delay_ms: 100,
-            enable_session_affinity: true,
-        }
-    }
-}
+mod file_utils;
+use file_utils::{atomic_write_json, calculate_max_quota_percentage, truncate_reason};
 
 /// Token representing an authenticated account with OAuth credentials.
 ///
@@ -453,7 +364,7 @@ impl TokenManager {
         // [FIX #563] 提取最大剩余配额百分比用于优先级排序
         let remaining_quota = account
             .get("quota")
-            .and_then(Self::calculate_max_quota_percentage);
+            .and_then(calculate_max_quota_percentage);
 
         // [FIX #621] 提取受保护模型列表 (quota exhausted models)
         // Also auto-populate from quota data - models with 0% should be protected
@@ -516,28 +427,6 @@ impl TokenManager {
             protected_models,
             health_score,
         }))
-    }
-
-    fn calculate_max_quota_percentage(quota: &serde_json::Value) -> Option<i32> {
-        let models = quota.get("models")?.as_array()?;
-        let mut max_percentage = 0;
-        let mut has_data = false;
-
-        for model in models {
-            if let Some(pct) = model.get("percentage").and_then(|v| v.as_i64()) {
-                let pct_i32 = pct as i32;
-                if pct_i32 > max_percentage {
-                    max_percentage = pct_i32;
-                }
-                has_data = true;
-            }
-        }
-
-        if has_data {
-            Some(max_percentage)
-        } else {
-            None
-        }
     }
 
     /// 获取当前可用的 Token（支持粘性会话与智能调度）
@@ -1691,15 +1580,6 @@ impl TokenManager {
     }
 }
 
-fn truncate_reason(reason: &str, max_len: usize) -> String {
-    if reason.chars().count() <= max_len {
-        return reason.to_string();
-    }
-    let mut s: String = reason.chars().take(max_len).collect();
-    s.push('…');
-    s
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1743,8 +1623,11 @@ mod tests {
             Some("gemini-pro".to_string()),
         );
 
-        assert!(manager.is_rate_limited(account_id));
-        let info = manager.rate_limit_tracker().get(account_id);
+        // Model-specific rate limit only blocks that model, not the whole account
+        assert!(manager.is_rate_limited_for_model(account_id, "gemini-pro"));
+        let info = manager
+            .rate_limit_tracker()
+            .get_for_model(account_id, "gemini-pro");
         assert!(info.is_some());
         assert_eq!(info.unwrap().model, Some("gemini-pro".to_string()));
     }
@@ -1773,7 +1656,7 @@ mod tests {
 
         let initial = manager.get_routing_config().await;
         assert!(initial.enable_session_affinity);
-        assert_eq!(initial.max_concurrent_per_account, 3);
+        assert_eq!(initial.max_concurrent_per_account, 5);
 
         let new_config = SmartRoutingConfig {
             enable_session_affinity: false,

@@ -699,6 +699,11 @@ impl RateLimitTracker {
         self.limits.get(&key).map(|r| r.clone())
     }
 
+    pub fn get_for_model(&self, account_id: &str, model: &str) -> Option<RateLimitInfo> {
+        let key = RateLimitKey::model(account_id, model);
+        self.limits.get(&key).map(|r| r.clone())
+    }
+
     /// 检查账号是否仍在限流中
     pub fn is_rate_limited(&self, account_id: &str) -> bool {
         if let Some(info) = self.get(account_id) {
@@ -1060,7 +1065,10 @@ mod tests {
     fn test_model_level_rate_limit() {
         let tracker = RateLimitTracker::new();
         tracker.parse_from_error("acc1", 429, Some("60"), "", Some("gemini-pro".to_string()));
-        let info = tracker.get("acc1").expect("should have rate limit");
+        assert!(tracker.is_rate_limited_for_model("acc1", "gemini-pro"));
+        let info = tracker
+            .get_for_model("acc1", "gemini-pro")
+            .expect("should have rate limit");
         assert_eq!(info.model, Some("gemini-pro".to_string()));
     }
 }
