@@ -23,6 +23,7 @@
 | `claude/request.rs` | 2509 | `transform.rs`, `tools.rs`, `generation_config.rs` | ⏳ |
 | `claude/streaming.rs` | 1177 | TBD | ⏳ |
 | `openai/streaming.rs` | 1092 | TBD | ⏳ |
+| `modules/device.rs` | 367 | `fingerprint.rs`, `storage.rs` | ⏳ |
 
 **Banned filenames renamed:** ✅ [2026-01-31]
 - `crates/antigravity-client/src/types.rs` → `messages.rs` ✅
