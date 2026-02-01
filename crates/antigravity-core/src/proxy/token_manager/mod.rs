@@ -6,7 +6,7 @@ use crate::proxy::AdaptiveLimitManager;
 use dashmap::DashMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 mod file_utils;
@@ -73,8 +73,6 @@ impl ProxyToken {
 /// - AIMD predictive rate limiting integration
 pub struct TokenManager {
     tokens: Arc<DashMap<String, ProxyToken>>,
-    current_index: Arc<AtomicUsize>,
-    last_used_account: Arc<tokio::sync::Mutex<Option<(String, std::time::Instant)>>>,
     data_dir: PathBuf,
     rate_limit_tracker: Arc<RateLimitTracker>,
     routing_config: Arc<tokio::sync::RwLock<SmartRoutingConfig>>,
@@ -82,6 +80,7 @@ pub struct TokenManager {
     adaptive_limits: Arc<tokio::sync::RwLock<Option<Arc<AdaptiveLimitManager>>>>,
     preferred_account_id: Arc<tokio::sync::RwLock<Option<String>>>,
     health_scores: Arc<DashMap<String, f32>>,
+    runtime_protected_models: Arc<DashMap<String, HashSet<String>>>,
     active_requests: Arc<DashMap<String, AtomicU32>>,
     session_failures: Arc<DashMap<String, AtomicU32>>,
     file_locks: Arc<DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
@@ -91,8 +90,6 @@ impl TokenManager {
     pub fn new(data_dir: PathBuf) -> Self {
         Self {
             tokens: Arc::new(DashMap::new()),
-            current_index: Arc::new(AtomicUsize::new(0)),
-            last_used_account: Arc::new(tokio::sync::Mutex::new(None)),
             data_dir,
             rate_limit_tracker: Arc::new(RateLimitTracker::new()),
             routing_config: Arc::new(tokio::sync::RwLock::new(SmartRoutingConfig::default())),
@@ -100,6 +97,7 @@ impl TokenManager {
             adaptive_limits: Arc::new(tokio::sync::RwLock::new(None)),
             preferred_account_id: Arc::new(tokio::sync::RwLock::new(None)),
             health_scores: Arc::new(DashMap::new()),
+            runtime_protected_models: Arc::new(DashMap::new()),
             active_requests: Arc::new(DashMap::new()),
             session_failures: Arc::new(DashMap::new()),
             file_locks: Arc::new(DashMap::new()),
@@ -136,6 +134,19 @@ impl TokenManager {
             .get(email)
             .map(|c| c.load(Ordering::SeqCst))
             .unwrap_or(0)
+    }
+
+    /// Check if model is protected for account (combines disk and runtime state)
+    pub fn is_model_protected(&self, account_id: &str, model: &str) -> bool {
+        if let Some(runtime) = self.runtime_protected_models.get(account_id) {
+            if runtime.contains(model) {
+                return true;
+            }
+        }
+        if let Some(token) = self.tokens.get(account_id) {
+            return token.protected_models.contains(model);
+        }
+        false
     }
 
     pub fn record_session_failure(&self, session_id: &str) -> u32 {
@@ -277,12 +288,6 @@ impl TokenManager {
         let count = new_tokens.len();
         for (account_id, token) in new_tokens {
             self.tokens.insert(account_id, token);
-        }
-
-        self.current_index.store(0, Ordering::SeqCst);
-        {
-            let mut last_used = self.last_used_account.lock().await;
-            *last_used = None;
         }
 
         Ok(count)
@@ -630,7 +635,7 @@ impl TokenManager {
         // This is the SINGLE place where quota protection is enforced - all selection paths will only see eligible accounts
         if quota_protection_enabled {
             let original_count = tokens_snapshot.len();
-            tokens_snapshot.retain(|t| !t.protected_models.contains(&normalized_target));
+            tokens_snapshot.retain(|t| !self.is_model_protected(&t.account_id, &normalized_target));
             let filtered_count = original_count - tokens_snapshot.len();
             if filtered_count > 0 {
                 tracing::debug!(
@@ -798,7 +803,10 @@ impl TokenManager {
                                         .iter()
                                         .find(|t| t.email == bound_id)
                                         .is_some_and(|t| {
-                                            t.protected_models.contains(&normalized_target)
+                                            self.is_model_protected(
+                                                &t.account_id,
+                                                &normalized_target,
+                                            )
                                         });
 
                                 if is_quota_protected {
@@ -848,7 +856,7 @@ impl TokenManager {
                     }
 
                     if quota_protection_enabled
-                        && candidate.protected_models.contains(&normalized_target)
+                        && self.is_model_protected(&candidate.account_id, &normalized_target)
                     {
                         continue;
                     }
@@ -996,7 +1004,7 @@ impl TokenManager {
                                 continue;
                             }
                             if quota_protection_enabled
-                                && t.protected_models.contains(&normalized_target)
+                                && self.is_model_protected(&t.account_id, &normalized_target)
                             {
                                 continue;
                             }
@@ -1522,16 +1530,16 @@ impl TokenManager {
 
         match reason {
             crate::proxy::rate_limit::RateLimitReason::QuotaExhausted => {
-                if let Some(mut token) = self.tokens.get_mut(account_id) {
-                    if !token.protected_models.contains(&model_str) {
-                        token.protected_models.insert(model_str.clone());
-                        tracing::warn!(
-                            "🛡️ {}:{} added to protected_models (quota exhausted)",
-                            account_id,
-                            model_str
-                        );
-                    }
-                }
+                // Store in runtime_protected_models (persists across account reloads)
+                self.runtime_protected_models
+                    .entry(account_id.to_string())
+                    .or_default()
+                    .insert(model_str.clone());
+                tracing::warn!(
+                    "🛡️ {}:{} added to runtime_protected_models (quota exhausted)",
+                    account_id,
+                    model_str
+                );
 
                 let lockout = std::time::Duration::from_secs(600);
                 self.rate_limit_tracker.set_model_lockout(
