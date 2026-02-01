@@ -4,7 +4,6 @@
 //! cross-account correlation by upstream APIs.
 
 use antigravity_types::models::DeviceProfile;
-use rand::distributions::Alphanumeric;
 use rand::Rng;
 use uuid::Uuid;
 
@@ -24,14 +23,13 @@ pub fn generate_profile() -> DeviceProfile {
     }
 }
 
-/// Generate random lowercase hexadecimal string of given length.
+/// Generate random lowercase hexadecimal string (0-9, a-f) of given length.
 fn random_hex(length: usize) -> String {
-    rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(length)
-        .map(char::from)
-        .collect::<String>()
-        .to_lowercase()
+    const HEX_CHARS: &[u8] = b"0123456789abcdef";
+    let mut rng = rand::thread_rng();
+    (0..length)
+        .map(|_| HEX_CHARS[rng.gen_range(0..16)] as char)
+        .collect()
 }
 
 /// Generate UUID v4 with specific variant bits (8-b in position 19).
@@ -80,7 +78,7 @@ mod tests {
     fn test_random_hex() {
         let hex = random_hex(32);
         assert_eq!(hex.len(), 32);
-        assert!(hex.chars().all(|c| c.is_ascii_alphanumeric()));
+        assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
         assert!(hex.chars().all(|c| c.is_lowercase() || c.is_numeric()));
     }
 
