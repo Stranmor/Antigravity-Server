@@ -776,26 +776,7 @@ impl TokenManager {
                 }
             }
 
-            // Business-Ultra-First: atomically try to reserve slot (race-free)
-            for ultra_candidate in tokens_snapshot.iter().filter(|t| {
-                t.is_business_ultra()
-                    && !attempted.contains(&t.email)
-                    && !(quota_protection_enabled
-                        && t.protected_models.contains(&normalized_target))
-            }) {
-                if let Some(guard) = ActiveRequestGuard::try_new(
-                    Arc::clone(&self.active_requests),
-                    ultra_candidate.email.clone(),
-                    routing.max_concurrent_per_account,
-                ) {
-                    tracing::info!("🚀 Business-Ultra-First: {}", ultra_candidate.email);
-                    target_token = Some(ultra_candidate.clone());
-                    active_guard = Some(guard);
-                    break;
-                }
-            }
-
-            // Sticky session handling (only if business-ultra not selected)
+            // Sticky session handling
             if target_token.is_none() {
                 if let Some(sid) = session_id {
                     if !rotate && routing.enable_session_affinity {
@@ -862,17 +843,15 @@ impl TokenManager {
             // Session affinity (Mode A) handles per-session consistency instead
 
             if target_token.is_none() {
-                // Collect eligible candidates with their scores
-                let mut scored_candidates: Vec<(&ProxyToken, f32)> = Vec::new();
+                // Collect eligible candidates with tier and active count
+                let mut scored_candidates: Vec<(&ProxyToken, u8, u32)> = Vec::new();
 
                 for candidate in &tokens_snapshot {
                     if attempted.contains(&candidate.email) {
                         continue;
                     }
 
-                    if !candidate.is_business_ultra()
-                        && self.is_rate_limited_for_model(&candidate.email, &normalized_target)
-                    {
+                    if self.is_rate_limited_for_model(&candidate.email, &normalized_target) {
                         continue;
                     }
 
@@ -889,17 +868,15 @@ impl TokenManager {
                     }
 
                     let active = self.get_active_requests(&candidate.email);
-                    let weight = candidate.tier_weight();
-                    let effective_score = weight + (active as f32) * weight;
-                    scored_candidates.push((candidate, effective_score));
+                    let tier = candidate.tier_priority();
+                    scored_candidates.push((candidate, tier, active));
                 }
 
-                // Sort by score (lower is better)
-                scored_candidates
-                    .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+                // Sort by: 1) tier priority (lower=better), 2) active requests (lower=better)
+                scored_candidates.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.2.cmp(&b.2)));
 
                 // Try to reserve slot atomically for each candidate in order
-                for (candidate, _score) in scored_candidates {
+                for (candidate, _tier, _active) in scored_candidates {
                     if let Some(guard) = ActiveRequestGuard::try_new(
                         Arc::clone(&self.active_requests),
                         candidate.email.clone(),
