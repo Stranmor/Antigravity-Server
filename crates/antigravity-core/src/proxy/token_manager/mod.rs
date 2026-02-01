@@ -111,16 +111,16 @@ impl TokenManager {
         *guard = config;
     }
 
-    pub fn increment_active_requests(&self, account_id: &str) -> u32 {
+    pub fn increment_active_requests(&self, email: &str) -> u32 {
         self.active_requests
-            .entry(account_id.to_string())
+            .entry(email.to_string())
             .or_insert_with(|| AtomicU32::new(0))
             .fetch_add(1, Ordering::SeqCst)
             + 1
     }
 
-    pub fn decrement_active_requests(&self, account_id: &str) {
-        if let Some(counter) = self.active_requests.get(account_id) {
+    pub fn decrement_active_requests(&self, email: &str) {
+        if let Some(counter) = self.active_requests.get(email) {
             let _ = counter.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
                 if v > 0 {
                     Some(v - 1)
@@ -131,9 +131,9 @@ impl TokenManager {
         }
     }
 
-    pub fn get_active_requests(&self, account_id: &str) -> u32 {
+    pub fn get_active_requests(&self, email: &str) -> u32 {
         self.active_requests
-            .get(account_id)
+            .get(email)
             .map(|c| c.load(Ordering::SeqCst))
             .unwrap_or(0)
     }
@@ -904,22 +904,32 @@ impl TokenManager {
                             // 缓冲延迟 500ms
                             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-                            // 重新尝试选择账号 - [FIX] use model-specific check
-                            let retry_token = tokens_snapshot.iter().find(|t| {
-                                !attempted.contains(&t.email)
-                                    && !self.is_rate_limited_for_model(&t.email, &normalized_target)
-                            });
-
-                            if let Some(t) = retry_token {
-                                tracing::info!(
-                                    "✅ Buffer delay successful! Found available account: {}",
-                                    t.email
-                                );
-                                active_guard = Some(ActiveRequestGuard::new(
+                            // Retry selection with atomic slot reservation
+                            let mut found_token: Option<ProxyToken> = None;
+                            for t in tokens_snapshot.iter() {
+                                if attempted.contains(&t.email) {
+                                    continue;
+                                }
+                                if self.is_rate_limited_for_model(&t.email, &normalized_target) {
+                                    continue;
+                                }
+                                if let Some(guard) = ActiveRequestGuard::try_new(
                                     Arc::clone(&self.active_requests),
                                     t.email.clone(),
-                                ));
-                                t.clone()
+                                    routing.max_concurrent_per_account,
+                                ) {
+                                    tracing::info!(
+                                        "✅ Buffer delay successful! Found available account: {}",
+                                        t.email
+                                    );
+                                    active_guard = Some(guard);
+                                    found_token = Some(t.clone());
+                                    break;
+                                }
+                            }
+
+                            if let Some(t) = found_token {
+                                t
                             } else {
                                 // Layer 2: 缓冲后仍无可用账号,执行乐观重置
                                 tracing::warn!(
@@ -930,21 +940,29 @@ impl TokenManager {
                                 // 清除所有限流记录
                                 self.rate_limit_tracker.clear_all();
 
-                                // 再次尝试选择账号
-                                let final_token = tokens_snapshot
-                                    .iter()
-                                    .find(|t| !attempted.contains(&t.email));
-
-                                if let Some(t) = final_token {
-                                    tracing::info!(
-                                        "✅ Optimistic reset successful! Using account: {}",
-                                        t.email
-                                    );
-                                    active_guard = Some(ActiveRequestGuard::new(
+                                // Retry with atomic slot reservation after reset
+                                let mut reset_found: Option<ProxyToken> = None;
+                                for t in tokens_snapshot.iter() {
+                                    if attempted.contains(&t.email) {
+                                        continue;
+                                    }
+                                    if let Some(guard) = ActiveRequestGuard::try_new(
                                         Arc::clone(&self.active_requests),
                                         t.email.clone(),
-                                    ));
-                                    t.clone()
+                                        routing.max_concurrent_per_account,
+                                    ) {
+                                        tracing::info!(
+                                            "✅ Optimistic reset successful! Using account: {}",
+                                            t.email
+                                        );
+                                        active_guard = Some(guard);
+                                        reset_found = Some(t.clone());
+                                        break;
+                                    }
+                                }
+
+                                if let Some(t) = reset_found {
+                                    t
                                 } else {
                                     // 所有策略都失败,返回错误
                                     return Err(
@@ -968,23 +986,37 @@ impl TokenManager {
                         );
                         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-                        // Find any available account after wait
-                        #[allow(clippy::nonminimal_bool)]
-                        let retry_token = tokens_snapshot.iter().find(|t| {
-                            !attempted.contains(&t.email)
-                                && !self.is_rate_limited_for_model(&t.email, &normalized_target)
-                                && self.get_active_requests(&t.email) < routing.max_concurrent_per_account
-                                // [FIX] Also check protected_models in fallback path
-                                && !(quota_protection_enabled && t.protected_models.contains(&normalized_target))
-                        });
-
-                        if let Some(t) = retry_token {
-                            tracing::info!("✅ Found available account after wait: {}", t.email);
-                            active_guard = Some(ActiveRequestGuard::new(
+                        // Find any available account after wait with atomic slot reservation
+                        let mut wait_found: Option<ProxyToken> = None;
+                        for t in tokens_snapshot.iter() {
+                            if attempted.contains(&t.email) {
+                                continue;
+                            }
+                            if self.is_rate_limited_for_model(&t.email, &normalized_target) {
+                                continue;
+                            }
+                            if quota_protection_enabled
+                                && t.protected_models.contains(&normalized_target)
+                            {
+                                continue;
+                            }
+                            if let Some(guard) = ActiveRequestGuard::try_new(
                                 Arc::clone(&self.active_requests),
                                 t.email.clone(),
-                            ));
-                            t.clone()
+                                routing.max_concurrent_per_account,
+                            ) {
+                                tracing::info!(
+                                    "✅ Found available account after wait: {}",
+                                    t.email
+                                );
+                                active_guard = Some(guard);
+                                wait_found = Some(t.clone());
+                                break;
+                            }
+                        }
+
+                        if let Some(t) = wait_found {
+                            t
                         } else {
                             return Err(
                                 "All accounts at maximum capacity. Please retry later.".to_string()
@@ -1092,9 +1124,28 @@ impl TokenManager {
                 }
             };
 
-            let guard = active_guard.unwrap_or_else(|| {
-                ActiveRequestGuard::new(Arc::clone(&self.active_requests), token.email.clone())
-            });
+            let guard = match active_guard {
+                Some(g) => g,
+                None => {
+                    // All selection paths should create a guard. If we reach here,
+                    // it means token was selected but guard wasn't created - try once more.
+                    match ActiveRequestGuard::try_new(
+                        Arc::clone(&self.active_requests),
+                        token.email.clone(),
+                        routing.max_concurrent_per_account,
+                    ) {
+                        Some(g) => g,
+                        None => {
+                            tracing::warn!(
+                                "Account {} at capacity after selection. Retrying with next account.",
+                                token.email
+                            );
+                            attempted.insert(token.email.clone());
+                            continue;
+                        }
+                    }
+                }
+            };
 
             return Ok((token.access_token, project_id, token.email, guard));
         }
