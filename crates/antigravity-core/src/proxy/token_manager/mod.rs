@@ -731,18 +731,39 @@ impl TokenManager {
 
             if let Some(sid) = session_id {
                 if !rotate && routing.enable_session_affinity {
-                    if let Some(bound_id) = self.session_accounts.get(sid).map(|v| v.clone()) {
+                    // [ULTRA-FIRST] Try ultra accounts BEFORE using sticky binding
+                    // This ensures premium accounts are utilized even with session affinity
+                    let best_ultra = tokens_snapshot.iter().find(|t| {
+                        t.subscription_tier
+                            .as_ref()
+                            .is_some_and(|tier| tier.contains("ultra"))
+                            && !self.is_rate_limited_for_model(&t.email, &normalized_target)
+                            && !attempted.contains(&t.email)
+                            && self.get_active_requests(&t.email)
+                                < routing.max_concurrent_per_account
+                            && !(quota_protection_enabled
+                                && t.protected_models.contains(&normalized_target))
+                    });
+
+                    if let Some(ultra) = best_ultra {
+                        tracing::debug!(
+                            "🚀 Ultra-First: Using {} instead of sticky binding",
+                            ultra.email
+                        );
+                        target_token = Some(ultra.clone());
+                        active_guard = Some(ActiveRequestGuard::new(
+                            Arc::clone(&self.active_requests),
+                            ultra.email.clone(),
+                        ));
+                    } else if let Some(bound_id) = self.session_accounts.get(sid).map(|v| v.clone())
+                    {
+                        // No ultra available, fall back to sticky binding
                         let reset_sec = self
                             .rate_limit_tracker
                             .get_remaining_wait_for_model(&bound_id, &normalized_target);
 
-                        // [UPSTREAM-STYLE] Sticky session handling:
-                        // - Any lockout > 0: migrate THIS request to another account
-                        // - Long lockout (>60s): also unbind session for future requests
-                        // - Never block/wait - that causes client socket timeout
                         if reset_sec > 0 {
                             if reset_sec > 60 {
-                                // Long lockout = quota exhausted, unbind for future
                                 self.session_accounts.remove(sid);
                                 tracing::warn!(
                                     "Sticky Session: {} rate-limited ({}s), unbinding session {}",
@@ -751,15 +772,12 @@ impl TokenManager {
                                     sid
                                 );
                             } else {
-                                // Short lockout = temporary, keep binding but migrate this request
                                 tracing::debug!(
                                     "Sticky Session: {} rate-limited ({}s), migrating this request only",
                                     bound_id, reset_sec
                                 );
                             }
-                            // Either way, don't use the bound account for THIS request
                         } else if !attempted.contains(&bound_id) {
-                            // Account is healthy, check quota protection
                             let is_quota_protected = quota_protection_enabled
                                 && tokens_snapshot
                                     .iter()
@@ -778,9 +796,8 @@ impl TokenManager {
                             } else if let Some(found) =
                                 tokens_snapshot.iter().find(|t| t.email == bound_id)
                             {
-                                // SUCCESS: reuse bound account
                                 tracing::debug!(
-                                    "Sticky Session: Reusing {} for session {}",
+                                    "Sticky Session: Reusing {} for session {} (no ultra available)",
                                     found.email,
                                     sid
                                 );
