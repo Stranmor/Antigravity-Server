@@ -771,22 +771,23 @@ impl TokenManager {
                 }
             }
 
-            // Business-Ultra-First: always try before sticky session
-            let business_ultra = tokens_snapshot.iter().find(|t| {
+            // Business-Ultra-First: atomically try to reserve slot (race-free)
+            for ultra_candidate in tokens_snapshot.iter().filter(|t| {
                 t.is_business_ultra()
                     && !attempted.contains(&t.email)
-                    && self.get_active_requests(&t.email) < routing.max_concurrent_per_account
                     && !(quota_protection_enabled
                         && t.protected_models.contains(&normalized_target))
-            });
-
-            if let Some(ultra) = business_ultra {
-                tracing::info!("🚀 Business-Ultra-First: {}", ultra.email);
-                target_token = Some(ultra.clone());
-                active_guard = Some(ActiveRequestGuard::new(
+            }) {
+                if let Some(guard) = ActiveRequestGuard::try_new(
                     Arc::clone(&self.active_requests),
-                    ultra.email.clone(),
-                ));
+                    ultra_candidate.email.clone(),
+                    routing.max_concurrent_per_account,
+                ) {
+                    tracing::info!("🚀 Business-Ultra-First: {}", ultra_candidate.email);
+                    target_token = Some(ultra_candidate.clone());
+                    active_guard = Some(guard);
+                    break;
+                }
             }
 
             // Sticky session handling (only if business-ultra not selected)
@@ -1747,6 +1748,49 @@ mod tests {
         manager.decrement_active_requests("account_b");
         manager.decrement_active_requests("account_b");
         assert_eq!(manager.get_active_requests("account_b"), 0);
+    }
+
+    #[test]
+    fn test_active_request_guard_try_new_respects_limit() {
+        let active_requests = Arc::new(DashMap::new());
+        let max_concurrent = 3;
+
+        let guard1 = ActiveRequestGuard::try_new(
+            Arc::clone(&active_requests),
+            "account_a".to_string(),
+            max_concurrent,
+        );
+        assert!(guard1.is_some());
+
+        let guard2 = ActiveRequestGuard::try_new(
+            Arc::clone(&active_requests),
+            "account_a".to_string(),
+            max_concurrent,
+        );
+        assert!(guard2.is_some());
+
+        let guard3 = ActiveRequestGuard::try_new(
+            Arc::clone(&active_requests),
+            "account_a".to_string(),
+            max_concurrent,
+        );
+        assert!(guard3.is_some());
+
+        let guard4 = ActiveRequestGuard::try_new(
+            Arc::clone(&active_requests),
+            "account_a".to_string(),
+            max_concurrent,
+        );
+        assert!(guard4.is_none());
+
+        drop(guard1);
+
+        let guard5 = ActiveRequestGuard::try_new(
+            Arc::clone(&active_requests),
+            "account_a".to_string(),
+            max_concurrent,
+        );
+        assert!(guard5.is_some());
     }
 
     #[test]

@@ -25,6 +25,37 @@ impl ActiveRequestGuard {
         }
     }
 
+    /// Atomically try to reserve a slot if current count < max_concurrent.
+    /// Returns None if limit would be exceeded (no race condition).
+    pub fn try_new(
+        active_requests: Arc<DashMap<String, AtomicU32>>,
+        key: String,
+        max_concurrent: u32,
+    ) -> Option<Self> {
+        active_requests
+            .entry(key.clone())
+            .or_insert_with(|| AtomicU32::new(0));
+
+        let counter_ref = active_requests.get(&key)?;
+        loop {
+            let current = counter_ref.load(Ordering::SeqCst);
+            if current >= max_concurrent {
+                return None;
+            }
+            if counter_ref
+                .compare_exchange(current, current + 1, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                drop(counter_ref);
+                return Some(Self {
+                    active_requests,
+                    key,
+                    released: false,
+                });
+            }
+        }
+    }
+
     pub fn release(mut self) {
         self.released = true;
     }
