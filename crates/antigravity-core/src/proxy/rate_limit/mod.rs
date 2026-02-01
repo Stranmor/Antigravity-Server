@@ -8,6 +8,15 @@ use std::time::{Duration, SystemTime};
 
 const FAILURE_COUNT_EXPIRY_SECONDS: u64 = 3600;
 
+fn duration_to_secs_ceil(d: Duration) -> u64 {
+    let secs = d.as_secs();
+    if d.subsec_nanos() > 0 {
+        secs + 1
+    } else {
+        secs
+    }
+}
+
 pub struct RateLimitTracker {
     limits: DashMap<RateLimitKey, RateLimitInfo>,
     failure_counts: DashMap<RateLimitKey, (u32, SystemTime)>,
@@ -27,11 +36,11 @@ impl RateLimitTracker {
         if let Some(info) = self.limits.get(&key) {
             let now = SystemTime::now();
             if info.reset_time > now {
-                return info
+                let duration = info
                     .reset_time
                     .duration_since(now)
-                    .unwrap_or(Duration::from_secs(0))
-                    .as_secs();
+                    .unwrap_or(Duration::from_secs(0));
+                return duration_to_secs_ceil(duration);
             }
         }
         0
@@ -167,8 +176,12 @@ impl RateLimitTracker {
         // 尝试解析 ISO 8601 格式
         match chrono::DateTime::parse_from_rfc3339(reset_time_str) {
             Ok(dt) => {
-                let reset_time =
-                    SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(dt.timestamp() as u64);
+                let ts = dt.timestamp();
+                if ts < 0 {
+                    tracing::warn!("配额刷新时间 '{}' 在 1970 之前，忽略", reset_time_str);
+                    return false;
+                }
+                let reset_time = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(ts as u64);
                 self.set_lockout_until(account_id, reset_time, reason, model);
                 true
             }
@@ -451,24 +464,22 @@ impl RateLimitTracker {
         let account_key = RateLimitKey::account(account_id);
         if let Some(info) = self.limits.get(&account_key) {
             if info.reset_time > now {
-                let wait = info
+                let duration = info
                     .reset_time
                     .duration_since(now)
-                    .unwrap_or(Duration::from_secs(0))
-                    .as_secs();
-                max_wait = max_wait.max(wait);
+                    .unwrap_or(Duration::from_secs(0));
+                max_wait = max_wait.max(duration_to_secs_ceil(duration));
             }
         }
 
         let model_key = RateLimitKey::model(account_id, model);
         if let Some(info) = self.limits.get(&model_key) {
             if info.reset_time > now {
-                let wait = info
+                let duration = info
                     .reset_time
                     .duration_since(now)
-                    .unwrap_or(Duration::from_secs(0))
-                    .as_secs();
-                max_wait = max_wait.max(wait);
+                    .unwrap_or(Duration::from_secs(0));
+                max_wait = max_wait.max(duration_to_secs_ceil(duration));
             }
         }
 
