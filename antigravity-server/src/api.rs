@@ -816,6 +816,8 @@ async fn create_device_profile() -> Result<Json<CreateProfileResponse>, (StatusC
         )
     })?;
 
+    let _ = device::save_global_original(&profile);
+
     Ok(Json(CreateProfileResponse {
         profile,
         backup_path: backup_path.map(|p| p.display().to_string()),
