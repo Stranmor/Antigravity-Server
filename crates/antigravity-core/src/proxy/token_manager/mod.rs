@@ -284,10 +284,17 @@ impl TokenManager {
             }
         }
 
-        // Insert/update accounts from disk
+        // Insert/update accounts from disk only if disk token is newer (atomic check-and-set)
         let count = new_tokens.len();
-        for (account_id, token) in new_tokens {
-            self.tokens.insert(account_id, token);
+        for (account_id, disk_token) in new_tokens {
+            self.tokens
+                .entry(account_id)
+                .and_modify(|existing| {
+                    if disk_token.timestamp > existing.timestamp {
+                        *existing = disk_token.clone();
+                    }
+                })
+                .or_insert(disk_token);
         }
 
         Ok(count)
