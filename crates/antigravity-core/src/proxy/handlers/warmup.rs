@@ -181,7 +181,6 @@ pub async fn handle_warmup(
             query,
             std::collections::HashMap::new(),
             warp_proxy.as_deref(),
-            Some(&req.email),
         )
         .await;
 
@@ -196,7 +195,6 @@ pub async fn handle_warmup(
                 None,
                 std::collections::HashMap::new(),
                 warp_proxy.as_deref(),
-                Some(&req.email),
             )
             .await;
     }

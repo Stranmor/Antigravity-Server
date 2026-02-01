@@ -132,7 +132,6 @@ pub async fn handle_audio_transcription(
             None,
             std::collections::HashMap::new(),
             warp_proxy.as_deref(),
-            Some(&email),
         )
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, format!("上游请求失败: {}", e)))?;

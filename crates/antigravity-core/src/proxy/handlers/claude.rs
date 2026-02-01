@@ -662,7 +662,6 @@ pub async fn handle_messages(
                 query,
                 extra_headers.clone(),
                 warp_proxy.as_deref(),
-                Some(&email),
             )
             .await
         {

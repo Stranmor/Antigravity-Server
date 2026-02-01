@@ -5,4 +5,3 @@ pub mod client;
 pub mod endpoint_health;
 pub mod models;
 pub mod retry;
-pub mod user_agent;

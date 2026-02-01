@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 
 use antigravity_core::models::AppConfig;
-use antigravity_core::modules::{account, config as core_config, oauth};
+use antigravity_core::modules::{account, config as core_config, device, oauth};
 use antigravity_types::models::TokenData;
 
 use crate::state::{get_model_quota, AppState};
@@ -56,6 +56,11 @@ pub fn router() -> Router<AppState> {
         // Config Sync (LWW Bidirectional)
         .route("/config/mapping", get(get_syncable_mapping))
         .route("/config/mapping", post(merge_remote_mapping))
+        // Device Fingerprint
+        .route("/device/profile", get(get_device_profile))
+        .route("/device/profile", post(create_device_profile))
+        .route("/device/backup", post(backup_device_storage))
+        .route("/device/baseline", get(get_device_baseline))
         // Resilience (AIMD, Circuit Breaker, Health)
         .route("/resilience/health", get(get_health_status))
         .route("/resilience/circuits", get(get_circuit_status))
@@ -765,6 +770,87 @@ async fn merge_remote_mapping(
     Json(MergeMappingResponse {
         updated_count: updated,
         total_count: total,
+    })
+}
+
+#[derive(Serialize)]
+struct DeviceProfileResponse {
+    profile: antigravity_types::models::DeviceProfile,
+    storage_path: String,
+}
+
+async fn get_device_profile() -> Result<Json<DeviceProfileResponse>, (StatusCode, String)> {
+    let storage_path = device::get_storage_path()
+        .map_err(|e| (StatusCode::NOT_FOUND, format!("storage_not_found: {}", e)))?;
+
+    let profile = device::read_profile(&storage_path).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("read_failed: {}", e),
+        )
+    })?;
+
+    Ok(Json(DeviceProfileResponse {
+        profile,
+        storage_path: storage_path.display().to_string(),
+    }))
+}
+
+#[derive(Serialize)]
+struct CreateProfileResponse {
+    profile: antigravity_types::models::DeviceProfile,
+    backup_path: Option<String>,
+}
+
+async fn create_device_profile() -> Result<Json<CreateProfileResponse>, (StatusCode, String)> {
+    let storage_path = device::get_storage_path()
+        .map_err(|e| (StatusCode::NOT_FOUND, format!("storage_not_found: {}", e)))?;
+
+    let backup_path = device::backup_storage(&storage_path).ok();
+
+    let profile = device::generate_profile();
+    device::write_profile(&storage_path, &profile).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("write_failed: {}", e),
+        )
+    })?;
+
+    Ok(Json(CreateProfileResponse {
+        profile,
+        backup_path: backup_path.map(|p| p.display().to_string()),
+    }))
+}
+
+#[derive(Serialize)]
+struct BackupResponse {
+    backup_path: String,
+}
+
+async fn backup_device_storage() -> Result<Json<BackupResponse>, (StatusCode, String)> {
+    let storage_path = device::get_storage_path()
+        .map_err(|e| (StatusCode::NOT_FOUND, format!("storage_not_found: {}", e)))?;
+
+    let backup_path = device::backup_storage(&storage_path).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("backup_failed: {}", e),
+        )
+    })?;
+
+    Ok(Json(BackupResponse {
+        backup_path: backup_path.display().to_string(),
+    }))
+}
+
+#[derive(Serialize)]
+struct BaselineResponse {
+    baseline: Option<antigravity_types::models::DeviceProfile>,
+}
+
+async fn get_device_baseline() -> Json<BaselineResponse> {
+    Json(BaselineResponse {
+        baseline: device::load_global_original(),
     })
 }
 

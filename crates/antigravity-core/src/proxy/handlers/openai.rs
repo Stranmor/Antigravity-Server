@@ -185,7 +185,6 @@ pub async fn handle_chat_completions(
                     query_string,
                     std::collections::HashMap::new(),
                     warp_proxy.as_deref(),
-                    Some(&email),
                 )
                 .await
             {
@@ -941,7 +940,6 @@ pub async fn handle_completions(
                 query_string,
                 std::collections::HashMap::new(),
                 warp_proxy.as_deref(),
-                Some(&email),
             )
             .await
         {
@@ -1290,7 +1288,6 @@ pub async fn handle_images_generations(
         let aspect_ratio = aspect_ratio.to_string();
         let _response_format = response_format.to_string();
         let warp_proxy_clone = warp_proxy.clone();
-        let email_clone = email.clone();
 
         tasks.push(tokio::spawn(async move {
             let gemini_body = json!({
@@ -1328,7 +1325,6 @@ pub async fn handle_images_generations(
                     None,
                     std::collections::HashMap::new(),
                     warp_proxy_clone.as_deref(),
-                    Some(&email_clone),
                 )
                 .await
             {
@@ -1609,7 +1605,6 @@ pub async fn handle_images_edits(
         let access_token = access_token.clone();
         let body = gemini_body.clone();
         let warp_proxy_clone = warp_proxy.clone();
-        let email_clone = email.clone();
 
         tasks.push(tokio::spawn(async move {
             match upstream
@@ -1620,7 +1615,6 @@ pub async fn handle_images_edits(
                     None,
                     std::collections::HashMap::new(),
                     warp_proxy_clone.as_deref(),
-                    Some(&email_clone),
                 )
                 .await
             {

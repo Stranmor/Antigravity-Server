@@ -31,3 +31,7 @@ pub mod utils;
 // Re-export commonly used types
 pub use error::{AppError, AppResult};
 pub use models::{Account, AppConfig, QuotaData, TokenData};
+pub use modules::device::{
+    backup_storage, generate_profile, get_storage_path, load_global_original, read_profile,
+    save_global_original, write_profile,
+};
