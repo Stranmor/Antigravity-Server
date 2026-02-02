@@ -8,6 +8,7 @@ use axum::{
 use bytes::{Bytes, BytesMut};
 use futures::StreamExt;
 use serde_json::{json, Value};
+use std::collections::HashSet;
 use tracing::{debug, error, info, warn};
 
 use crate::proxy::mappers::gemini::{unwrap_response, wrap_request};
@@ -43,6 +44,7 @@ pub async fn handle_generate(
     let mut last_email: Option<String> = None;
     let mut attempt = 0usize;
     let mut grace_retry_used = false;
+    let mut attempted_accounts: HashSet<String> = HashSet::new();
 
     while attempt < max_attempts {
         let (mapped_model, _reason) = crate::proxy::common::resolve_model_route(
@@ -73,11 +75,12 @@ pub async fn handle_generate(
         let session_id = SessionManager::extract_gemini_session_id(&body, &model_name);
 
         let (access_token, project_id, email, _guard) = match token_manager
-            .get_token(
+            .get_token_with_exclusions(
                 &config.request_type,
                 attempt > 0,
                 Some(&session_id),
                 &config.final_model,
+                Some(&attempted_accounts),
             )
             .await
         {
@@ -133,6 +136,7 @@ pub async fn handle_generate(
                     Err(peek_err) => {
                         warn!("[Gemini] Peek failed: {}, rotating account", peek_err);
                         last_error = peek_err;
+                        attempted_accounts.insert(email.clone());
                         attempt += 1;
                         continue;
                     }
@@ -195,6 +199,7 @@ pub async fn handle_generate(
             }
             warn!("[Gemini] {} on {}, rotating", code, email);
             grace_retry_used = false;
+            attempted_accounts.insert(email.clone());
             attempt += 1;
             continue;
         }

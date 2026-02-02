@@ -459,6 +459,8 @@ pub async fn handle_messages(
     let mut last_email: Option<String> = None;
     let mut grace_retry_used = false;
     let mut attempt = 0usize;
+    let mut attempted_accounts: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
 
     while attempt < max_attempts {
         // 2. 模型路由解析
@@ -490,11 +492,16 @@ pub async fn handle_messages(
 
         let force_rotate_token = attempt > 0;
         let (access_token, project_id, email, _guard) = match token_manager
-            .get_token(
+            .get_token_with_exclusions(
                 &config.request_type,
                 force_rotate_token,
                 session_id,
                 &config.final_model,
+                if attempted_accounts.is_empty() {
+                    None
+                } else {
+                    Some(&attempted_accounts)
+                },
             )
             .await
         {
@@ -1069,6 +1076,7 @@ pub async fn handle_messages(
         // 执行退避
         if apply_retry_strategy(strategy, attempt, status_code, &trace_id).await {
             if should_rotate_account(status_code) {
+                attempted_accounts.insert(email.clone());
                 attempt += 1;
                 grace_retry_used = false;
             }

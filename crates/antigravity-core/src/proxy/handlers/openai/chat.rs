@@ -99,6 +99,8 @@ pub async fn handle_chat_completions(
     let trace_id = format!("oai_{}", chrono::Utc::now().timestamp_subsec_millis());
     let mut grace_retry_used = false;
     let mut attempt = 0usize;
+    let mut attempted_accounts: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
 
     while attempt < max_attempts {
         // 2. 模型路由解析
@@ -122,11 +124,16 @@ pub async fn handle_chat_completions(
         // 4. 获取 Token (使用准确的 request_type)
         // 关键：在重试尝试 (attempt > 0) 时强制轮换账号
         let (access_token, project_id, email, _active_guard) = match token_manager
-            .get_token(
+            .get_token_with_exclusions(
                 &config.request_type,
                 attempt > 0,
                 Some(&session_id),
                 &config.final_model,
+                if attempted_accounts.is_empty() {
+                    None
+                } else {
+                    Some(&attempted_accounts)
+                },
             )
             .await
         {
@@ -222,6 +229,7 @@ pub async fn handle_chat_completions(
 
         // Check if we got a fake error response from connection failure
         if response.status().as_u16() == 500 && !last_error.is_empty() {
+            attempted_accounts.insert(email.clone());
             attempt += 1;
             grace_retry_used = false;
             continue;
@@ -254,6 +262,7 @@ pub async fn handle_chat_completions(
                         PeekResult::Data(bytes, stream) => (Some(bytes), stream),
                         PeekResult::Retry(err) => {
                             last_error = err;
+                            attempted_accounts.insert(email.clone());
                             attempt += 1;
                             grace_retry_used = false;
                             continue;
@@ -334,6 +343,7 @@ pub async fn handle_chat_completions(
                             trace_id
                         );
                         last_error = "Empty response stream (None)".to_string();
+                        attempted_accounts.insert(email.clone());
                         attempt += 1;
                         grace_retry_used = false;
                         continue;
@@ -426,6 +436,7 @@ pub async fn handle_chat_completions(
                     actual_delay
                 );
                 tokio::time::sleep(tokio::time::Duration::from_millis(actual_delay)).await;
+                attempted_accounts.insert(email.clone());
                 attempt += 1;
                 grace_retry_used = false;
                 continue;
@@ -452,6 +463,7 @@ pub async fn handle_chat_completions(
                 attempt + 1,
                 max_attempts
             );
+            attempted_accounts.insert(email.clone());
             attempt += 1;
             grace_retry_used = false;
             continue;
@@ -473,6 +485,7 @@ pub async fn handle_chat_completions(
                 attempt + 1,
                 max_attempts
             );
+            attempted_accounts.insert(email.clone());
             attempt += 1;
             grace_retry_used = false;
             continue;

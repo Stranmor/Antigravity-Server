@@ -487,6 +487,7 @@ impl TokenManager {
     /// 参数 `force_rotate` 为 true 时将忽略锁定，强制切换账号
     /// 参数 `session_id` 用于跨请求维持会话粘性
     /// 参数 `target_model` 目标模型名称（用于配额保护检查）
+    /// 参数 `exclude_accounts` 已尝试过的账号列表（用于避免重复选择失败账号）
     pub async fn get_token(
         &self,
         quota_group: &str,
@@ -494,10 +495,29 @@ impl TokenManager {
         session_id: Option<&str>,
         target_model: &str,
     ) -> Result<(String, String, String, ActiveRequestGuard), String> {
+        self.get_token_with_exclusions(quota_group, force_rotate, session_id, target_model, None)
+            .await
+    }
+
+    /// Extended version of get_token that accepts a set of accounts to exclude from selection
+    pub async fn get_token_with_exclusions(
+        &self,
+        quota_group: &str,
+        force_rotate: bool,
+        session_id: Option<&str>,
+        target_model: &str,
+        exclude_accounts: Option<&std::collections::HashSet<String>>,
+    ) -> Result<(String, String, String, ActiveRequestGuard), String> {
         let timeout_duration = std::time::Duration::from_secs(5);
         match tokio::time::timeout(
             timeout_duration,
-            self.get_token_internal(quota_group, force_rotate, session_id, target_model),
+            self.get_token_internal(
+                quota_group,
+                force_rotate,
+                session_id,
+                target_model,
+                exclude_accounts,
+            ),
         )
         .await
         {
@@ -586,6 +606,7 @@ impl TokenManager {
         force_rotate: bool,
         session_id: Option<&str>,
         target_model: &str,
+        exclude_accounts: Option<&std::collections::HashSet<String>>,
     ) -> Result<(String, String, String, ActiveRequestGuard), String> {
         let mut tokens_snapshot: Vec<ProxyToken> =
             self.tokens.iter().map(|e| e.value().clone()).collect();
@@ -748,7 +769,7 @@ impl TokenManager {
         }
         // ===== [END FIX #820] =====
 
-        let mut attempted: HashSet<String> = HashSet::new();
+        let mut attempted: HashSet<String> = exclude_accounts.cloned().unwrap_or_default();
         let mut last_error: Option<String> = None;
 
         // 获取 AIMD tracker 引用 (避免在循环中多次获取锁)
