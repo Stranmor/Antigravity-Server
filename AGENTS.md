@@ -79,8 +79,6 @@ vendor/
 
 ### ⏭️ Remaining Tasks
 
-### ⏭️ Remaining Tasks
-
 - [x] **VPS deployment** ✅ [2026-01-19] — `https://antigravity.quantumind.ru`
 - [ ] **Phase 5:** Module Size Compliance [IN PROGRESS] — see table above
 - [x] **CLI Management** — full headless control without Web UI ✅ [2026-01-19]
@@ -426,7 +424,7 @@ Server uses **SO_REUSEPORT** + **Graceful Shutdown** for zero-downtime binary re
 
 ### Deployment Workflow
 
-Or use: `./scripts/zero-downtime-deploy.sh`
+Use: `./scripts/zero-downtime-deploy.sh`
 
 ### Container Deployment (Recommended) [2026-01-28]
 
