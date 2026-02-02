@@ -15,7 +15,7 @@
 
 **Goal:** Split all files exceeding 300 lines to comply with Single Responsibility Module principle.
 
-**30 files exceed 300-line limit.** Priority by severity:
+**28 files exceed 300-line limit.** Priority by severity:
 
 | File | Lines | Excess | Priority | Status |
 |------|-------|--------|----------|--------|
@@ -33,7 +33,7 @@
 | `handlers/openai/completions.rs` | 650 | 2.2x | 🟡 MEDIUM | ⏳ |
 | `upstream/client.rs` | 554 | 1.8x | 🟢 LOW | ⏳ |
 | `handlers/openai/images.rs` | 538 | 1.8x | 🟢 LOW | ⏳ |
-| `mappers/request_config.rs` | 536 | 1.8x | 🟢 LOW | ✅ Renamed from `common_utils.rs` |
+| `mappers/request_config.rs` | 536 | 1.8x | 🟢 LOW | ⏳ (renamed from `common_utils.rs`) |
 | `handlers/openai/chat.rs` | 517 | 1.7x | 🟢 LOW | ⏳ |
 | `mappers/context_manager.rs` | 505 | 1.7x | 🟢 LOW | ⏳ |
 | `mappers/tool_result_compressor.rs` | 472 | 1.6x | 🟢 LOW | ⏳ |

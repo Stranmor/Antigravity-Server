@@ -19,7 +19,8 @@
 //! All proxy code is now local copies (no symlinks). Upstream reference lives
 //! in vendor/antigravity-upstream/ (git submodule) for feature porting.
 
-// Upstream code has functions with many arguments - allow this at crate level
+// Upstream-derived mappers have complex protocol transformation functions
+// with many arguments. Refactoring would diverge from upstream significantly.
 #![allow(clippy::too_many_arguments)]
 
 pub mod error;
