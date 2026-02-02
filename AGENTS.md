@@ -79,12 +79,14 @@ vendor/
 
 ### ⏭️ Remaining Tasks
 
-- [x] **Phase 4:** VPS deployment ✅ [2026-01-19] — `https://antigravity.quantumind.ru`
+### ⏭️ Remaining Tasks
+
+- [x] **VPS deployment** ✅ [2026-01-19] — `https://antigravity.quantumind.ru`
 - [ ] **Phase 5:** Module Size Compliance [IN PROGRESS] — see table above
-- [x] **Phase 6:** CLI Management — full headless control without Web UI ✅ [2026-01-19]
-- [x] **Phase 7:** Rust SDK (`antigravity-client`) — auto-discovery, retry, streaming ✅ [2026-01-19]
-- [x] **Phase 7b:** Account auto-sync (60s interval) ✅ [2026-01-19]
-- [ ] **Phase 8:** Extract `antigravity-proxy` crate (optional cleanup)
+- [x] **CLI Management** — full headless control without Web UI ✅ [2026-01-19]
+- [x] **Rust SDK** (`antigravity-client`) — auto-discovery, retry, streaming ✅ [2026-01-19]
+- [x] **Account auto-sync** (60s interval) ✅ [2026-01-19]
+- [ ] **Extract `antigravity-proxy` crate** (optional cleanup)
 
 ---
 
@@ -236,8 +238,8 @@ This fork uses **SEMANTIC PORTING** — we don't blindly copy upstream files, we
 
 - **Location:** `vendor/antigravity-upstream/` (git submodule)
 - **Upstream repo:** https://github.com/lbjlaq/Antigravity-Manager
-- **Current upstream:** v4.0.4
-- **Our version:** v3.3.45 (with custom improvements)
+- **Last sync:** 2026-01-29 (upstream v4.0.7)
+- **Our version:** v3.3.45 (forked with custom improvements)
 
 ### Intentional Divergences
 
