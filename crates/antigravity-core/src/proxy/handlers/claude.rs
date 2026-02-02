@@ -22,7 +22,7 @@ use std::sync::atomic::Ordering;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info};
 
-const MAX_RETRY_ATTEMPTS: usize = 3;
+const MAX_RETRY_ATTEMPTS: usize = 64; // Capped by pool_size - tries ALL accounts with quota
 
 // ===== Model Constants for Background Tasks =====
 // These can be adjusted for performance/cost optimization

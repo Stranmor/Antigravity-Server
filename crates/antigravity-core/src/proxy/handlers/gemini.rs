@@ -14,7 +14,7 @@ use crate::proxy::mappers::gemini::{unwrap_response, wrap_request};
 use crate::proxy::server::AppState;
 use crate::proxy::session_manager::SessionManager;
 
-const MAX_RETRY_ATTEMPTS: usize = 3;
+const MAX_RETRY_ATTEMPTS: usize = 64; // Capped by pool_size - tries ALL accounts with quota
 
 pub async fn handle_generate(
     State(state): State<AppState>,

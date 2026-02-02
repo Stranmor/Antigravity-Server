@@ -10,7 +10,7 @@ use crate::proxy::mappers::openai::{
 };
 use crate::proxy::server::AppState;
 
-const MAX_RETRY_ATTEMPTS: usize = 8;
+const MAX_RETRY_ATTEMPTS: usize = 64; // Capped by pool_size - tries ALL accounts with quota
 use crate::proxy::session_manager::SessionManager;
 
 pub async fn handle_chat_completions(

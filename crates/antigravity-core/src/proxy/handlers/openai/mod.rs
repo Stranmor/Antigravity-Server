@@ -27,4 +27,4 @@ use crate::proxy::mappers::openai::{
 use crate::proxy::server::AppState;
 use crate::proxy::session_manager::SessionManager;
 
-const MAX_RETRY_ATTEMPTS: usize = 8;
+const MAX_RETRY_ATTEMPTS: usize = 64; // Capped by pool_size - tries ALL accounts with quota
