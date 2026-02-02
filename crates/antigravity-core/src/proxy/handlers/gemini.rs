@@ -42,6 +42,7 @@ pub async fn handle_generate(
     let mut last_error = String::new();
     let mut last_email: Option<String> = None;
     let mut attempt = 0usize;
+    let mut grace_retry_used = false;
 
     while attempt < max_attempts {
         let (mapped_model, _reason) = crate::proxy::common::resolve_model_route(
@@ -185,7 +186,15 @@ pub async fn handle_generate(
                     (status, [("X-Account-Email", email.as_str())], error_text).into_response()
                 );
             }
+            // Grace retry for 429 RATE_LIMIT_EXCEEDED (not quota) — same account, once
+            if code == 429 && !grace_retry_used && error_text.contains("RATE_LIMIT_EXCEEDED") {
+                grace_retry_used = true;
+                warn!("[Gemini] 429 RATE_LIMIT_EXCEEDED on {}, grace retry", email);
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                continue;
+            }
             warn!("[Gemini] {} on {}, rotating", code, email);
+            grace_retry_used = false;
             attempt += 1;
             continue;
         }
