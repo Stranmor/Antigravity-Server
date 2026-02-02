@@ -1,5 +1,6 @@
 // OpenAI Handler
 use super::super::retry_strategy::{peek_first_data_chunk, PeekConfig, PeekResult};
+use super::MAX_RETRY_ATTEMPTS;
 use axum::{extract::Json, extract::State, http::StatusCode, response::IntoResponse};
 use bytes::Bytes;
 use serde_json::{json, Value};
@@ -10,7 +11,6 @@ use crate::proxy::mappers::openai::{
 };
 use crate::proxy::server::AppState;
 
-const MAX_RETRY_ATTEMPTS: usize = 64; // Capped by pool_size - tries ALL accounts with quota
 use crate::proxy::session_manager::SessionManager;
 
 pub async fn handle_chat_completions(
