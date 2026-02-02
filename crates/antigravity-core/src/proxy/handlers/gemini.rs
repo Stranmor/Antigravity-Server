@@ -41,8 +41,9 @@ pub async fn handle_generate(
 
     let mut last_error = String::new();
     let mut last_email: Option<String> = None;
+    let mut attempt = 0usize;
 
-    for attempt in 0..max_attempts {
+    while attempt < max_attempts {
         let (mapped_model, _reason) = crate::proxy::common::resolve_model_route(
             &model_name,
             &*state.custom_mapping.read().await,
@@ -116,6 +117,7 @@ pub async fn handle_generate(
                     max_attempts,
                     e
                 );
+                attempt += 1;
                 continue;
             }
         };
@@ -130,6 +132,7 @@ pub async fn handle_generate(
                     Err(peek_err) => {
                         warn!("[Gemini] Peek failed: {}, rotating account", peek_err);
                         last_error = peek_err;
+                        attempt += 1;
                         continue;
                     }
                 };
@@ -183,6 +186,7 @@ pub async fn handle_generate(
                 );
             }
             warn!("[Gemini] {} on {}, rotating", code, email);
+            attempt += 1;
             continue;
         }
 

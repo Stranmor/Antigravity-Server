@@ -98,9 +98,9 @@ pub async fn handle_chat_completions(
     let mut last_email: Option<String> = None;
     let trace_id = format!("oai_{}", chrono::Utc::now().timestamp_subsec_millis());
     let mut grace_retry_used = false;
-    let mut server_overload_retries = 0u8; // [FIX] Track 503 retries separately
+    let mut attempt = 0usize;
 
-    for attempt in 0..max_attempts {
+    while attempt < max_attempts {
         // 2. 模型路由解析
         let (mapped_model, reason) = crate::proxy::common::resolve_model_route(
             &openai_req.model,
@@ -222,7 +222,9 @@ pub async fn handle_chat_completions(
 
         // Check if we got a fake error response from connection failure
         if response.status().as_u16() == 500 && !last_error.is_empty() {
-            continue; // Rotate to next account
+            attempt += 1;
+            grace_retry_used = false;
+            continue;
         }
 
         let status = response.status();
@@ -252,6 +254,8 @@ pub async fn handle_chat_completions(
                         PeekResult::Data(bytes, stream) => (Some(bytes), stream),
                         PeekResult::Retry(err) => {
                             last_error = err;
+                            attempt += 1;
+                            grace_retry_used = false;
                             continue;
                         }
                     };
@@ -326,10 +330,12 @@ pub async fn handle_chat_completions(
                     }
                     None => {
                         tracing::warn!(
-                            "[{}] Stream ended immediately (Empty Response), retrying...",
+                            "[{}] Stream ended immediately (Empty Response), rotating...",
                             trace_id
                         );
                         last_error = "Empty response stream (None)".to_string();
+                        attempt += 1;
+                        grace_retry_used = false;
                         continue;
                     }
                 }
@@ -389,34 +395,8 @@ pub async fn handle_chat_completions(
             }
         }
 
-        // 429/529/503 智能处理
+        // 429/529/503/500 — rotate to next account (503 already retried 5x in inner loop)
         if status_code == 429 || status_code == 529 || status_code == 503 || status_code == 500 {
-            // [FIX] 503 = Google server overload, NOT account issue
-            // Retry on same account with exponential backoff, up to 5 times
-            if status_code == 503 {
-                server_overload_retries += 1;
-                if server_overload_retries <= 5 {
-                    let delay_ms = 300 * (1 << (server_overload_retries - 1)).min(8); // 300, 600, 1200, 2400, 2400
-                    tracing::warn!(
-                        "OpenAI Upstream 503 (server overload) on {} retry {}/5, waiting {}ms",
-                        email,
-                        server_overload_retries,
-                        delay_ms
-                    );
-                    tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
-                    // Don't increase attempt counter - stay on same account
-                    continue;
-                } else {
-                    tracing::warn!(
-                        "OpenAI Upstream 503: {} failed {} retries, rotating to different account",
-                        email,
-                        server_overload_retries
-                    );
-                    server_overload_retries = 0; // Reset for next account
-                                                 // Fall through to rotation logic
-                }
-            }
-
             token_manager
                 .mark_rate_limited_async(
                     &email,
@@ -438,7 +418,7 @@ pub async fn handle_chat_completions(
             if let Some(delay_ms) = crate::proxy::upstream::retry::parse_retry_delay(&error_text) {
                 let actual_delay = delay_ms.saturating_add(200).min(10_000);
                 tracing::warn!(
-                    "OpenAI Upstream {} on {} attempt {}/{}, waiting {}ms then retrying",
+                    "OpenAI Upstream {} on {} attempt {}/{}, waiting {}ms then rotating",
                     status_code,
                     email,
                     attempt + 1,
@@ -446,6 +426,8 @@ pub async fn handle_chat_completions(
                     actual_delay
                 );
                 tokio::time::sleep(tokio::time::Duration::from_millis(actual_delay)).await;
+                attempt += 1;
+                grace_retry_used = false;
                 continue;
             }
 
@@ -470,6 +452,8 @@ pub async fn handle_chat_completions(
                 attempt + 1,
                 max_attempts
             );
+            attempt += 1;
+            grace_retry_used = false;
             continue;
         }
 
@@ -489,6 +473,8 @@ pub async fn handle_chat_completions(
                 attempt + 1,
                 max_attempts
             );
+            attempt += 1;
+            grace_retry_used = false;
             continue;
         }
 

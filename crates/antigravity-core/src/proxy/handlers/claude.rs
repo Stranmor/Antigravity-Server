@@ -460,10 +460,10 @@ pub async fn handle_messages(
     let mut last_error = String::new();
     let mut retried_without_thinking = false;
     let mut last_email: Option<String> = None;
-    // [Grace Retry] Track if we've already done a grace retry on same account for transient 429
     let mut grace_retry_used = false;
+    let mut attempt = 0usize;
 
-    for attempt in 0..max_attempts {
+    while attempt < max_attempts {
         // 2. 模型路由解析
         let (mut mapped_model, reason) = crate::proxy::common::resolve_model_route(
             &request_for_body.model,
@@ -674,6 +674,8 @@ pub async fn handle_messages(
                     max_attempts,
                     e
                 );
+                attempt += 1;
+                grace_retry_used = false;
                 continue;
             }
         };
@@ -724,6 +726,8 @@ pub async fn handle_messages(
                         PeekResult::Data(bytes, stream) => (Some(bytes), stream),
                         PeekResult::Retry(err) => {
                             last_error = err;
+                            attempt += 1;
+                            grace_retry_used = false;
                             continue;
                         }
                     };
@@ -806,6 +810,8 @@ pub async fn handle_messages(
                             trace_id
                         );
                         last_error = "Empty response after peek".to_string();
+                        attempt += 1;
+                        grace_retry_used = false;
                         continue;
                     }
                 }
@@ -1065,12 +1071,9 @@ pub async fn handle_messages(
 
         // 执行退避
         if apply_retry_strategy(strategy, attempt, status_code, &trace_id).await {
-            // 判断是否需要轮换账号
-            if !should_rotate_account(status_code) {
-                debug!(
-                    "[{}] Keeping same account for status {} (server-side issue)",
-                    trace_id, status_code
-                );
+            if should_rotate_account(status_code) {
+                attempt += 1;
+                grace_retry_used = false;
             }
             continue;
         } else {
