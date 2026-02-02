@@ -11,36 +11,26 @@
 - **Phase 3:** Validator integration, Re-exports cleanup, Clippy compliance (all 23 modules clean)
 - **Phase 4:** Eliminate `antigravity-shared`, Edition 2021 alignment
 
-### 🔄 Phase 5: Module Size Compliance [IN PROGRESS - 2026-02-01]
+### 🔄 Phase 5: Module Size Compliance [IN PROGRESS - 2026-02-02]
 
 **Goal:** Split all files exceeding 300 lines to comply with Single Responsibility Module principle.
 
 | File | Lines | Target Split | Status |
 |------|-------|--------------|--------|
-| `handlers/openai.rs` | 1728 | `chat.rs`, `images.rs`, `models.rs` | ⏳ |
-| `handlers/claude.rs` | 1464 | `messages.rs`, `retry.rs`, `background_detection.rs` | ⏳ |
-| `token_manager/mod.rs` | 1754 | `selection.rs`, `state.rs`, `concurrency.rs` | 🔄 Started |
-| `claude/request.rs` | 2509 | `transform.rs`, `tools.rs`, `generation_config.rs` | ⏳ |
+| `handlers/openai.rs` | 1728 | `chat.rs`, `completions.rs`, `images.rs`, `models.rs` | ✅ Split into directory |
+| `handlers/claude.rs` | 1465 | Complex, deferred | ⏸️ Deferred |
+| `token_manager/mod.rs` | 1665 | Tests extracted | 🔄 -13% |
+| `claude/request.rs` | 1894 | Tests extracted | 🔄 -25% |
 | `claude/streaming.rs` | 1177 | TBD | ⏳ |
 | `openai/streaming.rs` | 1092 | TBD | ⏳ |
 | `api/mod.rs` | 778 | ~~`oauth.rs`~~ ✅, `accounts.rs` | 🔄 -324 lines |
 | `rate_limit/mod.rs` | 786 | ~~`types.rs`~~ ✅, ~~`parser.rs`~~ ✅ | 🔄 -289 lines |
 | `modules/process.rs` | 1069 | Platform-specific, complex | ⏳ |
 
-**Extracted modules (2026-02-01):**
-- `proxy/routing_config.rs` — SmartRoutingConfig (35 lines)
-- `proxy/active_request_guard.rs` — RAII guard (45 lines)
-- `proxy/token_manager/file_utils.rs` — atomic_write_json, truncate_reason (45 lines)
-- `api/resilience.rs` — health, circuit, aimd, metrics endpoints (82 lines)
-- `api/device.rs` — device fingerprint endpoints (82 lines)
-- `api/oauth.rs` — OAuth flow handlers (329 lines)
-- `rate_limit/types.rs` — RateLimitReason, RateLimitKey, RateLimitInfo (73 lines)
-- `rate_limit/parser.rs` — Regex patterns and parsing functions (170 lines)
-
-**Banned filenames renamed:** ✅ [2026-01-31]
-- `crates/antigravity-client/src/types.rs` → `messages.rs` ✅
-- `src-leptos/src/types.rs` → `api_models.rs` ✅
-- `src-leptos/src/utils.rs` → `formatters.rs` ✅
+**Completed (2026-02-02):**
+- `handlers/openai.rs` → `handlers/openai/` directory with `chat.rs`, `completions.rs`, `images.rs`, `models.rs`, `mod.rs`
+- Banned filenames renamed: `types.rs` → `messages.rs`, `utils.rs` → `formatters.rs`
+- MAX_RETRY_ATTEMPTS unified to 64 across all handlers
 
 ### 📊 Architecture (Current)
 
