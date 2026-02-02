@@ -51,6 +51,30 @@ enum RetryStrategy {
     ExponentialBackoff { base_ms: u64, max_ms: u64 },
 }
 
+const SIGNATURE_ERROR_PATTERNS: &[&str] = &[
+    "Invalid `signature`",
+    "Invalid signature",
+    "thinking.signature",
+    "thinking.thinking",
+    "thinking.signature: Field required",
+    "thinking.thinking: Field required",
+    "INVALID_ARGUMENT",
+    "Corrupted thought signature",
+    "failed to deserialise",
+    "thinking block",
+    "Found `text`",
+    "Found 'text'",
+    "must be `thinking`",
+    "must be 'thinking'",
+];
+
+#[inline]
+fn is_signature_error(error_text: &str) -> bool {
+    SIGNATURE_ERROR_PATTERNS
+        .iter()
+        .any(|pattern| error_text.contains(pattern))
+}
+
 /// 根据错误状态码和错误信息确定重试策略
 fn determine_retry_strategy(
     status_code: u16,
@@ -59,18 +83,7 @@ fn determine_retry_strategy(
 ) -> RetryStrategy {
     match status_code {
         // 400 错误：Thinking 签名失败或块顺序错误
-        400 if !retried_without_thinking
-            && (error_text.contains("Invalid `signature`")
-                || error_text.contains("thinking.signature")
-                || error_text.contains("thinking.thinking")
-                || error_text.contains("INVALID_ARGUMENT")
-                || error_text.contains("Invalid signature")
-                || error_text.contains("thinking block")
-                || error_text.contains("Found `text`")
-                || error_text.contains("Found 'text'")
-                || error_text.contains("must be `thinking`")
-                || error_text.contains("must be 'thinking'")) =>
-        {
+        400 if !retried_without_thinking && is_signature_error(error_text) => {
             // 固定 200ms 延迟后重试
             RetryStrategy::FixedDelay(Duration::from_millis(200))
         }
@@ -973,26 +986,7 @@ pub async fn handle_messages(
 
         // 4. 处理 400 错误 (Thinking 签名失效)
         // 由于已经主动过滤,这个错误应该很少发生
-        if status_code == 400
-            && !retried_without_thinking
-            && (
-                error_text.contains("Invalid `signature`")
-                || error_text.contains("thinking.signature: Field required")
-                || error_text.contains("thinking.thinking: Field required")
-                || error_text.contains("thinking.signature")
-                || error_text.contains("thinking.thinking")
-                || error_text.contains("INVALID_ARGUMENT")  // [New] Catch generic Google 400s
-                || error_text.contains("Corrupted thought signature") // [New] Explicit signature corruption
-                || error_text.contains("failed to deserialise") // [New] JSON structure issues
-                || error_text.contains("Invalid signature") // [v3.3.40] Universal signature error
-                || error_text.contains("thinking block") // [v3.3.40] Thinking block context
-                || error_text.contains("Found `text`") // [v3.3.40] Block order violation
-                || error_text.contains("Found 'text'") // [v3.3.40] Block order violation (alt quotes)
-                || error_text.contains("must be `thinking`") // [v3.3.40] Block type requirement
-                || error_text.contains("must be 'thinking'")
-                // [v3.3.40] Block type requirement (alt quotes)
-            )
-        {
+        if status_code == 400 && !retried_without_thinking && is_signature_error(&error_text) {
             // Existing logic for thinking signature...
             retried_without_thinking = true;
 

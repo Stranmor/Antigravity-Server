@@ -352,14 +352,17 @@ pub fn start_quota_refresh(state: AppState) {
         tracing::info!("📊 [QuotaRefresh] Auto Quota Refresh Scheduler started");
 
         let mut check_interval = interval(Duration::from_secs(60));
-        let mut last_refresh: Option<i64> = None;
+        let mut last_full_refresh: Option<i64> = None;
 
         loop {
             check_interval.tick().await;
 
             let app_config = match config::load_config() {
                 Ok(cfg) => cfg,
-                Err(_) => continue,
+                Err(e) => {
+                    tracing::warn!("[QuotaRefresh] Failed to load config: {}", e);
+                    continue;
+                }
             };
 
             if !app_config.auto_refresh {
@@ -368,28 +371,11 @@ pub fn start_quota_refresh(state: AppState) {
 
             let now = Utc::now().timestamp();
             let interval_minutes = if app_config.refresh_interval < 5 {
-                tracing::warn!(
-                    "[QuotaRefresh] refresh_interval {} too low, using 15",
-                    app_config.refresh_interval
-                );
                 15
             } else {
                 app_config.refresh_interval
             };
             let interval_secs = (interval_minutes as i64) * 60;
-
-            if let Some(last) = last_refresh {
-                if now - last < interval_secs {
-                    continue;
-                }
-            }
-
-            last_refresh = Some(now);
-
-            tracing::info!(
-                "[QuotaRefresh] 🔄 Refreshing all account quotas (interval: {}min)...",
-                interval_minutes
-            );
 
             let accounts = match account::list_accounts() {
                 Ok(accs) => accs,
@@ -402,39 +388,84 @@ pub fn start_quota_refresh(state: AppState) {
                 .into_iter()
                 .filter(|a| !a.disabled && !a.proxy_disabled)
                 .collect();
-            let total = enabled_accounts.len();
-            let mut success = 0;
 
-            for mut acc in enabled_accounts {
-                match account::fetch_quota_with_retry(&mut acc).await {
-                    Ok(_) => {
-                        if let Some(quota) = acc.quota.clone() {
-                            if let Err(e) =
-                                account::update_account_quota_async(acc.id.clone(), quota).await
-                            {
-                                tracing::warn!(
-                                    "[QuotaRefresh] Failed to update quota for {}: {}",
-                                    acc.email,
-                                    e
-                                );
+            let needs_immediate: Vec<_> = enabled_accounts
+                .iter()
+                .filter(|a| a.quota.as_ref().is_some_and(|q| q.needs_refresh()))
+                .collect();
+
+            if !needs_immediate.is_empty() {
+                tracing::info!(
+                    "[QuotaRefresh] ⚡ {} account(s) have expired reset_time, refreshing immediately",
+                    needs_immediate.len()
+                );
+                for acc in &needs_immediate {
+                    let mut acc_clone = (*acc).clone();
+                    match account::fetch_quota_with_retry(&mut acc_clone).await {
+                        Ok(_) => {
+                            if let Some(quota) = acc_clone.quota.clone() {
+                                let _ = account::update_account_quota_async(
+                                    acc_clone.id.clone(),
+                                    quota,
+                                )
+                                .await;
                             }
+                            tracing::debug!(
+                                "[QuotaRefresh] ✓ Immediate refresh: {}",
+                                acc_clone.email
+                            );
                         }
-                        success += 1;
+                        Err(e) => {
+                            tracing::warn!(
+                                "[QuotaRefresh] Failed immediate refresh {}: {}",
+                                acc_clone.email,
+                                e
+                            );
+                        }
                     }
-                    Err(e) => {
-                        tracing::warn!("[QuotaRefresh] Failed to refresh {}: {}", acc.email, e);
-                    }
+                    tokio::time::sleep(Duration::from_millis(300)).await;
                 }
-                tokio::time::sleep(Duration::from_millis(500)).await;
+                let _ = state.reload_accounts().await;
             }
 
-            tracing::info!(
-                "[QuotaRefresh] ✅ Refreshed {}/{} accounts successfully",
-                success,
-                total
-            );
+            let do_full_refresh = match last_full_refresh {
+                None => true,
+                Some(last) => now - last >= interval_secs,
+            };
 
-            let _ = state.reload_accounts().await;
+            if do_full_refresh {
+                last_full_refresh = Some(now);
+                tracing::info!(
+                    "[QuotaRefresh] 🔄 Full refresh (interval: {}min)...",
+                    interval_minutes
+                );
+
+                let total = enabled_accounts.len();
+                let mut success = 0;
+
+                for mut acc in enabled_accounts {
+                    match account::fetch_quota_with_retry(&mut acc).await {
+                        Ok(_) => {
+                            if let Some(quota) = acc.quota.clone() {
+                                let _ = account::update_account_quota_async(acc.id.clone(), quota)
+                                    .await;
+                            }
+                            success += 1;
+                        }
+                        Err(e) => {
+                            tracing::warn!("[QuotaRefresh] Failed {}: {}", acc.email, e);
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+
+                tracing::info!(
+                    "[QuotaRefresh] ✅ Full refresh: {}/{} accounts",
+                    success,
+                    total
+                );
+                let _ = state.reload_accounts().await;
+            }
         }
     });
 }

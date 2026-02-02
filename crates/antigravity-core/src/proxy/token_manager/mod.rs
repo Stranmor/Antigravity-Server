@@ -13,7 +13,10 @@ mod file_utils;
 mod proxy_token;
 
 use file_utils::{atomic_write_json, calculate_max_quota_percentage, truncate_reason};
-pub use proxy_token::ProxyToken;
+pub use proxy_token::{AccountTier, ProxyToken};
+
+const SESSION_FAILURE_THRESHOLD: u32 = 3;
+const STICKY_UNBIND_RATE_LIMIT_SECONDS: u64 = 15;
 
 /// Manages OAuth tokens for multiple accounts with smart routing and session affinity.
 ///
@@ -737,7 +740,7 @@ impl TokenManager {
             // Check if session has too many consecutive failures - force unbind
             if let Some(sid) = session_id {
                 let failures = self.get_session_failures(sid);
-                if failures >= 3 {
+                if failures >= SESSION_FAILURE_THRESHOLD {
                     if let Some(bound_id) = self.session_accounts.get(sid).map(|v| v.clone()) {
                         self.session_accounts.remove(sid);
                         self.clear_session_failures(sid);
@@ -820,7 +823,7 @@ impl TokenManager {
                                 .get_remaining_wait_for_model(&bound_id, &normalized_target);
 
                             if reset_sec > 0 {
-                                if reset_sec > 15 {
+                                if reset_sec > STICKY_UNBIND_RATE_LIMIT_SECONDS {
                                     self.session_accounts.remove(sid);
                                     tracing::warn!(
                                         "Sticky Session: {} rate-limited ({}s), unbinding session {}",

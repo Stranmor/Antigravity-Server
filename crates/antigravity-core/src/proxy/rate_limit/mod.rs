@@ -8,6 +8,13 @@ use std::time::{Duration, SystemTime};
 
 const FAILURE_COUNT_EXPIRY_SECONDS: u64 = 3600;
 
+const QUOTA_LOCKOUT_TIER_1: u64 = 60;
+const QUOTA_LOCKOUT_TIER_2: u64 = 300;
+const QUOTA_LOCKOUT_TIER_3: u64 = 1800;
+const QUOTA_LOCKOUT_TIER_4: u64 = 7200;
+
+const RATE_LIMIT_DEFAULT_SECONDS: u64 = 5;
+
 fn duration_to_secs_ceil(d: Duration) -> u64 {
     let secs = d.as_secs();
     if d.subsec_nanos() > 0 {
@@ -285,33 +292,31 @@ impl RateLimitTracker {
 
                 match reason {
                     RateLimitReason::QuotaExhausted => {
-                        // [智能限流] 根据连续失败次数动态调整锁定时间
-                        // 第1次: 60s, 第2次: 5min, 第3次: 30min, 第4次+: 2h
                         let lockout = match failure_count {
                             1 => {
                                 tracing::warn!(
                                     "检测到配额耗尽 (QUOTA_EXHAUSTED)，第1次失败，锁定 60秒"
                                 );
-                                60
+                                QUOTA_LOCKOUT_TIER_1
                             }
                             2 => {
                                 tracing::warn!(
                                     "检测到配额耗尽 (QUOTA_EXHAUSTED)，第2次连续失败，锁定 5分钟"
                                 );
-                                300
+                                QUOTA_LOCKOUT_TIER_2
                             }
                             3 => {
                                 tracing::warn!(
                                     "检测到配额耗尽 (QUOTA_EXHAUSTED)，第3次连续失败，锁定 30分钟"
                                 );
-                                1800
+                                QUOTA_LOCKOUT_TIER_3
                             }
                             _ => {
                                 tracing::warn!(
                                     "检测到配额耗尽 (QUOTA_EXHAUSTED)，第{}次连续失败，锁定 2小时",
                                     failure_count
                                 );
-                                7200
+                                QUOTA_LOCKOUT_TIER_4
                             }
                         };
                         lockout
@@ -321,7 +326,7 @@ impl RateLimitTracker {
                         // 原因: 时间解析器修复后,多数情况会解析成功,不会走到这里
                         // 即使解析失败,5秒也足够应对瞬时限流
                         tracing::debug!("检测到速率限制 (RATE_LIMIT_EXCEEDED)，使用默认值 5秒");
-                        5
+                        RATE_LIMIT_DEFAULT_SECONDS
                     }
                     RateLimitReason::ModelCapacityExhausted => {
                         // Unreachable: early return at line 215 handles this case

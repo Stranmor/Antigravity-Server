@@ -13,6 +13,45 @@ pub struct ModelQuota {
     pub reset_time: String,
 }
 
+impl ModelQuota {
+    /// Parse reset_time string (e.g., "4h 30m", "0h 0m", "45m") into total seconds.
+    /// Returns 0 if parsing fails or time is already expired.
+    pub fn reset_time_seconds(&self) -> i64 {
+        parse_reset_time(&self.reset_time)
+    }
+
+    /// Check if this model's quota has reset (reset_time <= 0).
+    pub fn has_reset(&self) -> bool {
+        self.reset_time_seconds() <= 0
+    }
+}
+
+/// Parse a reset time string like "4h 30m", "0h 0m", "45m", "2h" into seconds.
+/// Returns 0 for unparseable strings or already-expired times.
+pub fn parse_reset_time(s: &str) -> i64 {
+    let s = s.trim().to_lowercase();
+    let mut total_seconds: i64 = 0;
+
+    // Match hours: "4h", "0h"
+    if let Some(h_idx) = s.find('h') {
+        if let Ok(hours) = s[..h_idx].trim().parse::<i64>() {
+            total_seconds += hours * 3600;
+        }
+    }
+
+    // Match minutes: "30m", "0m"
+    if let Some(m_idx) = s.find('m') {
+        // Find the start of minutes (after 'h' if present, or from beginning)
+        let start = s.find('h').map(|i| i + 1).unwrap_or(0);
+        let minutes_str = s[start..m_idx].trim();
+        if let Ok(minutes) = minutes_str.parse::<i64>() {
+            total_seconds += minutes * 60;
+        }
+    }
+
+    total_seconds
+}
+
 /// Aggregated quota data for an account.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct QuotaData {
@@ -65,6 +104,17 @@ impl QuotaData {
     pub fn min_quota(&self) -> Option<i32> {
         self.models.iter().map(|m| m.percentage).min()
     }
+
+    /// Check if any model's quota has reset and needs refresh.
+    /// Returns true if any model has reset_time <= 0 (quota already refreshed by Google).
+    pub fn needs_refresh(&self) -> bool {
+        self.models.iter().any(|m| m.has_reset())
+    }
+
+    /// Get the minimum reset time in seconds across all models.
+    pub fn min_reset_seconds(&self) -> Option<i64> {
+        self.models.iter().map(|m| m.reset_time_seconds()).min()
+    }
 }
 
 #[cfg(test)]
@@ -80,5 +130,36 @@ mod tests {
         assert!(quota.any_below_threshold(20));
         assert!(!quota.any_below_threshold(10));
         assert_eq!(quota.min_quota(), Some(15));
+    }
+
+    #[test]
+    fn test_parse_reset_time() {
+        assert_eq!(parse_reset_time("4h 30m"), 4 * 3600 + 30 * 60);
+        assert_eq!(parse_reset_time("0h 0m"), 0);
+        assert_eq!(parse_reset_time("1h"), 3600);
+        assert_eq!(parse_reset_time("45m"), 45 * 60);
+        assert_eq!(parse_reset_time("0h 5m"), 5 * 60);
+        assert_eq!(parse_reset_time(""), 0);
+        assert_eq!(parse_reset_time("invalid"), 0);
+    }
+
+    #[test]
+    fn test_needs_refresh() {
+        let mut quota = QuotaData::new();
+        quota.add_model("g3-pro".to_string(), 100, "0h 0m".to_string());
+        quota.add_model("g3-flash".to_string(), 100, "4h 30m".to_string());
+
+        assert!(quota.needs_refresh());
+        assert_eq!(quota.min_reset_seconds(), Some(0));
+    }
+
+    #[test]
+    fn test_no_refresh_needed() {
+        let mut quota = QuotaData::new();
+        quota.add_model("g3-pro".to_string(), 50, "2h 15m".to_string());
+        quota.add_model("g3-flash".to_string(), 80, "4h 30m".to_string());
+
+        assert!(!quota.needs_refresh());
+        assert_eq!(quota.min_reset_seconds(), Some(2 * 3600 + 15 * 60));
     }
 }

@@ -1,13 +1,32 @@
 use super::super::file_utils::truncate_reason;
+use super::super::proxy_token::ProxyToken;
 use super::super::{ActiveRequestGuard, TokenManager};
 use crate::proxy::adaptive_limit::AdaptiveLimitManager;
 use crate::proxy::SmartRoutingConfig;
 use dashmap::DashMap;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 fn create_test_manager() -> TokenManager {
     TokenManager::new(PathBuf::from("/tmp/test_antigravity"))
+}
+
+fn create_test_token(tier: Option<&str>) -> ProxyToken {
+    ProxyToken {
+        account_id: "test".to_string(),
+        access_token: "token".to_string(),
+        refresh_token: "refresh".to_string(),
+        expires_in: 3600,
+        timestamp: 0,
+        email: "test@example.com".to_string(),
+        account_path: PathBuf::from("/tmp"),
+        project_id: None,
+        subscription_tier: tier.map(String::from),
+        remaining_quota: Some(100),
+        protected_models: HashSet::new(),
+        health_score: 1.0,
+    }
 }
 
 #[test]
@@ -217,29 +236,20 @@ async fn test_adaptive_limits_injection() {
 
 #[test]
 fn test_tier_weight_scoring() {
-    let tier_weight = |tier: &Option<String>| -> f32 {
-        match tier.as_deref() {
-            Some(t) if t.contains("ultra") => 0.25,
-            Some(t) if t.contains("pro") => 0.8,
-            Some(t) if t.contains("free") => 1.0,
-            _ => 1.25,
-        }
-    };
+    let tier_weight = |tier: Option<&str>| -> f32 { create_test_token(tier).tier_weight() };
 
     let score = |tier: Option<&str>, active: u32| -> f32 {
-        let t = tier.map(String::from);
-        let w = tier_weight(&t);
+        let w = tier_weight(tier);
         w + (active as f32) * w
     };
 
-    assert_eq!(
-        tier_weight(&Some("ws-ai-ultra-business-tier".to_string())),
-        0.25
-    );
-    assert_eq!(tier_weight(&Some("g1-pro-tier".to_string())), 0.8);
-    assert_eq!(tier_weight(&Some("free-tier".to_string())), 1.0);
-    assert_eq!(tier_weight(&None), 1.25);
+    assert_eq!(tier_weight(Some("ws-ai-ultra-business-tier")), 0.1);
+    assert_eq!(tier_weight(Some("g1-ultra-tier")), 0.25);
+    assert_eq!(tier_weight(Some("g1-pro-tier")), 0.8);
+    assert_eq!(tier_weight(Some("free-tier")), 1.0);
+    assert_eq!(tier_weight(None), 1.25);
 
+    assert!(score(Some("ultra-business"), 0) < score(Some("ultra"), 0));
     assert!(score(Some("ultra"), 0) < score(Some("free"), 0));
     assert!(score(Some("ultra"), 0) < score(Some("pro"), 0));
     assert!(score(Some("ultra"), 1) < score(Some("free"), 1));
