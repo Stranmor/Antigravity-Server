@@ -2,7 +2,7 @@
 // 对应 NonStreamingProcessor
 
 use super::models::*;
-use super::utils::to_claude_usage;
+use super::token_scaling::to_claude_usage;
 use serde_json::json;
 
 /// [FIX #547] Helper function to coerce string values to boolean
@@ -305,7 +305,7 @@ impl NonStreamingProcessor {
                 format!(
                     "{}-{}",
                     fc.name,
-                    crate::proxy::common::utils::generate_random_id()
+                    crate::proxy::common::random_id::generate_random_id()
                 )
             });
 
@@ -546,7 +546,10 @@ impl NonStreamingProcessor {
 
         ClaudeResponse {
             id: gemini_response.response_id.clone().unwrap_or_else(|| {
-                format!("msg_{}", crate::proxy::common::utils::generate_random_id())
+                format!(
+                    "msg_{}",
+                    crate::proxy::common::random_id::generate_random_id()
+                )
             }),
             type_: "message".to_string(),
             role: "assistant".to_string(),

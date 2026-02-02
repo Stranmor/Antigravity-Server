@@ -1,6 +1,6 @@
 // Claude 协议处理器
 
-use super::common::{peek_first_data_chunk, PeekConfig, PeekResult};
+use super::retry_strategy::{peek_first_data_chunk, PeekConfig, PeekResult};
 use crate::proxy::mappers::claude::{
     clean_cache_control_from_messages, close_tool_loop_for_thinking, create_claude_sse_stream,
     filter_invalid_thinking_blocks_with_family, merge_consecutive_messages,
@@ -690,9 +690,10 @@ pub async fn handle_messages(
             state.adaptive_limits.record_success(&email);
 
             // Determine context limit based on model
-            let context_limit = crate::proxy::mappers::claude::utils::get_context_limit_for_model(
-                &request_with_mapped.model,
-            );
+            let context_limit =
+                crate::proxy::mappers::claude::token_scaling::get_context_limit_for_model(
+                    &request_with_mapped.model,
+                );
 
             let estimated_tokens = {
                 use crate::proxy::mappers::context_manager::ContextManager;
@@ -852,7 +853,7 @@ pub async fn handle_messages(
 
                 // Determine context limit based on model
                 let context_limit =
-                    crate::proxy::mappers::claude::utils::get_context_limit_for_model(
+                    crate::proxy::mappers::claude::token_scaling::get_context_limit_for_model(
                         &request_with_mapped.model,
                     );
 

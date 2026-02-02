@@ -1,7 +1,7 @@
 mod parser;
-mod types;
+mod rate_limit_info;
 
-pub use types::{RateLimitInfo, RateLimitKey, RateLimitReason};
+pub use rate_limit_info::{RateLimitInfo, RateLimitKey, RateLimitReason};
 
 use dashmap::DashMap;
 use std::time::{Duration, SystemTime};

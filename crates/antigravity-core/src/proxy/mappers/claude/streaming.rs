@@ -2,7 +2,7 @@
 // 对应 StreamingState + PartProcessor
 
 use super::models::*;
-use super::utils::to_claude_usage;
+use super::token_scaling::to_claude_usage;
 use crate::proxy::SignatureCache;
 use bytes::Bytes;
 use serde_json::{json, Value};
@@ -973,7 +973,7 @@ impl<'a> PartProcessor<'a> {
             format!(
                 "{}-{}",
                 fc.name,
-                crate::proxy::common::utils::generate_random_id()
+                crate::proxy::common::random_id::generate_random_id()
             )
         });
 

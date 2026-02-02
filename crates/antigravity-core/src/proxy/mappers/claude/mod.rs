@@ -7,7 +7,10 @@ pub mod request;
 pub mod response;
 pub mod streaming;
 pub mod thinking_utils;
-pub mod utils;
+pub mod token_scaling;
+
+#[cfg(test)]
+mod tests_request;
 
 pub use collector::collect_stream_to_json;
 pub use models::*;
@@ -276,7 +279,7 @@ fn process_grounding_metadata(
     // Generate a unique tool_use_id
     let tool_use_id = format!(
         "srvtoolu_{}",
-        crate::proxy::common::utils::generate_random_id()
+        crate::proxy::common::random_id::generate_random_id()
     );
 
     // Build search results array
