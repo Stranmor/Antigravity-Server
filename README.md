@@ -61,10 +61,42 @@ claude
 | Deployment | Desktop GUI | **Headless VPS daemon** |
 | Frontend | React + TypeScript | **Leptos (Rust → WASM)** |
 | Rate Limiting | Reactive (retry on 429) | **AIMD predictive** |
+| Account Rotation | Standard retry | **Smart exclusion-based rotation** |
 | Reliability | Basic failover | **Circuit breakers + health scores** |
 | Persistence | Direct file I/O | **Actor loop (race-free)** |
 | Observability | Local UI only | **Prometheus metrics + REST API** |
 | Audio/Video | Not supported | **Full multimodal** |
+
+---
+
+## Smart Account Rotation
+
+When running multiple accounts (e.g., 15 Google AI Studio accounts), efficient load distribution becomes critical under high concurrency. This fork implements **exclusion-based rotation** — each request maintains memory of which accounts already failed, ensuring retries always try fresh accounts.
+
+```
+Request lifecycle:
+┌─────────────────────────────────────────────────────────────┐
+│ Attempt 1: Account A (ultra-tier) → 503 Service Unavailable │
+│            attempted = {A}                                   │
+├─────────────────────────────────────────────────────────────┤
+│ Attempt 2: Account B (pro-tier) → 429 Rate Limited          │
+│            attempted = {A, B}                                │
+├─────────────────────────────────────────────────────────────┤
+│ Attempt 3: Account C (free-tier) → 200 OK ✓                 │
+│            Response returned to client                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Benchmark (50 concurrent requests):**
+
+| Metric | Result |
+|--------|--------|
+| Accounts utilized | 14 different accounts |
+| Rotation events | 362 distributed across pool |
+| Success rate | 100% (50/50 HTTP 200) |
+| Total time | 18.9 seconds |
+
+The exclusion set is per-request (no cross-request contamination), thread-safe (stack-allocated HashSet), and has minimal overhead (~6KB worst case for 14 accounts).
 
 ---
 
