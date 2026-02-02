@@ -1,8 +1,8 @@
 # Antigravity Manager - Architecture Status
 
-## 🏛️ ARCHITECTURAL EVOLUTION [2026-01-17]
+## 🏛️ ARCHITECTURAL EVOLUTION [2026-02-02]
 
-**Current Status:** PHASE 4 COMPLETE — antigravity-shared eliminated, direct imports from antigravity-types
+**Current Status:** PHASE 5 IN PROGRESS — Module size compliance refactoring
 
 ### ✅ Completed Phases (1-4)
 
@@ -23,9 +23,9 @@
 | `handlers/openai/images.rs` | 538 | Need further split | 🔄 Phase 5B |
 | `handlers/claude.rs` | 1465 | Complex, deferred | ⏸️ Deferred |
 | `token_manager/mod.rs` | 1665 | Tests extracted | 🔄 -13% |
-| `claude/request.rs` | 1894 | Tests extracted | 🔄 -25% |
-| `claude/streaming.rs` | 1177 | TBD | ⏳ |
-| `openai/streaming.rs` | 1092 | TBD | ⏳ |
+| `mappers/claude/request.rs` | 1894 | Tests extracted | 🔄 -25% |
+| `mappers/claude/streaming.rs` | 1177 | TBD | ⏳ |
+| `mappers/openai/streaming.rs` | 1092 | TBD | ⏳ |
 | `api/mod.rs` | 778 | ~~`oauth.rs`~~ ✅, `accounts.rs` | 🔄 -324 lines |
 | `rate_limit/mod.rs` | 786 | ~~`types.rs`~~ ✅, ~~`parser.rs`~~ ✅ | 🔄 -289 lines |
 | `modules/process.rs` | 1069 | Platform-specific, complex | ⏳ |
