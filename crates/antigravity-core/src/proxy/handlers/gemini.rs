@@ -80,7 +80,11 @@ pub async fn handle_generate(
                 attempt > 0,
                 Some(&session_id),
                 &config.final_model,
-                Some(&attempted_accounts),
+                if attempted_accounts.is_empty() {
+                    None
+                } else {
+                    Some(&attempted_accounts)
+                },
             )
             .await
         {
