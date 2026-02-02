@@ -10,57 +10,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 mod file_utils;
+mod proxy_token;
+
 use file_utils::{atomic_write_json, calculate_max_quota_percentage, truncate_reason};
-
-/// Token representing an authenticated account with OAuth credentials.
-///
-/// Contains access/refresh tokens, account metadata, and quota information
-/// for routing requests to the appropriate Google/Anthropic backend.
-#[derive(Debug, Clone)]
-pub struct ProxyToken {
-    pub account_id: String,
-    pub access_token: String,
-    pub refresh_token: String,
-    pub expires_in: i64,
-    pub timestamp: i64,
-    pub email: String,
-    pub account_path: PathBuf, // 账号文件路径，用于更新
-    pub project_id: Option<String>,
-    pub subscription_tier: Option<String>, // "FREE" | "PRO" | "ULTRA"
-    pub remaining_quota: Option<i32>, // [FIX #563] Remaining quota percentage for priority sorting
-    pub protected_models: HashSet<String>, // [FIX #621] Models with exhausted quota (0%)
-    pub health_score: f32,            // [NEW v4.0.4] Health score (0.0 - 1.0)
-}
-
-impl ProxyToken {
-    /// Business Ultra tier: high daily quota, strict RPM limits
-    /// These accounts should be tried first on every request
-    pub fn is_business_ultra(&self) -> bool {
-        self.subscription_tier
-            .as_ref()
-            .is_some_and(|t| t.contains("ultra-business"))
-    }
-
-    pub fn tier_priority(&self) -> u8 {
-        match self.subscription_tier.as_deref() {
-            Some(t) if t.contains("ultra-business") => 0,
-            Some(t) if t.contains("ultra") => 1,
-            Some(t) if t.contains("pro") => 2,
-            Some(t) if t.contains("free") => 3,
-            _ => 4,
-        }
-    }
-
-    pub fn tier_weight(&self) -> f32 {
-        match self.subscription_tier.as_deref() {
-            Some(t) if t.contains("ultra-business") => 0.1,
-            Some(t) if t.contains("ultra") => 0.25,
-            Some(t) if t.contains("pro") => 0.8,
-            Some(t) if t.contains("free") => 1.0,
-            _ => 1.25,
-        }
-    }
-}
+pub use proxy_token::ProxyToken;
 
 /// Manages OAuth tokens for multiple accounts with smart routing and session affinity.
 ///
@@ -798,7 +751,73 @@ impl TokenManager {
                 }
             }
 
-            // Sticky session handling
+            // === ULTRA-TIER PRIORITY: Check ultra accounts BEFORE sticky session ===
+            // If an ultra/ultra-business account is available, use it even if session is sticky to pro
+            if target_token.is_none() && !rotate {
+                let mut ultra_candidates: Vec<(&ProxyToken, u8, u32)> = Vec::new();
+
+                for candidate in &tokens_snapshot {
+                    let tier = candidate.tier_priority();
+                    // Only consider ultra-business (0) and ultra (1) tiers
+                    if tier > 1 {
+                        continue;
+                    }
+
+                    if attempted.contains(&candidate.email) {
+                        continue;
+                    }
+
+                    if self.is_rate_limited_for_model(&candidate.email, &normalized_target) {
+                        continue;
+                    }
+
+                    if quota_protection_enabled
+                        && self.is_model_protected(&candidate.account_id, &normalized_target)
+                    {
+                        continue;
+                    }
+
+                    if let Some(aimd) = &aimd {
+                        if aimd.usage_ratio(&candidate.email) > 1.2 {
+                            continue;
+                        }
+                    }
+
+                    let active = self.get_active_requests(&candidate.email);
+                    ultra_candidates.push((candidate, tier, active));
+                }
+
+                if !ultra_candidates.is_empty() {
+                    // Sort by: 1) tier priority (lower=better), 2) active requests (lower=better)
+                    ultra_candidates.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.2.cmp(&b.2)));
+
+                    // Try to reserve slot atomically for each ultra candidate
+                    for (candidate, tier, _active) in ultra_candidates {
+                        if let Some(guard) = ActiveRequestGuard::try_new(
+                            Arc::clone(&self.active_requests),
+                            candidate.email.clone(),
+                            routing.max_concurrent_per_account,
+                        ) {
+                            let tier_name = match tier {
+                                0 => "ultra-business",
+                                1 => "ultra",
+                                _ => "unknown",
+                            };
+                            tracing::debug!(
+                                "Ultra Priority: Selected {} ({}) over sticky session",
+                                candidate.email,
+                                tier_name
+                            );
+                            target_token = Some(candidate.clone());
+                            active_guard = Some(guard);
+                            break;
+                        }
+                    }
+                }
+            }
+            // === END ULTRA-TIER PRIORITY ===
+
+            // Sticky session handling (FALLBACK: only if no ultra account was selected)
             if target_token.is_none() {
                 if let Some(sid) = session_id {
                     if !rotate && routing.enable_session_affinity {
