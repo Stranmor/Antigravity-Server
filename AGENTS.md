@@ -18,6 +18,9 @@
 | File | Lines | Target Split | Status |
 |------|-------|--------------|--------|
 | `handlers/openai.rs` | 1728 | `chat.rs`, `completions.rs`, `images.rs`, `models.rs` | ✅ Split into directory |
+| `handlers/openai/chat.rs` | 518 | Need further split | 🔄 Phase 5B |
+| `handlers/openai/completions.rs` | 650 | Need further split | 🔄 Phase 5B |
+| `handlers/openai/images.rs` | 538 | Need further split | 🔄 Phase 5B |
 | `handlers/claude.rs` | 1465 | Complex, deferred | ⏸️ Deferred |
 | `token_manager/mod.rs` | 1665 | Tests extracted | 🔄 -13% |
 | `claude/request.rs` | 1894 | Tests extracted | 🔄 -25% |
