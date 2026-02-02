@@ -173,11 +173,8 @@ async fn apply_retry_strategy(
 /// 判断是否应该轮换账号
 fn should_rotate_account(status_code: u16) -> bool {
     match status_code {
-        // 这些错误是账号级别的，需要轮换
-        429 | 401 | 403 | 500 => true,
-        // 这些错误是服务端级别的，轮换账号无意义
-        400 | 503 | 529 => false,
-        // 其他错误默认不轮换
+        429 | 401 | 403 | 500 | 503 | 529 => true,
+        400 => false,
         _ => false,
     }
 }
