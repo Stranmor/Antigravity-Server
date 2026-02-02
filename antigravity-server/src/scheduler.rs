@@ -394,6 +394,8 @@ pub fn start_quota_refresh(state: AppState) {
                 .filter(|a| a.quota.as_ref().is_some_and(|q| q.needs_refresh()))
                 .collect();
 
+            let mut already_refreshed: HashSet<String> = HashSet::new();
+
             if !needs_immediate.is_empty() {
                 tracing::info!(
                     "[QuotaRefresh] ⚡ {} account(s) have expired reset_time, refreshing immediately",
@@ -410,6 +412,7 @@ pub fn start_quota_refresh(state: AppState) {
                                 )
                                 .await;
                             }
+                            already_refreshed.insert(acc_clone.id.clone());
                             tracing::debug!(
                                 "[QuotaRefresh] ✓ Immediate refresh: {}",
                                 acc_clone.email
@@ -435,36 +438,50 @@ pub fn start_quota_refresh(state: AppState) {
 
             if do_full_refresh {
                 last_full_refresh = Some(now);
-                tracing::info!(
-                    "[QuotaRefresh] 🔄 Full refresh (interval: {}min)...",
-                    interval_minutes
-                );
 
-                let total = enabled_accounts.len();
-                let mut success = 0;
+                let accounts_to_refresh: Vec<_> = enabled_accounts
+                    .into_iter()
+                    .filter(|a| !already_refreshed.contains(&a.id))
+                    .collect();
 
-                for mut acc in enabled_accounts {
-                    match account::fetch_quota_with_retry(&mut acc).await {
-                        Ok(_) => {
-                            if let Some(quota) = acc.quota.clone() {
-                                let _ = account::update_account_quota_async(acc.id.clone(), quota)
-                                    .await;
+                let total = accounts_to_refresh.len();
+                if total == 0 {
+                    tracing::debug!(
+                        "[QuotaRefresh] All accounts already refreshed, skipping full refresh"
+                    );
+                } else {
+                    tracing::info!(
+                        "[QuotaRefresh] 🔄 Full refresh (interval: {}min, {} accounts)...",
+                        interval_minutes,
+                        total
+                    );
+
+                    let mut success = 0;
+
+                    for mut acc in accounts_to_refresh {
+                        match account::fetch_quota_with_retry(&mut acc).await {
+                            Ok(_) => {
+                                if let Some(quota) = acc.quota.clone() {
+                                    let _ =
+                                        account::update_account_quota_async(acc.id.clone(), quota)
+                                            .await;
+                                }
+                                success += 1;
                             }
-                            success += 1;
+                            Err(e) => {
+                                tracing::warn!("[QuotaRefresh] Failed {}: {}", acc.email, e);
+                            }
                         }
-                        Err(e) => {
-                            tracing::warn!("[QuotaRefresh] Failed {}: {}", acc.email, e);
-                        }
+                        tokio::time::sleep(Duration::from_millis(500)).await;
                     }
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                }
 
-                tracing::info!(
-                    "[QuotaRefresh] ✅ Full refresh: {}/{} accounts",
-                    success,
-                    total
-                );
-                let _ = state.reload_accounts().await;
+                    tracing::info!(
+                        "[QuotaRefresh] ✅ Full refresh: {}/{} accounts",
+                        success,
+                        total
+                    );
+                    let _ = state.reload_accounts().await;
+                }
             }
         }
     });

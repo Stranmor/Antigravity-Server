@@ -29,23 +29,37 @@ impl ModelQuota {
 /// Parse a reset time string like "4h 30m", "0h 0m", "45m", "2h" into seconds.
 /// Returns 0 for unparseable strings or already-expired times.
 pub fn parse_reset_time(s: &str) -> i64 {
-    let s = s.trim().to_lowercase();
+    let s = s.trim();
     let mut total_seconds: i64 = 0;
 
-    // Match hours: "4h", "0h"
-    if let Some(h_idx) = s.find('h') {
-        if let Ok(hours) = s[..h_idx].trim().parse::<i64>() {
-            total_seconds += hours * 3600;
-        }
-    }
-
-    // Match minutes: "30m", "0m"
-    if let Some(m_idx) = s.find('m') {
-        // Find the start of minutes (after 'h' if present, or from beginning)
-        let start = s.find('h').map(|i| i + 1).unwrap_or(0);
-        let minutes_str = s[start..m_idx].trim();
-        if let Ok(minutes) = minutes_str.parse::<i64>() {
-            total_seconds += minutes * 60;
+    let bytes = s.as_bytes();
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'h' || b == b'H' {
+            let num_end = i;
+            let num_start = bytes[..num_end]
+                .iter()
+                .rposition(|&c| !c.is_ascii_digit())
+                .map(|p| p + 1)
+                .unwrap_or(0);
+            if let Ok(hours) = std::str::from_utf8(&bytes[num_start..num_end])
+                .unwrap_or("")
+                .parse::<i64>()
+            {
+                total_seconds += hours * 3600;
+            }
+        } else if b == b'm' || b == b'M' {
+            let num_end = i;
+            let num_start = bytes[..num_end]
+                .iter()
+                .rposition(|&c| !c.is_ascii_digit())
+                .map(|p| p + 1)
+                .unwrap_or(0);
+            if let Ok(minutes) = std::str::from_utf8(&bytes[num_start..num_end])
+                .unwrap_or("")
+                .parse::<i64>()
+            {
+                total_seconds += minutes * 60;
+            }
         }
     }
 
@@ -141,6 +155,7 @@ mod tests {
         assert_eq!(parse_reset_time("0h 5m"), 5 * 60);
         assert_eq!(parse_reset_time(""), 0);
         assert_eq!(parse_reset_time("invalid"), 0);
+        assert_eq!(parse_reset_time("30m 4h"), 4 * 3600 + 30 * 60);
     }
 
     #[test]
