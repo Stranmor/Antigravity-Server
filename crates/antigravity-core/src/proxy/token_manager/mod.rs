@@ -757,9 +757,7 @@ impl TokenManager {
                 let mut ultra_candidates: Vec<(&ProxyToken, u8, u32)> = Vec::new();
 
                 for candidate in &tokens_snapshot {
-                    let tier = candidate.tier_priority();
-                    // Only consider ultra-business (0) and ultra (1) tiers
-                    if tier > 1 {
+                    if !candidate.is_ultra_tier() {
                         continue;
                     }
 
@@ -784,6 +782,7 @@ impl TokenManager {
                     }
 
                     let active = self.get_active_requests(&candidate.email);
+                    let tier = candidate.tier_priority();
                     ultra_candidates.push((candidate, tier, active));
                 }
 
@@ -791,22 +790,16 @@ impl TokenManager {
                     // Sort by: 1) tier priority (lower=better), 2) active requests (lower=better)
                     ultra_candidates.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.2.cmp(&b.2)));
 
-                    // Try to reserve slot atomically for each ultra candidate
-                    for (candidate, tier, _active) in ultra_candidates {
+                    for (candidate, _tier, _active) in ultra_candidates {
                         if let Some(guard) = ActiveRequestGuard::try_new(
                             Arc::clone(&self.active_requests),
                             candidate.email.clone(),
                             routing.max_concurrent_per_account,
                         ) {
-                            let tier_name = match tier {
-                                0 => "ultra-business",
-                                1 => "ultra",
-                                _ => "unknown",
-                            };
                             tracing::debug!(
-                                "Ultra Priority: Selected {} ({}) over sticky session",
+                                "Ultra Priority: Selected {} ({:?}) over sticky session",
                                 candidate.email,
-                                tier_name
+                                candidate.account_tier()
                             );
                             target_token = Some(candidate.clone());
                             active_guard = Some(guard);

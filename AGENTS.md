@@ -246,6 +246,32 @@ GET /api/metrics
 cargo check --workspace                        # ✅ passes
 cargo clippy --workspace -- -Dwarnings         # ✅ passes
 cargo test -p antigravity-types                # ✅ 7 tests pass
+```
+
+### Load Testing (MANDATORY for routing/selection changes)
+
+Changes to account selection, routing, or rate limiting logic MUST be verified with load testing before production deployment.
+
+**Test command (50 concurrent requests):**
+```bash
+for i in $(seq 1 50); do
+  curl -s -X POST "https://antigravity.quantumind.ru/v1/chat/completions" \
+    -H "Authorization: Bearer $API_KEY" \
+    -H "Content-Type: application/json" \
+    -d "{\"model\": \"gemini-3-pro\", \"messages\": [{\"role\": \"user\", \"content\": \"Say $i. ID: $(uuidgen)\"}], \"max_tokens\": 50}" &
+done
+wait
+```
+
+**Success criteria:**
+- 100% success rate (all HTTP 200)
+- No thundering herd (requests distributed across multiple accounts)
+- Total time < 30s for 50 requests
+
+**When required:**
+- Any change to `token_manager/mod.rs`
+- Any change to `rate_limit/` modules
+- Any change to account selection/routing logic
 cargo test -p antigravity-core --lib           # ✅ 170 tests pass
 cargo build --release -p antigravity-server    # ✅ builds (1m 22s, 11MB)
 ```
