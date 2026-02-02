@@ -25,7 +25,7 @@ pub fn wrap_request(
     let mut inner_request = body.clone();
 
     // 深度清理 [undefined] 字符串 (Cherry Studio 等客户端常见注入)
-    crate::proxy::mappers::common_utils::deep_clean_undefined(&mut inner_request);
+    crate::proxy::mappers::request_config::deep_clean_undefined(&mut inner_request);
 
     // [FIX #765] Inject thought_signature into functionCall parts
     if let Some(s_id) = session_id {
@@ -91,7 +91,7 @@ pub fn wrap_request(
         .cloned();
 
     // Use shared grounding/config logic
-    let config = crate::proxy::mappers::common_utils::resolve_request_config(
+    let config = crate::proxy::mappers::request_config::resolve_request_config(
         original_model,
         final_model_name,
         &tools_val,
@@ -137,7 +137,7 @@ pub fn wrap_request(
 
     // Inject googleSearch tool if needed
     if config.inject_google_search {
-        crate::proxy::mappers::common_utils::inject_google_search_tool(&mut inner_request);
+        crate::proxy::mappers::request_config::inject_google_search_tool(&mut inner_request);
     }
 
     // Inject imageConfig if present (for image generation models)

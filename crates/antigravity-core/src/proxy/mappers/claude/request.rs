@@ -428,7 +428,7 @@ pub fn transform_claude_request_in(
     });
 
     // Resolve grounding config
-    let config = crate::proxy::mappers::common_utils::resolve_request_config(
+    let config = crate::proxy::mappers::request_config::resolve_request_config(
         &claude_req.model,
         &mapped_model,
         &tools_val,
@@ -564,7 +564,7 @@ pub fn transform_claude_request_in(
     });
 
     // 深度清理 [undefined] 字符串 (Cherry Studio 等客户端常见注入)
-    crate::proxy::mappers::common_utils::deep_clean_undefined(&mut inner_request);
+    crate::proxy::mappers::request_config::deep_clean_undefined(&mut inner_request);
 
     if let Some(sys_inst) = system_instruction {
         inner_request["systemInstruction"] = sys_inst;
@@ -586,7 +586,7 @@ pub fn transform_claude_request_in(
 
     // Inject googleSearch tool if needed (and not already done by build_tools)
     if config.inject_google_search && !has_web_search_tool {
-        crate::proxy::mappers::common_utils::inject_google_search_tool(&mut inner_request);
+        crate::proxy::mappers::request_config::inject_google_search_tool(&mut inner_request);
     }
 
     // Inject imageConfig if present (for image generation models)

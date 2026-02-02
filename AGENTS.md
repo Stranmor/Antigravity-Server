@@ -15,25 +15,46 @@
 
 **Goal:** Split all files exceeding 300 lines to comply with Single Responsibility Module principle.
 
-| File | Lines | Target Split | Status |
-|------|-------|--------------|--------|
-| `handlers/openai.rs` | 1728 | `chat.rs`, `completions.rs`, `images.rs`, `models.rs` | ✅ Split into directory |
-| `handlers/openai/chat.rs` | 518 | Need further split | 🔄 Phase 5B |
-| `handlers/openai/completions.rs` | 650 | Need further split | 🔄 Phase 5B |
-| `handlers/openai/images.rs` | 538 | Need further split | 🔄 Phase 5B |
-| `handlers/claude.rs` | 1465 | Complex, deferred | ⏸️ Deferred |
-| `token_manager/mod.rs` | 1665 | Tests extracted | 🔄 -13% |
-| `mappers/claude/request.rs` | 1894 | Tests extracted | 🔄 -25% |
-| `mappers/claude/streaming.rs` | 1177 | TBD | ⏳ |
-| `mappers/openai/streaming.rs` | 1092 | TBD | ⏳ |
-| `api/mod.rs` | 778 | ~~`oauth.rs`~~ ✅, `accounts.rs` | 🔄 -324 lines |
-| `rate_limit/mod.rs` | 786 | ~~`types.rs`~~ ✅, ~~`parser.rs`~~ ✅ | 🔄 -289 lines |
-| `modules/process.rs` | 1069 | Platform-specific, complex | ⏳ |
+**30 files exceed 300-line limit.** Priority by severity:
+
+| File | Lines | Excess | Priority | Status |
+|------|-------|--------|----------|--------|
+| `mappers/claude/request.rs` | 1894 | 6.3x | 🔴 CRITICAL | ⏳ Split planned |
+| `token_manager/mod.rs` | 1685 | 5.6x | 🔴 CRITICAL | ⏳ God Object → 5 modules |
+| `handlers/claude.rs` | 1473 | 4.9x | 🔴 HIGH | ⏳ |
+| `mappers/claude/streaming.rs` | 1177 | 3.9x | 🔴 HIGH | ⏳ |
+| `mappers/openai/streaming.rs` | 1092 | 3.6x | 🔴 HIGH | ⏳ |
+| `common/json_schema.rs` | 924 | 3.1x | 🟡 MEDIUM | ⏳ |
+| `mappers/openai/request.rs` | 797 | 2.7x | 🟡 MEDIUM | ⏳ |
+| `rate_limit/mod.rs` | 792 | 2.6x | 🟡 MEDIUM | ⏳ |
+| `adaptive_limit.rs` | 789 | 2.6x | 🟡 MEDIUM | ⏳ |
+| `mappers/claude/response.rs` | 697 | 2.3x | 🟡 MEDIUM | ⏳ |
+| `health.rs` | 686 | 2.3x | 🟡 MEDIUM | ⏳ |
+| `handlers/openai/completions.rs` | 650 | 2.2x | 🟡 MEDIUM | ⏳ |
+| `upstream/client.rs` | 554 | 1.8x | 🟢 LOW | ⏳ |
+| `handlers/openai/images.rs` | 538 | 1.8x | 🟢 LOW | ⏳ |
+| `mappers/request_config.rs` | 536 | 1.8x | 🟢 LOW | ✅ Renamed from `common_utils.rs` |
+| `handlers/openai/chat.rs` | 517 | 1.7x | 🟢 LOW | ⏳ |
+| `mappers/context_manager.rs` | 505 | 1.7x | 🟢 LOW | ⏳ |
+| `mappers/tool_result_compressor.rs` | 472 | 1.6x | 🟢 LOW | ⏳ |
+| `zai_vision_tools.rs` | 462 | 1.5x | 🟢 LOW | ⏳ |
+| `handlers/gemini.rs` | 453 | 1.5x | 🟢 LOW | ⏳ |
+| `common/circuit_breaker.rs` | 446 | 1.5x | 🟢 LOW | ⏳ |
+| `mappers/claude/mod.rs` | 421 | 1.4x | 🟢 LOW | ⏳ |
+| `mappers/claude/models.rs` | 418 | 1.4x | 🟢 LOW | ⏳ |
+| `handlers/mcp.rs` | 418 | 1.4x | 🟢 LOW | ⏳ |
+| `mappers/gemini/wrapper.rs` | 361 | 1.2x | 🟢 LOW | ⏳ |
+| `signature_cache.rs` | 331 | 1.1x | 🟢 LOW | ⏳ |
+| `mappers/claude/collector.rs` | 320 | 1.1x | 🟢 LOW | ⏳ |
+| `mappers/claude/thinking_utils.rs` | 310 | 1.0x | 🟢 LOW | ⏳ |
 
 **Completed (2026-02-02):**
-- `handlers/openai.rs` → `handlers/openai/` directory with `chat.rs`, `completions.rs`, `images.rs`, `models.rs`, `mod.rs`
-- Banned filenames renamed: `types.rs` → `messages.rs`, `utils.rs` → `formatters.rs`
-- MAX_RETRY_ATTEMPTS unified to 64 across all handlers
+- `handlers/openai.rs` → `handlers/openai/` directory ✅
+- `common_utils.rs` → `request_config.rs` (banned filename fix) ✅
+- `types.rs` → `messages.rs`, `utils.rs` → `formatters.rs` ✅
+
+**TokenManager God Object Analysis (58 methods):**
+Target split: `TokenStore`, `RateLimitTracker`, `SessionBinder`, `HealthScorer`, `TokenPersistence`
 
 ### 📊 Architecture (Current)
 

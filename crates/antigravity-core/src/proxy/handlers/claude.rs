@@ -476,7 +476,7 @@ pub async fn handle_messages(
                 .collect()
         });
 
-        let config = crate::proxy::mappers::common_utils::resolve_request_config(
+        let config = crate::proxy::mappers::request_config::resolve_request_config(
             &request_for_body.model,
             &mapped_model,
             &tools_val,

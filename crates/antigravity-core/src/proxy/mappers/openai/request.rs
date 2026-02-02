@@ -15,7 +15,7 @@ pub fn transform_openai_request(
     let mapped_model_lower = mapped_model.to_lowercase();
 
     // Resolve grounding config
-    let config = crate::proxy::mappers::common_utils::resolve_request_config(
+    let config = crate::proxy::mappers::request_config::resolve_request_config(
         &request.model,
         &mapped_model_lower,
         &tools_val,
@@ -493,7 +493,7 @@ pub fn transform_openai_request(
     });
 
     // 深度清理 [undefined] 字符串 (Cherry Studio 等客户端常见注入)
-    crate::proxy::mappers::common_utils::deep_clean_undefined(&mut inner_request);
+    crate::proxy::mappers::request_config::deep_clean_undefined(&mut inner_request);
 
     // 4. Handle Tools (Merged Cleaning)
     if let Some(tools) = &request.tools {
@@ -623,7 +623,7 @@ pub fn transform_openai_request(
     });
 
     if config.inject_google_search {
-        crate::proxy::mappers::common_utils::inject_google_search_tool(&mut inner_request);
+        crate::proxy::mappers::request_config::inject_google_search_tool(&mut inner_request);
     }
 
     if let Some(image_config) = config.image_config {

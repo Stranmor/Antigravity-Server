@@ -250,7 +250,7 @@ pub async fn handle_detect_model(
         crate::proxy::common::resolve_model_route(model_name, &*state.custom_mapping.read().await);
 
     // 2. Resolve capabilities
-    let config = crate::proxy::mappers::common_utils::resolve_request_config(
+    let config = crate::proxy::mappers::request_config::resolve_request_config(
         model_name,
         &mapped_model,
         &None, // We don't check tools for static capability detection

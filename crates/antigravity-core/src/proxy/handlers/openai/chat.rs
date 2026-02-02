@@ -110,7 +110,7 @@ pub async fn handle_chat_completions(
         );
         // 将 OpenAI 工具转为 Value 数组以便探测联网
         let tools_val: Option<Vec<Value>> = openai_req.tools.as_ref().map(|list| list.to_vec());
-        let config = crate::proxy::mappers::common_utils::resolve_request_config(
+        let config = crate::proxy::mappers::request_config::resolve_request_config(
             &openai_req.model,
             &mapped_model,
             &tools_val,
