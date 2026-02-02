@@ -161,7 +161,7 @@ pub struct SmartRoutingConfig {
 | 3 manual modes to choose | 1 unified algorithm with tunable params |
 | No concurrency limit | Max N per account prevents thundering herd |
 
-### Tier-Priority Account Selection [2026-02-01]
+### Tier-Priority Account Selection [2026-02-02]
 
 **Selection Order:**
 | Priority | Tier | Example |
@@ -172,15 +172,26 @@ pub struct SmartRoutingConfig {
 | 3 | free | `free-tier` |
 | 4 | unknown | (no tier info) |
 
-**Algorithm:**
-1. Filter: exclude rate-limited, quota-protected, already-attempted accounts
-2. Sort by: tier_priority (ascending), then active_requests (ascending)
-3. Select first available with atomic slot reservation (`try_new`)
+**Algorithm (updated 2026-02-02):**
+1. **Ultra-tier priority:** Check ultra/ultra-business accounts (tier 0-1) FIRST
+2. If ultra available → use it (even if session is sticky to pro account)
+3. If no ultra available → check sticky session binding (fallback)
+4. If no sticky → standard tier-priority selection from remaining accounts
+5. Filter at each step: exclude rate-limited, quota-protected, already-attempted
+6. Sort by: tier_priority (ascending), then active_requests (ascending)
 
 **Behavior:**
-- All accounts (including ultra) respect rate limits with short lockout (5s)
-- Ultra accounts get priority but share load via least-connections within tier
-- No bypass of rate-limit checks — prevents hammering single account with 429s
+- Ultra accounts OVERRIDE sticky sessions — if ultra is available, it's used
+- Sticky session acts as FALLBACK when no ultra accounts are available
+- All accounts respect rate limits with short lockout (5s)
+- Ultra accounts share load via least-connections within tier
+
+**Example Flow:**
+| Scenario | Sticky on Pro | Ultra Available | Result |
+|----------|---------------|-----------------|--------|
+| Normal | Account A (pro) | Account B (ultra) free | B selected (ultra priority) |
+| Ultra busy | Account A (pro) | B rate-limited | A selected (sticky fallback) |
+| Both busy | Account A (pro) | B rate-limited, A rate-limited | Next available by tier |
 
 ---
 
