@@ -1,5 +1,5 @@
-// OpenAI Handler
 use super::super::retry_strategy::{peek_first_data_chunk, PeekConfig, PeekResult};
+use super::responses_format::{convert_responses_to_chat, is_responses_format};
 use super::MAX_RETRY_ATTEMPTS;
 use axum::http::HeaderMap;
 use axum::{
@@ -8,7 +8,7 @@ use axum::{
     response::IntoResponse,
 };
 use bytes::Bytes;
-use serde_json::{json, Value};
+use serde_json::Value;
 use tracing::{debug, error, info, warn};
 
 use crate::proxy::mappers::openai::{
@@ -30,51 +30,8 @@ pub async fn handle_chat_completions(
 
     // [NEW] 自动检测并转换 Responses 格式
     // 如果请求包含 instructions 或 input 但没有 messages，则认为是 Responses 格式
-    let is_responses_format = body.get("messages").is_none()
-        && (body.get("instructions").is_some() || body.get("input").is_some());
-
-    if is_responses_format {
-        debug!("Detected Responses API format, converting to Chat Completions format");
-
-        // 转换 instructions 为 system message
-        if let Some(instructions) = body.get("instructions").and_then(|v| v.as_str()) {
-            if !instructions.is_empty() {
-                let system_msg = json!({
-                    "role": "system",
-                    "content": instructions
-                });
-
-                // 初始化 messages 数组
-                if body.get("messages").is_none() {
-                    body["messages"] = json!([]);
-                }
-
-                // 将 system message 插入到开头
-                if let Some(messages) = body.get_mut("messages").and_then(|v| v.as_array_mut()) {
-                    messages.insert(0, system_msg);
-                }
-            }
-        }
-
-        // 转换 input 为 user message（如果存在）
-        if let Some(input) = body.get("input") {
-            let user_msg = if input.is_string() {
-                json!({
-                    "role": "user",
-                    "content": input.as_str().unwrap_or("")
-                })
-            } else {
-                // input 是数组格式，暂时简化处理
-                json!({
-                    "role": "user",
-                    "content": input.to_string()
-                })
-            };
-
-            if let Some(messages) = body.get_mut("messages").and_then(|v| v.as_array_mut()) {
-                messages.push(user_msg);
-            }
-        }
+    if is_responses_format(&body) {
+        convert_responses_to_chat(&mut body);
     }
 
     let mut openai_req: OpenAIRequest = serde_json::from_value(body)

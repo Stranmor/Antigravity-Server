@@ -1,5 +1,8 @@
 pub mod account;
 pub mod account_pg;
+pub mod account_pg_crud;
+pub mod account_pg_events;
+pub mod account_pg_helpers;
 pub mod config;
 pub mod device;
 pub mod json_migration;

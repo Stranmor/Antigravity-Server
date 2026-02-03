@@ -1,30 +1,35 @@
-use crate::proxy::handlers::retry_strategy::{peek_first_data_chunk, PeekConfig, PeekResult};
 use crate::proxy::mappers::claude::{
-    clean_cache_control_from_messages, close_tool_loop_for_thinking, create_claude_sse_stream,
+    clean_cache_control_from_messages, close_tool_loop_for_thinking,
     filter_invalid_thinking_blocks_with_family, merge_consecutive_messages,
-    remove_trailing_unsigned_thinking, transform_claude_request_in, transform_response,
-    ClaudeRequest,
+    transform_claude_request_in, transform_response, ClaudeRequest,
 };
 use crate::proxy::server::AppState;
 use axum::http::HeaderMap;
 use axum::{
-    body::Body,
     extract::{Json, State},
-    http::{header, StatusCode},
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
-use bytes::Bytes;
-use futures::StreamExt;
 use serde_json::{json, Value};
-use std::sync::atomic::Ordering;
 use tokio::time::Duration;
 use tracing::{debug, error, info};
 
 use super::background_detection::{detect_background_task_type, select_background_model};
+use super::dispatch::{decide_dispatch_mode, forward_to_zai};
+use super::error_recovery::{
+    apply_background_task_cleanup, apply_user_request_cleanup, handle_thinking_signature_error,
+};
+use super::preprocessing::{extract_meaningful_message, log_request_debug, log_request_info};
+use super::request_validation::{
+    all_retries_exhausted_error, generate_trace_id, parse_request, prompt_too_long_error,
+};
+use super::response_handler::{handle_nonstreaming_success, ResponseContext};
 use super::retry_logic::{
     apply_retry_strategy, determine_retry_strategy, is_signature_error, should_rotate_account,
     RetryStrategy, MAX_RETRY_ATTEMPTS,
 };
+use super::streaming::{handle_streaming_response, StreamingContext, StreamResult};
+use super::token_selection::{acquire_token, extract_session_id};
 use super::warmup::{create_warmup_response, is_warmup_request};
 
 pub async fn handle_messages(
@@ -42,82 +47,15 @@ pub async fn handle_messages(
         body.to_string().len()
     );
 
-    // 生成随机 Trace ID 用户追踪
-    let trace_id: String =
-        rand::Rng::sample_iter(rand::thread_rng(), &rand::distributions::Alphanumeric)
-            .take(6)
-            .map(char::from)
-            .collect::<String>()
-            .to_lowercase();
+    let trace_id = generate_trace_id();
 
-    // Decide whether this request should be handled by z.ai (Anthropic passthrough) or the existing Google flow.
-    let zai = state.zai.read().await.clone();
-    let zai_enabled =
-        zai.enabled && !matches!(zai.dispatch_mode, crate::proxy::ZaiDispatchMode::Off);
-    let google_accounts = state.token_manager.len();
-
-    // [CRITICAL REFACTOR] 优先解析请求以获取模型信息(用于智能兜底判断)
-    let mut request: ClaudeRequest = match serde_json::from_value(body) {
+    let mut request: ClaudeRequest = match parse_request(body) {
         Ok(r) => r,
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({
-                    "type": "error",
-                    "error": {
-                        "type": "invalid_request_error",
-                        "message": format!("Invalid request body: {}", e)
-                    }
-                })),
-            )
-                .into_response();
-        }
+        Err(response) => return response,
     };
 
-    // [Issue #703 Fix] 智能兜底判断:需要归一化模型名用于配额保护检查
-    let normalized_model =
-        crate::proxy::common::model_mapping::normalize_to_standard_id(&request.model)
-            .unwrap_or_else(|| request.model.clone());
-
-    let use_zai = if !zai_enabled {
-        false
-    } else {
-        match zai.dispatch_mode {
-            crate::proxy::ZaiDispatchMode::Off => false,
-            crate::proxy::ZaiDispatchMode::Exclusive => true,
-            crate::proxy::ZaiDispatchMode::Fallback => {
-                if google_accounts == 0 {
-                    // 没有 Google 账号,使用兜底
-                    tracing::info!(
-                        "[{}] No Google accounts available, using fallback provider",
-                        trace_id
-                    );
-                    true
-                } else {
-                    // [Issue #703 Fix] 智能判断:检查是否有可用的 Google 账号
-                    let has_available = state
-                        .token_manager
-                        .has_available_account("claude", &normalized_model)
-                        .await;
-                    if !has_available {
-                        tracing::info!(
-                            "[{}] All Google accounts unavailable (rate-limited or quota-protected for {}), using fallback provider",
-                            trace_id,
-                            request.model
-                        );
-                    }
-                    !has_available
-                }
-            }
-            crate::proxy::ZaiDispatchMode::Pooled => {
-                // Treat z.ai as exactly one extra slot in the pool.
-                // No strict guarantees: it may get 0 requests if selection never hits.
-                let total = google_accounts.saturating_add(1).max(1);
-                let slot = state.provider_rr.fetch_add(1, Ordering::Relaxed) % total;
-                slot == 0
-            }
-        }
-    };
+    // Decide whether to use z.ai (Anthropic passthrough) or Google flow
+    let dispatch = decide_dispatch_mode(&state, &request, &trace_id).await;
 
     // [CRITICAL FIX] 预先清理所有消息中的 cache_control 字段 (Issue #744)
     // 必须在序列化之前处理，以确保 z.ai 和 Google Flow 都不受历史消息缓存标记干扰
@@ -146,147 +84,24 @@ pub async fn handle_messages(
         return create_warmup_response(&request, request.stream);
     }
 
-    if use_zai {
-        // 重新序列化修复后的请求体
-        let new_body = match serde_json::to_value(&request) {
-            Ok(v) => v,
+    if dispatch.use_zai {
+        match forward_to_zai(&state, &headers, &request).await {
+            Ok(response) => return response,
             Err(e) => {
-                tracing::error!("Failed to serialize fixed request for z.ai: {}", e);
+                tracing::error!("{}", e);
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
-        };
-
-        return crate::proxy::providers::zai_anthropic::forward_anthropic_json(
-            &state,
-            axum::http::Method::POST,
-            "/v1/messages",
-            &headers,
-            new_body,
-        )
-        .await;
+        }
     }
 
-    // Google Flow 继续使用 request 对象
-    // (后续代码不需要再次 filter_invalid_thinking_blocks)
+    // Google Flow continues with request object
 
     // [NEW] 获取上下文缩放配置
     let scaling_enabled = state.experimental.read().await.enable_usage_scaling;
 
-    // 获取最新一条“有意义”的消息内容（用于日志记录和后台任务检测）
-    // 策略：反向遍历，首先筛选出所有角色为 "user" 的消息，然后从中找到第一条非 "Warmup" 且非空的文本消息
-    // 获取最新一条“有意义”的消息内容（用于日志记录和后台任务检测）
-    // 策略：反向遍历，首先筛选出所有和用户相关的消息 (role="user")
-    // 然后提取其文本内容，跳过 "Warmup" 或系统预设的 reminder
-    let meaningful_msg = request
-        .messages
-        .iter()
-        .rev()
-        .filter(|m| m.role == "user")
-        .find_map(|m| {
-            let content = match &m.content {
-                crate::proxy::mappers::claude::models::MessageContent::String(s) => s.to_string(),
-                crate::proxy::mappers::claude::models::MessageContent::Array(arr) => {
-                    // 对于数组，提取所有 Text 块并拼接，忽略 ToolResult
-                    arr.iter()
-                        .filter_map(|block| match block {
-                            crate::proxy::mappers::claude::models::ContentBlock::Text { text } => {
-                                Some(text.as_str())
-                            }
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                }
-            };
-
-            // 过滤规则：
-            // 1. 忽略空消息
-            // 2. 忽略 "Warmup" 消息
-            // 3. 忽略 <system-reminder> 标签的消息
-            if content.trim().is_empty()
-                || content.starts_with("Warmup")
-                || content.contains("<system-reminder>")
-            {
-                None
-            } else {
-                Some(content)
-            }
-        });
-
-    // 如果经过过滤还是找不到（例如纯工具调用），则回退到最后一条消息的原始展示
-    let latest_msg = meaningful_msg.unwrap_or_else(|| {
-        request
-            .messages
-            .last()
-            .map(|m| match &m.content {
-                crate::proxy::mappers::claude::models::MessageContent::String(s) => s.clone(),
-                crate::proxy::mappers::claude::models::MessageContent::Array(_) => {
-                    "[Complex/Tool Message]".to_string()
-                }
-            })
-            .unwrap_or_else(|| "[No Messages]".to_string())
-    });
-
-    // INFO 级别: 简洁的一行摘要
-    info!(
-        "[{}] Claude Request | Model: {} | Stream: {} | Messages: {} | Tools: {}",
-        trace_id,
-        request.model,
-        request.stream,
-        request.messages.len(),
-        request.tools.is_some()
-    );
-
-    // DEBUG 级别: 详细的调试信息
-    debug!(
-        "========== [{}] CLAUDE REQUEST DEBUG START ==========",
-        trace_id
-    );
-    debug!("[{}] Model: {}", trace_id, request.model);
-    debug!("[{}] Stream: {}", trace_id, request.stream);
-    debug!("[{}] Max Tokens: {:?}", trace_id, request.max_tokens);
-    debug!("[{}] Temperature: {:?}", trace_id, request.temperature);
-    debug!("[{}] Message Count: {}", trace_id, request.messages.len());
-    debug!("[{}] Has Tools: {}", trace_id, request.tools.is_some());
-    debug!(
-        "[{}] Has Thinking Config: {}",
-        trace_id,
-        request.thinking.is_some()
-    );
-    debug!("[{}] Content Preview: {:.100}...", trace_id, latest_msg);
-
-    // 输出每一条消息的详细信息
-    for (idx, msg) in request.messages.iter().enumerate() {
-        let content_preview = match &msg.content {
-            crate::proxy::mappers::claude::models::MessageContent::String(s) => {
-                let char_count = s.chars().count();
-                if char_count > 200 {
-                    // 【修复】使用 chars().take() 安全截取，避免 UTF-8 字符边界 panic
-                    let preview: String = s.chars().take(200).collect();
-                    format!("{}... (total {} chars)", preview, char_count)
-                } else {
-                    s.clone()
-                }
-            }
-            crate::proxy::mappers::claude::models::MessageContent::Array(arr) => {
-                format!("[Array with {} blocks]", arr.len())
-            }
-        };
-        debug!(
-            "[{}] Message[{}] - Role: {}, Content: {}",
-            trace_id, idx, msg.role, content_preview
-        );
-    }
-
-    debug!(
-        "[{}] Full Claude Request JSON: {}",
-        trace_id,
-        serde_json::to_string_pretty(&request).unwrap_or_default()
-    );
-    debug!(
-        "========== [{}] CLAUDE REQUEST DEBUG END ==========",
-        trace_id
-    );
+    let latest_msg = extract_meaningful_message(&request);
+    log_request_info(&trace_id, &request);
+    log_request_debug(&trace_id, &request, &latest_msg);
 
     // 1. 获取 会话 ID (已废弃基于内容的哈希，改用 TokenManager 内部的时间窗口锁定)
     let _session_id: Option<&str> = None;
@@ -331,97 +146,28 @@ pub async fn handle_messages(
             None,
         );
 
-        // 0. 尝试提取 session_id 用于粘性调度 (Phase 2/3)
-        // 使用 SessionManager 生成稳定的会话指纹
-        let session_id_str =
-            crate::proxy::session_manager::SessionManager::extract_session_id(&request_for_body);
+        let session_id_str = extract_session_id(&request_for_body);
         let session_id = Some(session_id_str.as_str());
 
         let force_rotate_token = attempt > 0;
-        let (access_token, project_id, email, _guard) = if let Some(ref forced) = force_account {
-            match token_manager
-                .get_token_forced(forced, &config.final_model)
-                .await
-            {
-                Ok((token, email, project, guard)) => (token, project, email, guard),
-                Err(e) => {
-                    tracing::warn!(
-                        "[Claude] Forced account {} failed: {}, using smart routing",
-                        forced,
-                        e
-                    );
-                    match token_manager
-                        .get_token_with_exclusions(
-                            &config.request_type,
-                            force_rotate_token,
-                            session_id,
-                            &config.final_model,
-                            if attempted_accounts.is_empty() {
-                                None
-                            } else {
-                                Some(&attempted_accounts)
-                            },
-                        )
-                        .await
-                    {
-                        Ok(t) => t,
-                        Err(e) => {
-                            let safe_message = if e.contains("invalid_grant") {
-                                "OAuth refresh failed (invalid_grant): refresh_token likely revoked/expired; reauthorize account(s) to restore service.".to_string()
-                            } else {
-                                e
-                            };
-                            return (
-                                StatusCode::SERVICE_UNAVAILABLE,
-                                Json(json!({
-                                    "type": "error",
-                                    "error": {
-                                        "type": "overloaded_error",
-                                        "message": format!("No available accounts: {}", safe_message)
-                                    }
-                                })),
-                            )
-                                .into_response();
-                        }
-                    }
-                }
-            }
-        } else {
-            match token_manager
-                .get_token_with_exclusions(
-                    &config.request_type,
-                    force_rotate_token,
-                    session_id,
-                    &config.final_model,
-                    if attempted_accounts.is_empty() {
-                        None
-                    } else {
-                        Some(&attempted_accounts)
-                    },
-                )
-                .await
-            {
-                Ok(t) => t,
-                Err(e) => {
-                    let safe_message = if e.contains("invalid_grant") {
-                        "OAuth refresh failed (invalid_grant): refresh_token likely revoked/expired; reauthorize account(s) to restore service.".to_string()
-                    } else {
-                        e
-                    };
-                    return (
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        Json(json!({
-                            "type": "error",
-                            "error": {
-                                "type": "overloaded_error",
-                                "message": format!("No available accounts: {}", safe_message)
-                            }
-                        })),
-                    )
-                        .into_response();
-                }
-            }
+        let token_result = match acquire_token(
+            token_manager.clone(),
+            force_account.as_deref(),
+            &config.request_type,
+            &config.final_model,
+            session_id,
+            force_rotate_token,
+            &attempted_accounts,
+        )
+        .await
+        {
+            Ok(r) => r,
+            Err(response) => return response,
         };
+        let access_token = token_result.access_token;
+        let project_id = token_result.project_id;
+        let email = token_result.email;
+        let _guard = token_result.guard;
 
         last_email = Some(email.clone());
         info!("✓ Using account: {} (type: {})", email, config.request_type);
@@ -432,55 +178,16 @@ pub async fn handle_messages(
         let mut request_with_mapped = request_for_body.clone();
 
         if let Some(task_type) = background_task_type {
-            // 检测到后台任务,强制降级到 Flash 模型
             let downgrade_model = select_background_model(task_type);
-
-            info!(
-                "[{}][AUTO] 检测到后台任务 (类型: {:?}),强制降级: {} -> {}",
-                trace_id, task_type, mapped_model, downgrade_model
+            apply_background_task_cleanup(
+                &mut request_with_mapped,
+                downgrade_model,
+                &trace_id,
+                &mapped_model,
             );
-
-            // 覆盖用户自定义映射
             mapped_model = downgrade_model.to_string();
-
-            // 后台任务净化：
-            // 1. 移除工具定义（后台任务不需要工具）
-            request_with_mapped.tools = None;
-
-            // 2. 移除 Thinking 配置（Flash 模型不支持）
-            request_with_mapped.thinking = None;
-
-            // 3. 清理历史消息中的 Thinking Block，防止 Invalid Argument
-            for msg in request_with_mapped.messages.iter_mut() {
-                if let crate::proxy::mappers::claude::models::MessageContent::Array(blocks) =
-                    &mut msg.content
-                {
-                    blocks.retain(|b| {
-                        !matches!(b,
-                        crate::proxy::mappers::claude::models::ContentBlock::Thinking { .. } |
-                        crate::proxy::mappers::claude::models::ContentBlock::RedactedThinking { .. }
-                    )
-                    });
-                }
-            }
         } else {
-            // 真实用户请求,保持原映射
-            debug!(
-                "[{}][USER] 用户交互请求,保持映射: {}",
-                trace_id, mapped_model
-            );
-
-            // 对真实请求应用额外的清理:移除尾部无签名的 thinking 块
-            // 对真实请求应用额外的清理:移除尾部无签名的 thinking 块
-            for msg in request_with_mapped.messages.iter_mut() {
-                if msg.role == "assistant" || msg.role == "model" {
-                    if let crate::proxy::mappers::claude::models::MessageContent::Array(blocks) =
-                        &mut msg.content
-                    {
-                        remove_trailing_unsigned_thinking(blocks);
-                    }
-                }
-            }
+            apply_user_request_cleanup(&mut request_with_mapped, &trace_id, &mapped_model);
         }
 
         request_with_mapped.model = mapped_model.clone();
@@ -607,110 +314,21 @@ pub async fn handle_messages(
 
             // 处理流式响应
             if actual_stream {
-                let stream = response.bytes_stream();
-                let gemini_stream = Box::pin(stream);
-                // [v3.3.17] Pass session_id for signature caching
-                let claude_stream = create_claude_sse_stream(
-                    gemini_stream,
-                    trace_id.clone(),
-                    email.clone(),
-                    Some(session_id_str.clone()),
+                let ctx = StreamingContext {
+                    trace_id: trace_id.clone(),
+                    email: email.clone(),
+                    session_id: session_id_str.clone(),
+                    mapped_model: mapped_model.clone(),
+                    reason: reason.clone(),
                     scaling_enabled,
                     context_limit,
                     estimated_tokens,
-                );
-
-                // [FIX #530/#529/#859] Enhanced Peek logic to handle heartbeats and slow start
-                let peek_config = PeekConfig::default();
-                let (first_data_chunk, claude_stream) =
-                    match peek_first_data_chunk(claude_stream, &peek_config, &trace_id).await {
-                        PeekResult::Data(bytes, stream) => (Some(bytes), stream),
-                        PeekResult::Retry(err) => {
-                            last_error = err;
-                            attempt += 1;
-                            grace_retry_used = false;
-                            continue;
-                        }
-                    };
-
-                match first_data_chunk {
-                    Some(bytes) => {
-                        // We have data! Construct the combined stream
-                        let stream_rest = claude_stream;
-                        let combined_stream =
-                            Box::pin(futures::stream::once(async move { Ok(bytes) }).chain(
-                                stream_rest.map(|result| -> Result<Bytes, std::io::Error> {
-                                    match result {
-                                        Ok(b) => Ok(b),
-                                        Err(e) => {
-                                            let err_str = e.to_string();
-                                            let user_message = if err_str.contains("decoding") || err_str.contains("hyper") {
-                                                "Upstream server closed connection (overload). Please retry your request."
-                                            } else {
-                                                "Stream interrupted by upstream. Please retry your request."
-                                            };
-                                            tracing::warn!("Stream error during transmission: {} (user msg: {})", err_str, user_message);
-                                            Ok(Bytes::from(format!(
-                                                "event: error\ndata: {{\"type\":\"error\",\"error\":{{\"type\":\"overloaded_error\",\"code\":\"stream_interrupted\",\"message\":\"{}\"}}}}\n\nevent: message_stop\ndata: {{\"type\":\"message_stop\"}}\n\n",
-                                                user_message
-                                            )))
-                                        }
-                                    }
-                                }),
-                            ));
-
-                        // 判断客户端期望的格式
-                        if client_wants_stream {
-                            // 客户端本就要 Stream，直接返回 SSE
-                            return Response::builder()
-                                .status(StatusCode::OK)
-                                .header(header::CONTENT_TYPE, "text/event-stream")
-                                .header(header::CACHE_CONTROL, "no-cache")
-                                .header(header::CONNECTION, "keep-alive")
-                                .header("X-Account-Email", &email)
-                                .header("X-Mapped-Model", &mapped_model)
-                                .header("X-Mapping-Reason", &reason)
-                                .body(Body::from_stream(combined_stream))
-                                .unwrap();
-                        } else {
-                            // 客户端要非 Stream，需要收集完整响应并转换为 JSON
-                            use crate::proxy::mappers::claude::collect_stream_to_json;
-
-                            match collect_stream_to_json(combined_stream).await {
-                                Ok(full_response) => {
-                                    info!(
-                                        "[{}] ✓ Stream collected and converted to JSON",
-                                        trace_id
-                                    );
-                                    return Response::builder()
-                                        .status(StatusCode::OK)
-                                        .header(header::CONTENT_TYPE, "application/json")
-                                        .header("X-Account-Email", &email)
-                                        .header("X-Mapped-Model", &mapped_model)
-                                        .header("X-Mapping-Reason", &reason)
-                                        .body(Body::from(
-                                            serde_json::to_string(&full_response)
-                                                .expect("ClaudeResponse is always serializable"),
-                                        ))
-                                        .expect("valid JSON response");
-                                }
-                                Err(e) => {
-                                    return (
-                                        StatusCode::INTERNAL_SERVER_ERROR,
-                                        format!("Stream collection error: {}", e),
-                                    )
-                                        .into_response();
-                                }
-                            }
-                        }
-                    }
-                    None => {
-                        // This shouldn't happen as peek loop handles it, but keep for safety
-                        tracing::warn!(
-                            "[{}] No data after peek loop (should not happen), retrying...",
-                            trace_id
-                        );
-                        last_error = "Empty response after peek".to_string();
+                    client_wants_stream,
+                };
+                match handle_streaming_response(response, &ctx).await {
+                    StreamResult::Success(resp) => return resp,
+                    StreamResult::Retry(err) => {
+                        last_error = err;
                         attempt += 1;
                         grace_retry_used = false;
                         continue;
@@ -871,101 +489,9 @@ pub async fn handle_messages(
         // 4. 处理 400 错误 (Thinking 签名失效)
         // 由于已经主动过滤,这个错误应该很少发生
         if status_code == 400 && !retried_without_thinking && is_signature_error(&error_text) {
-            // [FIX] PRESERVE SIGNATURE BEFORE STRIPPING THINKING BLOCKS
-            // Extract and cache the last valid signature so future requests can use it
-            let mut preserved_sig: Option<String> = None;
-            for msg in request_for_body.messages.iter().rev() {
-                if let crate::proxy::mappers::claude::models::MessageContent::Array(blocks) =
-                    &msg.content
-                {
-                    for block in blocks.iter().rev() {
-                        if let crate::proxy::mappers::claude::models::ContentBlock::Thinking {
-                            signature: Some(sig),
-                            ..
-                        } = block
-                        {
-                            if sig.len() >= 50 {
-                                preserved_sig = Some(sig.clone());
-                                break;
-                            }
-                        }
-                    }
-                }
-                if preserved_sig.is_some() {
-                    break;
-                }
-            }
-            if let Some(sig) = &preserved_sig {
-                if let Some(sid) = &session_id {
-                    crate::proxy::SignatureCache::global()
-                        .cache_session_signature(sid, sig.clone());
-                    tracing::info!(
-                        "[{}] Preserved signature (len={}) to session cache before stripping thinking blocks",
-                        trace_id, sig.len()
-                    );
-                }
-            }
-
+            handle_thinking_signature_error(&mut request_for_body, session_id, &trace_id);
             retried_without_thinking = true;
 
-            // 使用 WARN 级别,因为这不应该经常发生(已经主动过滤过)
-            tracing::warn!(
-                "[{}] Unexpected thinking signature error (should have been filtered). \
-                 Retrying with all thinking blocks removed.",
-                trace_id
-            );
-
-            // [IMPROVED] 不再禁用 Thinking 模式！
-            // 既然我们已经将历史 Thinking Block 转换为 Text，那么当前请求可以视为一个新的 Thinking 会话
-            // 保持 thinking 配置开启，让模型重新生成思维，避免退化为简单的 "OK" 回复
-            // request_for_body.thinking = None;
-
-            // 清理历史消息中的所有 Thinking Block，将其转换为 Text 以保留上下文
-            for msg in request_for_body.messages.iter_mut() {
-                if let crate::proxy::mappers::claude::models::MessageContent::Array(blocks) =
-                    &mut msg.content
-                {
-                    let mut new_blocks = Vec::with_capacity(blocks.len());
-                    for block in blocks.drain(..) {
-                        match block {
-                            crate::proxy::mappers::claude::models::ContentBlock::Thinking { thinking, .. } => {
-                                // 降级为 text
-                                if !thinking.is_empty() {
-                                    tracing::debug!("[Fallback] Converting thinking block to text (len={})", thinking.len());
-                                    new_blocks.push(crate::proxy::mappers::claude::models::ContentBlock::Text {
-                                        text: thinking
-                                    });
-                                }
-                            },
-                            crate::proxy::mappers::claude::models::ContentBlock::RedactedThinking { .. } => {
-                                // Redacted thinking 没什么用，直接丢弃
-                            },
-                            _ => new_blocks.push(block),
-                        }
-                    }
-                    *blocks = new_blocks;
-                }
-            }
-
-            // [NEW] Heal session after stripping thinking blocks to prevent "naked ToolResult" rejection
-            // This ensures that any ToolResult in history is properly "closed" with synthetic messages
-            // if its preceding Thinking block was just converted to Text.
-            close_tool_loop_for_thinking(&mut request_for_body.messages);
-
-            // 清理模型名中的 -thinking 后缀
-            if request_for_body.model.contains("claude-") {
-                let mut m = request_for_body.model.clone();
-                m = m.replace("-thinking", "");
-                if m.contains("claude-sonnet-4-5-") {
-                    m = "claude-sonnet-4-5".to_string();
-                } else if m.contains("claude-opus-4-5-") || m.contains("claude-opus-4-") {
-                    m = "claude-opus-4-5".to_string();
-                }
-                request_for_body.model = m;
-            }
-
-            // [FIX] 强制重试：因为我们已经清理了 thinking block，所以这是一个新的、可以重试的请求
-            // 不要使用 determine_retry_strategy，因为它会因为 retried_without_thinking=true 而返回 NoRetry
             if apply_retry_strategy(
                 RetryStrategy::FixedDelay(Duration::from_millis(100)),
                 attempt,
@@ -994,28 +520,14 @@ pub async fn handle_messages(
             }
             continue;
         } else {
-            // 5. 增强的 400 错误处理: Prompt Too Long 友好提示
             if status_code == 400
                 && (error_text.contains("too long")
                     || error_text.contains("exceeds")
                     || error_text.contains("limit"))
             {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    [("X-Account-Email", email.as_str())],
-                    Json(json!({
-                        "id": "err_prompt_too_long",
-                        "type": "error",
-                        "error": {
-                            "type": "invalid_request_error",
-                            "message": "Prompt is too long (server-side context limit reached).",
-                            "suggestion": "Please: 1) Executive '/compact' in Claude Code 2) Reduce conversation history 3) Switch to gemini-1.5-pro (2M context limit)"
-                        }
-                    }))
-                ).into_response();
+                return prompt_too_long_error(&email);
             }
 
-            // 不可重试的错误，直接返回
             error!(
                 "[{}] Non-retryable error {}: {}",
                 trace_id, status_code, error_text
@@ -1024,23 +536,7 @@ pub async fn handle_messages(
         }
     }
 
-    if let Some(email) = last_email {
-        (StatusCode::TOO_MANY_REQUESTS, [("X-Account-Email", email)], Json(json!({
-            "type": "error",
-            "error": {
-                "type": "overloaded_error",
-                "message": format!("All {} attempts failed. Last error: {}", max_attempts, last_error)
-            }
-        }))).into_response()
-    } else {
-        (StatusCode::TOO_MANY_REQUESTS, Json(json!({
-            "type": "error",
-            "error": {
-                "type": "overloaded_error",
-                "message": format!("All {} attempts failed. Last error: {}", max_attempts, last_error)
-            }
-        }))).into_response()
-    }
+    all_retries_exhausted_error(max_attempts, &last_error, last_email.as_deref())
 }
 
 /// 列出可用模型

@@ -1,0 +1,235 @@
+use chrono::Utc;
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::Mutex;
+use tokio::time::interval;
+
+use crate::state::AppState;
+use antigravity_core::modules::{account, config};
+
+use super::state::{SchedulerState, DEFAULT_WARMUP_MODELS, LOW_QUOTA_THRESHOLD};
+
+/// Start the smart warmup scheduler as a background tokio task
+pub fn start(state: AppState) {
+    tokio::spawn(async move {
+        let data_dir = match account::get_data_dir() {
+            Ok(dir) => dir,
+            Err(e) => {
+                tracing::error!("[Scheduler] Failed to get data dir: {}", e);
+                return;
+            }
+        };
+
+        let scheduler_state = Arc::new(Mutex::new(SchedulerState::new_async(data_dir).await));
+
+        tracing::info!("[Scheduler] Smart Warmup Scheduler started");
+
+        let mut check_interval = interval(Duration::from_secs(60));
+        let mut last_warmup_check: Option<i64> = None;
+
+        loop {
+            check_interval.tick().await;
+
+            let app_config = match config::load_config() {
+                Ok(cfg) => cfg,
+                Err(_) => continue,
+            };
+
+            let warmup_config = &app_config.smart_warmup;
+
+            if !warmup_config.enabled {
+                continue;
+            }
+
+            let now = Utc::now().timestamp();
+            let interval_minutes = if warmup_config.interval_minutes < 5 {
+                tracing::warn!(
+                    "[Scheduler] interval_minutes {} too low, using 60",
+                    warmup_config.interval_minutes
+                );
+                60
+            } else {
+                warmup_config.interval_minutes
+            };
+            let interval_secs = (interval_minutes as i64) * 60;
+
+            if let Some(last) = last_warmup_check {
+                if now - last < interval_secs {
+                    continue;
+                }
+            }
+
+            last_warmup_check = Some(now);
+
+            tracing::info!("[Scheduler] Starting warmup scan...");
+
+            let models_to_warmup: Vec<String> = if warmup_config.models.is_empty() {
+                DEFAULT_WARMUP_MODELS
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect()
+            } else {
+                warmup_config.models.clone()
+            };
+
+            let accounts = match account::list_accounts() {
+                Ok(a) => a,
+                Err(e) => {
+                    tracing::warn!("[Scheduler] Failed to list accounts: {}", e);
+                    continue;
+                }
+            };
+
+            if accounts.is_empty() {
+                continue;
+            }
+
+            let mode_desc = if warmup_config.only_low_quota {
+                "low quota"
+            } else {
+                "100% quota"
+            };
+            tracing::info!(
+                "[Scheduler] Scanning {} accounts for {} models...",
+                accounts.len(),
+                mode_desc
+            );
+
+            let mut accounts_to_warmup: HashSet<String> = HashSet::new();
+            let mut skipped_cooldown = 0;
+            let mut skipped_disabled = 0;
+
+            {
+                let scheduler = scheduler_state.lock().await;
+
+                for acc in &accounts {
+                    if acc.disabled || acc.proxy_disabled {
+                        skipped_disabled += 1;
+                        continue;
+                    }
+
+                    let quota = match &acc.quota {
+                        Some(q) => q,
+                        None => continue,
+                    };
+
+                    for model in &quota.models {
+                        let model_matches = models_to_warmup
+                            .iter()
+                            .any(|m| model.name.to_lowercase().contains(&m.to_lowercase()));
+
+                        if !model_matches {
+                            continue;
+                        }
+
+                        let should_warmup = if warmup_config.only_low_quota {
+                            model.percentage < LOW_QUOTA_THRESHOLD
+                        } else {
+                            model.percentage == 100
+                        };
+
+                        if should_warmup {
+                            if scheduler.is_in_cooldown(&acc.email, now) {
+                                skipped_cooldown += 1;
+                                continue;
+                            }
+                            accounts_to_warmup.insert(acc.email.clone());
+                            tracing::info!(
+                                "[Scheduler] Account {} has {} at {}%",
+                                acc.email,
+                                model.name,
+                                model.percentage
+                            );
+                        }
+                    }
+                }
+            }
+
+            {
+                let mut scheduler = scheduler_state.lock().await;
+                let cutoff = now - 86400;
+                let cleaned = scheduler.cleanup_stale(cutoff);
+                if cleaned > 0 {
+                    tracing::debug!("[Scheduler] Cleaned up {} stale history entries", cleaned);
+                }
+                scheduler.save_history_async().await;
+            }
+
+            if !accounts_to_warmup.is_empty() {
+                let total = accounts_to_warmup.len();
+
+                if skipped_cooldown > 0 {
+                    tracing::info!(
+                        "[Scheduler] Skipped {} in cooldown, warming {} accounts",
+                        skipped_cooldown,
+                        total
+                    );
+                }
+
+                tracing::info!("[Scheduler] Triggering {} account warmups...", total);
+
+                let mut success = 0;
+
+                for email in &accounts_to_warmup {
+                    let mut acc = match accounts.iter().find(|a| &a.email == email).cloned() {
+                        Some(a) => a,
+                        None => continue,
+                    };
+
+                    tracing::info!("[Warmup] Refreshing {}", email);
+
+                    match account::fetch_quota_with_retry(&mut acc).await {
+                        Ok(_) => {
+                            if let Some(quota) = acc.quota.clone() {
+                                if let Err(e) =
+                                    account::update_account_quota_async(acc.id.clone(), quota).await
+                                {
+                                    tracing::warn!(
+                                        "[Warmup] Failed to update quota for {}: {}",
+                                        email,
+                                        e
+                                    );
+                                }
+                            }
+                            success += 1;
+                            let mut scheduler = scheduler_state.lock().await;
+                            scheduler.record_warmup(email, now);
+                        }
+                        Err(e) => {
+                            tracing::warn!("[Scheduler] Warmup failed for {}: {}", email, e);
+                        }
+                    }
+
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+
+                {
+                    let scheduler = scheduler_state.lock().await;
+                    scheduler.save_history_async().await;
+                }
+
+                tracing::info!(
+                    "[Scheduler] Warmup completed: {}/{} successful",
+                    success,
+                    total
+                );
+
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                let _ = state.reload_accounts().await;
+            } else if skipped_cooldown > 0 {
+                tracing::info!(
+                    "[Scheduler] Scan complete, all {} in cooldown",
+                    skipped_cooldown
+                );
+            } else if skipped_disabled > 0 {
+                tracing::debug!(
+                    "[Scheduler] Scan complete, {} disabled, no matching models",
+                    skipped_disabled
+                );
+            } else {
+                tracing::debug!("[Scheduler] Scan complete, no accounts need warmup");
+            }
+        }
+    });
+}

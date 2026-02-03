@@ -5,6 +5,7 @@ mod chat;
 mod completions;
 mod images;
 mod models;
+mod responses_format;
 
 pub use chat::handle_chat_completions;
 pub use completions::handle_completions;
