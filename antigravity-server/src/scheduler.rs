@@ -391,7 +391,9 @@ pub fn start_quota_refresh(state: AppState) {
 
             let needs_immediate: Vec<_> = enabled_accounts
                 .iter()
-                .filter(|a| a.quota.as_ref().is_some_and(|q| q.needs_refresh()))
+                .filter(|a| {
+                    a.quota.is_none() || a.quota.as_ref().is_some_and(|q| q.needs_refresh())
+                })
                 .collect();
 
             let mut already_refreshed: HashSet<String> = HashSet::new();
