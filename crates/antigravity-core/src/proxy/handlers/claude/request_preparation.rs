@@ -1,7 +1,7 @@
 //! Request preparation for Claude messages handler
 
 use crate::proxy::mappers::claude::{transform_claude_request_in, ClaudeRequest};
-use crate::proxy::mappers::request_config::{resolve_request_config, RequestConfig};
+use crate::proxy::mappers::request_config::resolve_request_config;
 use crate::proxy::server::AppState;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -11,11 +11,8 @@ use serde_json::{json, Value};
 use super::background_detection::{detect_background_task_type, select_background_model};
 use super::error_recovery::{apply_background_task_cleanup, apply_user_request_cleanup};
 
-#[allow(dead_code)]
 pub struct PreparedRequest {
     pub mapped_model: String,
-    pub reason: String,
-    pub config: RequestConfig,
     pub request_with_mapped: ClaudeRequest,
     pub gemini_body: Value,
 }
@@ -27,7 +24,7 @@ pub async fn prepare_request(
     trace_id: &str,
     retried_without_thinking: bool,
 ) -> Result<PreparedRequest, Response> {
-    let (mut mapped_model, reason) = crate::proxy::common::resolve_model_route(
+    let (mut mapped_model, _reason) = crate::proxy::common::resolve_model_route(
         &request_for_body.model,
         &*state.custom_mapping.read().await,
     );
@@ -38,7 +35,7 @@ pub async fn prepare_request(
             .collect()
     });
 
-    let config = resolve_request_config(
+    let _config = resolve_request_config(
         &request_for_body.model,
         &mapped_model,
         &tools_val,
@@ -94,8 +91,6 @@ pub async fn prepare_request(
 
     Ok(PreparedRequest {
         mapped_model,
-        reason,
-        config,
         request_with_mapped,
         gemini_body,
     })

@@ -26,13 +26,6 @@ pub fn parse_request(body: Value) -> Result<ClaudeRequest, Response> {
     })
 }
 
-/// Normalize model name for quota protection checks
-#[allow(dead_code)]
-pub fn normalize_model_name(model: &str) -> String {
-    crate::proxy::common::model_mapping::normalize_to_standard_id(model)
-        .unwrap_or_else(|| model.to_string())
-}
-
 /// Generate a random trace ID for request tracking
 pub fn generate_trace_id() -> String {
     rand::Rng::sample_iter(rand::thread_rng(), &rand::distributions::Alphanumeric)
@@ -56,22 +49,6 @@ pub fn no_accounts_error(message: String) -> Response {
             "error": {
                 "type": "overloaded_error",
                 "message": format!("No available accounts: {}", safe_message)
-            }
-        })),
-    )
-        .into_response()
-}
-
-/// Create error response for transform errors
-#[allow(dead_code)]
-pub fn transform_error(message: String) -> Response {
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(json!({
-            "type": "error",
-            "error": {
-                "type": "api_error",
-                "message": format!("Transform error: {}", message)
             }
         })),
     )

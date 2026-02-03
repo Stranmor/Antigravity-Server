@@ -7,10 +7,8 @@ use axum::http::HeaderMap;
 use axum::response::Response;
 use std::sync::atomic::Ordering;
 
-#[allow(dead_code)]
 pub struct DispatchDecision {
     pub use_zai: bool,
-    pub normalized_model: String,
 }
 
 pub async fn decide_dispatch_mode(
@@ -62,10 +60,7 @@ pub async fn decide_dispatch_mode(
         }
     };
 
-    DispatchDecision {
-        use_zai,
-        normalized_model,
-    }
+    DispatchDecision { use_zai }
 }
 
 pub async fn forward_to_zai(

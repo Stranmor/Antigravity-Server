@@ -1,7 +1,5 @@
 use super::grounding::detects_networking_tool;
-use super::image_config::{
-    calculate_aspect_ratio_from_size, parse_image_config, parse_image_config_with_params,
-};
+use super::image_config::{calculate_aspect_ratio_from_size, parse_image_config_with_params};
 use super::resolve_request_config;
 use serde_json::json;
 

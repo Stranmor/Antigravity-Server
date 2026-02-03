@@ -70,21 +70,6 @@ pub async fn acquire_token(
     }
 }
 
-#[allow(dead_code)]
-pub fn prepare_request_config(
-    request_model: &str,
-    mapped_model: &str,
-    tools: &Option<Vec<serde_json::Value>>,
-) -> crate::proxy::mappers::request_config::RequestConfig {
-    crate::proxy::mappers::request_config::resolve_request_config(
-        request_model,
-        mapped_model,
-        tools,
-        None,
-        None,
-    )
-}
-
 pub fn extract_session_id(request: &crate::proxy::mappers::claude::ClaudeRequest) -> String {
     crate::proxy::session_manager::SessionManager::extract_session_id(request)
 }
