@@ -103,7 +103,9 @@ pub async fn migrate_json_to_postgres(
                         }
 
                         if let Some(quota) = &account.quota {
-                            let _ = repo.update_quota(&updated.id, quota.clone()).await;
+                            if let Err(e) = repo.update_quota(&updated.id, quota.clone()).await {
+                                warn!("Failed to migrate quota for {}: {}", account.email, e);
+                            }
                         }
 
                         stats.migrated += 1;
@@ -128,13 +130,36 @@ pub async fn migrate_json_to_postgres(
         let current_account_path = accounts_dir.join(format!("{}.json", current_json_id));
 
         if current_account_path.exists() {
-            if let Ok(content) = tokio::fs::read_to_string(&current_account_path).await {
-                if let Ok(account) = serde_json::from_str::<Account>(&content) {
-                    if let Ok(Some(pg_account)) = repo.get_account_by_email(&account.email).await {
-                        if let Err(e) = repo.set_current_account_id(&pg_account.id).await {
-                            warn!("Failed to set current account ID: {}", e);
+            match tokio::fs::read_to_string(&current_account_path).await {
+                Ok(content) => match serde_json::from_str::<Account>(&content) {
+                    Ok(account) => match repo.get_account_by_email(&account.email).await {
+                        Ok(Some(pg_account)) => {
+                            if let Err(e) = repo.set_current_account_id(&pg_account.id).await {
+                                warn!("Failed to set current account ID: {}", e);
+                            }
                         }
+                        Ok(None) => {
+                            warn!(
+                                "Current account {} not found in PostgreSQL after migration",
+                                account.email
+                            );
+                        }
+                        Err(e) => {
+                            warn!("Failed to lookup current account {}: {}", account.email, e);
+                        }
+                    },
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse current account JSON {}: {}",
+                            current_json_id, e
+                        );
                     }
+                },
+                Err(e) => {
+                    warn!(
+                        "Failed to read current account file {}: {}",
+                        current_json_id, e
+                    );
                 }
             }
         }

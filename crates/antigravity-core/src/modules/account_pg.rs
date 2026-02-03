@@ -277,6 +277,14 @@ impl AccountRepository for PostgresAccountRepository {
         .await
         .map_err(map_sqlx_err)?;
 
+        self.log_event_internal(
+            &mut tx,
+            account_id.to_string(),
+            AccountEventType::Updated,
+            serde_json::json!({"email": email, "operation": "upsert"}),
+        )
+        .await?;
+
         tx.commit().await.map_err(map_sqlx_err)?;
 
         self.get_account_by_email(&email)
@@ -323,11 +331,25 @@ impl AccountRepository for PostgresAccountRepository {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| RepositoryError::NotFound(e.to_string()))?;
 
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
+
+        for (uuid, id) in uuids.iter().zip(ids.iter()) {
+            self.log_event_internal(
+                &mut tx,
+                uuid.to_string(),
+                AccountEventType::Deleted,
+                serde_json::json!({"batch_delete": true, "original_id": id}),
+            )
+            .await?;
+        }
+
         sqlx::query("DELETE FROM accounts WHERE id = ANY($1)")
             .bind(&uuids)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(map_sqlx_err)?;
+
+        tx.commit().await.map_err(map_sqlx_err)?;
 
         Ok(())
     }
@@ -430,7 +452,7 @@ impl AccountRepository for PostgresAccountRepository {
             successful_requests: row.get::<i64, _>("successful_requests"),
             rate_limited_requests: row.get::<i64, _>("rate_limited_requests"),
             success_rate_pct: row.get::<Option<f64>, _>("success_rate_pct").unwrap_or(0.0),
-            avg_latency_ms: row.get("avg_latency_ms"),
+            avg_latency_ms: row.get::<Option<f64>, _>("avg_latency_ms"),
         })
     }
 
