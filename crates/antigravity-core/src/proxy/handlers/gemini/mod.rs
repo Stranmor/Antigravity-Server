@@ -5,6 +5,11 @@ mod streaming;
 
 pub use models::{handle_count_tokens, handle_get_model, handle_list_models};
 
+use crate::proxy::{
+    mappers::gemini::{unwrap_response, wrap_request},
+    server::AppState,
+    session_manager::SessionManager,
+};
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
@@ -13,13 +18,8 @@ use axum::{
 };
 use serde_json::Value;
 use std::collections::HashSet;
-use tracing::{debug, error, info, warn};
-
-use crate::proxy::mappers::gemini::{unwrap_response, wrap_request};
-use crate::proxy::server::AppState;
-use crate::proxy::session_manager::SessionManager;
-
 use streaming::{build_stream_response, extract_signature, peek_first_chunk};
+use tracing::{debug, error, info, warn};
 
 const MAX_RETRY_ATTEMPTS: usize = 64;
 

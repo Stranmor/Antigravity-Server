@@ -1,40 +1,32 @@
-use crate::models::{Account, TokenData};
-use crate::modules::{account, vscode};
-use crate::utils::protobuf;
+use crate::{
+    models::{Account, TokenData},
+    modules::{account, vscode},
+    utils::protobuf,
+};
 use base64::{engine::general_purpose, Engine as _};
 use serde_json::Value;
-use std::fs;
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 
 /// 扫描并导入 V1 数据
 pub async fn import_from_v1() -> Result<Vec<Account>, String> {
     use crate::modules::oauth;
-
     let home = dirs::home_dir().ok_or("无法获取主目录")?;
-
     // V1 数据目录 (根据 utils.py 确认全平台统一)
     let v1_dir = home.join(".antigravity-agent");
-
     let mut imported_accounts = Vec::new();
-
     // 尝试多个可能的文件名
     let index_files = vec![
         "antigravity_accounts.json", // Directly use string literal
         "accounts.json",
     ];
-
     let mut found_index = false;
-
     for index_filename in index_files {
         let v1_accounts_path = v1_dir.join(index_filename);
-
         if !v1_accounts_path.exists() {
             continue;
         }
-
         found_index = true;
         crate::modules::logger::log_info(&format!("发现 V1 数据: {:?}", v1_accounts_path));
-
         let content = match fs::read_to_string(&v1_accounts_path) {
             Ok(c) => c,
             Err(e) => {
@@ -51,7 +43,7 @@ pub async fn import_from_v1() -> Result<Vec<Account>, String> {
             }
         };
 
-        // 兼容两种格式：直接是 map，或者包含 "accounts" 字段
+        // 兼容两种格式：直接是 map，或者包含 \"accounts\" 字段
         let accounts_map = if let Some(map) = v1_index.as_object() {
             if let Some(accounts) = map.get("accounts").and_then(|v| v.as_object()) {
                 accounts
@@ -61,7 +53,6 @@ pub async fn import_from_v1() -> Result<Vec<Account>, String> {
         } else {
             continue;
         };
-
         for (id, acc_info) in accounts_map {
             let email_placeholder = acc_info
                 .get("email")
@@ -294,12 +285,10 @@ pub fn extract_refresh_token_from_file(db_path: &PathBuf) -> Result<String, Stri
     let oauth_data = protobuf::find_field(&blob, 6)
         .map_err(|e| format!("解析 Protobuf 失败: {}", e))?
         .ok_or("未找到 OAuth 数据 (Field 6)")?;
-
     // 2. 提取 refresh_token (Field 3)
     let refresh_bytes = protobuf::find_field(&oauth_data, 3)
         .map_err(|e| format!("解析 OAuth 数据失败: {}", e))?
         .ok_or("数据中未包含 Refresh Token (Field 3)")?;
-
     String::from_utf8(refresh_bytes).map_err(|_| "Refresh Token 非 UTF-8 编码".to_string())
 }
 

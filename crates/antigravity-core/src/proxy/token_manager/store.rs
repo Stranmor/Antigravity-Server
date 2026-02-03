@@ -1,9 +1,6 @@
-use super::file_utils::calculate_max_quota_percentage;
-use super::proxy_token::ProxyToken;
-use super::TokenManager;
+use super::{file_utils::calculate_max_quota_percentage, proxy_token::ProxyToken, TokenManager};
 use crate::modules::oauth;
-use std::collections::HashSet;
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
 impl TokenManager {
     pub async fn load_accounts(&self) -> Result<usize, String> {
@@ -298,7 +295,6 @@ impl TokenManager {
     pub fn len(&self) -> usize {
         self.tokens.len()
     }
-
     pub fn is_empty(&self) -> bool {
         self.tokens.is_empty()
     }
