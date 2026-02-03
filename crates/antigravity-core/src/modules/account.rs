@@ -691,13 +691,18 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> crate::error::AppR
         // Always update quota data
         account.update_quota(quota_data.clone());
 
-        // Update project_id if changed
         if project_id.is_some() && *project_id != account.token.project_id {
             logger::log_info(&format!(
                 "Project ID updated ({}), saving...",
                 account.email
             ));
             account.token.project_id = project_id.clone();
+            if let Err(e) = save_account_async(account.clone()).await {
+                logger::log_warn(&format!(
+                    "Failed to save project_id for {}: {}",
+                    account.email, e
+                ));
+            }
         }
 
         // Save account with updated quota using quota protection logic
@@ -778,6 +783,7 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> crate::error::AppR
                             account.email
                         ));
                         account.token.project_id = project_id.clone();
+                        let _ = save_account_async(account.clone()).await;
                     }
 
                     let _ =
