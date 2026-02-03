@@ -188,6 +188,23 @@ pub async fn handle_generate(
 
         if matches!(code, 429 | 529 | 503 | 500 | 403 | 401) {
             token_manager.mark_rate_limited(&email, code, retry_after.as_deref(), &error_text);
+
+            if code == 403
+                && (error_text.contains("SERVICE_DISABLED")
+                    || error_text.contains("CONSUMER_INVALID")
+                    || error_text.contains("Permission denied on resource project"))
+            {
+                let reason = if error_text.contains("SERVICE_DISABLED") {
+                    "PROJECT_INVALID: Vertex AI API not enabled"
+                } else {
+                    "PROJECT_INVALID: Permission denied on project"
+                };
+                let _ = token_manager.mark_project_invalid(&email, reason).await;
+                attempted_accounts.insert(email.clone());
+                attempt += 1;
+                continue;
+            }
+
             if code == 429 && error_text.contains("QUOTA_EXHAUSTED") {
                 error!("[Gemini] Quota exhausted on {}", email);
                 return Ok(

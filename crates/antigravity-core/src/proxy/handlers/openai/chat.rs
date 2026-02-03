@@ -405,6 +405,22 @@ pub async fn handle_chat_completions(
             }
         }
 
+        if status_code == 403
+            && (error_text.contains("SERVICE_DISABLED")
+                || error_text.contains("CONSUMER_INVALID")
+                || error_text.contains("Permission denied on resource project"))
+        {
+            let reason = if error_text.contains("SERVICE_DISABLED") {
+                "PROJECT_INVALID: Vertex AI API not enabled"
+            } else {
+                "PROJECT_INVALID: Permission denied on project"
+            };
+            let _ = token_manager.mark_project_invalid(&email, reason).await;
+            attempted_accounts.insert(email.clone());
+            attempt += 1;
+            continue;
+        }
+
         // 429/529/503/500 — rotate to next account (503 already retried 5x in inner loop)
         if status_code == 429 || status_code == 529 || status_code == 503 || status_code == 500 {
             token_manager

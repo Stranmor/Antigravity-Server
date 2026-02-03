@@ -36,7 +36,6 @@ pub struct TokenManager {
     adaptive_limits: Arc<tokio::sync::RwLock<Option<Arc<AdaptiveLimitManager>>>>,
     preferred_account_id: Arc<tokio::sync::RwLock<Option<String>>>,
     health_scores: Arc<DashMap<String, f32>>,
-    runtime_protected_models: Arc<DashMap<String, HashSet<String>>>,
     active_requests: Arc<DashMap<String, AtomicU32>>,
     session_failures: Arc<DashMap<String, AtomicU32>>,
     file_locks: Arc<DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
@@ -53,7 +52,6 @@ impl TokenManager {
             adaptive_limits: Arc::new(tokio::sync::RwLock::new(None)),
             preferred_account_id: Arc::new(tokio::sync::RwLock::new(None)),
             health_scores: Arc::new(DashMap::new()),
-            runtime_protected_models: Arc::new(DashMap::new()),
             active_requests: Arc::new(DashMap::new()),
             session_failures: Arc::new(DashMap::new()),
             file_locks: Arc::new(DashMap::new()),
@@ -92,13 +90,8 @@ impl TokenManager {
             .unwrap_or(0)
     }
 
-    /// Check if model is protected for account (combines disk and runtime state)
+    /// Check if model is protected for account (disk state only, rate_limit_tracker handles runtime)
     pub fn is_model_protected(&self, account_id: &str, model: &str) -> bool {
-        if let Some(runtime) = self.runtime_protected_models.get(account_id) {
-            if runtime.contains(model) {
-                return true;
-            }
-        }
         if let Some(token) = self.tokens.get(account_id) {
             return token.protected_models.contains(model);
         }
@@ -1230,6 +1223,50 @@ impl TokenManager {
         Ok(())
     }
 
+    /// Mark account as having invalid project configuration (SERVICE_DISABLED, CONSUMER_INVALID).
+    /// This permanently disables the account for proxy use until manually re-enabled.
+    /// The account is removed from runtime pool and the flag is persisted to disk.
+    pub async fn mark_project_invalid(&self, email: &str, reason: &str) -> Result<(), String> {
+        let account_id = self
+            .tokens
+            .iter()
+            .find(|e| e.email == email)
+            .map(|e| e.account_id.clone())
+            .ok_or_else(|| format!("Account not found: {}", email))?;
+
+        let path = if let Some(entry) = self.tokens.get(&account_id) {
+            entry.account_path.clone()
+        } else {
+            self.data_dir
+                .join("accounts")
+                .join(format!("{}.json", account_id))
+        };
+
+        let lock = self.get_file_lock(&account_id);
+        let _guard = lock.lock().await;
+
+        let content_str = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| format!("Failed to read file: {}", e))?;
+        let mut content: serde_json::Value = serde_json::from_str(&content_str)
+            .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+
+        let now = chrono::Utc::now().timestamp();
+        content["proxy_disabled"] = serde_json::Value::Bool(true);
+        content["proxy_disabled_at"] = serde_json::Value::Number(now.into());
+        content["proxy_disabled_reason"] = serde_json::Value::String(truncate_reason(reason, 800));
+
+        atomic_write_json(&path, &content).await?;
+        self.tokens.remove(&account_id);
+
+        tracing::error!(
+            "🚫 Account marked as PROJECT_INVALID: {} - {} (removed from pool)",
+            email,
+            truncate_reason(reason, 100)
+        );
+        Ok(())
+    }
+
     /// 保存 project_id 到账号文件
     async fn save_project_id(&self, account_id: &str, project_id: &str) -> Result<(), String> {
         let entry = self.tokens.get(account_id).ok_or("账号不存在")?;
@@ -1570,17 +1607,6 @@ impl TokenManager {
 
         match reason {
             crate::proxy::rate_limit::RateLimitReason::QuotaExhausted => {
-                // Store in runtime_protected_models (persists across account reloads)
-                self.runtime_protected_models
-                    .entry(account_id.to_string())
-                    .or_default()
-                    .insert(model_str.clone());
-                tracing::warn!(
-                    "🛡️ {}:{} added to runtime_protected_models (quota exhausted)",
-                    account_id,
-                    model_str
-                );
-
                 let lockout = std::time::Duration::from_secs(600);
                 self.rate_limit_tracker.set_model_lockout(
                     account_id,
@@ -1589,7 +1615,7 @@ impl TokenManager {
                     reason,
                 );
                 tracing::info!(
-                    "⏳ {}:{} QUOTA_EXHAUSTED, 10min fallback lock (fetching precise time)",
+                    "⏳ {}:{} QUOTA_EXHAUSTED, 10min fallback lock",
                     account_id,
                     model_str
                 );

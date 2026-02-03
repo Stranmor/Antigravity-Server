@@ -19,9 +19,9 @@
 
 | File | Lines | Excess | Priority | Status |
 |------|-------|--------|----------|--------|
-| `mappers/claude/request.rs` | 1894 | 6.3x | 🔴 CRITICAL | ⏳ Split planned |
+| `mappers/claude/request.rs` | 1894 | 6.3x | 🔴 CRITICAL | ✅ Split to request/ directory |
 | `token_manager/mod.rs` | 1685 | 5.6x | 🔴 CRITICAL | ⏳ God Object → 5 modules |
-| `handlers/claude.rs` | 1473 | 4.9x | 🔴 HIGH | ⏳ |
+| `handlers/claude.rs` | 1473 | 4.9x | 🔴 HIGH | ✅ Split to claude/ directory (messages.rs 1042 lines - needs Phase 6) |
 | `mappers/claude/streaming.rs` | 1177 | 3.9x | 🔴 HIGH | ⏳ |
 | `mappers/openai/streaming.rs` | 1092 | 3.6x | 🔴 HIGH | ⏳ |
 | `common/json_schema.rs` | 924 | 3.1x | 🟡 MEDIUM | ⏳ |
@@ -48,7 +48,9 @@
 | `mappers/claude/collector.rs` | 320 | 1.1x | 🟢 LOW | ⏳ |
 | `mappers/claude/thinking_utils.rs` | 310 | 1.0x | 🟢 LOW | ⏳ |
 
-**Completed (2026-02-02):**
+**Completed (2026-02-03):**
+- `mappers/claude/request.rs` → `mappers/claude/request/` directory (13 modules, all <300 lines) ✅
+- `handlers/claude.rs` → `handlers/claude/` directory (5 modules: messages, retry_logic, background_detection, warmup, mod) ✅
 - `handlers/openai.rs` → `handlers/openai/` directory ✅
 - `common_utils.rs` → `request_config.rs` (banned filename fix) ✅
 - `types.rs` → `messages.rs`, `utils.rs` → `formatters.rs` ✅
