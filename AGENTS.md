@@ -1,5 +1,82 @@
 # Antigravity Manager - Architecture Status
 
+## 🔄 IN PROGRESS: PostgreSQL Migration [2026-02-03]
+
+**Goal:** Replace JSON file storage with PostgreSQL + Event Sourcing
+
+### Why
+
+| Problem | Impact |
+|---------|--------|
+| No ACID transactions | Crash during write = corrupted file |
+| Race conditions | Global mutex blocks all operations |
+| No history | "When did account X get rate-limited?" — unknown |
+| No analytics | "Which account is most reliable?" — impossible |
+| No cross-instance sync | VPS ↔ Local = manual scp |
+
+### Current State (JSON)
+
+```
+~/.antigravity_tools/
+├── accounts.json              # AccountIndex (list of IDs + current_account_id)
+├── accounts/
+│   ├── {uuid-1}.json          # Full Account data
+│   ├── {uuid-2}.json
+│   └── ...
+└── gui_config.json            # App config + model mappings
+```
+
+- `ACCOUNT_INDEX_LOCK` (global Mutex) prevents concurrent writes
+- Atomic write via temp file + rename
+- No event history, no analytics queries
+
+### Target State (PostgreSQL)
+
+```sql
+-- Core tables
+accounts (id, email, name, created_at, updated_at, disabled, proxy_disabled, ...)
+tokens (account_id, access_token, refresh_token, expiry, project_id)
+quotas (account_id, fetched_at, is_forbidden, models JSONB)
+
+-- Event sourcing (append-only)
+account_events (
+    id, account_id, event_type, timestamp, metadata JSONB
+    -- types: created, token_refreshed, rate_limited, quota_updated, 
+    --        disabled, enabled, model_protected, model_unprotected
+)
+
+-- Request logging (analytics)
+requests (
+    id, account_id, model, tokens_in, tokens_out, 
+    latency_ms, status_code, error_type, timestamp
+)
+```
+
+### Migration Phases
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Add sqlx + PostgreSQL deps | ⏳ |
+| 2 | Create migration files (schema) | ⏳ |
+| 3 | Implement `AccountRepository` trait | ⏳ |
+| 4 | PostgreSQL backend implementation | ⏳ |
+| 5 | Event sourcing: `AccountEvent` enum | ⏳ |
+| 6 | JSON → PostgreSQL data migration | ⏳ |
+| 7 | Update handlers to use new storage | ⏳ |
+| 8 | Setup PostgreSQL on VPS (NixOS) | ⏳ |
+| 9 | Deploy + verify | ⏳ |
+
+### Files to Modify
+
+- `crates/antigravity-core/Cargo.toml` — add sqlx
+- `crates/antigravity-core/src/modules/account.rs` → `repository.rs` (trait)
+- `crates/antigravity-core/src/modules/account_pg.rs` — PostgreSQL impl
+- `crates/antigravity-core/src/modules/account_json.rs` — JSON impl (legacy, for migration)
+- `antigravity-server/src/main.rs` — initialize DB pool
+- `/etc/nixos/configuration.nix` — PostgreSQL service
+
+---
+
 ## 🏛️ ARCHITECTURAL EVOLUTION [2026-02-02]
 
 **Current Status:** PHASE 5 IN PROGRESS — Module size compliance refactoring
@@ -23,7 +100,7 @@
 | `token_manager/mod.rs` | 1685 | 5.6x | 🔴 CRITICAL | ✅ Split to 12 modules (largest: 308 lines) |
 | `handlers/claude.rs` | 1473 | 4.9x | 🔴 HIGH | ✅ Split to claude/ directory (messages.rs 1042 lines - needs Phase 6) |
 | `mappers/claude/streaming.rs` | 1177 | 3.9x | 🔴 HIGH | ✅ Split to streaming/ directory (7 modules) |
-| `mappers/openai/streaming.rs` | 1092 | 3.6x | 🔴 HIGH | ⏳ |
+| `mappers/openai/streaming.rs` | 1092 | 3.6x | 🔴 HIGH | ✅ Split to streaming/ directory (5 modules) |
 | `common/json_schema.rs` | 924 | 3.1x | 🟡 MEDIUM | ⏳ |
 | `mappers/openai/request.rs` | 797 | 2.7x | 🟡 MEDIUM | ⏳ |
 | `rate_limit/mod.rs` | 792 | 2.6x | 🟡 MEDIUM | ⏳ |
@@ -55,6 +132,8 @@
 - `common_utils.rs` → `request_config.rs` (banned filename fix) ✅
 - `types.rs` → `messages.rs`, `utils.rs` → `formatters.rs` ✅
 - `token_manager/mod.rs` → 12 modules (mod.rs, store.rs, selection.rs, selection_helpers.rs, rate_limiter.rs, session.rs, health.rs, persistence.rs, routing.rs, recovery.rs, proxy_token.rs, file_utils.rs) ✅
+- `mappers/claude/streaming.rs` → `mappers/claude/streaming/` directory (7 modules) ✅
+- `mappers/openai/streaming.rs` → `mappers/openai/streaming/` directory (5 modules: mod.rs, usage.rs, legacy_stream.rs, openai_stream.rs, codex_stream.rs) ✅
 
 ### 📊 Architecture (Current)
 
