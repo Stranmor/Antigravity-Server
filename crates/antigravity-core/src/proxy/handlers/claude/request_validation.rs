@@ -9,6 +9,7 @@ use axum::{
 use serde_json::{json, Value};
 
 /// Parse and validate incoming Claude request body
+#[allow(clippy::result_large_err)]
 pub fn parse_request(body: Value) -> Result<ClaudeRequest, Response> {
     serde_json::from_value(body).map_err(|e| {
         (
@@ -26,6 +27,7 @@ pub fn parse_request(body: Value) -> Result<ClaudeRequest, Response> {
 }
 
 /// Normalize model name for quota protection checks
+#[allow(dead_code)]
 pub fn normalize_model_name(model: &str) -> String {
     crate::proxy::common::model_mapping::normalize_to_standard_id(model)
         .unwrap_or_else(|| model.to_string())
@@ -61,6 +63,7 @@ pub fn no_accounts_error(message: String) -> Response {
 }
 
 /// Create error response for transform errors
+#[allow(dead_code)]
 pub fn transform_error(message: String) -> Response {
     (
         StatusCode::INTERNAL_SERVER_ERROR,

@@ -17,7 +17,6 @@ use super::retry_strategy::{
     apply_retry_strategy, determine_retry_strategy, peek_first_data_chunk, PeekConfig, PeekResult,
 };
 use axum::{extract::Json, extract::State, http::StatusCode, response::IntoResponse};
-use base64::Engine as _;
 use bytes::Bytes;
 use serde_json::{json, Value};
 use tracing::{debug, info};

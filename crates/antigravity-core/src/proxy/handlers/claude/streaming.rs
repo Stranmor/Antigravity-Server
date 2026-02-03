@@ -61,9 +61,9 @@ pub async fn handle_streaming_response(
             let combined_stream = build_combined_stream(bytes, stream_rest);
 
             if ctx.client_wants_stream {
-                StreamResult::Success(build_sse_response(&ctx, combined_stream))
+                StreamResult::Success(build_sse_response(ctx, combined_stream))
             } else {
-                StreamResult::Success(collect_to_json_response(&ctx, combined_stream).await)
+                StreamResult::Success(collect_to_json_response(ctx, combined_stream).await)
             }
         }
         None => {

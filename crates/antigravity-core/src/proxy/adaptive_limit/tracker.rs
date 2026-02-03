@@ -136,10 +136,8 @@ impl AdaptiveLimitTracker {
             .map(|last| Instant::now().duration_since(*last))
             .unwrap_or(Duration::from_secs(3600));
 
-        if time_since_calibration < Duration::from_secs(300) {
-            if ratio < 0.90 {
-                return ProbeStrategy::None;
-            }
+        if time_since_calibration < Duration::from_secs(300) && ratio < 0.90 {
+            return ProbeStrategy::None;
         }
 
         ProbeStrategy::from_usage_ratio(ratio)

@@ -70,6 +70,7 @@ pub async fn acquire_token(
     }
 }
 
+#[allow(dead_code)]
 pub fn prepare_request_config(
     request_model: &str,
     mapped_model: &str,
