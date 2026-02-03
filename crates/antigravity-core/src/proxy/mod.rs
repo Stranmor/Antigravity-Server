@@ -38,6 +38,8 @@ pub mod providers;
 pub mod rate_limit;
 pub mod session_manager;
 pub mod signature_cache;
+#[cfg(test)]
+mod signature_cache_tests;
 pub mod upstream;
 pub mod warp_isolation;
 pub mod zai_vision_mcp;
