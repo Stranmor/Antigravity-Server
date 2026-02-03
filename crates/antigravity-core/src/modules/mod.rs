@@ -14,4 +14,5 @@ pub mod process;
 pub mod proxy_db;
 pub mod quota;
 pub mod repository;
+pub mod token_extraction;
 pub mod vscode;
