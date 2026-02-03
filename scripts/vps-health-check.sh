@@ -3,7 +3,7 @@ set -euo pipefail
 
 TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
 TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:-432567587}"
-SERVICE_NAME="antigravity-server"
+SERVICE_NAME="antigravity"
 HEALTH_URL="http://127.0.0.1:8045/healthz"
 STATE_FILE="/tmp/antigravity-health-state"
 
