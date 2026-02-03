@@ -8,21 +8,8 @@
 //! Access via: http://localhost:8045
 
 use anyhow::Result;
-use axum::{
-    extract::DefaultBodyLimit, http::StatusCode, response::IntoResponse, routing::get, Router,
-};
 use clap::Parser;
-use listenfd::ListenFd;
-use socket2::{Domain, Protocol, Socket, Type};
-use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::signal;
-use tower_http::{
-    cors::{Any, CorsLayer},
-    services::{ServeDir, ServeFile},
-    trace::TraceLayer,
-};
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
@@ -30,7 +17,9 @@ mod api;
 mod cli;
 mod commands;
 mod config_sync;
+mod router;
 mod scheduler;
+mod server_utils;
 mod state;
 
 mod account_commands;
@@ -211,11 +200,11 @@ async fn run_server(port: u16) -> Result<()> {
         config_sync::start_auto_config_sync(Arc::new(state.clone()), remote_url);
     }
 
-    let listener = create_listener(port, &initial_proxy_config).await?;
+    let listener = server_utils::create_listener(port, &initial_proxy_config).await?;
     let local_addr = listener.local_addr()?;
     state.set_bound_port(local_addr.port());
 
-    let app = build_router(state, axum_server).await;
+    let app = router::build_router(state, axum_server).await;
 
     info!("🌐 Server listening on http://{}", local_addr);
     info!(
@@ -232,124 +221,9 @@ async fn run_server(port: u16) -> Result<()> {
     );
 
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(server_utils::shutdown_signal())
         .await?;
 
     info!("👋 Server shutdown complete");
     Ok(())
-}
-
-async fn create_listener(
-    port: u16,
-    proxy_config: &antigravity_types::models::ProxyConfig,
-) -> Result<tokio::net::TcpListener> {
-    let mut listenfd = ListenFd::from_env();
-
-    if let Some(listener) = listenfd.take_tcp_listener(0)? {
-        info!("🔌 Using systemd socket activation (fd=3)");
-        listener.set_nonblocking(true)?;
-        return Ok(tokio::net::TcpListener::from_std(listener)?);
-    }
-
-    // Use config-based binding (127.0.0.1 by default, 0.0.0.0 if allow_lan_access=true)
-    let bind_addr = proxy_config.get_bind_address();
-    let addr: SocketAddr = format!("{}:{}", bind_addr, port)
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Invalid bind address '{}:{}': {}", bind_addr, port, e))?;
-    let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
-
-    socket.set_reuse_address(true)?;
-    socket.set_reuse_port(true)?;
-    socket.set_nonblocking(true)?;
-    socket.bind(&addr.into())?;
-    socket.listen(4096)?;
-
-    info!(
-        "🔌 Binding with SO_REUSEPORT to {} (zero-downtime capable)",
-        addr
-    );
-
-    Ok(tokio::net::TcpListener::from_std(socket.into())?)
-}
-
-async fn shutdown_signal() {
-    let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-    };
-
-    #[cfg(unix)]
-    let terminate = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install SIGTERM handler")
-            .recv()
-            .await;
-    };
-
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
-    tokio::select! {
-        _ = ctrl_c => info!("🛑 Received Ctrl+C, initiating graceful shutdown..."),
-        _ = terminate => info!("🛑 Received SIGTERM, initiating graceful shutdown..."),
-    }
-
-    info!("⏳ Graceful shutdown initiated...");
-    tokio::time::sleep(Duration::from_millis(100)).await;
-}
-
-async fn build_router(state: AppState, _axum_server: Arc<AxumServer>) -> Router {
-    // Get proxy router from state (uses shared Arc for hot-reload)
-    let proxy_router = state.build_proxy_router();
-
-    // Static files for WebUI (Leptos dist)
-    let static_dir =
-        std::env::var("ANTIGRAVITY_STATIC_DIR").unwrap_or_else(|_| "./src-leptos/dist".to_string());
-
-    // API router with AppState
-    let api_routes = Router::new()
-        .nest("/api", api::router())
-        .route("/health", get(health_check))
-        .route("/healthz", get(health_check))
-        .route("/version", get(version_info))
-        .with_state(state);
-
-    // SPA fallback: use ServeDir::fallback() which preserves 200 status from ServeFile
-    // (unlike not_found_service which wraps response in 404)
-    let index_path = format!("{}/index.html", static_dir);
-    let spa_service = ServeDir::new(&static_dir)
-        .append_index_html_on_directories(true)
-        .fallback(ServeFile::new(&index_path));
-
-    // Combine: API routes + Proxy routes + SPA fallback
-    api_routes
-        .merge(proxy_router)
-        .fallback_service(spa_service)
-        .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
-        .layer(TraceLayer::new_for_http())
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
-        )
-}
-
-async fn health_check() -> impl IntoResponse {
-    (
-        StatusCode::OK,
-        axum::Json(serde_json::json!({"status": "ok"})),
-    )
-}
-
-async fn version_info() -> impl IntoResponse {
-    (
-        StatusCode::OK,
-        axum::Json(serde_json::json!({
-            "version": option_env!("GIT_VERSION").unwrap_or("dev"),
-            "build_time": option_env!("BUILD_TIME").unwrap_or("unknown"),
-            "cargo_version": env!("CARGO_PKG_VERSION"),
-        })),
-    )
 }
