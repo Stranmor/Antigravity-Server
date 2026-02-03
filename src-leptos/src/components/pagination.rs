@@ -11,7 +11,7 @@ pub fn Pagination(
     #[prop(into)] on_page_change: Callback<usize>,
     #[prop(into)] on_page_size_change: Callback<usize>,
 ) -> impl IntoView {
-    let page_sizes = [10, 20, 50, 100];
+    let page_sizes = [10, 20, 50, 100, 500, 9999];
 
     let can_prev = move || current_page.get() > 1;
     let can_next = move || current_page.get() < total_pages.get();
@@ -81,8 +81,9 @@ pub fn Pagination(
                     }
                 >
                     {page_sizes.iter().map(|&size| {
+                        let label = if size >= 9999 { "All".to_string() } else { format!("{} / page", size) };
                         view! {
-                            <option value=size.to_string()>{size}" / page"</option>
+                            <option value=size.to_string()>{label}</option>
                         }
                     }).collect_view()}
                 </select>

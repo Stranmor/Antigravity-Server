@@ -205,6 +205,11 @@ pub async fn handle_generate(
                     crate::proxy::rate_limit::RateLimitReason::ServerError,
                     None,
                 );
+                let email_clone = email.clone();
+                tokio::spawn(async move {
+                    let _ = crate::modules::account::mark_needs_verification_by_email(&email_clone)
+                        .await;
+                });
                 attempted_accounts.insert(email.clone());
                 attempt += 1;
                 continue;

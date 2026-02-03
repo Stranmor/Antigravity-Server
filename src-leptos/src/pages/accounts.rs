@@ -26,6 +26,7 @@ pub enum FilterType {
     Pro,
     Ultra,
     Free,
+    NeedsVerification,
 }
 
 #[component]
@@ -93,7 +94,15 @@ pub fn Accounts() -> impl IntoView {
             })
             .count();
         let free = all - pro - ultra;
-        (all, pro, ultra, free)
+        let needs_verification = accounts
+            .iter()
+            .filter(|a| {
+                a.proxy_disabled_reason
+                    .as_ref()
+                    .is_some_and(|r| r == "phone_verification_required")
+            })
+            .count();
+        (all, pro, ultra, free, needs_verification)
     });
 
     // Filtered accounts
@@ -131,6 +140,10 @@ pub fn Accounts() -> impl IntoView {
                             .unwrap_or_default();
                         !tier.contains("pro") && !tier.contains("ultra")
                     }
+                    FilterType::NeedsVerification => a
+                        .proxy_disabled_reason
+                        .as_ref()
+                        .is_some_and(|r| r == "phone_verification_required"),
                 }
             })
             .collect::<Vec<_>>()
@@ -543,6 +556,13 @@ pub fn Accounts() -> impl IntoView {
                         "Free"
                         <span class="filter-count">{move || filter_counts.get().3}</span>
                     </button>
+                    <button
+                        class=move || if matches!(filter.get(), FilterType::NeedsVerification) { "active filter-warning" } else { "filter-warning" }
+                        on:click=move |_| filter.set(FilterType::NeedsVerification)
+                    >
+                        "⚠️ Verify"
+                        <span class="filter-count">{move || filter_counts.get().4}</span>
+                    </button>
                 </div>
 
                 <div class="toolbar-spacer"></div>
@@ -648,6 +668,8 @@ pub fn Accounts() -> impl IntoView {
                                     let email = account.email.clone();
                                     let is_disabled = account.disabled;
                                     let proxy_disabled = account.proxy_disabled;
+                                    let needs_verification = account.proxy_disabled_reason.as_ref()
+                                        .is_some_and(|r| r == "phone_verification_required");
 
                                     let tier = account.quota.as_ref()
                                         .and_then(|q| q.subscription_tier.clone())
@@ -729,6 +751,9 @@ pub fn Accounts() -> impl IntoView {
                                                 <Show when=move || state.current_account_id.get() == Some(account_id_show.clone())>
                                                     <span class="current-badge">"ACTIVE"</span>
                                                 </Show>
+                                                {needs_verification.then(|| view! {
+                                                    <span class="verify-badge" title="Phone verification required">"📱"</span>
+                                                })}
                                             </td>
                                             <td class="col-tier">
                                                 <span class=format!("tier-badge {}", tier_class)>{tier}</span>
