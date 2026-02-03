@@ -6,6 +6,10 @@ use std::pin::Pin;
 use tracing::debug;
 use uuid::Uuid;
 
+use super::stream_formatters::{
+    content_chunk, error_chunk, format_grounding_metadata, generate_call_id, map_finish_reason,
+    reasoning_chunk, sse_line, tool_call_chunk, usage_chunk,
+};
 use super::usage::extract_usage_metadata;
 use crate::proxy::mappers::openai::models::OpenAIUsage;
 use crate::proxy::mappers::signature_store::store_thought_signature;
@@ -143,68 +147,25 @@ pub fn create_openai_sse_stream(
 
                                                             let name = func_call.get("name").and_then(|v| v.as_str()).unwrap_or("unknown");
                                                             let args = func_call.get("args").unwrap_or(&json!({})).to_string();
+                                                            let call_id = generate_call_id(func_call);
 
-                                                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                                                            use std::hash::{Hash, Hasher};
-                                                            serde_json::to_string(func_call).unwrap_or_default().hash(&mut hasher);
-                                                            let call_id = format!("call_{:x}", hasher.finish());
-
-                                                            let tool_call_chunk = json!({
-                                                                "id": &stream_id,
-                                                                "object": "chat.completion.chunk",
-                                                                "created": created_ts,
-                                                                "model": &model,
-                                                                "choices": [{
-                                                                    "index": idx as u32,
-                                                                    "delta": {
-                                                                        "role": "assistant",
-                                                                        "tool_calls": [{
-                                                                            "index": 0,
-                                                                            "id": call_id,
-                                                                            "type": "function",
-                                                                            "function": {
-                                                                                "name": name,
-                                                                                "arguments": args
-                                                                            }
-                                                                        }]
-                                                                    },
-                                                                    "finish_reason": serde_json::Value::Null
-                                                                }]
-                                                            });
-
-                                                            let sse_out = format!("data: {}\n\n", serde_json::to_string(&tool_call_chunk).unwrap_or_default());
-                                                            yield Ok::<Bytes, String>(Bytes::from(sse_out));
+                                                            let chunk = tool_call_chunk(
+                                                                &stream_id,
+                                                                created_ts,
+                                                                &model,
+                                                                idx as u32,
+                                                                &call_id,
+                                                                name,
+                                                                &args,
+                                                            );
+                                                            yield Ok::<Bytes, String>(Bytes::from(sse_line(&chunk)));
                                                         }
                                                     }
                                                 }
                                             }
 
                                             if let Some(grounding) = candidate.get("groundingMetadata") {
-                                                let mut grounding_text = String::new();
-
-                                                if let Some(queries) = grounding.get("webSearchQueries").and_then(|q| q.as_array()) {
-                                                    let query_list: Vec<&str> = queries.iter().filter_map(|v| v.as_str()).collect();
-                                                    if !query_list.is_empty() {
-                                                        grounding_text.push_str("\n\n---\n**🔍 已为您搜索：** ");
-                                                        grounding_text.push_str(&query_list.join(", "));
-                                                    }
-                                                }
-
-                                                if let Some(chunks) = grounding.get("groundingChunks").and_then(|c| c.as_array()) {
-                                                    let mut links = Vec::new();
-                                                    for (i, chunk) in chunks.iter().enumerate() {
-                                                        if let Some(web) = chunk.get("web") {
-                                                            let title = web.get("title").and_then(|v| v.as_str()).unwrap_or("网页来源");
-                                                            let uri = web.get("uri").and_then(|v| v.as_str()).unwrap_or("#");
-                                                            links.push(format!("[{}] [{}]({})", i + 1, title, uri));
-                                                        }
-                                                    }
-                                                    if !links.is_empty() {
-                                                        grounding_text.push_str("\n\n**🌐 来源引文：**\n");
-                                                        grounding_text.push_str(&links.join("\n"));
-                                                    }
-                                                }
-
+                                                let grounding_text = format_grounding_metadata(grounding);
                                                 if !grounding_text.is_empty() {
                                                     content_out.push_str(&grounding_text);
                                                 }
@@ -218,34 +179,17 @@ pub fn create_openai_sse_stream(
 
                                             let finish_reason = candidate.get("finishReason")
                                                 .and_then(|f| f.as_str())
-                                                .map(|f| match f {
-                                                    "STOP" => "stop",
-                                                    "MAX_TOKENS" => "length",
-                                                    "SAFETY" => "content_filter",
-                                                    "RECITATION" => "content_filter",
-                                                    _ => f,
-                                                });
+                                                .map(map_finish_reason);
 
                                             if !thought_out.is_empty() {
-                                                let reasoning_chunk = json!({
-                                                    "id": &stream_id,
-                                                    "object": "chat.completion.chunk",
-                                                    "created": created_ts,
-                                                    "model": model,
-                                                    "choices": [
-                                                        {
-                                                            "index": idx as u32,
-                                                            "delta": {
-                                                                "role": "assistant",
-                                                                "content": serde_json::Value::Null,
-                                                                "reasoning_content": thought_out
-                                                            },
-                                                            "finish_reason": serde_json::Value::Null
-                                                        }
-                                                    ]
-                                                });
-                                                let sse_out = format!("data: {}\n\n", serde_json::to_string(&reasoning_chunk).unwrap_or_default());
-                                                yield Ok::<Bytes, String>(Bytes::from(sse_out));
+                                                let chunk = reasoning_chunk(
+                                                    &stream_id,
+                                                    created_ts,
+                                                    &model,
+                                                    idx as u32,
+                                                    &thought_out,
+                                                );
+                                                yield Ok::<Bytes, String>(Bytes::from(sse_line(&chunk)));
                                             }
 
                                             if !content_out.is_empty() || finish_reason.is_some() {
@@ -269,45 +213,26 @@ pub fn create_openai_sse_stream(
                                                         };
 
                                                         let chunk_finish_reason = if is_last_chunk { finish_reason } else { None };
-
-                                                        let openai_chunk = json!({
-                                                            "id": &stream_id,
-                                                            "object": "chat.completion.chunk",
-                                                            "created": created_ts,
-                                                            "model": model,
-                                                            "choices": [
-                                                                {
-                                                                    "index": idx as u32,
-                                                                    "delta": {
-                                                                        "content": chunk_str
-                                                                    },
-                                                                    "finish_reason": chunk_finish_reason
-                                                                }
-                                                            ]
-                                                        });
-
-                                                        let sse_out = format!("data: {}\n\n", serde_json::to_string(&openai_chunk).unwrap_or_default());
-                                                        yield Ok::<Bytes, String>(Bytes::from(sse_out));
+                                                        let c = content_chunk(
+                                                            &stream_id,
+                                                            created_ts,
+                                                            &model,
+                                                            idx as u32,
+                                                            &chunk_str,
+                                                            chunk_finish_reason,
+                                                        );
+                                                        yield Ok::<Bytes, String>(Bytes::from(sse_line(&c)));
                                                     }
                                                 } else {
-                                                    let openai_chunk = json!({
-                                                        "id": &stream_id,
-                                                        "object": "chat.completion.chunk",
-                                                        "created": created_ts,
-                                                        "model": model,
-                                                        "choices": [
-                                                            {
-                                                                "index": idx as u32,
-                                                                "delta": {
-                                                                    "content": content_out
-                                                                },
-                                                                "finish_reason": finish_reason
-                                                            }
-                                                        ]
-                                                    });
-
-                                                    let sse_out = format!("data: {}\n\n", serde_json::to_string(&openai_chunk).unwrap_or_default());
-                                                    yield Ok::<Bytes, String>(Bytes::from(sse_out));
+                                                    let c = content_chunk(
+                                                        &stream_id,
+                                                        created_ts,
+                                                        &model,
+                                                        idx as u32,
+                                                        &content_out,
+                                                        finish_reason,
+                                                    );
+                                                    yield Ok::<Bytes, String>(Bytes::from(sse_line(&c)));
                                                 }
                                             }
                                         }
@@ -329,22 +254,15 @@ pub fn create_openai_sse_stream(
                         "OpenAI stream error occurred"
                     );
 
-                    let error_chunk = json!({
-                        "id": &stream_id,
-                        "object": "chat.completion.chunk",
-                        "created": created_ts,
-                        "model": &model,
-                        "choices": [],
-                        "error": {
-                            "type": error_type,
-                            "message": user_message,
-                            "code": "stream_error",
-                            "i18n_key": i18n_key
-                        }
-                    });
-
-                    let sse_out = format!("data: {}\n\n", serde_json::to_string(&error_chunk).unwrap_or_default());
-                    yield Ok(Bytes::from(sse_out));
+                    let err = error_chunk(
+                        &stream_id,
+                        created_ts,
+                        &model,
+                        error_type,
+                        user_message,
+                        i18n_key,
+                    );
+                    yield Ok(Bytes::from(sse_line(&err)));
                     yield Ok(Bytes::from("data: [DONE]\n\n"));
                     break;
                 }
@@ -352,16 +270,8 @@ pub fn create_openai_sse_stream(
         }
 
         if let Some(usage) = final_usage {
-            let usage_chunk = json!({
-                "id": &stream_id,
-                "object": "chat.completion.chunk",
-                "created": created_ts,
-                "model": &model,
-                "choices": [],
-                "usage": usage
-            });
-            let sse_out = format!("data: {}\n\n", serde_json::to_string(&usage_chunk).unwrap_or_default());
-            yield Ok::<Bytes, String>(Bytes::from(sse_out));
+            let u = usage_chunk(&stream_id, created_ts, &model, &usage);
+            yield Ok::<Bytes, String>(Bytes::from(sse_line(&u)));
         }
 
         yield Ok::<Bytes, String>(Bytes::from("data: [DONE]\n\n"));

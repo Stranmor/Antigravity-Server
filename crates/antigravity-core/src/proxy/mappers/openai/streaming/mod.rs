@@ -3,6 +3,7 @@ mod function_call_handler;
 mod legacy_stream;
 mod openai_stream;
 mod ssop_detector;
+mod stream_formatters;
 mod usage;
 
 pub use codex_stream::create_codex_sse_stream;
