@@ -66,15 +66,11 @@
 - **Phase 3:** Validator integration, Re-exports cleanup, Clippy compliance (all 23 modules clean)
 - **Phase 4:** Eliminate `antigravity-shared`, Edition 2021 alignment
 
-### 🔄 Phase 5: Module Size Compliance [COMPLETE - 2026-02-03]
+### 🔄 Phase 5: Module Size Compliance [COMPLETE - 2026-02-04]
 
 **Goal:** Split all files exceeding 300 lines to comply with Single Responsibility Module principle.
 
-**Status:** ✅ ALL core `.rs` files now under 300 lines.
-
-**Remaining (exempt or low priority):**
-- Test files (exempt): `request_tests.rs` (614), `handlers.rs` (378)
-- Leptos UI (low priority): `settings.rs` (549), `dashboard.rs` (399), `add_account_modal.rs` (379)
+**Status:** ✅ ALL `.rs` files now under 300 lines (except test files which are exempt).
 
 **Completed refactoring:**
 - `mappers/claude/request.rs` → `mappers/claude/request/` directory (13 modules) ✅
@@ -86,6 +82,14 @@
 - `mappers/gemini/wrapper.rs` → extracted tests to `wrapper_tests.rs` ✅
 - `modules/device.rs` → extracted tests to `device_tests.rs` ✅
 - `antigravity-server/main.rs` → extracted `server_utils.rs` + `router.rs` ✅
+- `src-leptos/pages/settings.rs` (549) → `settings/` directory (7 modules, max 134 lines) ✅
+- `src-leptos/pages/dashboard.rs` (399) → `dashboard/` directory (4 modules, max 217 lines) ✅
+- `src-leptos/components/add_account_modal.rs` (379) → `add_account_modal/` directory (3 modules) ✅
+- `modules/migration.rs` (306) → extracted `token_extraction.rs` (265 lines) ✅
+
+**Exempt (test files):**
+- `request_tests.rs` (614 lines)
+- `handlers.rs` (378 lines)
 
 ### 📊 Architecture (Current)
 
