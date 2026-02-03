@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+# DEPRECATED: This script is obsolete since PostgreSQL migration (2026-02-03)
+# VPS now uses PostgreSQL for account storage, not JSON files.
+# Accounts are managed via API or direct database operations.
+echo "ERROR: This script is deprecated. VPS uses PostgreSQL now." >&2
+echo "Use: psql -U antigravity -d antigravity -c 'SELECT * FROM accounts;'" >&2
+exit 1
+
+# Original script below (kept for reference)
+# ---
 # Sync local Antigravity accounts to VPS
 # Usage: ./sync-accounts-to-vps.sh [--reload]
 set -euo pipefail
