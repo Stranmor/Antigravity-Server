@@ -13,6 +13,15 @@ use antigravity_types::models::TokenData;
 
 use crate::state::AppState;
 
+fn error_page(title: &str, message: &str) -> String {
+    format!(
+        r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>OAuth Error</title></head>
+<body style="font-family:sans-serif;text-align:center;padding:50px">
+<h1 style="color:red">{}</h1><p>{}</p></body></html>"#,
+        title, message
+    )
+}
+
 fn escape_html(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -102,62 +111,33 @@ pub async fn handle_oauth_callback(
 ) -> impl IntoResponse {
     if let Some(s) = &query.state {
         if !app_state.validate_oauth_state(s) {
-            return Html(
-                r#"<!DOCTYPE html>
-                <html>
-                <head><meta charset="utf-8"><title>OAuth Error</title></head>
-                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                    <h1 style="color: red;">❌ Invalid State Token</h1>
-                    <p>CSRF validation failed. Please try again.</p>
-                </body>
-                </html>"#
-                    .to_string(),
-            )
+            return Html(error_page(
+                "❌ Invalid State Token",
+                "CSRF validation failed. Please try again.",
+            ))
             .into_response();
         }
     } else {
-        return Html(
-            r#"<!DOCTYPE html>
-            <html>
-            <head><meta charset="utf-8"><title>OAuth Error</title></head>
-            <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                <h1 style="color: red;">❌ Missing State Token</h1>
-                <p>No state parameter received. Please try again.</p>
-            </body>
-            </html>"#
-                .to_string(),
-        )
+        return Html(error_page(
+            "❌ Missing State Token",
+            "No state parameter received. Please try again.",
+        ))
         .into_response();
     }
 
     if let Some(error) = query.error {
-        return Html(format!(
-            r#"<!DOCTYPE html>
-            <html>
-            <head><meta charset="utf-8"><title>OAuth Error</title></head>
-            <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                <h1 style="color: red;">❌ Authorization Failed</h1>
-                <p>Error: {}</p>
-                <p>Please close this window and try again.</p>
-            </body>
-            </html>"#,
-            escape_html(&error)
+        return Html(error_page(
+            "❌ Authorization Failed",
+            &format!("Error: {}", escape_html(&error)),
         ))
         .into_response();
     }
 
     let Some(code) = query.code else {
-        return Html(
-            r#"<!DOCTYPE html>
-            <html>
-            <head><meta charset="utf-8"><title>OAuth Error</title></head>
-            <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                <h1 style="color: red;">❌ Missing Authorization Code</h1>
-                <p>No authorization code received.</p>
-            </body>
-            </html>"#
-                .to_string(),
-        )
+        return Html(error_page(
+            "❌ Missing Authorization Code",
+            "No authorization code received.",
+        ))
         .into_response();
     };
 
@@ -167,18 +147,11 @@ pub async fn handle_oauth_callback(
     let token_res = match oauth::exchange_code(&code, &redirect_uri).await {
         Ok(t) => t,
         Err(e) => {
-            return Html(format!(
-                r#"<!DOCTYPE html>
-                <html>
-                <head><meta charset="utf-8"><title>OAuth Error</title></head>
-                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                    <h1 style="color: red;">❌ Token Exchange Failed</h1>
-                    <p>Error: {}</p>
-                </body>
-                </html>"#,
-                escape_html(&e)
+            return Html(error_page(
+                "❌ Token Exchange Failed",
+                &format!("Error: {}", escape_html(&e)),
             ))
-            .into_response();
+            .into_response()
         }
     };
 
@@ -203,18 +176,11 @@ pub async fn handle_oauth_callback(
     let user_info = match oauth::get_user_info(&token_res.access_token).await {
         Ok(u) => u,
         Err(e) => {
-            return Html(format!(
-                r#"<!DOCTYPE html>
-                <html>
-                <head><meta charset="utf-8"><title>OAuth Error</title></head>
-                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                    <h1 style="color: red;">❌ Failed to Get User Info</h1>
-                    <p>Error: {}</p>
-                </body>
-                </html>"#,
-                escape_html(&e)
+            return Html(error_page(
+                "❌ Failed to Get User Info",
+                &format!("Error: {}", escape_html(&e)),
             ))
-            .into_response();
+            .into_response()
         }
     };
 
@@ -253,16 +219,9 @@ pub async fn handle_oauth_callback(
             ))
             .into_response()
         }
-        Err(e) => Html(format!(
-            r#"<!DOCTYPE html>
-                <html>
-                <head><meta charset="utf-8"><title>OAuth Error</title></head>
-                <body style="font-family: sans-serif; text-align: center; padding: 50px;">
-                    <h1 style="color: red;">❌ Failed to Save Account</h1>
-                    <p>Error: {}</p>
-                </body>
-                </html>"#,
-            escape_html(&e)
+        Err(e) => Html(error_page(
+            "❌ Failed to Save Account",
+            &format!("Error: {}", escape_html(&e)),
         ))
         .into_response(),
     }

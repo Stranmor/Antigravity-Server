@@ -1,12 +1,11 @@
-// OpenAI legacy completions handler
 mod codex_parser;
+mod request_parser;
 mod response_mapper;
 mod streaming_handler;
 
 use super::*;
+use request_parser::{ensure_non_empty_messages, normalize_request_body};
 
-/// 处理 Legacy Completions API (/v1/completions)
-/// 将 Prompt 转换为 Chat Message 格式，复用 handle_chat_completions
 pub async fn handle_completions(
     State(state): State<AppState>,
     Json(mut body): Json<Value>,
@@ -15,57 +14,10 @@ pub async fn handle_completions(
         "Received /v1/completions or /v1/responses payload: {:?}",
         body
     );
-
-    let is_codex_style = body.get("input").is_some() || body.get("instructions").is_some();
-
-    // Convert Codex-style or legacy prompt to messages format
-    if is_codex_style {
-        let instructions = body
-            .get("instructions")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let input_items = body.get("input").and_then(|v| v.as_array());
-        let messages = codex_parser::parse_codex_input_to_messages(instructions, input_items);
-
-        if let Some(obj) = body.as_object_mut() {
-            obj.insert("messages".to_string(), json!(messages));
-        }
-    } else if let Some(prompt_val) = body.get("prompt") {
-        // Legacy OpenAI Style: prompt -> Chat
-        let prompt_str = match prompt_val {
-            Value::String(s) => s.clone(),
-            Value::Array(arr) => arr
-                .iter()
-                .filter_map(|v| v.as_str())
-                .collect::<Vec<_>>()
-                .join("\n"),
-            _ => prompt_val.to_string(),
-        };
-        let messages = json!([ { "role": "user", "content": prompt_str } ]);
-        if let Some(obj) = body.as_object_mut() {
-            obj.remove("prompt");
-            obj.insert("messages".to_string(), messages);
-        }
-    }
-
+    let is_codex_style = normalize_request_body(&mut body);
     let mut openai_req: OpenAIRequest = serde_json::from_value(body.clone())
         .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid request: {}", e)))?;
-
-    // Safety: Inject empty message if needed
-    if openai_req.messages.is_empty() {
-        openai_req
-            .messages
-            .push(crate::proxy::mappers::openai::OpenAIMessage {
-                role: "user".to_string(),
-                content: Some(crate::proxy::mappers::openai::OpenAIContent::String(
-                    " ".to_string(),
-                )),
-                reasoning_content: None,
-                tool_calls: None,
-                tool_call_id: None,
-                name: None,
-            });
-    }
+    ensure_non_empty_messages(&mut openai_req);
 
     let upstream = state.upstream.clone();
     let token_manager = state.token_manager;
@@ -79,12 +31,10 @@ pub async fn handle_completions(
     let mut grace_retry_used = false;
 
     for attempt in 0..max_attempts {
-        // 1. 模型路由解析
         let (mapped_model, _reason) = crate::proxy::common::resolve_model_route(
             &openai_req.model,
             &*state.custom_mapping.read().await,
         );
-        // 将 OpenAI 工具转为 Value 数组以便探测联网
         let tools_val: Option<Vec<Value>> = openai_req.tools.as_ref().map(|list| list.to_vec());
         let config = crate::proxy::mappers::request_config::resolve_request_config(
             &openai_req.model,
@@ -94,12 +44,8 @@ pub async fn handle_completions(
             None,
         );
 
-        // 3. 提取 SessionId (复用)
-        // [New] 使用 TokenManager 内部逻辑提取 session_id，支持粘性调度
         let session_id_str = SessionManager::extract_openai_session_id(&openai_req);
         let session_id = Some(session_id_str.as_str());
-
-        // 重试时强制轮换，除非只是简单的网络抖动但 Claude 逻辑里 attempt > 0 总是 force_rotate
         let force_rotate = attempt > 0;
 
         let (access_token, project_id, email, _guard) = match token_manager
@@ -124,8 +70,6 @@ pub async fn handle_completions(
         info!("✓ Using account: {} (type: {})", email, config.request_type);
 
         let gemini_body = transform_openai_request(&openai_req, &project_id, &mapped_model);
-
-        // [New] 打印转换后的报文 (Gemini Body) 供调试 (Codex 路径) ———— 缩减为 simple debug
         debug!(
             "[Codex-Request] Transformed Gemini Body ({} parts)",
             gemini_body
@@ -172,11 +116,8 @@ pub async fn handle_completions(
 
         let status = response.status();
         if status.is_success() {
-            // [智能限流] 请求成功，重置该账号的连续失败计数
             token_manager.mark_account_success(&email);
             token_manager.clear_session_failures(&session_id_str);
-
-            // [AIMD] 记录成功，用于预测性限流调整
             state.adaptive_limits.record_success(&email);
 
             if list_response {
@@ -262,25 +203,20 @@ pub async fn handle_completions(
             error_text
         );
 
-        // [Grace Retry] For transient 429 (RATE_LIMIT_EXCEEDED), retry once on same account
+        // Grace retry for transient 429
         if status_code == 429 && !grace_retry_used {
             let reason = token_manager
                 .rate_limit_tracker()
                 .parse_rate_limit_reason(&error_text);
             if reason == crate::proxy::rate_limit::RateLimitReason::RateLimitExceeded {
                 grace_retry_used = true;
-                tracing::info!(
-                    "[{}] 🔄 Grace retry: RATE_LIMIT_EXCEEDED on {}, waiting 1s before retry on same account",
-                    trace_id, email
-                );
+                tracing::info!("[{}] 🔄 Grace retry on {}, waiting 1s", trace_id, email);
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                 continue;
             }
         }
 
-        // 3. 标记限流状态(用于 UI 显示)
         if status_code == 429 || status_code == 529 || status_code == 503 || status_code == 500 {
-            // 记录限流信息 (全局同步)
             token_manager
                 .mark_rate_limited_async(
                     &email,
@@ -291,7 +227,6 @@ pub async fn handle_completions(
                 )
                 .await;
 
-            // Record session failure for consecutive failure tracking
             if status_code == 429 {
                 token_manager.record_session_failure(&session_id_str);
                 state.adaptive_limits.record_429(&email);
@@ -300,9 +235,7 @@ pub async fn handle_completions(
             }
         }
 
-        // 确定重试策略
         let strategy = determine_retry_strategy(status_code, &error_text, false);
-
         if apply_retry_strategy(
             strategy,
             attempt,
@@ -312,15 +245,12 @@ pub async fn handle_completions(
         )
         .await
         {
-            // 继续重试 (loop 会增加 attempt, 导致 force_rotate=true)
             continue;
         } else {
-            // 不可重试
             return Ok((status, [("X-Account-Email", email.as_str())], error_text).into_response());
         }
     }
 
-    // 所有尝试均失败
     if let Some(email) = last_email {
         Ok((
             StatusCode::TOO_MANY_REQUESTS,

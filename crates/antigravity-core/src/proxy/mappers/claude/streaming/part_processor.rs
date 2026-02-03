@@ -16,6 +16,31 @@ impl<'a> PartProcessor<'a> {
         Self { state }
     }
 
+    fn emit_trailing_signature(&mut self) -> Vec<Bytes> {
+        let mut chunks = Vec::new();
+        chunks.extend(self.state.end_block());
+        if let Some(trailing_sig) = self.state.take_trailing_signature() {
+            chunks.push(self.state.emit(
+                "content_block_start",
+                json!({
+                    "type": "content_block_start",
+                    "index": self.state.current_block_index(),
+                    "content_block": { "type": "thinking", "thinking": "" }
+                }),
+            ));
+            chunks.push(
+                self.state
+                    .emit_delta("thinking_delta", json!({ "thinking": "" })),
+            );
+            chunks.push(
+                self.state
+                    .emit_delta("signature_delta", json!({ "signature": trailing_sig })),
+            );
+            chunks.extend(self.state.end_block());
+        }
+        chunks
+    }
+
     pub fn process(&mut self, part: &GeminiPart) -> Vec<Bytes> {
         let mut chunks = Vec::new();
         let signature = part.thought_signature.as_ref().map(|sig: &String| {
@@ -38,26 +63,7 @@ impl<'a> PartProcessor<'a> {
 
         if let Some(fc) = &part.function_call {
             if self.state.has_trailing_signature() {
-                chunks.extend(self.state.end_block());
-                if let Some(trailing_sig) = self.state.take_trailing_signature() {
-                    chunks.push(self.state.emit(
-                        "content_block_start",
-                        json!({
-                            "type": "content_block_start",
-                            "index": self.state.current_block_index(),
-                            "content_block": { "type": "thinking", "thinking": "" }
-                        }),
-                    ));
-                    chunks.push(
-                        self.state
-                            .emit_delta("thinking_delta", json!({ "thinking": "" })),
-                    );
-                    chunks.push(
-                        self.state
-                            .emit_delta("signature_delta", json!({ "signature": trailing_sig })),
-                    );
-                    chunks.extend(self.state.end_block());
-                }
+                chunks.extend(self.emit_trailing_signature());
             }
 
             chunks.extend(self.process_function_call(fc, signature));
@@ -88,26 +94,7 @@ impl<'a> PartProcessor<'a> {
         let mut chunks = Vec::new();
 
         if self.state.has_trailing_signature() {
-            chunks.extend(self.state.end_block());
-            if let Some(trailing_sig) = self.state.take_trailing_signature() {
-                chunks.push(self.state.emit(
-                    "content_block_start",
-                    json!({
-                        "type": "content_block_start",
-                        "index": self.state.current_block_index(),
-                        "content_block": { "type": "thinking", "thinking": "" }
-                    }),
-                ));
-                chunks.push(
-                    self.state
-                        .emit_delta("thinking_delta", json!({ "thinking": "" })),
-                );
-                chunks.push(
-                    self.state
-                        .emit_delta("signature_delta", json!({ "signature": trailing_sig })),
-                );
-                chunks.extend(self.state.end_block());
-            }
+            chunks.extend(self.emit_trailing_signature());
         }
 
         if self.state.current_block_type() != BlockType::Thinking {
@@ -128,24 +115,16 @@ impl<'a> PartProcessor<'a> {
             if let Some(model) = &self.state.model_name {
                 SignatureCache::global().cache_thinking_family(sig.clone(), model.clone());
             }
-
             if let Some(session_id) = &self.state.session_id {
                 SignatureCache::global().cache_session_signature(session_id, sig.clone());
-                tracing::debug!(
-                    "[Claude-SSE] Cached signature to session {} (length: {})",
-                    session_id,
-                    sig.len()
-                );
             }
-
             tracing::debug!(
-                "[Claude-SSE] Captured thought_signature from thinking block (length: {})",
+                "[Claude-SSE] Captured thought_signature (len={})",
                 sig.len()
             );
         }
 
         self.state.store_signature(signature);
-
         chunks
     }
 
@@ -160,26 +139,7 @@ impl<'a> PartProcessor<'a> {
         }
 
         if self.state.has_trailing_signature() {
-            chunks.extend(self.state.end_block());
-            if let Some(trailing_sig) = self.state.take_trailing_signature() {
-                chunks.push(self.state.emit(
-                    "content_block_start",
-                    json!({
-                        "type": "content_block_start",
-                        "index": self.state.current_block_index(),
-                        "content_block": { "type": "thinking", "thinking": "" }
-                    }),
-                ));
-                chunks.push(
-                    self.state
-                        .emit_delta("thinking_delta", json!({ "thinking": "" })),
-                );
-                chunks.push(
-                    self.state
-                        .emit_delta("signature_delta", json!({ "signature": trailing_sig })),
-                );
-                chunks.extend(self.state.end_block());
-            }
+            chunks.extend(self.emit_trailing_signature());
         }
 
         if signature.is_some() {
