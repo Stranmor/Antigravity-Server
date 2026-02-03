@@ -1,5 +1,5 @@
 mod codex_parser;
-mod request_parser;
+pub mod request_parser;
 mod response_mapper;
 mod streaming_handler;
 
