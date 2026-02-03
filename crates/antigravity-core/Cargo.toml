@@ -60,7 +60,7 @@ pin-project = { workspace = true }
 eventsource-stream = { workspace = true }
 
 # Validation
-validator = { version = "0.18", features = ["derive"] }
+validator = { version = "0.20", features = ["derive"] }
 
 # System info (for process detection)
 sysinfo = "0.31"
