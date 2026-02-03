@@ -4,9 +4,23 @@ use crate::modules::account_pg::PostgresAccountRepository;
 use crate::modules::repository::AccountRepository;
 use tracing::{error, info, warn};
 
+const MIGRATION_KEY: &str = "json_migration_completed";
+
 pub async fn migrate_json_to_postgres(
     repo: &PostgresAccountRepository,
 ) -> Result<MigrationStats, String> {
+    let migrated: Option<String> =
+        sqlx::query_scalar("SELECT value FROM app_settings WHERE key = $1")
+            .bind(MIGRATION_KEY)
+            .fetch_optional(repo.pool())
+            .await
+            .map_err(|e| format!("Failed to check migration status: {}", e))?;
+
+    if migrated.is_some() {
+        info!("JSON migration already completed, skipping");
+        return Ok(MigrationStats::default());
+    }
+
     let mut stats = MigrationStats::default();
 
     info!("Starting JSON to PostgreSQL migration...");
@@ -130,6 +144,16 @@ pub async fn migrate_json_to_postgres(
         "Migration complete: {} migrated, {} updated, {} skipped, {} failed",
         stats.migrated, stats.updated, stats.skipped, stats.failed
     );
+
+    sqlx::query(
+        "INSERT INTO app_settings (key, value) VALUES ($1, $2)
+         ON CONFLICT (key) DO UPDATE SET value = $2",
+    )
+    .bind(MIGRATION_KEY)
+    .bind(chrono::Utc::now().to_rfc3339())
+    .execute(repo.pool())
+    .await
+    .map_err(|e| format!("Failed to mark migration complete: {}", e))?;
 
     Ok(stats)
 }

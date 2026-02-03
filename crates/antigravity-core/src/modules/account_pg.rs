@@ -19,6 +19,10 @@ impl PostgresAccountRepository {
         Self { pool }
     }
 
+    pub fn pool(&self) -> &PgPool {
+        &self.pool
+    }
+
     pub async fn connect(database_url: &str) -> Result<Self, sqlx::Error> {
         let pool = PgPoolOptions::new()
             .max_connections(20)
@@ -211,6 +215,14 @@ impl AccountRepository for PostgresAccountRepository {
         .await
         .map_err(map_sqlx_err)?;
 
+        self.log_event_internal(
+            &mut tx,
+            id.to_string(),
+            AccountEventType::Updated,
+            serde_json::json!({"email": account.email}),
+        )
+        .await?;
+
         tx.commit().await.map_err(map_sqlx_err)
     }
 
@@ -220,36 +232,103 @@ impl AccountRepository for PostgresAccountRepository {
         name: Option<String>,
         token: TokenData,
     ) -> RepoResult<Account> {
-        match self.get_account_by_email(&email).await? {
-            Some(mut account) => {
-                account.name = name;
-                account.token = token;
-                account.update_last_used();
-                self.update_account(&account).await?;
-                Ok(account)
-            }
-            None => self.create_account(email, name, token).await,
-        }
+        let id = Uuid::new_v4();
+        let now = chrono::Utc::now();
+        let protected_models: Vec<String> = vec![];
+
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
+
+        let row = sqlx::query(
+            r#"INSERT INTO accounts (id, email, name, protected_models, created_at, last_used_at)
+               VALUES ($1, $2, $3, $4, $5, $5)
+               ON CONFLICT (email) DO UPDATE SET
+                   name = EXCLUDED.name,
+                   last_used_at = NOW()
+               RETURNING id"#,
+        )
+        .bind(id)
+        .bind(&email)
+        .bind(&name)
+        .bind(serde_json::to_value(&protected_models).unwrap())
+        .bind(now)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(map_sqlx_err)?;
+
+        let account_id: Uuid = row.get("id");
+
+        sqlx::query(
+            r#"INSERT INTO tokens (account_id, access_token, refresh_token, expiry_timestamp, project_id, email)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT (account_id) DO UPDATE SET
+                   access_token = EXCLUDED.access_token,
+                   refresh_token = EXCLUDED.refresh_token,
+                   expiry_timestamp = EXCLUDED.expiry_timestamp,
+                   project_id = EXCLUDED.project_id,
+                   email = EXCLUDED.email"#,
+        )
+        .bind(account_id)
+        .bind(&token.access_token)
+        .bind(&token.refresh_token)
+        .bind(token.expiry_timestamp)
+        .bind(&token.project_id)
+        .bind(&token.email)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_sqlx_err)?;
+
+        tx.commit().await.map_err(map_sqlx_err)?;
+
+        self.get_account_by_email(&email)
+            .await?
+            .ok_or(RepositoryError::NotFound(email))
     }
 
     async fn delete_account(&self, id: &str) -> RepoResult<()> {
         let uuid = Uuid::parse_str(id).map_err(|e| RepositoryError::NotFound(e.to_string()))?;
+
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_err)?;
+
+        // Log deletion event BEFORE deleting (to preserve account_id reference)
+        self.log_event_internal(
+            &mut tx,
+            id.to_string(),
+            AccountEventType::Deleted,
+            serde_json::json!({}),
+        )
+        .await?;
+
         let result = sqlx::query("DELETE FROM accounts WHERE id = $1")
             .bind(uuid)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(map_sqlx_err)?;
 
         if result.rows_affected() == 0 {
             return Err(RepositoryError::NotFound(id.to_string()));
         }
+
+        tx.commit().await.map_err(map_sqlx_err)?;
         Ok(())
     }
 
     async fn delete_accounts(&self, ids: &[String]) -> RepoResult<()> {
-        for id in ids {
-            let _ = self.delete_account(id).await;
+        if ids.is_empty() {
+            return Ok(());
         }
+
+        let uuids: Vec<Uuid> = ids
+            .iter()
+            .map(|id| Uuid::parse_str(id))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| RepositoryError::NotFound(e.to_string()))?;
+
+        sqlx::query("DELETE FROM accounts WHERE id = ANY($1)")
+            .bind(&uuids)
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx_err)?;
+
         Ok(())
     }
 
@@ -267,6 +346,15 @@ impl AccountRepository for PostgresAccountRepository {
         .execute(&self.pool)
         .await
         .map_err(map_sqlx_err)?;
+
+        self.log_event(AccountEvent {
+            account_id: account_id.to_string(),
+            event_type: AccountEventType::QuotaUpdated,
+            metadata: serde_json::json!({"is_forbidden": quota.is_forbidden}),
+            created_at: chrono::Utc::now(),
+        })
+        .await?;
+
         Ok(())
     }
 
@@ -440,6 +528,7 @@ fn parse_event_type(s: &str) -> AccountEventType {
     match s {
         "account_created" => AccountEventType::Created,
         "account_updated" => AccountEventType::Updated,
+        "account_deleted" => AccountEventType::Deleted,
         "account_disabled" => AccountEventType::Disabled,
         "account_enabled" => AccountEventType::Enabled,
         "token_refreshed" => AccountEventType::TokenRefreshed,

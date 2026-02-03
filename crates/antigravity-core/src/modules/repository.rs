@@ -7,6 +7,7 @@ use async_trait::async_trait;
 pub enum AccountEventType {
     Created,
     Updated,
+    Deleted,
     Disabled,
     Enabled,
     TokenRefreshed,
@@ -22,6 +23,7 @@ impl AccountEventType {
         match self {
             Self::Created => "account_created",
             Self::Updated => "account_updated",
+            Self::Deleted => "account_deleted",
             Self::Disabled => "account_disabled",
             Self::Enabled => "account_enabled",
             Self::TokenRefreshed => "token_refreshed",
