@@ -1,7 +1,12 @@
 // OpenAI Handler
 use super::super::retry_strategy::{peek_first_data_chunk, PeekConfig, PeekResult};
 use super::MAX_RETRY_ATTEMPTS;
-use axum::{extract::Json, extract::State, http::StatusCode, response::IntoResponse};
+use axum::http::HeaderMap;
+use axum::{
+    extract::{Json, State},
+    http::StatusCode,
+    response::IntoResponse,
+};
 use bytes::Bytes;
 use serde_json::{json, Value};
 use tracing::{debug, error, info, warn};
@@ -15,8 +20,14 @@ use crate::proxy::session_manager::SessionManager;
 
 pub async fn handle_chat_completions(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(mut body): Json<Value>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let force_account = headers
+        .get("X-Force-Account")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
     // [NEW] 自动检测并转换 Responses 格式
     // 如果请求包含 instructions 或 input 但没有 messages，则认为是 Responses 格式
     let is_responses_format = body.get("messages").is_none()
@@ -121,30 +132,66 @@ pub async fn handle_chat_completions(
         // 3. 提取 SessionId (粘性指纹)
         let session_id = SessionManager::extract_openai_session_id(&openai_req);
 
-        // 4. 获取 Token (使用准确的 request_type)
-        // 关键：在重试尝试 (attempt > 0) 时强制轮换账号
-        let (access_token, project_id, email, _active_guard) = match token_manager
-            .get_token_with_exclusions(
-                &config.request_type,
-                attempt > 0,
-                Some(&session_id),
-                &config.final_model,
-                if attempted_accounts.is_empty() {
-                    None
-                } else {
-                    Some(&attempted_accounts)
-                },
-            )
-            .await
-        {
-            Ok(t) => t,
-            Err(e) => {
-                return Err((
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    format!("Token error: {}", e),
-                ));
-            }
-        };
+        let (access_token, project_id, email, _active_guard) =
+            if let Some(ref forced) = force_account {
+                match token_manager
+                    .get_token_forced(forced, &config.final_model)
+                    .await
+                {
+                    Ok((token, email, project, guard)) => (token, project, email, guard),
+                    Err(e) => {
+                        warn!(
+                            "[OpenAI] Forced account {} failed: {}, using smart routing",
+                            forced, e
+                        );
+                        match token_manager
+                            .get_token_with_exclusions(
+                                &config.request_type,
+                                attempt > 0,
+                                Some(&session_id),
+                                &config.final_model,
+                                if attempted_accounts.is_empty() {
+                                    None
+                                } else {
+                                    Some(&attempted_accounts)
+                                },
+                            )
+                            .await
+                        {
+                            Ok(t) => t,
+                            Err(e) => {
+                                return Err((
+                                    StatusCode::SERVICE_UNAVAILABLE,
+                                    format!("Token error: {}", e),
+                                ));
+                            }
+                        }
+                    }
+                }
+            } else {
+                match token_manager
+                    .get_token_with_exclusions(
+                        &config.request_type,
+                        attempt > 0,
+                        Some(&session_id),
+                        &config.final_model,
+                        if attempted_accounts.is_empty() {
+                            None
+                        } else {
+                            Some(&attempted_accounts)
+                        },
+                    )
+                    .await
+                {
+                    Ok(t) => t,
+                    Err(e) => {
+                        return Err((
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            format!("Token error: {}", e),
+                        ));
+                    }
+                }
+            };
 
         last_email = Some(email.clone());
         info!("✓ Using account: {} (type: {})", email, config.request_type);

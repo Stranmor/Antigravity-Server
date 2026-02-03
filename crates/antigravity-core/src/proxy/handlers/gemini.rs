@@ -1,7 +1,7 @@
 use axum::{
     body::Body,
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -20,8 +20,14 @@ const MAX_RETRY_ATTEMPTS: usize = 64; // Capped by pool_size - tries ALL account
 pub async fn handle_generate(
     State(state): State<AppState>,
     Path(model_action): Path<String>,
+    headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let force_account = headers
+        .get("X-Force-Account")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
     let (model_name, method) = match model_action.rsplit_once(':') {
         Some((m, action)) => (m.to_string(), action.to_string()),
         None => (model_action, "generateContent".to_string()),
@@ -74,26 +80,63 @@ pub async fn handle_generate(
         );
         let session_id = SessionManager::extract_gemini_session_id(&body, &model_name);
 
-        let (access_token, project_id, email, _guard) = match token_manager
-            .get_token_with_exclusions(
-                &config.request_type,
-                attempt > 0,
-                Some(&session_id),
-                &config.final_model,
-                if attempted_accounts.is_empty() {
-                    None
-                } else {
-                    Some(&attempted_accounts)
-                },
-            )
-            .await
-        {
-            Ok(t) => t,
-            Err(e) => {
-                return Err((
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    format!("Token error: {}", e),
-                ))
+        let (access_token, project_id, email, _guard) = if let Some(ref forced) = force_account {
+            match token_manager
+                .get_token_forced(forced, &config.final_model)
+                .await
+            {
+                Ok((token, email, project, guard)) => (token, project, email, guard),
+                Err(e) => {
+                    warn!(
+                        "[Gemini] Forced account {} failed: {}, using smart routing",
+                        forced, e
+                    );
+                    match token_manager
+                        .get_token_with_exclusions(
+                            &config.request_type,
+                            attempt > 0,
+                            Some(&session_id),
+                            &config.final_model,
+                            if attempted_accounts.is_empty() {
+                                None
+                            } else {
+                                Some(&attempted_accounts)
+                            },
+                        )
+                        .await
+                    {
+                        Ok(t) => t,
+                        Err(e) => {
+                            return Err((
+                                StatusCode::SERVICE_UNAVAILABLE,
+                                format!("Token error: {}", e),
+                            ))
+                        }
+                    }
+                }
+            }
+        } else {
+            match token_manager
+                .get_token_with_exclusions(
+                    &config.request_type,
+                    attempt > 0,
+                    Some(&session_id),
+                    &config.final_model,
+                    if attempted_accounts.is_empty() {
+                        None
+                    } else {
+                        Some(&attempted_accounts)
+                    },
+                )
+                .await
+            {
+                Ok(t) => t,
+                Err(e) => {
+                    return Err((
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        format!("Token error: {}", e),
+                    ))
+                }
             }
         };
 

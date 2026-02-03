@@ -32,6 +32,11 @@ pub async fn handle_messages(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
+    let force_account = headers
+        .get("X-Force-Account")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
     tracing::debug!(
         "handle_messages called. Body JSON len: {}",
         body.to_string().len()
@@ -333,38 +338,88 @@ pub async fn handle_messages(
         let session_id = Some(session_id_str.as_str());
 
         let force_rotate_token = attempt > 0;
-        let (access_token, project_id, email, _guard) = match token_manager
-            .get_token_with_exclusions(
-                &config.request_type,
-                force_rotate_token,
-                session_id,
-                &config.final_model,
-                if attempted_accounts.is_empty() {
-                    None
-                } else {
-                    Some(&attempted_accounts)
-                },
-            )
-            .await
-        {
-            Ok(t) => t,
-            Err(e) => {
-                let safe_message = if e.contains("invalid_grant") {
-                    "OAuth refresh failed (invalid_grant): refresh_token likely revoked/expired; reauthorize account(s) to restore service.".to_string()
-                } else {
-                    e
-                };
-                return (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    Json(json!({
-                        "type": "error",
-                        "error": {
-                            "type": "overloaded_error",
-                            "message": format!("No available accounts: {}", safe_message)
+        let (access_token, project_id, email, _guard) = if let Some(ref forced) = force_account {
+            match token_manager
+                .get_token_forced(forced, &config.final_model)
+                .await
+            {
+                Ok((token, email, project, guard)) => (token, project, email, guard),
+                Err(e) => {
+                    tracing::warn!(
+                        "[Claude] Forced account {} failed: {}, using smart routing",
+                        forced,
+                        e
+                    );
+                    match token_manager
+                        .get_token_with_exclusions(
+                            &config.request_type,
+                            force_rotate_token,
+                            session_id,
+                            &config.final_model,
+                            if attempted_accounts.is_empty() {
+                                None
+                            } else {
+                                Some(&attempted_accounts)
+                            },
+                        )
+                        .await
+                    {
+                        Ok(t) => t,
+                        Err(e) => {
+                            let safe_message = if e.contains("invalid_grant") {
+                                "OAuth refresh failed (invalid_grant): refresh_token likely revoked/expired; reauthorize account(s) to restore service.".to_string()
+                            } else {
+                                e
+                            };
+                            return (
+                                StatusCode::SERVICE_UNAVAILABLE,
+                                Json(json!({
+                                    "type": "error",
+                                    "error": {
+                                        "type": "overloaded_error",
+                                        "message": format!("No available accounts: {}", safe_message)
+                                    }
+                                })),
+                            )
+                                .into_response();
                         }
-                    })),
+                    }
+                }
+            }
+        } else {
+            match token_manager
+                .get_token_with_exclusions(
+                    &config.request_type,
+                    force_rotate_token,
+                    session_id,
+                    &config.final_model,
+                    if attempted_accounts.is_empty() {
+                        None
+                    } else {
+                        Some(&attempted_accounts)
+                    },
                 )
-                    .into_response();
+                .await
+            {
+                Ok(t) => t,
+                Err(e) => {
+                    let safe_message = if e.contains("invalid_grant") {
+                        "OAuth refresh failed (invalid_grant): refresh_token likely revoked/expired; reauthorize account(s) to restore service.".to_string()
+                    } else {
+                        e
+                    };
+                    return (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        Json(json!({
+                            "type": "error",
+                            "error": {
+                                "type": "overloaded_error",
+                                "message": format!("No available accounts: {}", safe_message)
+                            }
+                        })),
+                    )
+                        .into_response();
+                }
             }
         };
 

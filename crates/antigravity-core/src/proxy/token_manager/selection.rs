@@ -45,6 +45,54 @@ impl TokenManager {
         }
     }
 
+    /// Force selection of a specific account by email.
+    /// Bypasses smart routing and uses the specified account directly.
+    /// Returns error if account not found or unavailable.
+    pub async fn get_token_forced(
+        &self,
+        forced_email: &str,
+        _target_model: &str,
+    ) -> Result<(String, String, String, ActiveRequestGuard), String> {
+        let tokens_snapshot: Vec<ProxyToken> =
+            self.tokens.iter().map(|e| e.value().clone()).collect();
+
+        let forced_email_lower = forced_email.to_lowercase();
+        let token = tokens_snapshot
+            .iter()
+            .find(|t| t.email.to_lowercase() == forced_email_lower)
+            .cloned()
+            .ok_or_else(|| format!("Forced account not found: {}", forced_email))?;
+
+        if self.is_rate_limited(&token.account_id) {
+            return Err(format!("Forced account {} is rate limited", forced_email));
+        }
+
+        let routing = self.routing_config.read().await.clone();
+        let guard = ActiveRequestGuard::try_new(
+            Arc::clone(&self.active_requests),
+            token.email.clone(),
+            routing.max_concurrent_per_account,
+        )
+        .ok_or_else(|| {
+            format!(
+                "Forced account {} at max concurrency ({})",
+                forced_email, routing.max_concurrent_per_account
+            )
+        })?;
+
+        tracing::info!(
+            "[Force-Account] Using forced account: {} (bypassing smart routing)",
+            token.email
+        );
+
+        Ok((
+            token.access_token,
+            token.email,
+            token.project_id.unwrap_or_default(),
+            guard,
+        ))
+    }
+
     async fn get_token_internal(
         &self,
         _quota_group: &str,
