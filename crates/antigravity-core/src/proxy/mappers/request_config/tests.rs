@@ -38,7 +38,7 @@ fn test_image_gen_model_detection() {
         None,
         None,
     );
-    assert_eq!(config.request_type, "imagen");
+    assert_eq!(config.request_type, "image_gen");
     assert!(!config.inject_google_search);
 }
 
@@ -47,7 +47,7 @@ fn test_openai_tool_format_detection() {
     let tools = Some(vec![json!({
         "type": "function",
         "function": {
-            "name": "mcp_puppeteer_puppeteer_navigate"
+            "name": "web_search"
         }
     })]);
     assert!(detects_networking_tool(&tools));
@@ -55,8 +55,9 @@ fn test_openai_tool_format_detection() {
 
 #[test]
 fn test_grounding_only_request_type() {
+    // -online suffix triggers web_search mode
     let config =
-        resolve_request_config("gemini-3-flash-search", "gemini-3-flash", &None, None, None);
+        resolve_request_config("gemini-3-flash-online", "gemini-3-flash", &None, None, None);
     assert_eq!(config.request_type, "web_search");
     assert!(config.inject_google_search);
 }
