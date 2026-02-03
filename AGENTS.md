@@ -66,52 +66,26 @@
 - **Phase 3:** Validator integration, Re-exports cleanup, Clippy compliance (all 23 modules clean)
 - **Phase 4:** Eliminate `antigravity-shared`, Edition 2021 alignment
 
-### 🔄 Phase 5: Module Size Compliance [IN PROGRESS - 2026-02-02]
+### 🔄 Phase 5: Module Size Compliance [COMPLETE - 2026-02-03]
 
 **Goal:** Split all files exceeding 300 lines to comply with Single Responsibility Module principle.
 
-**28 files exceed 300-line limit.** Priority by severity:
+**Status:** ✅ ALL core `.rs` files now under 300 lines.
 
-| File | Lines | Excess | Priority | Status |
-|------|-------|--------|----------|--------|
-| `mappers/claude/request.rs` | 1894 | 6.3x | 🔴 CRITICAL | ✅ Split to request/ directory |
-| `token_manager/mod.rs` | 1685 | 5.6x | 🔴 CRITICAL | ✅ Split to 12 modules (largest: 308 lines) |
-| `handlers/claude.rs` | 1473 | 4.9x | 🔴 HIGH | ✅ Split to claude/ directory (messages.rs 1042 lines - needs Phase 6) |
-| `mappers/claude/streaming.rs` | 1177 | 3.9x | 🔴 HIGH | ✅ Split to streaming/ directory (7 modules) |
-| `mappers/openai/streaming.rs` | 1092 | 3.6x | 🔴 HIGH | ✅ Split to streaming/ directory (5 modules) |
-| `common/json_schema.rs` | 924 | 3.1x | 🟡 MEDIUM | ⏳ |
-| `mappers/openai/request.rs` | 797 | 2.7x | 🟡 MEDIUM | ⏳ |
-| `rate_limit/mod.rs` | 792 | 2.6x | 🟡 MEDIUM | ⏳ |
-| `adaptive_limit.rs` | 789 | 2.6x | 🟡 MEDIUM | ⏳ |
-| `mappers/claude/response.rs` | 697 | 2.3x | 🟡 MEDIUM | ⏳ |
-| `health.rs` | 686 | 2.3x | 🟡 MEDIUM | ⏳ |
-| `handlers/openai/completions.rs` | 650 | 2.2x | 🟡 MEDIUM | ⏳ |
-| `upstream/client.rs` | 554 | 1.8x | 🟢 LOW | ⏳ |
-| `handlers/openai/images.rs` | 538 | 1.8x | 🟢 LOW | ⏳ |
-| `mappers/request_config.rs` | 536 | 1.8x | 🟢 LOW | ⏳ (renamed from `common_utils.rs`) |
-| `handlers/openai/chat.rs` | 517 | 1.7x | 🟢 LOW | ⏳ |
-| `mappers/context_manager.rs` | 505 | 1.7x | 🟢 LOW | ⏳ |
-| `mappers/tool_result_compressor.rs` | 472 | 1.6x | 🟢 LOW | ⏳ |
-| `zai_vision_tools.rs` | 462 | 1.5x | 🟢 LOW | ⏳ |
-| `handlers/gemini.rs` | 453 | 1.5x | 🟢 LOW | ⏳ |
-| `common/circuit_breaker.rs` | 446 | 1.5x | 🟢 LOW | ⏳ |
-| `mappers/claude/mod.rs` | 421 | 1.4x | 🟢 LOW | ⏳ |
-| `mappers/claude/models.rs` | 418 | 1.4x | 🟢 LOW | ⏳ |
-| `handlers/mcp.rs` | 418 | 1.4x | 🟢 LOW | ⏳ |
-| `mappers/gemini/wrapper.rs` | 361 | 1.2x | 🟢 LOW | ⏳ |
-| `signature_cache.rs` | 331 | 1.1x | 🟢 LOW | ⏳ |
-| `mappers/claude/collector.rs` | 320 | 1.1x | 🟢 LOW | ⏳ |
-| `mappers/claude/thinking_utils.rs` | 310 | 1.0x | 🟢 LOW | ⏳ |
+**Remaining (exempt or low priority):**
+- Test files (exempt): `request_tests.rs` (614), `handlers.rs` (378)
+- Leptos UI (low priority): `settings.rs` (549), `dashboard.rs` (399), `add_account_modal.rs` (379)
 
-**Completed (2026-02-03):**
-- `mappers/claude/request.rs` → `mappers/claude/request/` directory (13 modules, all <300 lines) ✅
-- `handlers/claude.rs` → `handlers/claude/` directory (5 modules: messages, retry_logic, background_detection, warmup, mod) ✅
+**Completed refactoring:**
+- `mappers/claude/request.rs` → `mappers/claude/request/` directory (13 modules) ✅
+- `handlers/claude.rs` → `handlers/claude/` directory (5 modules) ✅
 - `handlers/openai.rs` → `handlers/openai/` directory ✅
-- `common_utils.rs` → `request_config.rs` (banned filename fix) ✅
-- `types.rs` → `messages.rs`, `utils.rs` → `formatters.rs` ✅
-- `token_manager/mod.rs` → 12 modules (mod.rs, store.rs, selection.rs, selection_helpers.rs, rate_limiter.rs, session.rs, health.rs, persistence.rs, routing.rs, recovery.rs, proxy_token.rs, file_utils.rs) ✅
+- `token_manager/mod.rs` → 13 modules ✅
 - `mappers/claude/streaming.rs` → `mappers/claude/streaming/` directory (7 modules) ✅
-- `mappers/openai/streaming.rs` → `mappers/openai/streaming/` directory (5 modules: mod.rs, usage.rs, legacy_stream.rs, openai_stream.rs, codex_stream.rs) ✅
+- `mappers/openai/streaming.rs` → `mappers/openai/streaming/` directory (6 modules) ✅
+- `mappers/gemini/wrapper.rs` → extracted tests to `wrapper_tests.rs` ✅
+- `modules/device.rs` → extracted tests to `device_tests.rs` ✅
+- `antigravity-server/main.rs` → extracted `server_utils.rs` + `router.rs` ✅
 
 ### 📊 Architecture (Current)
 
