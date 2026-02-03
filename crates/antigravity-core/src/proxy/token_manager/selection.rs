@@ -1,6 +1,6 @@
 use super::proxy_token::ProxyToken;
 use super::TokenManager;
-use crate::modules::{config, oauth};
+use crate::modules::config;
 use crate::proxy::active_request_guard::ActiveRequestGuard;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -109,21 +109,7 @@ impl TokenManager {
             return Err("Token pool is empty".to_string());
         }
 
-        tokens_snapshot.sort_by(|a, b| {
-            let tier_cmp = a.tier_priority().cmp(&b.tier_priority());
-            if tier_cmp != std::cmp::Ordering::Equal {
-                return tier_cmp;
-            }
-            let quota_a = a.remaining_quota.unwrap_or(0);
-            let quota_b = b.remaining_quota.unwrap_or(0);
-            let quota_cmp = quota_b.cmp(&quota_a);
-            if quota_cmp != std::cmp::Ordering::Equal {
-                return quota_cmp;
-            }
-            b.health_score
-                .partial_cmp(&a.health_score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        tokens_snapshot.sort_by(super::selection_helpers::compare_tokens_by_priority);
 
         let routing = self.routing_config.read().await.clone();
 
@@ -269,74 +255,19 @@ impl TokenManager {
 
             let now = chrono::Utc::now().timestamp();
             if now >= token.timestamp - 300 {
-                tracing::debug!("Account {} token expiring, refreshing...", token.email);
-
-                match oauth::refresh_access_token(&token.refresh_token).await {
-                    Ok(token_response) => {
-                        token.access_token = token_response.access_token.clone();
-                        token.expires_in = token_response.expires_in;
-                        token.timestamp = now + token_response.expires_in;
-
-                        if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
-                            entry.access_token = token.access_token.clone();
-                            entry.expires_in = token.expires_in;
-                            entry.timestamp = token.timestamp;
-                        }
-
-                        if let Err(e) = self
-                            .save_refreshed_token(&token.account_id, &token_response)
-                            .await
-                        {
-                            tracing::debug!(
-                                "Failed to save refreshed token ({}): {}",
-                                token.email,
-                                e
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("Token refresh failed ({}): {}", token.email, e);
-                        if e.contains("\"invalid_grant\"") || e.contains("invalid_grant") {
-                            tracing::error!(
-                                "Disabling account due to invalid_grant ({}): refresh_token likely revoked/expired",
-                                token.email
-                            );
-                            let _ = self
-                                .disable_account(
-                                    &token.account_id,
-                                    &format!("invalid_grant: {}", e),
-                                )
-                                .await;
-                            self.tokens.remove(&token.account_id);
-                        }
-                        last_error = Some(format!("Token refresh failed: {}", e));
-                        attempted.insert(token.email.clone());
-                        continue;
-                    }
+                if let Err(e) = self.try_refresh_token(&mut token).await {
+                    last_error = Some(e);
+                    attempted.insert(token.email.clone());
+                    continue;
                 }
             }
 
-            let project_id = if let Some(pid) = &token.project_id {
-                pid.clone()
-            } else {
-                tracing::debug!("Account {} missing project_id, fetching...", token.email);
-                match crate::proxy::project_resolver::fetch_project_id(&token.access_token).await {
-                    Ok(pid) => {
-                        if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
-                            entry.project_id = Some(pid.clone());
-                        }
-                        let _ = self.save_project_id(&token.account_id, &pid).await;
-                        pid
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to fetch project_id for {}: {}", token.email, e);
-                        last_error = Some(format!(
-                            "Failed to fetch project_id for {}: {}",
-                            token.email, e
-                        ));
-                        attempted.insert(token.email.clone());
-                        continue;
-                    }
+            let project_id = match self.ensure_project_id(&mut token).await {
+                Ok(pid) => pid,
+                Err(e) => {
+                    last_error = Some(e);
+                    attempted.insert(token.email.clone());
+                    continue;
                 }
             };
 

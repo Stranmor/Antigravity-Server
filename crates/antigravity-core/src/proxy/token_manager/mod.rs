@@ -17,6 +17,7 @@ mod selection;
 mod selection_helpers;
 mod session;
 mod store;
+mod token_refresh;
 
 pub use proxy_token::{AccountTier, ProxyToken};
 

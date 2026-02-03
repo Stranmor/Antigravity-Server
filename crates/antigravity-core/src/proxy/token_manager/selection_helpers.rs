@@ -4,8 +4,25 @@ use super::TokenManager;
 use crate::proxy::active_request_guard::ActiveRequestGuard;
 use crate::proxy::routing_config::SmartRoutingConfig;
 use crate::proxy::AdaptiveLimitManager;
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::sync::Arc;
+
+pub fn compare_tokens_by_priority(a: &ProxyToken, b: &ProxyToken) -> Ordering {
+    let tier_cmp = a.tier_priority().cmp(&b.tier_priority());
+    if tier_cmp != Ordering::Equal {
+        return tier_cmp;
+    }
+    let quota_a = a.remaining_quota.unwrap_or(0);
+    let quota_b = b.remaining_quota.unwrap_or(0);
+    let quota_cmp = quota_b.cmp(&quota_a);
+    if quota_cmp != Ordering::Equal {
+        return quota_cmp;
+    }
+    b.health_score
+        .partial_cmp(&a.health_score)
+        .unwrap_or(Ordering::Equal)
+}
 
 impl TokenManager {
     pub(super) async fn try_preferred_account(
