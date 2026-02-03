@@ -12,8 +12,8 @@ use uuid::Uuid;
 pub use crate::proxy::mappers::signature_store::{get_thought_signature, store_thought_signature};
 
 /// Extract and convert Gemini usageMetadata to OpenAI usage format
-fn extract_usage_metadata(u: &Value) -> Option<super::models::OpenAIUsage> {
-    use super::models::{OpenAIUsage, PromptTokensDetails};
+fn extract_usage_metadata(u: &Value) -> Option<super::super::models::OpenAIUsage> {
+    use super::super::models::{OpenAIUsage, PromptTokensDetails};
 
     let prompt_tokens = u
         .get("promptTokenCount")
@@ -56,7 +56,7 @@ pub fn create_openai_sse_stream(
 
     let stream = async_stream::stream! {
         let mut emitted_tool_calls = std::collections::HashSet::new();
-        let mut final_usage: Option<super::models::OpenAIUsage> = None;
+        let mut final_usage: Option<super::super::models::OpenAIUsage> = None;
         while let Some(item) = gemini_stream.next().await {
             match item {
                 Ok(bytes) => {
@@ -455,7 +455,7 @@ pub fn create_legacy_sse_stream(
     let created_ts = Utc::now().timestamp();
 
     let stream = async_stream::stream! {
-        let mut final_usage: Option<super::models::OpenAIUsage> = None;
+        let mut final_usage: Option<super::super::models::OpenAIUsage> = None;
         while let Some(item) = gemini_stream.next().await {
             match item {
                 Ok(bytes) => {
@@ -625,7 +625,7 @@ pub fn create_codex_sse_stream(
         let mut full_content = String::new();
         let mut emitted_tool_calls = std::collections::HashSet::new();
         let mut last_finish_reason = "stop".to_string();
-        let mut _accumulated_usage: Option<super::models::OpenAIUsage> = None;
+        let mut _accumulated_usage: Option<super::super::models::OpenAIUsage> = None;
 
         while let Some(item) = gemini_stream.next().await {
             match item {

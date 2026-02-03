@@ -22,7 +22,7 @@
 | `mappers/claude/request.rs` | 1894 | 6.3x | 🔴 CRITICAL | ✅ Split to request/ directory |
 | `token_manager/mod.rs` | 1685 | 5.6x | 🔴 CRITICAL | ✅ Split to 12 modules (largest: 308 lines) |
 | `handlers/claude.rs` | 1473 | 4.9x | 🔴 HIGH | ✅ Split to claude/ directory (messages.rs 1042 lines - needs Phase 6) |
-| `mappers/claude/streaming.rs` | 1177 | 3.9x | 🔴 HIGH | ⏳ |
+| `mappers/claude/streaming.rs` | 1177 | 3.9x | 🔴 HIGH | ✅ Split to streaming/ directory (7 modules) |
 | `mappers/openai/streaming.rs` | 1092 | 3.6x | 🔴 HIGH | ⏳ |
 | `common/json_schema.rs` | 924 | 3.1x | 🟡 MEDIUM | ⏳ |
 | `mappers/openai/request.rs` | 797 | 2.7x | 🟡 MEDIUM | ⏳ |
