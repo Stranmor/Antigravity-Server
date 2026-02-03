@@ -1,8 +1,13 @@
 // Claude mapper module
 // Handles Claude ↔ Gemini protocol transformation
 
+pub mod claude_models;
+pub mod claude_response;
 pub mod collector;
+pub mod content_block;
+pub mod gemini_models;
 pub mod grounding;
+pub mod grounding_models;
 pub mod models;
 pub mod request;
 pub mod response;
