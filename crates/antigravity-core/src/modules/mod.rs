@@ -1,10 +1,13 @@
 pub mod account;
+pub mod account_pg;
 pub mod config;
 pub mod device;
+pub mod json_migration;
 pub mod logger;
 pub mod migration;
 pub mod oauth;
 pub mod process;
 pub mod proxy_db;
 pub mod quota;
+pub mod repository;
 pub mod vscode;

@@ -12,6 +12,7 @@ use tokio::sync::RwLock;
 
 use antigravity_core::models::Account;
 use antigravity_core::modules::account;
+use antigravity_core::modules::repository::{AccountRepository, RepoResult};
 use antigravity_core::proxy::{
     build_proxy_router_with_shared_state, server::AxumServer, warp_isolation::WarpIsolationManager,
     AdaptiveLimitManager, CircuitBreakerManager, HealthMonitor, ProxyMonitor, ProxySecurityConfig,
@@ -31,21 +32,19 @@ pub struct AppStateInner {
     pub proxy_config: Arc<RwLock<ProxyConfig>>,
     #[allow(dead_code)] // Reserved for future hot-reload (listener restart)
     pub axum_server: Arc<AxumServer>,
-    // Shared state for hot-reload
     pub custom_mapping: Arc<RwLock<std::collections::HashMap<String, String>>>,
     pub mapping_timestamps: Arc<RwLock<std::collections::HashMap<String, i64>>>,
     pub security_config: Arc<RwLock<ProxySecurityConfig>>,
     pub zai_config: Arc<RwLock<antigravity_types::models::ZaiConfig>>,
     pub experimental_config: Arc<RwLock<antigravity_types::models::ExperimentalConfig>>,
-    // AIMD Predictive Rate Limiting System
-    // Wired into proxy router via build_proxy_router_with_shared_state
     pub adaptive_limits: Arc<AdaptiveLimitManager>,
     pub health_monitor: Arc<HealthMonitor>,
     pub circuit_breaker: Arc<CircuitBreakerManager>,
     pub warp_isolation: Option<Arc<WarpIsolationManager>>,
     pub oauth_states: Arc<DashMap<String, Instant>>,
-    /// Actual bound port (set after listener creation, 0 if not yet bound)
     pub bound_port: AtomicU16,
+    #[allow(dead_code)] // WIP: PostgreSQL migration, will be used in phase 7
+    pub repository: Option<Arc<dyn AccountRepository>>,
 }
 
 impl AppState {
@@ -56,8 +55,8 @@ impl AppState {
         proxy_config: ProxyConfig,
         axum_server: Arc<AxumServer>,
         warp_isolation: Option<Arc<WarpIsolationManager>>,
+        repository: Option<Arc<dyn AccountRepository>>,
     ) -> Result<Self> {
-        // Create shared Arc references for hot-reload
         let custom_mapping = Arc::new(RwLock::new(proxy_config.custom_mapping.clone()));
         let security_config = Arc::new(RwLock::new(ProxySecurityConfig::from_proxy_config(
             &proxy_config,
@@ -65,18 +64,15 @@ impl AppState {
         let zai_config = Arc::new(RwLock::new(proxy_config.zai.clone()));
         let experimental_config = Arc::new(RwLock::new(proxy_config.experimental.clone()));
 
-        // Initialize AIMD Predictive Rate Limiting System
         let adaptive_limits = Arc::new(AdaptiveLimitManager::new(
-            0.85, // safety_margin: 85% of confirmed limit is working threshold
+            0.85,
             antigravity_core::proxy::AIMDController::default(),
         ));
         let health_monitor = HealthMonitor::new();
         let circuit_breaker = Arc::new(CircuitBreakerManager::new());
 
-        // Start health monitor recovery task
         health_monitor.start_recovery_task();
 
-        // Inject AIMD into TokenManager
         token_manager
             .set_adaptive_limits(adaptive_limits.clone())
             .await;
@@ -100,6 +96,7 @@ impl AppState {
                 warp_isolation,
                 oauth_states: Arc::new(DashMap::new()),
                 bound_port: AtomicU16::new(0),
+                repository,
             }),
         })
     }
@@ -425,6 +422,28 @@ impl AppState {
         self.inner
             .oauth_states
             .retain(|_, created_at: &mut Instant| created_at.elapsed().as_secs() < 600);
+    }
+
+    #[allow(dead_code)]
+    pub fn repository(&self) -> Option<&Arc<dyn AccountRepository>> {
+        self.inner.repository.as_ref()
+    }
+
+    #[allow(dead_code)]
+    pub fn has_database(&self) -> bool {
+        self.inner.repository.is_some()
+    }
+
+    #[allow(dead_code)]
+    pub async fn list_accounts_db(&self) -> RepoResult<Vec<Account>> {
+        match &self.inner.repository {
+            Some(repo) => repo.list_accounts().await,
+            None => Err(
+                antigravity_core::modules::repository::RepositoryError::Database(
+                    "No database configured".to_string(),
+                ),
+            ),
+        }
     }
 }
 

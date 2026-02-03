@@ -58,10 +58,47 @@ pub enum OpenAIContentBlock {
     Text { text: String },
     #[serde(rename = "image_url")]
     ImageUrl { image_url: OpenAIImageUrl },
+    /// Supports both nested and flat formats:
+    /// - Nested (official): `{ "type": "input_audio", "input_audio": { "data": "...", "format": "..." } }`
+    /// - Flat (common):     `{ "type": "input_audio", "data": "...", "format": "..." }`
     #[serde(rename = "input_audio")]
-    InputAudio { input_audio: InputAudioContent },
+    InputAudio {
+        /// Nested format field
+        #[serde(skip_serializing_if = "Option::is_none")]
+        input_audio: Option<InputAudioContent>,
+        /// Flat format: base64 audio data
+        #[serde(skip_serializing_if = "Option::is_none")]
+        data: Option<String>,
+        /// Flat format: audio format (wav, mp3, etc.)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        format: Option<String>,
+    },
     #[serde(rename = "video_url")]
     VideoUrl { video_url: VideoUrlContent },
+}
+
+impl OpenAIContentBlock {
+    pub fn extract_audio(&self) -> Option<InputAudioContent> {
+        match self {
+            OpenAIContentBlock::InputAudio {
+                input_audio,
+                data,
+                format,
+            } => {
+                if let Some(nested) = input_audio {
+                    Some(nested.clone())
+                } else if let (Some(d), Some(f)) = (data, format) {
+                    Some(InputAudioContent {
+                        data: d.clone(),
+                        format: f.clone(),
+                    })
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

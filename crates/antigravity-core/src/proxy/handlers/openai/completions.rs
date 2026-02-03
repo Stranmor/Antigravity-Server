@@ -455,10 +455,11 @@ pub async fn handle_completions(
                 let sse_stream: std::pin::Pin<
                     Box<dyn futures::Stream<Item = Result<Bytes, String>> + Send>,
                 > = if is_codex_style {
-                    use crate::proxy::mappers::openai::streaming::create_codex_sse_stream;
-                    Box::pin(create_codex_sse_stream(
+                    use crate::proxy::mappers::openai::streaming::create_openai_sse_stream;
+                    Box::pin(create_openai_sse_stream(
                         Box::pin(gemini_stream),
                         openai_req.model.clone(),
+                        None,
                     ))
                 } else {
                     use crate::proxy::mappers::openai::streaming::create_legacy_sse_stream;
@@ -470,20 +471,23 @@ pub async fn handle_completions(
 
                 // [FIX #859] Enhanced Peek logic to handle heartbeats and slow start
                 let peek_config = PeekConfig::openai();
-                let (first_data_chunk, sse_stream) =
-                    match peek_first_data_chunk(sse_stream, &peek_config, &trace_id).await {
-                        PeekResult::Data(bytes, stream) => (Some(bytes), stream),
-                        PeekResult::Retry(err) => {
-                            last_error = err;
-                            continue;
-                        }
-                    };
+                #[allow(clippy::type_complexity)]
+                let (first_data_chunk, sse_stream): (
+                    Option<Bytes>,
+                    std::pin::Pin<Box<dyn futures::Stream<Item = Result<Bytes, String>> + Send>>,
+                ) = match peek_first_data_chunk(sse_stream, &peek_config, &trace_id).await {
+                    PeekResult::Data(bytes, stream) => (Some(bytes), stream),
+                    PeekResult::Retry(err) => {
+                        last_error = err;
+                        continue;
+                    }
+                };
 
                 match first_data_chunk {
                     Some(bytes) => {
                         let combined_stream =
                             Box::pin(futures::stream::once(async move { Ok(bytes) }).chain(
-                                sse_stream.map(|result| -> Result<Bytes, std::io::Error> {
+                                sse_stream.map(|result: Result<Bytes, String>| -> Result<Bytes, std::io::Error> {
                                     match result {
                                         Ok(b) => Ok(b),
                                         Err(e) => {

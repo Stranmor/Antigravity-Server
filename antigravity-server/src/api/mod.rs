@@ -124,27 +124,32 @@ async fn list_accounts(
 ) -> Result<Json<Vec<AccountInfo>>, (StatusCode, String)> {
     let current_id = state.get_current_account().ok().flatten().map(|a| a.id);
 
-    match state.list_accounts() {
-        Ok(accounts) => {
-            let infos: Vec<AccountInfo> = accounts
-                .into_iter()
-                .map(|a| AccountInfo {
-                    id: a.id.clone(),
-                    email: a.email.clone(),
-                    name: a.name.clone(),
-                    disabled: a.disabled,
-                    proxy_disabled: a.proxy_disabled,
-                    is_current: current_id.as_ref() == Some(&a.id),
-                    gemini_quota: get_model_quota(&a, "gemini"),
-                    claude_quota: get_model_quota(&a, "claude"),
-                    subscription_tier: a.quota.as_ref().and_then(|q| q.subscription_tier.clone()),
-                    quota: a.quota.clone(),
-                })
-                .collect();
-            Ok(Json(infos))
-        }
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
-    }
+    let accounts = if let Some(repo) = state.repository() {
+        repo.list_accounts()
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    } else {
+        state
+            .list_accounts()
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?
+    };
+
+    let infos: Vec<AccountInfo> = accounts
+        .into_iter()
+        .map(|a| AccountInfo {
+            id: a.id.clone(),
+            email: a.email.clone(),
+            name: a.name.clone(),
+            disabled: a.disabled,
+            proxy_disabled: a.proxy_disabled,
+            is_current: current_id.as_ref() == Some(&a.id),
+            gemini_quota: get_model_quota(&a, "gemini"),
+            claude_quota: get_model_quota(&a, "claude"),
+            subscription_tier: a.quota.as_ref().and_then(|q| q.subscription_tier.clone()),
+            quota: a.quota.clone(),
+        })
+        .collect();
+    Ok(Json(infos))
 }
 
 async fn get_current_account(
@@ -194,14 +199,16 @@ async fn delete_account_handler(
     State(state): State<AppState>,
     Json(payload): Json<DeleteAccountRequest>,
 ) -> Result<Json<bool>, (StatusCode, String)> {
-    match account::delete_account(&payload.account_id) {
-        Ok(()) => {
-            // Reload token manager
-            let _ = state.reload_accounts().await;
-            Ok(Json(true))
-        }
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
+    if let Some(repo) = state.repository() {
+        repo.delete_account(&payload.account_id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    } else {
+        account::delete_account(&payload.account_id)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     }
+    let _ = state.reload_accounts().await;
+    Ok(Json(true))
 }
 
 #[derive(Deserialize)]
@@ -213,14 +220,16 @@ async fn delete_accounts_handler(
     State(state): State<AppState>,
     Json(payload): Json<DeleteAccountsRequest>,
 ) -> Result<Json<bool>, (StatusCode, String)> {
-    match account::delete_accounts(&payload.account_ids) {
-        Ok(()) => {
-            // Reload token manager
-            let _ = state.reload_accounts().await;
-            Ok(Json(true))
-        }
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
+    if let Some(repo) = state.repository() {
+        repo.delete_accounts(&payload.account_ids)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    } else {
+        account::delete_accounts(&payload.account_ids)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     }
+    let _ = state.reload_accounts().await;
+    Ok(Json(true))
 }
 
 #[derive(Deserialize)]
@@ -289,12 +298,23 @@ async fn add_account_by_token(
     while let Some(result) = join_set.join_next().await {
         match result {
             Ok(Ok(token_result)) => {
-                // Sequential upsert to avoid race condition on file storage
-                match account::upsert_account(
-                    token_result.email.clone(),
-                    token_result.name,
-                    token_result.token_data,
-                ) {
+                let upsert_result = if let Some(repo) = state.repository() {
+                    repo.upsert_account(
+                        token_result.email.clone(),
+                        token_result.name,
+                        token_result.token_data,
+                    )
+                    .await
+                    .map_err(|e| e.to_string())
+                } else {
+                    account::upsert_account(
+                        token_result.email.clone(),
+                        token_result.name,
+                        token_result.token_data,
+                    )
+                };
+
+                match upsert_result {
                     Ok(acc) => {
                         success_count += 1;
                         added_accounts.push(AccountInfo {
@@ -461,7 +481,6 @@ async fn toggle_proxy_status(
     State(state): State<AppState>,
     Json(payload): Json<ToggleProxyRequest>,
 ) -> Result<Json<ToggleProxyResponse>, (StatusCode, String)> {
-    // Log toggle with optional reason
     tracing::info!(
         account_id = %payload.account_id,
         enable = %payload.enable,
@@ -469,29 +488,31 @@ async fn toggle_proxy_status(
         "Toggling proxy status"
     );
 
-    // Load account
-    let mut acc = match account::load_account(&payload.account_id) {
-        Ok(a) => a,
-        Err(e) => return Err((StatusCode::NOT_FOUND, e)),
+    let mut acc = if let Some(repo) = state.repository() {
+        repo.get_account(&payload.account_id)
+            .await
+            .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?
+    } else {
+        account::load_account(&payload.account_id).map_err(|e| (StatusCode::NOT_FOUND, e))?
     };
 
-    // Toggle proxy_disabled (enable=true means proxy is NOT disabled)
     acc.proxy_disabled = !payload.enable;
 
-    // Save account
-    match account::save_account(&acc) {
-        Ok(_) => {
-            // Reload token manager
-            let _ = state.reload_accounts().await;
-
-            Ok(Json(ToggleProxyResponse {
-                success: true,
-                account_id: payload.account_id,
-                proxy_disabled: acc.proxy_disabled,
-            }))
-        }
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
+    if let Some(repo) = state.repository() {
+        repo.update_account(&acc)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    } else {
+        account::save_account(&acc).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     }
+
+    let _ = state.reload_accounts().await;
+
+    Ok(Json(ToggleProxyResponse {
+        success: true,
+        account_id: payload.account_id,
+        proxy_disabled: acc.proxy_disabled,
+    }))
 }
 
 // ============ Warmup ============

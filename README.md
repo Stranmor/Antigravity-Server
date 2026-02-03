@@ -2,7 +2,7 @@
 
 # Antigravity Server
 
-**Production-grade AI Gateway — OpenAI-compatible API for Gemini & Claude**
+**Headless proxy for Antigravity accounts with OpenAI-compatible API**
 
 <img src="public/icon.png" alt="Antigravity" width="120" height="120">
 
@@ -10,23 +10,32 @@
 [![Axum](https://img.shields.io/badge/Axum-Backend-3B82F6?style=flat-square)](https://github.com/tokio-rs/axum)
 [![Leptos](https://img.shields.io/badge/Leptos-WASM_UI-8B5CF6?style=flat-square)](https://leptos.dev/)
 [![Upstream](https://img.shields.io/badge/Upstream-lbjlaq-888?style=flat-square)](https://github.com/lbjlaq/Antigravity-Manager)
-[![License](https://img.shields.io/badge/License-CC--BY--NC--SA--4.0-gray?style=flat-square)](LICENSE)
-
-[English](README.md) · [Русский](README_RU.md) · [Upstream 中文](https://github.com/lbjlaq/Antigravity-Manager)
 
 </div>
 
 ---
 
-Headless Rust server that transforms Google AI Studio and Anthropic Console web sessions into standard OpenAI-compatible APIs. Deploy on VPS, run as systemd daemon, manage via CLI or Web UI.
+## What is this?
+
+A headless Rust server that proxies AI requests through [Antigravity](https://github.com/lbjlaq/Antigravity-Manager) accounts (Google AI Studio / Anthropic Console OAuth sessions).
+
+**You provide:** Antigravity account JSON files (exported from upstream desktop app)  
+**You get:** OpenAI-compatible API endpoint for Gemini & Claude models
+
+```
+┌─────────────────┐     ┌─────────────────────┐     ┌──────────────────┐
+│  Claude Code    │     │                     │     │  Google Gemini   │
+│  OpenAI SDK     │ ──► │  Antigravity Server │ ──► │  Anthropic API   │
+│  Cursor / IDE   │     │   (localhost:8045)  │     │  (via OAuth)     │
+└─────────────────┘     └─────────────────────┘     └──────────────────┘
+```
+
+---
 
 ## Quick Start
 
 ```bash
-# Build
 cargo build --release -p antigravity-server
-
-# Run
 ./target/release/antigravity-server
 # → http://127.0.0.1:8045
 ```
@@ -40,153 +49,68 @@ client = openai.OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="gemini-3-pro-high",
+    model="gemini-3-pro",
     messages=[{"role": "user", "content": "Hello!"}]
 )
-```
-
-```bash
-# Claude Code CLI
-export ANTHROPIC_API_KEY="sk-antigravity"
-export ANTHROPIC_BASE_URL="http://127.0.0.1:8045"
-claude
 ```
 
 ---
 
 ## Why This Fork?
 
-| Capability | Upstream (Tauri) | This Fork (Axum) |
-|------------|------------------|------------------|
-| Deployment | Desktop GUI | **Headless VPS daemon** |
-| Frontend | React + TypeScript | **Leptos (Rust → WASM)** |
-| Rate Limiting | Reactive (retry on 429) | **AIMD predictive** |
-| Account Rotation | Standard retry | **Smart exclusion-based rotation** |
-| Reliability | Basic failover | **Circuit breakers + health scores** |
-| Persistence | Direct file I/O | **Actor loop (race-free)** |
-| Observability | Local UI only | **Prometheus metrics + REST API** |
-| Audio/Video | Not supported | **Full multimodal** |
+| Feature | Upstream (Tauri Desktop) | This Fork (Axum Server) |
+|---------|--------------------------|-------------------------|
+| Deployment | Desktop GUI app | Headless VPS daemon |
+| Frontend | React + TypeScript | Leptos (Rust WASM) |
+| Rate Limiting | Retry on 429 | AIMD predictive throttling |
+| Account Selection | Round-robin | Least-connections + tier priority |
+| Failover | Basic retry | Circuit breakers + health scores |
+| Multimodal | — | Audio, video, images |
+| Observability | Local UI | Prometheus metrics + REST API |
 
 ---
 
-## Smart Account Rotation
+## API
 
-When running multiple accounts (e.g., 15 Google AI Studio accounts), efficient load distribution becomes critical under high concurrency. This fork implements **exclusion-based rotation** — each request maintains memory of which accounts already failed, ensuring retries always try fresh accounts.
-
-```
-Request lifecycle:
-┌─────────────────────────────────────────────────────────────┐
-│ Attempt 1: Account A (ultra-tier) → 503 Service Unavailable │
-│            attempted = {A}                                   │
-├─────────────────────────────────────────────────────────────┤
-│ Attempt 2: Account B (pro-tier) → 429 Rate Limited          │
-│            attempted = {A, B}                                │
-├─────────────────────────────────────────────────────────────┤
-│ Attempt 3: Account C (free-tier) → 200 OK ✓                 │
-│            Response returned to client                       │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Benchmark (50 concurrent requests):**
-
-| Metric | Result |
-|--------|--------|
-| Accounts utilized | 14 different accounts |
-| Rotation events | 362 distributed across pool |
-| Success rate | 100% (50/50 HTTP 200) |
-| Total time | 18.9 seconds |
-
-The exclusion set is per-request (no cross-request contamination), thread-safe (stack-allocated HashSet), and has minimal overhead (~6KB worst case for 14 accounts).
-
----
-
-## Architecture
-
-```
-┌─────────────────┐     ┌─────────────────────┐     ┌──────────────────┐
-│  Claude Code    │     │                     │     │  Google Gemini   │
-│  OpenAI SDK     │ ──▶ │  Antigravity Proxy  │ ──▶ │  Anthropic API   │
-│  Cursor / IDE   │     │   (localhost:8045)  │     │  (via OAuth)     │
-└─────────────────┘     └─────────────────────┘     └──────────────────┘
-```
-
-**Endpoints:**
-- `POST /v1/chat/completions` — OpenAI-compatible chat
-- `POST /v1/messages` — Anthropic-compatible messages
-- `GET /v1/models` — Available models
-- `POST /v1/images/generations` — Imagen 3 (DALL-E compatible)
+**OpenAI-compatible:**
+- `POST /v1/chat/completions` — Chat (streaming supported)
+- `POST /v1/images/generations` — Imagen 3
 - `POST /v1/audio/transcriptions` — Whisper-compatible
+- `GET /v1/models` — Available models
 
-**Resilience API:**
-- `GET /api/resilience/health` — Account availability
-- `GET /api/resilience/circuits` — Circuit breaker states
-- `GET /api/resilience/aimd` — Rate limit telemetry
+**Anthropic-compatible:**
+- `POST /v1/messages` — Claude messages API
+
+**Management:**
+- `GET /api/resilience/health` — Account status
+- `GET /api/resilience/aimd` — Rate limit stats
 - `GET /api/metrics` — Prometheus metrics
-
----
-
-## Multimodal
-
-**Audio** (official OpenAI format):
-```python
-response = client.chat.completions.create(
-    model="gemini-3-pro",
-    messages=[{
-        "role": "user",
-        "content": [
-            {"type": "text", "text": "Transcribe this audio"},
-            {"type": "input_audio", "input_audio": {"data": audio_b64, "format": "wav"}}
-        ]
-    }]
-)
-```
-
-**Video** (Gemini extension):
-```python
-response = client.chat.completions.create(
-    model="gemini-3-pro",
-    messages=[{
-        "role": "user",
-        "content": [
-            {"type": "text", "text": "Describe this video"},
-            {"type": "video_url", "video_url": {"url": f"data:video/mp4;base64,{video_b64}"}}
-        ]
-    }]
-)
-```
-
-Supported: `wav`, `mp3`, `ogg`, `flac`, `m4a` | `mp4`, `mov`, `webm`, `avi`
 
 ---
 
 ## CLI
 
 ```bash
-antigravity-server account list          # List accounts with quotas
-antigravity-server account add --file x  # Add account from JSON
-antigravity-server account refresh all   # Refresh all quotas
-antigravity-server warmup --all          # Warmup sessions
-antigravity-server status                # Proxy statistics
-antigravity-server config show           # Current config
+antigravity-server account list          # List accounts
+antigravity-server account add -f x.json # Import account
+antigravity-server account refresh all   # Refresh quotas
+antigravity-server status                # Server stats
 ```
 
 ---
 
 ## Deployment
 
-**Systemd (user service):**
-
 ```ini
 # ~/.config/systemd/user/antigravity.service
 [Unit]
-Description=Antigravity AI Gateway
+Description=Antigravity Server
 After=network.target
 
 [Service]
 ExecStart=%h/.cargo/bin/antigravity-server
 Restart=always
 Environment=RUST_LOG=info
-Environment=ANTIGRAVITY_PORT=8045
 
 [Install]
 WantedBy=default.target
@@ -196,40 +120,14 @@ WantedBy=default.target
 systemctl --user enable --now antigravity
 ```
 
-**Environment:**
-
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ANTIGRAVITY_PORT` | `8045` | Server port |
 | `ANTIGRAVITY_DATA_DIR` | `~/.antigravity_tools` | Data directory |
-| `RUST_LOG` | `info` | Log level |
-
----
-
-## Project Structure
-
-```
-crates/
-├── antigravity-types/    # Shared types, errors, models
-├── antigravity-core/     # Business logic (proxy, AIMD, circuits)
-└── antigravity-client/   # Rust SDK (auto-discovery, streaming)
-
-antigravity-server/       # Axum HTTP server + CLI
-src-leptos/               # Leptos WASM frontend
-vendor/antigravity-upstream/  # Upstream reference (submodule)
-```
 
 ---
 
 ## License
 
-Based on [lbjlaq/Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager). 
-
-**License:** [CC BY-NC-SA 4.0](LICENSE) — Non-commercial use only.
-
-<div align="center">
-
-**Built with Rust**
-
-</div>
-
+Fork of [lbjlaq/Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager).  
+License: [CC BY-NC-SA 4.0](LICENSE) — Non-commercial use only.

@@ -252,18 +252,20 @@ pub fn transform_openai_request(
                                         }
                                     }
                                 }
-                                OpenAIContentBlock::InputAudio { input_audio } => {
-                                    let mime_type = match input_audio.format.as_str() {
-                                        "wav" => "audio/wav",
-                                        "mp3" => "audio/mp3",
-                                        "ogg" => "audio/ogg",
-                                        "flac" => "audio/flac",
-                                        "m4a" | "aac" => "audio/aac",
-                                        _ => "audio/wav",
-                                    };
-                                    parts.push(json!({
-                                        "inlineData": { "mimeType": mime_type, "data": &input_audio.data }
-                                    }));
+                                OpenAIContentBlock::InputAudio { .. } => {
+                                    if let Some(audio) = block.extract_audio() {
+                                        let mime_type = match audio.format.as_str() {
+                                            "wav" => "audio/wav",
+                                            "mp3" => "audio/mp3",
+                                            "ogg" => "audio/ogg",
+                                            "flac" => "audio/flac",
+                                            "m4a" | "aac" => "audio/aac",
+                                            _ => "audio/wav",
+                                        };
+                                        parts.push(json!({
+                                            "inlineData": { "mimeType": mime_type, "data": &audio.data }
+                                        }));
+                                    }
                                 }
                                 OpenAIContentBlock::VideoUrl { video_url } => {
                                     if video_url.url.starts_with("data:") {

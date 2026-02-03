@@ -33,6 +33,8 @@ mod config_sync;
 mod scheduler;
 mod state;
 
+use antigravity_core::modules::account_pg::PostgresAccountRepository;
+use antigravity_core::modules::repository::AccountRepository;
 use antigravity_core::proxy::server::AxumServer;
 use cli::{Cli, Commands};
 use state::AppState;
@@ -122,7 +124,46 @@ async fn run_server(port: u16) -> Result<()> {
 
     let monitor = Arc::new(antigravity_core::proxy::ProxyMonitor::new());
 
-    // Create AxumServer for hot reload capabilities (without starting listener)
+    let repository: Option<Arc<dyn AccountRepository>> = match std::env::var("DATABASE_URL") {
+        Ok(database_url) => {
+            info!("🗄️ Connecting to PostgreSQL...");
+            match PostgresAccountRepository::connect(&database_url).await {
+                Ok(repo) => {
+                    info!("✅ PostgreSQL connected");
+                    if let Err(e) = repo.run_migrations().await {
+                        tracing::error!(
+                            "❌ Database migration failed: {}. Falling back to JSON storage.",
+                            e
+                        );
+                        None
+                    } else {
+                        info!("✅ Database migrations applied");
+                        if let Err(e) =
+                            antigravity_core::modules::json_migration::migrate_json_to_postgres(
+                                &repo,
+                            )
+                            .await
+                        {
+                            tracing::warn!("⚠️ JSON migration skipped or failed: {}", e);
+                        }
+                        Some(Arc::new(repo) as Arc<dyn AccountRepository>)
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "❌ PostgreSQL connection failed: {}. Falling back to JSON storage.",
+                        e
+                    );
+                    None
+                }
+            }
+        }
+        Err(_) => {
+            info!("ℹ️ DATABASE_URL not set, using JSON file storage");
+            None
+        }
+    };
+
     let server_config = antigravity_core::proxy::server::ServerStartConfig {
         host: initial_proxy_config.get_bind_address(),
         port,
@@ -152,6 +193,7 @@ async fn run_server(port: u16) -> Result<()> {
         initial_proxy_config.clone(),
         axum_server.clone(),
         Some(warp_manager.clone()),
+        repository,
     )
     .await?;
 

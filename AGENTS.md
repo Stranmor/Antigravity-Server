@@ -1,79 +1,57 @@
 # Antigravity Manager - Architecture Status
 
-## 🔄 IN PROGRESS: PostgreSQL Migration [2026-02-03]
+## ✅ COMPLETED: PostgreSQL Migration [2026-02-03]
 
-**Goal:** Replace JSON file storage with PostgreSQL + Event Sourcing
+**Goal:** Replace JSON file storage with PostgreSQL + Event Sourcing — **DEPLOYED**
 
-### Why
+### Verification Results
 
-| Problem | Impact |
-|---------|--------|
-| No ACID transactions | Crash during write = corrupted file |
-| Race conditions | Global mutex blocks all operations |
-| No history | "When did account X get rate-limited?" — unknown |
-| No analytics | "Which account is most reliable?" — impossible |
-| No cross-instance sync | VPS ↔ Local = manual scp |
-
-### Current State (JSON)
-
-```
-~/.antigravity_tools/
-├── accounts.json              # AccountIndex (list of IDs + current_account_id)
-├── accounts/
-│   ├── {uuid-1}.json          # Full Account data
-│   ├── {uuid-2}.json
-│   └── ...
-└── gui_config.json            # App config + model mappings
-```
-
-- `ACCOUNT_INDEX_LOCK` (global Mutex) prevents concurrent writes
-- Atomic write via temp file + rename
-- No event history, no analytics queries
-
-### Target State (PostgreSQL)
-
-```sql
--- Core tables
-accounts (id, email, name, created_at, updated_at, disabled, proxy_disabled, ...)
-tokens (account_id, access_token, refresh_token, expiry, project_id)
-quotas (account_id, fetched_at, is_forbidden, models JSONB)
-
--- Event sourcing (append-only)
-account_events (
-    id, account_id, event_type, timestamp, metadata JSONB
-    -- types: created, token_refreshed, rate_limited, quota_updated, 
-    --        disabled, enabled, model_protected, model_unprotected
-)
-
--- Request logging (analytics)
-requests (
-    id, account_id, model, tokens_in, tokens_out, 
-    latency_ms, status_code, error_type, timestamp
-)
-```
+| Metric | Value |
+|--------|-------|
+| Accounts migrated | 41 |
+| Tokens migrated | 41 |
+| API `/api/accounts` | ✅ Working |
+| API `/api/status` | ✅ Working |
+| Chat completions | ✅ Working |
+| Database | PostgreSQL 16 on VPS |
 
 ### Migration Phases
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Add sqlx + PostgreSQL deps | ⏳ |
-| 2 | Create migration files (schema) | ⏳ |
-| 3 | Implement `AccountRepository` trait | ⏳ |
-| 4 | PostgreSQL backend implementation | ⏳ |
-| 5 | Event sourcing: `AccountEvent` enum | ⏳ |
-| 6 | JSON → PostgreSQL data migration | ⏳ |
-| 7 | Update handlers to use new storage | ⏳ |
-| 8 | Setup PostgreSQL on VPS (NixOS) | ⏳ |
-| 9 | Deploy + verify | ⏳ |
+| 1 | Add sqlx + PostgreSQL deps | ✅ |
+| 2 | Create migration files (schema) | ✅ |
+| 3 | Implement `AccountRepository` trait | ✅ |
+| 4 | PostgreSQL backend implementation | ✅ |
+| 5 | Event sourcing: `AccountEvent` enum | ✅ |
+| 6 | JSON → PostgreSQL data migration | ✅ |
+| 7 | Wire repository into AppState + main.rs | ✅ |
+| 8 | Setup PostgreSQL on VPS (NixOS) | ✅ |
+| 9 | Update API handlers to use repository | ✅ |
+| 10 | Deploy + verify | ✅ |
 
-### Files to Modify
+### Database Configuration
 
-- `crates/antigravity-core/Cargo.toml` — add sqlx
-- `crates/antigravity-core/src/modules/account.rs` → `repository.rs` (trait)
-- `crates/antigravity-core/src/modules/account_pg.rs` — PostgreSQL impl
-- `crates/antigravity-core/src/modules/account_json.rs` — JSON impl (legacy, for migration)
-- `antigravity-server/src/main.rs` — initialize DB pool
-- `/etc/nixos/configuration.nix` — PostgreSQL service
+| Setting | Value |
+|---------|-------|
+| Host | 127.0.0.1 |
+| Database | antigravity |
+| User | antigravity |
+| Tables | accounts, tokens, quotas, account_events, requests, app_settings |
+
+### Files Modified
+
+- `Cargo.toml` (workspace) — added sqlx, async-trait
+- `crates/antigravity-core/Cargo.toml` — added sqlx, async-trait
+- `crates/antigravity-core/migrations/001_initial_schema.sql` — PostgreSQL schema (with IF NOT EXISTS)
+- `crates/antigravity-core/src/modules/repository.rs` — AccountRepository trait
+- `crates/antigravity-core/src/modules/account_pg.rs` — PostgreSQL implementation
+- `crates/antigravity-core/src/modules/json_migration.rs` — Migration utilities
+- `antigravity-server/Cargo.toml` — added sqlx
+- `antigravity-server/src/main.rs` — DATABASE_URL parsing, PostgresAccountRepository init
+- `antigravity-server/src/state.rs` — Added repository to AppState
+- `antigravity-server/src/api/mod.rs` — Updated handlers to use repository when available
+- NixOS config `/etc/nixos/configuration.nix` — Added DATABASE_URL to antigravity.service
 
 ---
 
