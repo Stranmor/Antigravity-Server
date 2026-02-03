@@ -143,14 +143,11 @@ impl SignatureCache {
     }
 
     /// Get model family for a signature
+    /// NOTE: Family cache entries NEVER expire (model families are static)
     pub fn get_signature_family(&self, signature: &str) -> Option<String> {
         if let Ok(cache) = self.thinking_families.read() {
             if let Some(entry) = cache.get(signature) {
-                if !entry.is_expired() {
-                    return Some(entry.data.clone());
-                } else {
-                    tracing::debug!("[SignatureCache] Signature family entry expired");
-                }
+                return Some(entry.data.clone());
             }
         }
         None

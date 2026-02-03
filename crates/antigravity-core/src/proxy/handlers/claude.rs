@@ -987,7 +987,41 @@ pub async fn handle_messages(
         // 4. 处理 400 错误 (Thinking 签名失效)
         // 由于已经主动过滤,这个错误应该很少发生
         if status_code == 400 && !retried_without_thinking && is_signature_error(&error_text) {
-            // Existing logic for thinking signature...
+            // [FIX] PRESERVE SIGNATURE BEFORE STRIPPING THINKING BLOCKS
+            // Extract and cache the last valid signature so future requests can use it
+            let mut preserved_sig: Option<String> = None;
+            for msg in request_for_body.messages.iter().rev() {
+                if let crate::proxy::mappers::claude::models::MessageContent::Array(blocks) =
+                    &msg.content
+                {
+                    for block in blocks.iter().rev() {
+                        if let crate::proxy::mappers::claude::models::ContentBlock::Thinking {
+                            signature: Some(sig),
+                            ..
+                        } = block
+                        {
+                            if sig.len() >= 50 {
+                                preserved_sig = Some(sig.clone());
+                                break;
+                            }
+                        }
+                    }
+                }
+                if preserved_sig.is_some() {
+                    break;
+                }
+            }
+            if let Some(sig) = &preserved_sig {
+                if let Some(sid) = &session_id {
+                    crate::proxy::SignatureCache::global()
+                        .cache_session_signature(sid, sig.clone());
+                    tracing::info!(
+                        "[{}] Preserved signature (len={}) to session cache before stripping thinking blocks",
+                        trace_id, sig.len()
+                    );
+                }
+            }
+
             retried_without_thinking = true;
 
             // 使用 WARN 级别,因为这不应该经常发生(已经主动过滤过)

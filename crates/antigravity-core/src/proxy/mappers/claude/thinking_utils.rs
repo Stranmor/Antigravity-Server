@@ -260,17 +260,19 @@ pub fn has_valid_signature(block: &ContentBlock) -> bool {
                     return false;
                 }
 
-                // Check if in cache
+                // Check if in cache (ADVISORY - don't reject valid signatures on cache miss)
+                // FIX: Previously rejected valid signatures when family cache expired/missed
                 let cached_family = SignatureCache::global().get_signature_family(sig);
                 if cached_family.is_none() {
-                    warn!(
-                        "[Signature-Validation] Unknown signature origin (len: {}). Rejecting.",
+                    // Advisory only - valid length signature accepted even without cached family
+                    // This prevents signature loss on cache TTL expiry or cold start
+                    debug!(
+                        "[Signature-Validation] Unknown signature origin (len: {}). Accepting anyway (valid length).",
                         sig.len()
                     );
-                    return false;
                 }
 
-                // Signature valid
+                // Signature valid if length check passed (family check is advisory)
                 true
             } else {
                 // No signature

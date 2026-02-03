@@ -9,7 +9,7 @@
 [![Rust](https://img.shields.io/badge/Rust-100%25-dea584?style=flat-square&logo=rust&logoColor=black)](https://www.rust-lang.org/)
 [![Axum](https://img.shields.io/badge/Axum-Backend-3B82F6?style=flat-square)](https://github.com/tokio-rs/axum)
 [![Leptos](https://img.shields.io/badge/Leptos-WASM_UI-8B5CF6?style=flat-square)](https://leptos.dev/)
-[![Upstream](https://img.shields.io/badge/Upstream-v4.0.7-888?style=flat-square)](https://github.com/lbjlaq/Antigravity-Manager)
+[![Upstream](https://img.shields.io/badge/Upstream-lbjlaq-888?style=flat-square)](https://github.com/lbjlaq/Antigravity-Manager)
 [![License](https://img.shields.io/badge/License-CC--BY--NC--SA--4.0-gray?style=flat-square)](LICENSE)
 
 [English](README.md) · [Русский](README_RU.md) · [Upstream 中文](https://github.com/lbjlaq/Antigravity-Manager)

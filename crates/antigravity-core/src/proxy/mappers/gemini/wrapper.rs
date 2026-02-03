@@ -116,9 +116,24 @@ pub fn wrap_request(
                         });
 
                         // 2. 清洗剩余 Schema
+                        // [FIX] Gemini CLI 使用 parametersJsonSchema，而标准 Gemini API 使用 parameters
+                        // 需要将 parametersJsonSchema 重命名为 parameters
                         for decl in decls_arr {
-                            if let Some(params) = decl.get_mut("parameters") {
-                                crate::proxy::common::json_schema::clean_json_schema(params);
+                            // 检测并转换字段名
+                            if let Some(decl_obj) = decl.as_object_mut() {
+                                // 如果存在 parametersJsonSchema，将其重命名为 parameters
+                                if let Some(params_json_schema) =
+                                    decl_obj.remove("parametersJsonSchema")
+                                {
+                                    let mut params = params_json_schema;
+                                    crate::proxy::common::json_schema::clean_json_schema(
+                                        &mut params,
+                                    );
+                                    decl_obj.insert("parameters".to_string(), params);
+                                } else if let Some(params) = decl_obj.get_mut("parameters") {
+                                    // 标准 parameters 字段
+                                    crate::proxy::common::json_schema::clean_json_schema(params);
+                                }
                             }
                         }
                     }

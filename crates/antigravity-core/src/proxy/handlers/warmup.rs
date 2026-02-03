@@ -44,6 +44,28 @@ pub async fn handle_warmup(
     State(state): State<AppState>,
     Json(req): Json<WarmupRequest>,
 ) -> Response {
+    // ===== 前置检查：跳过 gemini-2.5-* 家族模型 =====
+    // These models return 400 INVALID_ARGUMENT with current warmup protocol
+    let model_lower = req.model.to_lowercase();
+    if model_lower.contains("2.5-") || model_lower.contains("2-5-") {
+        info!(
+            "[Warmup-API] SKIP: gemini-2.5-* model not supported for warmup: {} / {}",
+            req.email, req.model
+        );
+        return (
+            StatusCode::OK,
+            Json(WarmupResponse {
+                success: true,
+                message: format!(
+                    "Skipped warmup for {} (2.5 models not supported)",
+                    req.model
+                ),
+                error: None,
+            }),
+        )
+            .into_response();
+    }
+
     info!(
         "[Warmup-API] ========== START: email={}, model={} ==========",
         req.email, req.model

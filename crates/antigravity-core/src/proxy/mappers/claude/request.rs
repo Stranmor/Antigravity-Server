@@ -66,7 +66,6 @@ fn build_safety_settings() -> Value {
         { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": threshold_str },
         { "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": threshold_str },
         { "category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": threshold_str },
-        { "category": "HARM_CATEGORY_CIVIC_INTEGRITY", "threshold": threshold_str },
     ])
 }
 
@@ -1168,18 +1167,7 @@ fn build_contents(
                                         tracing::info!("[Claude-Request] Recovered signature from TOOL cache for tool_id: {}", id);
                                     })
                             })
-                            .or_else(|| {
-                                // [DEPRECATED] Global store fallback - kept for backward compatibility
-                                let global_sig = get_thought_signature();
-                                if let Some(sig) = &global_sig {
-                                    tracing::warn!(
-                                        "[Claude-Request] Using deprecated GLOBAL thought_signature fallback (length: {}). \
-                                         This indicates session cache miss.",
-                                        sig.len()
-                                    );
-                                }
-                                global_sig
-                            });
+;
                         // [FIX #752] Validate signature before using
                         // Only add thoughtSignature if we have a valid and compatible one
                         if let Some(sig) = final_sig {

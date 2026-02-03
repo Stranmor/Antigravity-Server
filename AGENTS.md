@@ -278,123 +278,27 @@ cargo build --release -p antigravity-server    # ✅ builds (1m 22s, 11MB)
 
 ---
 
-### Last Sync: 2026-01-29 (v4.0.7)
+## 🔀 Upstream Sync
 
-See git history for detailed sync changelog.
+- **repo:** lbjlaq/Antigravity-Manager
+- **watch:** src-tauri/src/proxy/, src-tauri/src/modules/
+- **ignore:** *.tsx, *.json, README*, i18n/, Tauri-specific
+- **last_reviewed:** 9033f4f (2026-02-03)
 
----
+### What We Port
 
-## 🔀 UPSTREAM SYNC ARCHITECTURE [2026-01-18]
+✅ Bug fixes in protocol transformation, new model support, JSON Schema improvements, security fixes
 
-### Fork Strategy
+❌ UI/React, Tauri-specific, changes conflicting with our resilience layer
 
-This fork uses **SEMANTIC PORTING** — we don't blindly copy upstream files, we selectively integrate useful changes while maintaining our own improvements.
+### Our Divergences
 
-### Upstream Reference
-
-- **Location:** `vendor/antigravity-upstream/` (git submodule)
-- **Upstream repo:** https://github.com/lbjlaq/Antigravity-Manager
-- **Last sync:** 2026-01-29 (upstream v4.0.7)
-- **Our version:** v3.3.45 (forked with custom improvements)
-
-### Intentional Divergences
-
-| File | Lines Diff | Reason |
-|------|------------|--------|
-| `handlers/claude.rs` | ~1500 | **OUR ADDITIONS:** AIMD rate limiting, resilience patterns, Axum-specific handlers, circuit breakers |
-| `handlers/gemini.rs` | ~330 | **COMPLETE REWRITE:** Full Gemini Native API handler with streaming SSE, retry logic, buffer overflow protection |
-| `mappers/claude/*.rs` | ~200 | Format differences + our clippy fixes (Rust 1.92 compliance) |
-| `mappers/openai/request.rs` | ~100 | **OUR ADDITION:** `tool_result_compressor` for OpenAI endpoint (upstream only has it for Claude) |
-| `common/json_schema.rs` | ~20 | Clippy fixes (collapsible_match, etc.) |
-
-### What We Port From Upstream
-
-✅ **ALWAYS PORT:**
-- Bug fixes in protocol transformation logic
-- New model support (thinking models, signatures)
-- JSON Schema improvements (flatten_refs, merge_all_of)
-- Security fixes (auth headers, validation)
-
-❌ **NEVER PORT:**
-- UI/React code (we use Leptos)
-- Tauri-specific code (we use headless Axum)
-- Changes that conflict with our resilience layer
-
-### Sync Workflow
-
-```bash
-# 1. Update submodule
-cd vendor/antigravity-upstream
-git fetch origin && git checkout origin/main
-cd ../..
-
-# 2. Check what changed in proxy/
-git diff HEAD@{1}..HEAD -- vendor/antigravity-upstream/src-tauri/src/proxy/
-
-# 3. Manually port useful changes to our crates/antigravity-core/src/proxy/
-# 4. Run clippy + tests
-cargo clippy --workspace -- -D warnings
-cargo test -p antigravity-core --lib
-
-# 5. Commit
-git add . && git commit -m "chore: sync upstream v3.3.XX changes"
-```
-
-> **Note:** Detailed sync history moved to git commits. See `git log --grep="sync upstream"` for changelog.
-
-**Our Key Additions (not in upstream):**
-- Constant-time API key comparison (timing attack prevention)
-- AIMD predictive rate limiting
-- Circuit breakers per account
-- Prometheus metrics endpoint
-- Resilience API endpoints
-- WARP proxy support for per-account IP isolation
-- Sticky session rebind on 429
-  - Intelligent opus fallback → `gemini-3-pro-preview`
-  - Multi-wildcard matching (`a*b*c` patterns)
-
-**OUR BUG FIXES (not in upstream):**
-- **Race condition in rate limit recording** — fixed immediate lockout in `mark_rate_limited_async()`
-- **60s Global Lock missing rate limit check** — added `is_rate_limited()` check
-- **protected_models not populated** — replaced `save_account()` with `update_account_quota()`
-
-- **[FEATURE] Smart Warmup Scheduler enabled** (2026-01-26)
-  - **Purpose:** Automatically warms up accounts to prevent staleness and maintain active sessions.
-  - **Config location:** `~/.antigravity_tools/gui_config.json` → `smart_warmup` section
-  - **Config example:**
-    ```json
-    "smart_warmup": {
-      "enabled": true,
-      "models": ["gemini-3-flash", "claude-sonnet-4-5", "gemini-3-pro-high", "gemini-3-pro-image", "claude-opus-4-5-thinking"],
-      "interval_minutes": 60,
-      "only_low_quota": false
-    }
-    ```
-  - **Behavior:**
-    - Checks config every 60 seconds, triggers warmup every `interval_minutes` (default 60)
-    - **`only_low_quota: false` (default):** Warms up models at 100% quota to prevent staleness
-    - **`only_low_quota: true`:** Warms up models below 50% quota to refresh them
-    - 4-hour cooldown per model to prevent re-warming
-    - Persistent history in `~/.antigravity_tools/warmup_history.json`
-  - **Note:** Different from `scheduled_warmup` (old format). Use `smart_warmup` for the scheduler.
-
-- **[FEATURE] Auto Quota Refresh Scheduler** (2026-01-28)
-  - **Purpose:** Automatically refreshes account quotas at configurable intervals (mirrors upstream Tauri behavior).
-  - **Config location:** `~/.antigravity_tools/gui_config.json` → `auto_refresh` and `refresh_interval` fields
-  - **Config example:**
-    ```json
-    {
-      "auto_refresh": true,
-      "refresh_interval": 15
-    }
-    ```
-  - **Behavior:**
-    - Checks config every 60 seconds
-    - If `auto_refresh: true`, refreshes all enabled accounts at `refresh_interval` minute intervals
-    - Minimum interval enforced: 5 minutes (values <5 are clamped to 15)
-    - After refresh, reloads accounts into AppState for immediate availability
-  - **Implementation:** `scheduler::start_quota_refresh()` in `antigravity-server/src/scheduler.rs`
-  - **Note:** This was missing in headless server while upstream Tauri had it via `BackgroundTaskRunner.tsx`
+| Area | Description |
+|------|-------------|
+| Routing | Smart routing with least-connections (not P2C/round-robin) |
+| Resilience | AIMD rate limiting, circuit breakers, health scores |
+| Handlers | Axum-specific, streaming SSE, buffer overflow protection |
+| Security | Constant-time API key comparison |
 
 ---
 
