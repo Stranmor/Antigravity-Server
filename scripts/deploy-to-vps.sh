@@ -4,8 +4,8 @@ set -euo pipefail
 VPS_HOST="${VPS_HOST:-vps-production}"
 BUILD_DIR="$(dirname "$(dirname "$(realpath "$0")")")"
 BINARY_NAME="antigravity-server"
-VPS_BINARY_PATH="/usr/local/bin/${BINARY_NAME}"
-SERVICE_NAME="antigravity-server"
+VPS_BINARY_PATH="/opt/antigravity/${BINARY_NAME}"
+SERVICE_NAME="antigravity"
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 error() { echo "[$(date '+%H:%M:%S')] ❌ $*" >&2; exit 1; }
@@ -29,8 +29,8 @@ ssh "$VPS_HOST" bash -s <<'REMOTE_SCRIPT'
 set -euo pipefail
 
 BINARY_NAME="antigravity-server"
-BINARY_PATH="/usr/local/bin/${BINARY_NAME}"
-SERVICE_NAME="antigravity-server"
+BINARY_PATH="/opt/antigravity/${BINARY_NAME}"
+SERVICE_NAME="antigravity"
 NEW_BINARY="/tmp/${BINARY_NAME}.new"
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
