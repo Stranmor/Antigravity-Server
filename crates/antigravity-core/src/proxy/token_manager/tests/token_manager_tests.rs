@@ -1,6 +1,7 @@
 use super::super::file_utils::truncate_reason;
 use super::super::proxy_token::ProxyToken;
-use super::super::{ActiveRequestGuard, TokenManager};
+use super::super::TokenManager;
+use crate::proxy::active_request_guard::ActiveRequestGuard;
 use crate::proxy::adaptive_limit::AdaptiveLimitManager;
 use crate::proxy::SmartRoutingConfig;
 use dashmap::DashMap;

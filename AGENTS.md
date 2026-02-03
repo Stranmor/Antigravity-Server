@@ -20,7 +20,7 @@
 | File | Lines | Excess | Priority | Status |
 |------|-------|--------|----------|--------|
 | `mappers/claude/request.rs` | 1894 | 6.3x | 🔴 CRITICAL | ✅ Split to request/ directory |
-| `token_manager/mod.rs` | 1685 | 5.6x | 🔴 CRITICAL | ⏳ God Object → 5 modules |
+| `token_manager/mod.rs` | 1685 | 5.6x | 🔴 CRITICAL | ✅ Split to 12 modules (largest: 308 lines) |
 | `handlers/claude.rs` | 1473 | 4.9x | 🔴 HIGH | ✅ Split to claude/ directory (messages.rs 1042 lines - needs Phase 6) |
 | `mappers/claude/streaming.rs` | 1177 | 3.9x | 🔴 HIGH | ⏳ |
 | `mappers/openai/streaming.rs` | 1092 | 3.6x | 🔴 HIGH | ⏳ |
@@ -54,9 +54,7 @@
 - `handlers/openai.rs` → `handlers/openai/` directory ✅
 - `common_utils.rs` → `request_config.rs` (banned filename fix) ✅
 - `types.rs` → `messages.rs`, `utils.rs` → `formatters.rs` ✅
-
-**TokenManager God Object Analysis (58 methods):**
-Target split: `TokenStore`, `RateLimitTracker`, `SessionBinder`, `HealthScorer`, `TokenPersistence`
+- `token_manager/mod.rs` → 12 modules (mod.rs, store.rs, selection.rs, selection_helpers.rs, rate_limiter.rs, session.rs, health.rs, persistence.rs, routing.rs, recovery.rs, proxy_token.rs, file_utils.rs) ✅
 
 ### 📊 Architecture (Current)
 

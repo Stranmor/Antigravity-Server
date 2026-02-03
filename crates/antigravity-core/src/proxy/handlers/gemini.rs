@@ -192,14 +192,19 @@ pub async fn handle_generate(
             if code == 403
                 && (error_text.contains("SERVICE_DISABLED")
                     || error_text.contains("CONSUMER_INVALID")
-                    || error_text.contains("Permission denied on resource project"))
+                    || error_text.contains("Permission denied on resource project")
+                    || error_text.contains("verify your account"))
             {
-                let reason = if error_text.contains("SERVICE_DISABLED") {
-                    "PROJECT_INVALID: Vertex AI API not enabled"
-                } else {
-                    "PROJECT_INVALID: Permission denied on project"
-                };
-                let _ = token_manager.mark_project_invalid(&email, reason).await;
+                warn!(
+                    "[Gemini] 🚫 Account {} needs verification or has project issue. 1h lockout.",
+                    email
+                );
+                token_manager.rate_limit_tracker().set_lockout_until(
+                    &email,
+                    std::time::SystemTime::now() + std::time::Duration::from_secs(3600),
+                    crate::proxy::rate_limit::RateLimitReason::ServerError,
+                    None,
+                );
                 attempted_accounts.insert(email.clone());
                 attempt += 1;
                 continue;
