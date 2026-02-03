@@ -187,10 +187,10 @@ impl AccountRepository for PostgresAccountRepository {
         .bind(&account.name)
         .bind(account.disabled)
         .bind(&account.disabled_reason)
-        .bind(account.disabled_at.map(|ts| chrono::DateTime::from_timestamp(ts, 0)))
+        .bind(account.disabled_at.and_then(|ts| chrono::DateTime::from_timestamp(ts, 0)))
         .bind(account.proxy_disabled)
         .bind(&account.proxy_disabled_reason)
-        .bind(account.proxy_disabled_at.map(|ts| chrono::DateTime::from_timestamp(ts, 0)))
+        .bind(account.proxy_disabled_at.and_then(|ts| chrono::DateTime::from_timestamp(ts, 0)))
         .bind(serde_json::to_value(&protected).unwrap())
         .bind(chrono::DateTime::from_timestamp(account.last_used, 0))
         .execute(&mut *tx)
@@ -403,19 +403,26 @@ fn row_to_account(row: &sqlx::postgres::PgRow) -> RepoResult<Account> {
     let last_used: chrono::DateTime<chrono::Utc> = row.get("last_used_at");
     let disabled_at: Option<chrono::DateTime<chrono::Utc>> = row.get("disabled_at");
     let proxy_disabled_at: Option<chrono::DateTime<chrono::Utc>> = row.get("proxy_disabled_at");
+    let expiry_timestamp: i64 = row.get("expiry_timestamp");
+
+    // Calculate expires_in from stored absolute timestamp
+    let now = chrono::Utc::now().timestamp();
+    let expires_in = (expiry_timestamp - now).max(0);
 
     Ok(Account {
         id: id.to_string(),
         email: row.get("email"),
         name: row.get("name"),
-        token: TokenData::new(
-            row.get("access_token"),
-            row.get("refresh_token"),
-            3600,
-            row.get("token_email"),
-            row.get("project_id"),
-            None,
-        ),
+        token: TokenData {
+            access_token: row.get("access_token"),
+            refresh_token: row.get("refresh_token"),
+            expires_in,
+            expiry_timestamp,
+            token_type: "Bearer".to_string(),
+            email: row.get("token_email"),
+            project_id: row.get("project_id"),
+            session_id: None,
+        },
         quota: None,
         disabled: row.get("disabled"),
         disabled_reason: row.get("disabled_reason"),

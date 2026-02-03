@@ -2,7 +2,6 @@ use crate::models::Account;
 use crate::modules::account::{get_accounts_dir, load_account_index};
 use crate::modules::account_pg::PostgresAccountRepository;
 use crate::modules::repository::AccountRepository;
-use std::fs;
 use tracing::{error, info, warn};
 
 pub async fn migrate_json_to_postgres(
@@ -25,7 +24,7 @@ pub async fn migrate_json_to_postgres(
             continue;
         }
 
-        let content = match fs::read_to_string(&account_path) {
+        let content = match tokio::fs::read_to_string(&account_path).await {
             Ok(c) => c,
             Err(e) => {
                 error!("Failed to read {}: {}", summary.id, e);
@@ -44,9 +43,19 @@ pub async fn migrate_json_to_postgres(
         };
 
         match repo.get_account_by_email(&account.email).await {
-            Ok(Some(_)) => {
+            Ok(Some(existing)) => {
+                let mut updated = existing.clone();
+                updated.token = account.token.clone();
+                updated.disabled = account.disabled;
+                updated.disabled_reason = account.disabled_reason.clone();
+                updated.disabled_at = account.disabled_at;
+                updated.proxy_disabled = account.proxy_disabled;
+                updated.proxy_disabled_reason = account.proxy_disabled_reason.clone();
+                updated.proxy_disabled_at = account.proxy_disabled_at;
+                updated.protected_models = account.protected_models.clone();
+
                 info!("Account {} already exists, updating...", account.email);
-                if let Err(e) = repo.update_account(&account).await {
+                if let Err(e) = repo.update_account(&updated).await {
                     error!("Failed to update {}: {}", account.email, e);
                     stats.failed += 1;
                 } else {
@@ -99,9 +108,21 @@ pub async fn migrate_json_to_postgres(
         }
     }
 
-    if let Some(current_id) = &index.current_account_id {
-        if let Err(e) = repo.set_current_account_id(current_id).await {
-            warn!("Failed to set current account ID: {}", e);
+    if let Some(current_json_id) = &index.current_account_id {
+        let accounts_dir =
+            get_accounts_dir().map_err(|e| format!("Failed to get accounts dir: {}", e))?;
+        let current_account_path = accounts_dir.join(format!("{}.json", current_json_id));
+
+        if current_account_path.exists() {
+            if let Ok(content) = tokio::fs::read_to_string(&current_account_path).await {
+                if let Ok(account) = serde_json::from_str::<Account>(&content) {
+                    if let Ok(Some(pg_account)) = repo.get_account_by_email(&account.email).await {
+                        if let Err(e) = repo.set_current_account_id(&pg_account.id).await {
+                            warn!("Failed to set current account ID: {}", e);
+                        }
+                    }
+                }
+            }
         }
     }
 

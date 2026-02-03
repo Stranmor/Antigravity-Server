@@ -134,8 +134,10 @@ crates/
 │       ├── error.rs            # ClientError enum
 │       └── messages.rs         # ChatRequest, ChatResponse, StreamChunk (SDK-specific)
 ├── antigravity-core/           # 🟢 BUSINESS LOGIC (all clippy-clean!)
-│   └── src/proxy/
-│       └── 23 modules          # ALL modules now clippy-clean
+│   └── src/
+│       ├── modules/            # Account storage, repository, JSON migration
+│       └── proxy/
+│           └── 23 modules      # ALL modules now clippy-clean
 ├── antigravity-server/         # 🔴 HTTP ENTRY POINT
 vendor/
 └── antigravity-upstream/       # Git submodule (REFERENCE ONLY)
