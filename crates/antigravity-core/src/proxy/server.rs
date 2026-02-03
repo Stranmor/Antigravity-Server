@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::trace::TraceLayer;
 
-/// Axum 应用状态
+/// Axum application state
 #[derive(Clone)]
 pub struct AppState {
     pub token_manager: Arc<TokenManager>,
@@ -158,7 +158,7 @@ pub fn build_proxy_router_with_shared_state(
         .with_state(state)
 }
 
-// ===== API 处理器 (旧代码已移除，由 src/proxy/handlers/* 接管) =====
+// ===== API handlers (legacy code removed, handled by src/proxy/handlers/*) =====
 /// Configuration for starting the Axum server
 pub struct ServerStartConfig {
     pub host: String,
@@ -176,7 +176,7 @@ pub struct ServerStartConfig {
     pub warp_isolation: Option<Arc<crate::proxy::warp_isolation::WarpIsolationManager>>,
 }
 
-/// Axum 服务器实例
+/// Axum server instance
 pub struct AxumServer {
     config: ServerStartConfig,
 }

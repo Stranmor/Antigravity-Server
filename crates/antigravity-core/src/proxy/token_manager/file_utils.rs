@@ -7,11 +7,11 @@ pub async fn atomic_write_json(path: &Path, content: &serde_json::Value) -> Resu
 
     tokio::fs::write(&temp_path, &json_str)
         .await
-        .map_err(|e| format!("写入临时文件失败: {}", e))?;
+        .map_err(|e| format!("Failed to write temp file: {}", e))?;
 
     tokio::fs::rename(&temp_path, path)
         .await
-        .map_err(|e| format!("重命名文件失败: {}", e))?;
+        .map_err(|e| format!("Failed to rename file: {}", e))?;
 
     Ok(())
 }

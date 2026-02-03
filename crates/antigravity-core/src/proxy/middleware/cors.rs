@@ -1,8 +1,8 @@
-// CORS 中间件
+// CORS middleware
 use axum::http::Method;
 use tower_http::cors::{Any, CorsLayer};
 
-/// 创建 CORS layer
+/// create CORS layer
 pub fn cors_layer() -> CorsLayer {
     CorsLayer::new()
         .allow_origin(Any)

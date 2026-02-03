@@ -139,7 +139,7 @@ pub fn format_grounding_metadata(grounding: &Value) -> String {
     if let Some(queries) = grounding.get("webSearchQueries").and_then(|q| q.as_array()) {
         let query_list: Vec<&str> = queries.iter().filter_map(|v| v.as_str()).collect();
         if !query_list.is_empty() {
-            result.push_str("\n\n---\n**🔍 已为您搜索：** ");
+            result.push_str("\n\n---\n**🔍 Searched for you:** ");
             result.push_str(&query_list.join(", "));
         }
     }
@@ -151,13 +151,13 @@ pub fn format_grounding_metadata(grounding: &Value) -> String {
                 let title = web
                     .get("title")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("网页来源");
+                    .unwrap_or("Web Source");
                 let uri = web.get("uri").and_then(|v| v.as_str()).unwrap_or("#");
                 links.push(format!("[{}] [{}]({})", i + 1, title, uri));
             }
         }
         if !links.is_empty() {
-            result.push_str("\n\n**🌐 来源引文：**\n");
+            result.push_str("\n\n**🌐 Source Citations:**\n");
             result.push_str(&links.join("\n"));
         }
     }

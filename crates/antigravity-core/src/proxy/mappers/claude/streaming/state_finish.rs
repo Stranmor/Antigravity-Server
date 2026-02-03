@@ -102,7 +102,7 @@ impl StreamingState {
 
         if let Some(query) = &self.web_search_query {
             if !query.is_empty() {
-                grounding_text.push_str("\n\n---\n**🔍 已为您搜索：** ");
+                grounding_text.push_str("\n\n---\n**🔍 Searched for:** ");
                 grounding_text.push_str(query);
             }
         }
@@ -114,14 +114,14 @@ impl StreamingState {
                     let title = web
                         .get("title")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("网页来源");
+                        .unwrap_or("Web Source");
                     let uri = web.get("uri").and_then(|v| v.as_str()).unwrap_or("#");
                     links.push(format!("[{}] [{}]({})", i + 1, title, uri));
                 }
             }
 
             if !links.is_empty() {
-                grounding_text.push_str("\n\n**🌐 来源引文：**\n");
+                grounding_text.push_str("\n\n**🌐 Source Citations:**\n");
                 grounding_text.push_str(&links.join("\n"));
             }
         }

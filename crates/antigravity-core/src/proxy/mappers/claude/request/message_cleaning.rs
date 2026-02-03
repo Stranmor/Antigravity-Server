@@ -76,10 +76,10 @@ pub fn clean_cache_control_from_messages(messages: &mut [Message]) {
     }
 }
 
-/// [FIX #593] 递归深度清理 JSON 中的 cache_control 字段
+/// [FIX #593] Recursively deep-clean cache_control fields from JSON
 ///
-/// 用于处理嵌套结构和非标准位置的 cache_control。
-/// 这是最后一道防线,确保发送给 Antigravity 的请求中不包含任何 cache_control。
+/// Handles nested structures and non-standard positions of cache_control.
+/// This is the final defense line, ensuring requests sent to Antigravity contain no cache_control.
 pub fn deep_clean_cache_control(value: &mut Value) {
     match value {
         Value::Object(map) => {
@@ -180,11 +180,11 @@ pub fn sort_thinking_blocks_first(messages: &mut [Message]) {
     }
 }
 
-/// 合并 ClaudeRequest 中连续的同角色消息
+/// Merge consecutive messages with the same role in ClaudeRequest
 ///
-/// 场景: 当从 Spec/Plan 模式切换回编码模式时，可能出现连续两条 "user" 消息
-/// (一条是 ToolResult，一条是 <system-reminder>)。
-/// 这会违反角色交替规则，导致 400 报错。
+/// Scenario: When switching from Spec/Plan mode back to encode mode, two consecutive "user" messages may appear
+/// (one is ToolResult, one is <system-reminder>).
+/// This violates the role alternation rule and causes 400 errors.
 pub fn merge_consecutive_messages(messages: &mut Vec<Message>) {
     if messages.len() <= 1 {
         return;
@@ -197,7 +197,7 @@ pub fn merge_consecutive_messages(messages: &mut Vec<Message>) {
     if let Some(mut current) = messages_iter.next() {
         for next in messages_iter {
             if current.role == next.role {
-                // 合并内容
+                // Merge content
                 match (&mut current.content, next.content) {
                     (MessageContent::Array(current_blocks), MessageContent::Array(next_blocks)) => {
                         current_blocks.extend(next_blocks);

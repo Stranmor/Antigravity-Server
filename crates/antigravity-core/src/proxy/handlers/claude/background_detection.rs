@@ -21,8 +21,8 @@ const TITLE_KEYWORDS: &[&str] = &[
     "Create a brief title",
     "title for the conversation",
     "conversation title",
-    "生成标题",
-    "为对话起个标题",
+    "generate title",
+    "give conversation a title",
 ];
 
 const SUMMARY_KEYWORDS: &[&str] = &[

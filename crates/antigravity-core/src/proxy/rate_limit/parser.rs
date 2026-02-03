@@ -46,13 +46,13 @@ pub fn get_wait_paren_regex() -> &'static Regex {
 }
 
 pub fn parse_duration_string(s: &str) -> Option<u64> {
-    tracing::debug!("[时间解析] 尝试解析: '{}'", s);
+    tracing::debug!("[timeparse] attemptparse: '{}'", s);
 
     let re = get_duration_regex();
     let caps = match re.captures(s) {
         Some(c) => c,
         None => {
-            tracing::warn!("[时间解析] 正则未匹配: '{}'", s);
+            tracing::warn!("[timeparse] regex did not match: '{}'", s);
             return None;
         }
     };
@@ -80,12 +80,12 @@ pub fn parse_duration_string(s: &str) -> Option<u64> {
         || caps.get(4).is_some();
 
     if !any_matched {
-        tracing::warn!("[时间解析] 失败: '{}' (无匹配组件)", s);
+        tracing::warn!("[timeparse] failed: '{}' (no matching components)", s);
         return None;
     }
 
     tracing::debug!(
-        "[时间解析] 提取结果: {}h {}m {:.3}s {:.3}ms",
+        "[timeparse] extractresult: {}h {}m {:.3}s {:.3}ms",
         hours,
         minutes,
         seconds,
@@ -96,7 +96,7 @@ pub fn parse_duration_string(s: &str) -> Option<u64> {
         hours * 3600 + minutes * 60 + seconds.ceil() as u64 + (milliseconds / 1000.0).ceil() as u64;
 
     tracing::info!(
-        "[时间解析] ✓ 成功: '{}' => {}秒 ({}h {}m {:.1}s {:.1}ms)",
+        "[timeparse] ✓ success: '{}' => {}second ({}h {}m {:.1}s {:.1}ms)",
         s,
         total_seconds,
         hours,
@@ -120,7 +120,7 @@ pub fn parse_retry_time_from_body(body: &str) -> Option<u64> {
                 .and_then(|m| m.get("quotaResetDelay"))
                 .and_then(|v| v.as_str())
             {
-                tracing::debug!("[JSON解析] 找到 quotaResetDelay: '{}'", delay_str);
+                tracing::debug!("[JSONparse] found quotaResetDelay: '{}'", delay_str);
                 if let Some(seconds) = parse_duration_string(delay_str) {
                     return Some(seconds);
                 }

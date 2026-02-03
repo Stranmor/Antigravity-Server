@@ -39,8 +39,8 @@ pub fn build_contents(
                 match item {
                     ContentBlock::Text { text } => {
                         if text != "(no content)" {
-                            // [NEW] 任务去重逻辑: 如果当前是 User 消息，且紧跟在 ToolResult 之后，
-                            // 检查该文本是否与上一轮任务描述完全一致。
+                            // [NEW] taskdeduplogic: ifcurrentis User message，andimmediately followat ToolResult after，
+                            // checkthetextwhetherandprevious roundtaskdescriptioncompletelysame。
                             if !is_assistant && *previous_was_tool_result {
                                 if let Some(last_task) = last_user_task_text_normalized {
                                     let current_normalized =
@@ -137,7 +137,7 @@ pub fn build_contents(
                         }
                     }
                     ContentBlock::RedactedThinking { data } => {
-                        // [FIX] 将 RedactedThinking 作为普通文本处理，保留上下文
+                        // [FIX] will RedactedThinking asnormaltexthandle，preservecontext
                         tracing::debug!("[Claude-Request] Degrade RedactedThinking to text");
                         parts.push(json!({
                             "text": format!("[Redacted Thinking: {}]", data)
@@ -273,7 +273,7 @@ pub fn build_contents(
                     // ContentBlock::RedactedThinking handled above at line 583
                     ContentBlock::ServerToolUse { .. }
                     | ContentBlock::WebSearchToolResult { .. } => {
-                        // 搜索结果 block 不应由客户端发回给上游 (已由 tool_result 替代)
+                        // Search result blocks should not be sent back to upstream by client (already replaced by tool_result)
                         continue;
                     }
                 }

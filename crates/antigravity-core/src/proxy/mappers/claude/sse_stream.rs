@@ -7,7 +7,7 @@ use bytes::Bytes;
 use futures::Stream;
 use std::pin::Pin;
 
-/// 创建从 Gemini SSE 流到 Claude SSE 流的转换
+/// Create Gemini SSE stream to Claude SSE stream converter
 pub fn create_claude_sse_stream(
     mut gemini_stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
     trace_id: String,
@@ -30,7 +30,7 @@ pub fn create_claude_sse_stream(
         let mut buffer = BytesMut::new();
 
         loop {
-            // 15秒心跳保活: 如果长时间无数据，发送 ping 包
+            // 15 second heartbeat keepalive: if no data for long time, send ping packet
             let next_chunk = tokio::time::timeout(
                 std::time::Duration::from_secs(15),
                 gemini_stream.next()
@@ -63,9 +63,9 @@ pub fn create_claude_sse_stream(
                         }
                     }
                 }
-                Ok(None) => break, // Stream 正常结束
+                Ok(None) => break, // Stream ended normally
                 Err(_) => {
-                    // 超时，发送心跳包 (SSE Comment 格式)
+                    // Timeout, send heartbeat packet (SSE Comment format)
                     yield Ok(Bytes::from(": ping\n\n"));
                 }
             }
@@ -78,7 +78,7 @@ pub fn create_claude_sse_stream(
     })
 }
 
-/// 处理单行 SSE 数据
+/// Handle SSE data line
 fn process_sse_line(
     line: &str,
     state: &mut StreamingState,
@@ -102,7 +102,7 @@ fn process_sse_line(
         return Some(chunks);
     }
 
-    // 解析 JSON
+    // parse JSON
     let json_value: serde_json::Value = match serde_json::from_str(data_str) {
         Ok(v) => v,
         Err(_) => return None,
@@ -110,18 +110,18 @@ fn process_sse_line(
 
     let mut chunks = Vec::new();
 
-    // 解包 response 字段 (如果存在)
+    // unwrap response field (ifexist)
     let raw_json = json_value.get("response").unwrap_or(&json_value);
 
-    // 发送 message_start
+    // send message_start
     if !state.message_start_sent {
         chunks.push(state.emit_message_start(raw_json));
     }
 
-    // 捕获 groundingMetadata (Web Search)
+    // capture groundingMetadata (Web Search)
     if let Some(candidate) = raw_json.get("candidates").and_then(|c| c.get(0)) {
         if let Some(grounding) = candidate.get("groundingMetadata") {
-            // 提取搜索词
+            // Extract search query
             if let Some(query) = grounding
                 .get("webSearchQueries")
                 .and_then(|v| v.as_array())
@@ -131,7 +131,7 @@ fn process_sse_line(
                 state.web_search_query = Some(query.to_string());
             }
 
-            // 提取结果块
+            // Extract result blocks
             if let Some(chunks_arr) = grounding.get("groundingChunks").and_then(|v| v.as_array()) {
                 state.grounding_chunks = Some(chunks_arr.clone());
             } else if let Some(chunks_arr) = grounding
@@ -144,7 +144,7 @@ fn process_sse_line(
         }
     }
 
-    // 处理所有 parts
+    // Handle all parts
     if let Some(parts) = raw_json
         .get("candidates")
         .and_then(|c| c.get(0))
@@ -160,7 +160,7 @@ fn process_sse_line(
         }
     }
 
-    // 检查是否结束
+    // Check if ended
     if let Some(finish_reason) = raw_json
         .get("candidates")
         .and_then(|c| c.get(0))
@@ -202,7 +202,7 @@ fn process_sse_line(
     }
 }
 
-/// 发送强制结束事件
+/// Send force end event
 pub fn emit_force_stop(state: &mut StreamingState) -> Vec<Bytes> {
     if !state.message_stop_sent {
         let mut chunks = state.emit_finish(None, None);
@@ -248,7 +248,7 @@ mod tests {
         let chunks = result.unwrap();
         assert!(!chunks.is_empty());
 
-        // 应该包含 message_start 和 text delta
+        // Should contain message_start and text delta
         let all_text: String = chunks
             .iter()
             .map(|b| String::from_utf8(b.to_vec()).unwrap_or_default())

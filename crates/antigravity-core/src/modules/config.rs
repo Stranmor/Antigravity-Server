@@ -7,9 +7,10 @@ use crate::modules::account::get_data_dir;
 
 const CONFIG_FILE: &str = "gui_config.json";
 
-/// 加载应用配置
+/// Load application configuration.
 ///
-/// 注意：此函数包含迁移逻辑，会自动将旧的映射字段迁移到 custom_mapping
+/// Note: This function includes migration logic that automatically migrates
+/// legacy mapping fields to custom_mapping.
 pub fn load_config() -> Result<AppConfig, String> {
     let data_dir = get_data_dir()?;
     let config_path = data_dir.join(CONFIG_FILE);
@@ -18,15 +19,15 @@ pub fn load_config() -> Result<AppConfig, String> {
         return Ok(AppConfig::new());
     }
 
-    let content =
-        fs::read_to_string(&config_path).map_err(|e| format!("读取配置文件失败: {}", e))?;
+    let content = fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to read config file: {}", e))?;
 
-    let mut v: serde_json::Value =
-        serde_json::from_str(&content).map_err(|e| format!("解析配置文件失败: {}", e))?;
+    let mut v: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse config file: {}", e))?;
 
     let mut modified = false;
 
-    // 迁移逻辑
+    // Migration logic
     if let Some(proxy) = v.get_mut("proxy") {
         let mut custom_mapping = proxy
             .get("custom_mapping")
@@ -34,7 +35,7 @@ pub fn load_config() -> Result<AppConfig, String> {
             .cloned()
             .unwrap_or_default();
 
-        // 迁移 Anthropic 映射
+        // Migrate Anthropic mapping
         if let Some(anthropic) = proxy
             .get_mut("anthropic_mapping")
             .and_then(|m| m.as_object_mut())
@@ -44,14 +45,14 @@ pub fn load_config() -> Result<AppConfig, String> {
                     custom_mapping.insert(k.clone(), v.clone());
                 }
             }
-            // 移除旧字段
+            // Remove legacy field
             if let Some(obj) = proxy.as_object_mut() {
                 obj.remove("anthropic_mapping");
             }
             modified = true;
         }
 
-        // 迁移 OpenAI 映射
+        // Migrate OpenAI mapping
         if let Some(openai) = proxy
             .get_mut("openai_mapping")
             .and_then(|m| m.as_object_mut())
@@ -61,7 +62,7 @@ pub fn load_config() -> Result<AppConfig, String> {
                     custom_mapping.insert(k.clone(), v.clone());
                 }
             }
-            // 移除旧字段
+            // Remove legacy field
             if let Some(obj) = proxy.as_object_mut() {
                 obj.remove("openai_mapping");
             }
@@ -78,10 +79,10 @@ pub fn load_config() -> Result<AppConfig, String> {
         }
     }
 
-    let config: AppConfig =
-        serde_json::from_value(v).map_err(|e| format!("迁移后转换配置失败: {}", e))?;
+    let config: AppConfig = serde_json::from_value(v)
+        .map_err(|e| format!("Failed to convert config after migration: {}", e))?;
 
-    // 如果发生了迁移，自动保存一次以清理文件
+    // If migration occurred, save once to clean up the file
     if modified {
         let _ = save_config(&config);
     }
@@ -89,18 +90,18 @@ pub fn load_config() -> Result<AppConfig, String> {
     Ok(config)
 }
 
-/// 保存应用配置
+/// Save application configuration.
 pub fn save_config(config: &AppConfig) -> Result<(), String> {
     let data_dir = get_data_dir()?;
     let config_path = data_dir.join(CONFIG_FILE);
     let temp_path = data_dir.join(format!("{}.tmp", CONFIG_FILE));
 
-    let content =
-        serde_json::to_string_pretty(config).map_err(|e| format!("序列化配置失败: {}", e))?;
+    let content = serde_json::to_string_pretty(config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
     // Atomic write
-    fs::write(&temp_path, content).map_err(|e| format!("写入临时配置失败: {}", e))?;
-    fs::rename(&temp_path, &config_path).map_err(|e| format!("保存配置失败: {}", e))
+    fs::write(&temp_path, content).map_err(|e| format!("Failed to write temp config: {}", e))?;
+    fs::rename(&temp_path, &config_path).map_err(|e| format!("Failed to save config: {}", e))
 }
 
 /// Update specific fields in the config.

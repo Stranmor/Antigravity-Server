@@ -88,16 +88,16 @@ pub fn create_codex_sse_stream(
                                                     let clean_text = text.replace(['“', '”'], "\"");
                                                     delta_text.push_str(&clean_text);
                                                 }
-                                                /* 禁用思维链输出到正文
+                                                /* Disable thought chain output to main text
                                                 if let Some(thought_text) = part.get("thought").and_then(|t| t.as_str()) {
                                                     let clean_thought = thought_text.replace('"', "\"").replace('"', "\"");
                                                     // delta_text.push_str(&clean_thought);
                                                 }
                                                 */
-                                                // 捕获 thoughtSignature (Gemini 3 工具调用必需)
-                                                // 存储到全局状态，不再嵌入到用户可见的文本中
+                                                // Capture thoughtSignature (required for Gemini 3 tool calls)
+                                                // Store to global state, no longer embed in user-visible text
                                                 if let Some(sig) = part.get("thoughtSignature").or(part.get("thought_signature")).and_then(|s| s.as_str()) {
-                                                    tracing::debug!("[Codex-SSE] 捕获 thoughtSignature (长度: {})", sig.len());
+                                                    tracing::debug!("[Codex-SSE] capture thoughtSignature (length: {})", sig.len());
                                                     store_thought_signature(sig);
                                                 }
                                                 // Handle function call in chunk with deduplication
@@ -141,7 +141,7 @@ pub fn create_codex_sse_stream(
                         "Codex stream error occurred"
                     );
 
-                    // 发送友好的错误事件(包含 i18n_key 供前端翻译)
+                    // Send friendly error event (containing i18n_key for frontend translation)
                     let error_ev = json!({
                         "type": "error",
                         "error": {

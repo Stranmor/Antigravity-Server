@@ -49,17 +49,17 @@ pub fn build_tools(
 
         let mut tool_obj = serde_json::Map::new();
 
-        // [修复] 解决 "Multiple tools are supported only when they are all search tools" 400 错误
-        // 原理：Gemini v1internal 接口非常挑剔，通常不允许在同一个工具定义中混用 Google Search 和 Function Declarations。
-        // 对于 Claude CLI 等携带 MCP 工具的客户端，必须优先保证 Function Declarations 正常工作。
+        // [repair] solve "Multiple tools are supported only when they are all search tools" 400 error
+        // Principle: Gemini v1 internal interface is very picky, usually doesn't allow mixing Google Search and Function Declarations in the same tool definition.
+        // For Claude CLI and other clients with MCP tools, must prioritize ensuring Function Declarations work properly.
         if !function_declarations.is_empty() {
-            // 如果有本地工具，则只使用本地工具，放弃注入的 Google Search
+            // If there are local tools, only use local tools, skip injecting Google Search
             tool_obj.insert(
                 "functionDeclarations".to_string(),
                 json!(function_declarations),
             );
 
-            // [IMPROVED] 记录跳过 googleSearch 注入的原因
+            // [IMPROVED] Record reason for skipping googleSearch injection
             if has_google_search {
                 tracing::info!(
                     "[Claude-Request] Skipping googleSearch injection due to {} existing function declarations. \
@@ -68,7 +68,7 @@ pub fn build_tools(
                 );
             }
         } else if has_google_search {
-            // 只有在没有本地工具时，才允许注入 Google Search
+            // Only when there are no local tools, allow injecting Google Search
             tool_obj.insert("googleSearch".to_string(), json!({}));
         }
 

@@ -30,10 +30,10 @@ pub fn create_client_with_proxy(
             match Proxy::all(&config.url) {
                 Ok(proxy) => {
                     builder = builder.proxy(proxy);
-                    tracing::info!("HTTP 客户端已启用上游代理: {}", config.url);
+                    tracing::info!("HTTP clientalreadyenableupstreamproxy: {}", config.url);
                 }
                 Err(e) => {
-                    tracing::error!("无效的代理地址: {}, 错误: {}", config.url, e);
+                    tracing::error!("invalid proxyaddress: {}, error: {}", config.url, e);
                 }
             }
         }

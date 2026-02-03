@@ -1,5 +1,5 @@
-// Stream 收集器 - 将 SSE 流转换为完整的 JSON 响应
-// 用于非 Stream 请求的自动转换
+// Stream collector - converts SSE stream to complete JSON response
+// For non-stream request auto-conversion
 
 use super::models::*;
 use bytes::Bytes;
@@ -7,14 +7,14 @@ use futures::StreamExt;
 use serde_json::{json, Value};
 use std::io;
 
-/// SSE 事件类型
+/// SSE event type
 #[derive(Debug, Clone)]
 struct SseEvent {
     event_type: String,
     data: Value,
 }
 
-/// 解析 SSE 行
+/// Parse SSE line
 fn parse_sse_line(line: &str) -> Option<(String, String)> {
     if let Some(colon_pos) = line.find(':') {
         let key = &line[..colon_pos];
@@ -25,10 +25,10 @@ fn parse_sse_line(line: &str) -> Option<(String, String)> {
     }
 }
 
-/// 将 SSE Stream 收集为完整的 Claude Response
+/// Collect SSE Stream as complete Claude Response
 ///
-/// 此函数接收一个 SSE 字节流，解析所有事件，并重建完整的 ClaudeResponse 对象。
-/// 这使得非 Stream 客户端可以透明地享受 Stream 模式的配额优势。
+/// This function receives an SSE byte stream, parses all events, and reconstructs a complete ClaudeResponse object.
+/// This allows non-stream clients to transparently enjoy stream mode quota advantages.
 pub async fn collect_stream_to_json<S>(mut stream: S) -> Result<ClaudeResponse, String>
 where
     S: futures::Stream<Item = Result<Bytes, io::Error>> + Unpin,
@@ -37,14 +37,14 @@ where
     let mut current_event_type = String::new();
     let mut current_data = String::new();
 
-    // 1. 收集所有 SSE 事件
+    // 1. Collect all SSE events
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.map_err(|e| format!("Stream error: {}", e))?;
         let text = String::from_utf8_lossy(&chunk);
 
         for line in text.lines() {
             if line.is_empty() {
-                // 空行表示事件结束
+                // Empty line indicates event end
                 if !current_data.is_empty() {
                     if let Ok(data) = serde_json::from_str::<Value>(&current_data) {
                         events.push(SseEvent {
@@ -65,7 +65,7 @@ where
         }
     }
 
-    // 2. 重建 ClaudeResponse
+    // 2. Reconstruct ClaudeResponse
     let mut response = ClaudeResponse {
         id: "msg_unknown".to_string(),
         type_: "message".to_string(),
@@ -83,7 +83,7 @@ where
         },
     };
 
-    // 用于累积内容块
+    // For accumulating content blocks
     let mut current_text = String::new();
     let mut current_thinking = String::new();
     let mut current_signature: Option<String> = None;
@@ -93,7 +93,7 @@ where
     for event in events {
         match event.event_type.as_str() {
             "message_start" => {
-                // 提取基本信息
+                // Extract basic info
                 if let Some(message) = event.data.get("message") {
                     if let Some(id) = message.get("id").and_then(|v| v.as_str()) {
                         response.id = id.to_string();
@@ -166,7 +166,7 @@ where
             }
 
             "content_block_stop" => {
-                // 完成当前块
+                // Complete current block
                 if !current_text.is_empty() {
                     response.content.push(ContentBlock::Text {
                         text: current_text.clone(),
@@ -180,7 +180,7 @@ where
                     });
                     current_thinking.clear();
                 } else if let Some(tool_use) = current_tool_use.take() {
-                    // 构建 tool_use 块
+                    // build tool_use block
                     let id = tool_use
                         .get("id")
                         .and_then(|v| v.as_str())
@@ -222,17 +222,17 @@ where
             }
 
             "message_stop" => {
-                // Stream 结束
+                // Stream end
                 break;
             }
 
             "error" => {
-                // 错误事件
+                // Error event
                 return Err(format!("Stream error: {:?}", event.data));
             }
 
             _ => {
-                // 忽略未知事件类型
+                // Ignore unknown event types
             }
         }
     }

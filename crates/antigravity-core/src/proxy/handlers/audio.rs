@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::proxy::{audio::AudioProcessor, server::AppState};
 
-/// 处理音频转录请求 (OpenAI Whisper API 兼容)
+/// handleaudiotranscriptionrequest (OpenAI Whisper API compatible)
 pub async fn handle_audio_transcription(
     State(state): State<AppState>,
     mut multipart: Multipart,
@@ -20,11 +20,11 @@ pub async fn handle_audio_transcription(
     let model = "gemini-2.5-flash".to_string();
     let mut prompt = "Generate a transcript of the speech.".to_string();
 
-    // 1. 解析 multipart/form-data
+    // 1. parse multipart/form-data
     while let Some(field) = multipart
         .next_field()
         .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("解析表单失败: {}", e)))?
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("parsetablefailed: {}", e)))?
     {
         let name = field.name().unwrap_or("").to_string();
 
@@ -35,7 +35,7 @@ pub async fn handle_audio_transcription(
                     field
                         .bytes()
                         .await
-                        .map_err(|e| (StatusCode::BAD_REQUEST, format!("读取文件失败: {}", e)))?
+                        .map_err(|e| (StatusCode::BAD_REQUEST, format!("readfilefailed: {}", e)))?
                         .to_vec(),
                 );
             }
@@ -50,12 +50,14 @@ pub async fn handle_audio_transcription(
         }
     }
 
-    let audio_bytes = audio_data.ok_or((StatusCode::BAD_REQUEST, "缺少音频文件".to_string()))?;
+    let audio_bytes =
+        audio_data.ok_or((StatusCode::BAD_REQUEST, "Missing audiofile".to_string()))?;
 
-    let file_name = filename.ok_or((StatusCode::BAD_REQUEST, "无法获取文件名".to_string()))?;
+    let file_name =
+        filename.ok_or((StatusCode::BAD_REQUEST, "Failed to getfilename".to_string()))?;
 
     info!(
-        "收到音频转录请求: 文件={}, 大小={} bytes, 模型={}",
+        "receivedaudiotranscriptionrequest: file={}, size={} bytes, model={}",
         file_name,
         audio_bytes.len(),
         model
@@ -65,23 +67,23 @@ pub async fn handle_audio_transcription(
     let mime_type = AudioProcessor::detect_mime_type(&file_name, &audio_bytes)
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
 
-    // 3. 验证文件大小
+    // 3. verifyfilesize
     if AudioProcessor::exceeds_size_limit(audio_bytes.len()) {
         let size_mb = audio_bytes.len() as f64 / (1024.0 * 1024.0);
         return Err((
             StatusCode::PAYLOAD_TOO_LARGE,
             format!(
-                "音频文件过大 ({:.1} MB)。最大支持 15 MB (约 16 分钟 MP3)。建议: 1) 压缩音频质量 2) 分段上传",
+                "audiofiletoo large ({:.1} MB)。maxsupport 15 MB (approximately 16 minute MP3)。suggest: 1) compressaudioquality 2) segmentupload",
                 size_mb
             ),
         ));
     }
 
-    // 4. 使用 Inline Data 方式
-    debug!("使用 Inline Data 方式处理");
+    // 4. use Inline Data method
+    debug!("use Inline Data methodhandle");
     let base64_audio = AudioProcessor::encode_to_base64(&audio_bytes);
 
-    // 5. 构建 Gemini 请求
+    // 5. build Gemini request
     let gemini_request = json!({
         "contents": [{
             "role": "user",
@@ -97,16 +99,16 @@ pub async fn handle_audio_transcription(
         }]
     });
 
-    // 6. 获取 Token 和上游客户端
+    // 6. get Token  and upstreamclient
     let token_manager = state.token_manager;
     let (access_token, project_id, email, _guard) = token_manager
         .get_token("text", false, None, &model)
         .await
         .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e))?;
 
-    info!("使用账号: {}", email);
+    info!("useaccount: {}", email);
 
-    // 7. 包装请求为 v1internal 格式
+    // 7. wraprequestas v1internal format
     // Use model as-is — Antigravity API expects "gemini-3-pro" directly
     let mapped_model = model.clone();
     let wrapped_body = json!({
@@ -118,7 +120,7 @@ pub async fn handle_audio_transcription(
         "requestType": "text"
     });
 
-    // 8. 发送请求到 Gemini
+    // 8. sendrequestto Gemini
     let upstream = state.upstream.clone();
 
     // Get WARP proxy for IP isolation
@@ -134,7 +136,12 @@ pub async fn handle_audio_transcription(
             warp_proxy.as_deref(),
         )
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("上游请求失败: {}", e)))?;
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("upstreamRequest failed: {}", e),
+            )
+        })?;
 
     if !response.status().is_success() {
         let error_text = response
@@ -143,16 +150,18 @@ pub async fn handle_audio_transcription(
             .unwrap_or_else(|_| "Unknown error".to_string());
         return Err((
             StatusCode::BAD_GATEWAY,
-            format!("Gemini API 错误: {}", error_text),
+            format!("Gemini API error: {}", error_text),
         ));
     }
 
-    let result: Value = response
-        .json()
-        .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("解析响应失败: {}", e)))?;
+    let result: Value = response.json().await.map_err(|e| {
+        (
+            StatusCode::BAD_GATEWAY,
+            format!("parseResponse failed: {}", e),
+        )
+    })?;
 
-    // 9. 提取文本响应（解包 v1internal 响应）
+    // 9. extracttextresponse（unwrap v1internal response）
     let inner_response = result.get("response").unwrap_or(&result);
     let text = inner_response
         .get("candidates")
@@ -164,9 +173,12 @@ pub async fn handle_audio_transcription(
         .and_then(|t| t.as_str())
         .unwrap_or("");
 
-    info!("音频转录完成，返回 {} 字符", text.len());
+    info!(
+        "audiotranscriptioncomplete，return {} character",
+        text.len()
+    );
 
-    // 10. 返回标准格式响应
+    // 10. returnstandardformatresponse
     Ok((
         StatusCode::OK,
         [("X-Account-Email", email.as_str())],

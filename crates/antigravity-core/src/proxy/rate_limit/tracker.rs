@@ -37,7 +37,10 @@ impl RateLimitTracker {
     pub fn mark_success(&self, account_id: &str) {
         let key = RateLimitKey::account(account_id);
         if self.failure_counts.remove(&key).is_some() {
-            tracing::debug!("账号 {} 请求成功，已重置失败计数", account_id);
+            tracing::debug!(
+                "account {} request success, reset failure count",
+                account_id
+            );
         }
         self.limits.remove(&key);
     }
@@ -149,7 +152,7 @@ impl RateLimitTracker {
         });
 
         if count > 0 {
-            tracing::debug!("清除了 {} 个过期的限流记录", count);
+            tracing::debug!("Cleared {} expired rate limit records", count);
         }
 
         count

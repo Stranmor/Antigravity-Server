@@ -17,7 +17,7 @@ pub fn transform_openai_request(
     project_id: &str,
     mapped_model: &str,
 ) -> Value {
-    // 将 OpenAI 工具转为 Value 数组以便探测
+    // Convert OpenAI tools to Value array for detection
     let tools_val = request.tools.as_ref().map(|list| list.to_vec());
 
     let mapped_model_lower = mapped_model.to_lowercase();
@@ -40,7 +40,7 @@ pub fn transform_openai_request(
     let is_claude_thinking = mapped_model_lower.ends_with("-thinking");
     let is_thinking_model = is_gemini_3_thinking || is_claude_thinking;
 
-    // [NEW] 检查历史消息是否兼容思维模型 (是否有 Assistant 消息缺失 reasoning_content)
+    // [NEW] Check if history messages are compatible with thinking model (whether Assistant messages are missing reasoning_content)
     let has_incompatible_assistant_history = request.messages.iter().any(|msg| {
         msg.role == "assistant"
             && msg
@@ -50,11 +50,11 @@ pub fn transform_openai_request(
                 .unwrap_or(true)
     });
 
-    // 获取全局存储的思维签名
+    // Get global stored thought signature
     let global_thought_sig = get_thought_signature();
 
-    // [NEW] 决定是否开启 Thinking 功能:
-    // 如果是 Claude 思考模型且历史不兼容且没有可用签名来占位, 则禁用 Thinking 以防 400
+    // [NEW] Decide whether to enable Thinking feature:
+    // If it's a Claude thinking model and history is incompatible and no available signature to use as placeholder, disable Thinking to prevent 400
     let mut actual_include_thinking = is_thinking_model;
     if is_claude_thinking && has_incompatible_assistant_history && global_thought_sig.is_none() {
         tracing::warn!("[OpenAI-Thinking] Incompatible assistant history detected for Claude thinking model without global signature. Disabling thinking for this request to avoid 400 error.");
@@ -69,7 +69,7 @@ pub fn transform_openai_request(
         config.image_config.is_some()
     );
 
-    // 1. 提取所有 System Message 并注入补丁
+    // 1. Extract all System Messages and inject patches
     let mut system_instructions: Vec<String> = request
         .messages
         .iter()
@@ -92,7 +92,7 @@ pub fn transform_openai_request(
         })
         .collect();
 
-    // [NEW] 如果请求中包含 instructions 字段，优先使用它
+    // [NEW] ifrequestincontaining instructions field，priorityuseit
     if let Some(inst) = &request.instructions {
         if !inst.is_empty() {
             system_instructions.insert(0, inst.clone());
@@ -136,10 +136,13 @@ pub fn transform_openai_request(
         }
     }
 
-    // 从全局存储获取 thoughtSignature (PR #93 支持)
+    // Get thoughtSignature from global storage (PR #93 support)
     // (Already fetched as global_thought_sig above)
     if let Some(ref sig) = global_thought_sig {
-        tracing::debug!("从全局存储获取到 thoughtSignature (长度: {})", sig.len());
+        tracing::debug!(
+            "Got thoughtSignature from global storage (length: {})",
+            sig.len()
+        );
     }
 
     let transform_ctx = MessageTransformContext {
@@ -179,7 +182,7 @@ pub fn transform_openai_request(
         ]
     });
 
-    // 深度清理 [undefined] 字符串 (Cherry Studio 等客户端常见注入)
+    // Deep cleanup [undefined] strings (commonly injected by Cherry Studio and other clients)
     crate::proxy::mappers::request_config::deep_clean_undefined(&mut inner_request);
 
     // 4. Handle Tools
@@ -190,25 +193,25 @@ pub fn transform_openai_request(
         }
     }
 
-    // [NEW] Antigravity 身份指令 (原始简化版)
+    // [NEW] Antigravity identity instruction (simplified version)
     let antigravity_identity = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.\n\
     You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.\n\
     **Absolute paths only**\n\
     **Proactiveness**";
 
-    // [HYBRID] 检查用户是否已提供 Antigravity 身份
+    // [HYBRID] Check if user already provided Antigravity identity
     let user_has_antigravity = system_instructions
         .iter()
         .any(|s| s.contains("You are Antigravity"));
 
     let mut parts = Vec::new();
 
-    // 1. Antigravity 身份 (如果需要, 作为独立 Part 插入)
+    // 1. Antigravity identity (if needed, insert as separate Part)
     if !user_has_antigravity {
         parts.push(json!({"text": antigravity_identity}));
     }
 
-    // 2. 追加用户指令 (作为独立 Parts)
+    // 2. Append user instructions (as separate Parts)
     for inst in system_instructions {
         parts.push(json!({"text": inst}));
     }

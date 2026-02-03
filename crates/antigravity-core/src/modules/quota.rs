@@ -47,14 +47,14 @@ struct Tier {
     slug: Option<String>,
 }
 
-/// 创建配置好的 HTTP Client
+/// Create configured HTTP Client
 fn create_client() -> reqwest::Client {
     crate::utils::http::create_client(15)
 }
 
 const CLOUD_CODE_BASE_URL: &str = "https://cloudcode-pa.googleapis.com";
 
-/// 获取项目 ID 和订阅类型
+/// Get project ID and subscription type
 async fn fetch_project_id(access_token: &str, email: &str) -> (Option<String>, Option<String>) {
     let client = create_client();
     let meta = json!({"metadata": {"ideType": "ANTIGRAVITY"}});
@@ -80,7 +80,7 @@ async fn fetch_project_id(access_token: &str, email: &str) -> (Option<String>, O
                 if let Ok(data) = res.json::<LoadProjectResponse>().await {
                     let project_id = data.project_id.clone();
 
-                    // 核心逻辑：优先从 paid_tier 获取订阅 ID，这比 current_tier 更能反映真实账户权益
+                    // Core logic: prefer subscription ID from paid_tier, which better reflects actual account entitlements than current_tier
                     let subscription_tier = data
                         .paid_tier
                         .and_then(|t| t.id)
@@ -88,7 +88,7 @@ async fn fetch_project_id(access_token: &str, email: &str) -> (Option<String>, O
 
                     if let Some(ref tier) = subscription_tier {
                         crate::modules::logger::log_info(&format!(
-                            "📊 [{}] 订阅识别成功: {}",
+                            "📊 [{}] Subscription identified: {}",
                             email, tier
                         ));
                     }
@@ -97,7 +97,7 @@ async fn fetch_project_id(access_token: &str, email: &str) -> (Option<String>, O
                 }
             } else {
                 crate::modules::logger::log_warn(&format!(
-                    "⚠️  [{}] loadCodeAssist 失败: Status: {}",
+                    "⚠️  [{}] loadCodeAssist failed: Status: {}",
                     email,
                     res.status()
                 ));
@@ -105,7 +105,7 @@ async fn fetch_project_id(access_token: &str, email: &str) -> (Option<String>, O
         }
         Err(e) => {
             crate::modules::logger::log_error(&format!(
-                "❌ [{}] loadCodeAssist 网络错误: {}",
+                "❌ [{}] loadCodeAssist network error: {}",
                 email, e
             ));
         }
@@ -114,7 +114,7 @@ async fn fetch_project_id(access_token: &str, email: &str) -> (Option<String>, O
     (None, None)
 }
 
-/// 查询账号配额的统一入口
+/// Unified entry point for querying account quota
 pub async fn fetch_quota(
     access_token: &str,
     email: &str,
@@ -122,15 +122,15 @@ pub async fn fetch_quota(
     fetch_quota_inner(access_token, email).await
 }
 
-/// 查询账号配额逻辑
+/// Query account quota logic
 pub async fn fetch_quota_inner(
     access_token: &str,
     email: &str,
 ) -> crate::error::AppResult<(QuotaData, Option<String>)> {
     use crate::error::AppError;
-    // crate::modules::logger::log_info(&format!("[{}] 开始外部查询配额...", email));
+    // crate::modules::logger::log_info(&format!("[{}] Starting external quota query...", email));
 
-    // 1. 获取 Project ID 和订阅类型
+    // 1. Get Project ID and subscription type
     let (project_id, subscription_tier) = fetch_project_id(access_token, email).await;
 
     let final_project_id = project_id.as_deref().unwrap_or("bamboo-precept-lgxtn");
@@ -154,14 +154,14 @@ pub async fn fetch_quota_inner(
             .await
         {
             Ok(response) => {
-                // 将 HTTP 错误状态转换为 AppError
+                // Convert HTTP error status to AppError
                 if response.error_for_status_ref().is_err() {
                     let status = response.status();
 
-                    // ✅ 特殊处理 403 Forbidden - 直接返回,不重试
+                    // ✅ Special handling for 403 Forbidden - return directly, no retry
                     if status == reqwest::StatusCode::FORBIDDEN {
                         crate::modules::logger::log_warn(
-                            "账号无权限 (403 Forbidden),标记为 forbidden 状态",
+                            "Account has no permission (403 Forbidden), marking as forbidden status",
                         );
                         let mut q = QuotaData::new();
                         q.is_forbidden = true;
@@ -169,11 +169,11 @@ pub async fn fetch_quota_inner(
                         return Ok((q, project_id.clone()));
                     }
 
-                    // 其他错误继续重试逻辑
+                    // Other errors continue retry logic
                     if attempt < max_retries {
                         let text = response.text().await.unwrap_or_default();
                         crate::modules::logger::log_warn(&format!(
-                            "API 错误: {} - {} (尝试 {}/{})",
+                            "API error: {} - {} (attempt {}/{})",
                             status, text, attempt, max_retries
                         ));
                         last_error = Some(AppError::Unknown(format!("HTTP {} - {}", status, text)));
@@ -182,7 +182,7 @@ pub async fn fetch_quota_inner(
                     } else {
                         let text = response.text().await.unwrap_or_default();
                         return Err(AppError::Unknown(format!(
-                            "API 错误: {} - {}",
+                            "API error: {} - {}",
                             status, text
                         )));
                     }
@@ -193,8 +193,8 @@ pub async fn fetch_quota_inner(
 
                 let mut quota_data = QuotaData::new();
 
-                // 使用 debug 级别记录详细信息，避免控制台噪音
-                tracing::debug!("Quota API 返回了 {} 个模型", quota_response.models.len());
+                // Use debug level for detailed info to avoid console noise
+                tracing::debug!("Quota API returned {} models", quota_response.models.len());
 
                 for (name, info) in quota_response.models {
                     if let Some(quota_info) = info.quota_info {
@@ -205,21 +205,21 @@ pub async fn fetch_quota_inner(
 
                         let reset_time = quota_info.reset_time.unwrap_or_default();
 
-                        // 只保存我们关心的模型
+                        // Only save models we care about
                         if name.contains("gemini") || name.contains("claude") {
                             quota_data.add_model(name, percentage, reset_time);
                         }
                     }
                 }
 
-                // 设置订阅类型
+                // Set subscription type
                 quota_data.subscription_tier = subscription_tier.clone();
 
                 return Ok((quota_data, project_id.clone()));
             }
             Err(e) => {
                 crate::modules::logger::log_warn(&format!(
-                    "请求失败: {} (尝试 {}/{})",
+                    "Request failed: {} (attempt {}/{})",
                     e, attempt, max_retries
                 ));
                 last_error = Some(AppError::Network(e));
@@ -230,10 +230,10 @@ pub async fn fetch_quota_inner(
         }
     }
 
-    Err(last_error.unwrap_or_else(|| AppError::Unknown("配额查询失败".to_string())))
+    Err(last_error.unwrap_or_else(|| AppError::Unknown("Quota query failed".to_string())))
 }
 
-/// 批量查询所有账号配额 (备用功能)
+/// Batch query all account quotas (backup feature)
 #[allow(dead_code)]
 pub async fn fetch_all_quotas(
     accounts: Vec<(String, String)>,
@@ -241,7 +241,7 @@ pub async fn fetch_all_quotas(
     let mut results = Vec::new();
 
     for (account_id, access_token) in accounts {
-        // 在批量查询中，我们将 account_id 传入以供日志标识
+        // In batch query, we pass account_id for log identification
         let result = fetch_quota(&access_token, &account_id)
             .await
             .map(|(q, _)| q);

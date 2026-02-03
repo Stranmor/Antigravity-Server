@@ -7,14 +7,14 @@ use base64::{engine::general_purpose, Engine as _};
 use serde_json::Value;
 use std::{fs, path::PathBuf};
 
-/// 扫描并导入 V1 数据
+/// Scan and import V1 data
 pub async fn import_from_v1() -> Result<Vec<Account>, String> {
     use crate::modules::oauth;
-    let home = dirs::home_dir().ok_or("无法获取主目录")?;
-    // V1 数据目录 (根据 utils.py 确认全平台统一)
+    let home = dirs::home_dir().ok_or("Failed to get home directory")?;
+    // V1 data directory (confirmed unified across platforms per utils.py)
     let v1_dir = home.join(".antigravity-agent");
     let mut imported_accounts = Vec::new();
-    // 尝试多个可能的文件名
+    // Try multiple possible filenames
     let index_files = vec![
         "antigravity_accounts.json", // Directly use string literal
         "accounts.json",
@@ -26,11 +26,11 @@ pub async fn import_from_v1() -> Result<Vec<Account>, String> {
             continue;
         }
         found_index = true;
-        crate::modules::logger::log_info(&format!("发现 V1 数据: {:?}", v1_accounts_path));
+        crate::modules::logger::log_info(&format!("Found V1 data: {:?}", v1_accounts_path));
         let content = match fs::read_to_string(&v1_accounts_path) {
             Ok(c) => c,
             Err(e) => {
-                crate::modules::logger::log_warn(&format!("读取索引失败: {}", e));
+                crate::modules::logger::log_warn(&format!("Failed to read index: {}", e));
                 continue;
             }
         };
@@ -38,12 +38,12 @@ pub async fn import_from_v1() -> Result<Vec<Account>, String> {
         let v1_index: Value = match serde_json::from_str(&content) {
             Ok(v) => v,
             Err(e) => {
-                crate::modules::logger::log_warn(&format!("解析索引 JSON 失败: {}", e));
+                crate::modules::logger::log_warn(&format!("Failed to parse index JSON: {}", e));
                 continue;
             }
         };
 
-        // 兼容两种格式：直接是 map，或者包含 \"accounts\" 字段
+        // Compatible with two formats: direct map, or containing \"accounts\" field
         let accounts_map = if let Some(map) = v1_index.as_object() {
             if let Some(accounts) = map.get("accounts").and_then(|v| v.as_object()) {
                 accounts
@@ -60,7 +60,7 @@ pub async fn import_from_v1() -> Result<Vec<Account>, String> {
                 .unwrap_or("Unknown")
                 .to_string();
 
-            // 跳过非账号的 key (如 "current_account_id")
+            // Skip non-account keys (e.g., "current_account_id")
             if !acc_info.is_object() {
                 continue;
             }
@@ -68,12 +68,12 @@ pub async fn import_from_v1() -> Result<Vec<Account>, String> {
             let backup_file_str = acc_info.get("backup_file").and_then(|v| v.as_str());
             let data_file_str = acc_info.get("data_file").and_then(|v| v.as_str());
 
-            // 优先使用 backup_file, 其次 data_file
+            // Prefer backup_file, fallback to data_file
             let target_file = backup_file_str.or(data_file_str);
 
             if target_file.is_none() {
                 crate::modules::logger::log_warn(&format!(
-                    "账号 {} ({}) 缺少数据文件路径",
+                    "Account {} ({}) missing data file path",
                     id, email_placeholder
                 ));
                 continue;
@@ -82,12 +82,12 @@ pub async fn import_from_v1() -> Result<Vec<Account>, String> {
             // target_file is guaranteed to be Some here (checked above)
             let mut backup_path = PathBuf::from(target_file.expect("checked is_none above"));
 
-            // 如果是相对路径，尝试拼接
+            // If relative path, try to join
             if !backup_path.exists() {
                 backup_path = v1_dir.join(backup_path.file_name().unwrap_or_default());
             }
 
-            // 再次尝试拼接 data/ 或 backups/ 子目录
+            // Try joining data/ or backups/ subdirectories
             if !backup_path.exists() {
                 let file_name = backup_path.file_name().unwrap_or_default();
                 let try_backups = v1_dir.join("backups").join(file_name);
@@ -103,35 +103,35 @@ pub async fn import_from_v1() -> Result<Vec<Account>, String> {
 
             if !backup_path.exists() {
                 crate::modules::logger::log_warn(&format!(
-                    "账号 {} ({}) 备份文件不存在: {:?}",
+                    "Account {} ({}) backup file does not exist: {:?}",
                     id, email_placeholder, backup_path
                 ));
                 continue;
             }
 
-            // 读取备份文件
+            // Read backup file
             if let Ok(backup_content) = fs::read_to_string(&backup_path) {
                 if let Ok(backup_json) = serde_json::from_str::<Value>(&backup_content) {
-                    // 兼容两种格式：
-                    // 1. V1 备份: jetskiStateSync.agentManagerInitState -> Protobuf
-                    // 2. V2/Script 数据: 包含 "token" 字段的 JSON
+                    // Compatible with two formats:
+                    // 1. V1 backup: jetskiStateSync.agentManagerInitState -> Protobuf
+                    // 2. V2/Script data: JSON containing "token" field
 
                     let mut refresh_token_opt = None;
 
-                    // 尝试格式 2
+                    // Try format 2
                     if let Some(token_data) = backup_json.get("token") {
                         if let Some(rt) = token_data.get("refresh_token").and_then(|v| v.as_str()) {
                             refresh_token_opt = Some(rt.to_string());
                         }
                     }
 
-                    // 尝试格式 1
+                    // Try format 1
                     if refresh_token_opt.is_none() {
                         if let Some(state_b64) = backup_json
                             .get("jetskiStateSync.agentManagerInitState")
                             .and_then(|v| v.as_str())
                         {
-                            // 解析 Protobuf
+                            // Parse Protobuf
                             if let Ok(blob) = general_purpose::STANDARD.decode(state_b64) {
                                 if let Ok(Some(oauth_data)) = protobuf::find_field(&blob, 6) {
                                     if let Ok(Some(refresh_bytes)) =
@@ -148,7 +148,7 @@ pub async fn import_from_v1() -> Result<Vec<Account>, String> {
 
                     if let Some(refresh_token) = refresh_token_opt {
                         crate::modules::logger::log_info(&format!(
-                            "正在导入账号: {}",
+                            "Importing account: {}",
                             email_placeholder
                         ));
 
@@ -170,7 +170,7 @@ pub async fn import_from_v1() -> Result<Vec<Account>, String> {
                                 }
                                 Err(e) => {
                                     crate::modules::logger::log_warn(&format!(
-                                        "Token 刷新失败 (可能过期): {}",
+                                        "Token refresh failed (may be expired): {}",
                                         e
                                     ));
                                     (
@@ -186,24 +186,27 @@ pub async fn import_from_v1() -> Result<Vec<Account>, String> {
                             refresh_token,
                             expires_in,
                             Some(email.clone()),
-                            None, // project_id 将在需要时获取
+                            None, // project_id will be fetched when needed
                             None, // session_id
                         );
 
-                        // 在第153行的get_user_info中已经获取name，但这里是在match语句外，我们巴安全起见使用None
+                        // get_user_info already fetched name at line 153, but we're outside the match, using None for safety
                         match account::upsert_account(email.clone(), None, token_data) {
                             Ok(acc) => {
-                                crate::modules::logger::log_info(&format!("导入成功: {}", email));
+                                crate::modules::logger::log_info(&format!(
+                                    "Import successful: {}",
+                                    email
+                                ));
                                 imported_accounts.push(acc);
                             }
                             Err(e) => crate::modules::logger::log_error(&format!(
-                                "导入保存失败 {}: {}",
+                                "Import save failed {}: {}",
                                 email, e
                             )),
                         }
                     } else {
                         crate::modules::logger::log_warn(&format!(
-                            "账号 {} 数据文件中未找到 Refresh Token",
+                            "Account {} data file does not contain Refresh Token",
                             email_placeholder
                         ));
                     }
@@ -213,86 +216,89 @@ pub async fn import_from_v1() -> Result<Vec<Account>, String> {
     }
 
     if !found_index {
-        return Err("未找到 V1 版本账号数据文件".to_string());
+        return Err("V1 account data file not found".to_string());
     }
 
     Ok(imported_accounts)
 }
 
-/// 从自定义数据库路径导入账号
+/// Import account from custom database path
 pub async fn import_from_custom_db_path(path_str: String) -> Result<Account, String> {
     use crate::modules::oauth;
 
     let path = PathBuf::from(path_str);
     if !path.exists() {
-        return Err(format!("文件不存在: {:?}", path));
+        return Err(format!("File does not exist: {:?}", path));
     }
 
     let refresh_token = extract_refresh_token_from_file(&path)?;
 
-    // 3. 使用 Refresh Token 获取最新的 Access Token 和用户信息
-    crate::modules::logger::log_info("正在使用 Refresh Token 获取用户信息...");
+    // 3. Use Refresh Token to get latest Access Token and user info
+    crate::modules::logger::log_info("Using Refresh Token to get user info...");
     let token_resp = oauth::refresh_access_token(&refresh_token).await?;
     let user_info = oauth::get_user_info(&token_resp.access_token).await?;
 
     let email = user_info.email;
 
-    crate::modules::logger::log_info(&format!("成功获取账号信息: {}", email));
+    crate::modules::logger::log_info(&format!("Successfully retrieved account info: {}", email));
 
     let token_data = TokenData::new(
         token_resp.access_token,
         refresh_token,
         token_resp.expires_in,
         Some(email.clone()),
-        None, // project_id 将在需要时获取
-        None, // session_id 将在 token_manager 中生成
+        None, // project_id will be fetched when needed
+        None, // session_id will be generated in token_manager
     );
 
-    // 4. 添加或更新账号
+    // 4. Add or update account
     account::upsert_account(email.clone(), user_info.name, token_data)
 }
 
-/// 从默认 IDE 数据库导入当前登录账号
+/// Import current logged-in account from default IDE database
 pub async fn import_from_db() -> Result<Account, String> {
     let db_path = vscode::get_vscode_db_path()?;
     import_from_custom_db_path(db_path.to_string_lossy().to_string()).await
 }
 
-/// 从数据库获取当前 Refresh Token (通用逻辑)
+/// Extract Refresh Token from database (common logic)
 pub fn extract_refresh_token_from_file(db_path: &PathBuf) -> Result<String, String> {
     if !db_path.exists() {
-        return Err(format!("找不到数据库文件: {:?}", db_path));
+        return Err(format!("Database file not found: {:?}", db_path));
     }
 
-    // 连接数据库
-    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("打开数据库失败: {}", e))?;
+    // Connect to database
+    let conn = rusqlite::Connection::open(db_path)
+        .map_err(|e| format!("Failed to open database: {}", e))?;
 
-    // 从 ItemTable 读取
+    // Read from ItemTable
     let current_data: String = conn
         .query_row(
             "SELECT value FROM ItemTable WHERE key = ?",
             ["jetskiStateSync.agentManagerInitState"],
             |row| row.get(0),
         )
-        .map_err(|_| "未找到登录状态数据 (jetskiStateSync.agentManagerInitState)".to_string())?;
+        .map_err(|_| {
+            "Login state data not found (jetskiStateSync.agentManagerInitState)".to_string()
+        })?;
 
-    // Base64 解码
+    // Base64 decode
     let blob = general_purpose::STANDARD
         .decode(&current_data)
-        .map_err(|e| format!("Base64 解码失败: {}", e))?;
+        .map_err(|e| format!("Base64 decode failed: {}", e))?;
 
-    // 1. 查找 oauthTokenInfo (Field 6)
+    // 1. Find oauthTokenInfo (Field 6)
     let oauth_data = protobuf::find_field(&blob, 6)
-        .map_err(|e| format!("解析 Protobuf 失败: {}", e))?
-        .ok_or("未找到 OAuth 数据 (Field 6)")?;
-    // 2. 提取 refresh_token (Field 3)
+        .map_err(|e| format!("Failed to parse Protobuf: {}", e))?
+        .ok_or("OAuth data not found (Field 6)")?;
+    // 2. Extract refresh_token (Field 3)
     let refresh_bytes = protobuf::find_field(&oauth_data, 3)
-        .map_err(|e| format!("解析 OAuth 数据失败: {}", e))?
-        .ok_or("数据中未包含 Refresh Token (Field 3)")?;
-    String::from_utf8(refresh_bytes).map_err(|_| "Refresh Token 非 UTF-8 编码".to_string())
+        .map_err(|e| format!("Failed to parse OAuth data: {}", e))?
+        .ok_or("Data does not contain Refresh Token (Field 3)")?;
+    String::from_utf8(refresh_bytes).map_err(|_| "Refresh Token is not UTF-8 encoded".to_string())
 }
 
-/// 从默认数据库获取当前 Refresh Token (兼容旧调用)
+/// Get Refresh Token from default database (legacy compatibility)
 pub fn get_refresh_token_from_db() -> Result<String, String> {
     let db_path = vscode::get_vscode_db_path()?;
     extract_refresh_token_from_file(&db_path)

@@ -43,7 +43,7 @@ fn test_get_remaining_wait() {
 #[test]
 fn test_safety_buffer() {
     let tracker = RateLimitTracker::new();
-    // 如果 API 返回 1s，我们强制设为 2s
+    // if API return 1s，weforce设as 2s
     tracker.parse_from_error("acc1", 429, Some("1"), "", None);
     let wait = tracker.get_remaining_wait("acc1");
     // Due to time passing, it might be 1 or 2
@@ -53,11 +53,11 @@ fn test_safety_buffer() {
 #[test]
 fn test_tpm_exhausted_is_rate_limit_exceeded() {
     let tracker = RateLimitTracker::new();
-    // 模拟真实世界的 TPM 错误，同时包含 "Resource exhausted" 和 "per minute"
+    // simulatetrue实世界  TPM error，同whencontaining "Resource exhausted"  and  "per minute"
     let body =
         "Resource has been exhausted (e.g. check quota). Quota limit 'Tokens per minute' exceeded.";
     let reason = tracker.parse_rate_limit_reason(body);
-    // 应该被识别为 RateLimitExceeded，而不是 QuotaExhausted
+    // shouldbe识别as RateLimitExceeded，而notis QuotaExhausted
     assert_eq!(reason, RateLimitReason::RateLimitExceeded);
 }
 

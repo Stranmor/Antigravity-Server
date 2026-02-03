@@ -82,14 +82,14 @@ impl RateLimitTracker {
 
         if let Some(m) = &model {
             tracing::info!(
-                "账号 {} 的模型 {} 已精确锁定到配额刷新时间,剩余 {} 秒",
+                "account {} model {} locked until quota refresh time, {} seconds remaining",
                 account_id,
                 m,
                 retry_sec
             );
         } else {
             tracing::info!(
-                "账号 {} 已精确锁定到配额刷新时间,剩余 {} 秒",
+                "account {} locked until quota refresh time, {} seconds remaining",
                 account_id,
                 retry_sec
             );
@@ -108,7 +108,10 @@ impl RateLimitTracker {
             Ok(dt) => {
                 let ts = dt.timestamp();
                 if ts < 0 {
-                    tracing::warn!("配额刷新时间 '{}' 在 1970 之前，忽略", reset_time_str);
+                    tracing::warn!(
+                        "quotarefreshtime '{}' at 1970 before，ignore",
+                        reset_time_str
+                    );
                     return false;
                 }
                 let reset_time = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(ts as u64);
@@ -117,7 +120,7 @@ impl RateLimitTracker {
             }
             Err(e) => {
                 tracing::warn!(
-                    "无法解析配额刷新时间 '{}': {},将使用默认退避策略",
+                    "Cannot parse quota refresh time '{}': {}, will use default backoff strategy",
                     reset_time_str,
                     e
                 );

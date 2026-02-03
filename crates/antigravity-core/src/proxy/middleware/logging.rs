@@ -1,5 +1,5 @@
-// 日志中间件
-// 直接使用 tower_http::trace::TraceLayer::new_for_http() 在路由中
+// logmiddleware
+// directlyuse tower_http::trace::TraceLayer::new_for_http() atroutein
 
 #[cfg(test)]
 mod tests {

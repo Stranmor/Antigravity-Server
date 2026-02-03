@@ -27,7 +27,7 @@ pub fn format_grounding_text(grounding: &GroundingMetadata) -> String {
 
     if let Some(queries) = &grounding.web_search_queries {
         if !queries.is_empty() {
-            grounding_text.push_str("\n\n---\n**🔍 已为您搜索：** ");
+            grounding_text.push_str("\n\n---\n**🔍 Searched for:** ");
             grounding_text.push_str(&queries.join(", "));
         }
     }
@@ -36,14 +36,14 @@ pub fn format_grounding_text(grounding: &GroundingMetadata) -> String {
         let mut links = Vec::new();
         for (i, chunk) in chunks.iter().enumerate() {
             if let Some(web) = &chunk.web {
-                let title = web.title.as_deref().unwrap_or("网页来源");
+                let title = web.title.as_deref().unwrap_or("Web Source");
                 let uri = web.uri.as_deref().unwrap_or("#");
                 links.push(format!("[{}] [{}]({})", i + 1, title, uri));
             }
         }
 
         if !links.is_empty() {
-            grounding_text.push_str("\n\n**🌐 来源引文：**\n");
+            grounding_text.push_str("\n\n**🌐 Source Citations:**\n");
             grounding_text.push_str(&links.join("\n"));
         }
     }

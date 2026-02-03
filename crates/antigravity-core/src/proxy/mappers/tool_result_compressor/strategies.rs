@@ -81,7 +81,6 @@ pub fn compact_saved_output_notice(text: &str, max_chars: usize) -> Option<Strin
 pub fn compact_browser_snapshot(text: &str, max_chars: usize) -> Option<String> {
     // Detect if this is a browser snapshot
     let is_snapshot = text.to_lowercase().contains("page snapshot")
-        || text.contains("页面快照")
         || text.matches("ref=").count() > 30
         || text.matches("[ref=").count() > 30;
 

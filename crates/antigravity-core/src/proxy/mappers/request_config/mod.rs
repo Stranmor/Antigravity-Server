@@ -44,9 +44,9 @@ pub fn resolve_request_config(
         };
     }
 
-    // 检测是否有联网工具定义 (内置功能调用)
+    // Detect whether there is a networking tool definition (built-in feature call)
     let has_networking_tool = detects_networking_tool(tools);
-    // 检测是否包含非联网工具 (如 MCP 本地工具)
+    // Detect whether containing non-networking tool (e.g., MCP local tool)
     let _has_non_networking = contains_non_networking_tool(tools);
 
     // Strip -online suffix from original model if present (to detect networking intent)
@@ -66,8 +66,8 @@ pub fn resolve_request_config(
         || mapped_model.contains("claude-4");
 
     // Determine if we should enable networking
-    // [FIX] 禁用基于模型的自动联网逻辑，防止图像请求被联网搜索结果覆盖。
-    // 仅在用户显式请求联网时启用：1) -online 后缀 2) 携带联网工具定义
+    // [FIX] Disable model-based auto-networking logic to prevent image requests from being overwritten by search results.
+    // Only enable when user explicitly requests networking: 1) -online suffix 2) carries networking tool definition
     let enable_networking = is_online_suffix || has_networking_tool;
 
     // The final model to send upstream should be the MAPPED model,

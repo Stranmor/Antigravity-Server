@@ -1,5 +1,5 @@
-// Mappers 模块 - 协议转换器
-// 协议转换器模块
+// Mappers module - protocol converters
+// Protocol converter module
 
 pub mod claude;
 pub mod context_manager;

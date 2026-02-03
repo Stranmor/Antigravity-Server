@@ -4,7 +4,7 @@ use super::super::models::{ContentBlock, Message, MessageContent};
 use super::safety::MIN_SIGNATURE_LENGTH;
 
 pub fn should_disable_thinking_due_to_history(messages: &[Message]) -> bool {
-    // 逆序查找最后一条 Assistant 消息
+    // Reverse iterate to find the last Assistant message
     for msg in messages.iter().rev() {
         if msg.role == "assistant" {
             if let MessageContent::Array(blocks) = &msg.content {
@@ -15,7 +15,7 @@ pub fn should_disable_thinking_due_to_history(messages: &[Message]) -> bool {
                     .iter()
                     .any(|b| matches!(b, ContentBlock::Thinking { .. }));
 
-                // 如果有工具调用，但没有 Thinking 块 -> 不兼容
+                // If has tool call but no Thinking block -> not compatible
                 if has_tool_use && !has_thinking {
                     tracing::info!(
                         "[Thinking-Mode] Detected ToolUse without Thinking in history. Requesting disable."
@@ -23,8 +23,8 @@ pub fn should_disable_thinking_due_to_history(messages: &[Message]) -> bool {
                     return true;
                 }
             }
-            // 只要找到最近的一条 Assistant 消息就结束检查
-            // 因为验证规则主要针对当前的闭环状态
+            // Once we find the most recent Assistant message, end the check
+            // because the validation rule mainly targets the current closed-loop state
             return false;
         }
     }

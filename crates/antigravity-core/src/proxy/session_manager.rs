@@ -3,22 +3,22 @@ use crate::proxy::mappers::openai::models::{OpenAIContent, OpenAIRequest};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-/// 会话管理器工具
+/// Session manager utilities
 pub struct SessionManager;
 
 impl SessionManager {
-    /// 根据 Claude 请求生成稳定的会话指纹 (Session Fingerprint)
+    /// Generate stable session fingerprint based on Claude request
     ///
-    /// 设计理念:
-    /// - 只哈希第一条用户消息内容,不混入模型名称或时间戳
-    /// - 确保同一对话的所有轮次使用相同的 session_id
-    /// - 最大化 prompt caching 的命中率
+    /// Design philosophy:
+    /// - Only hash the first user message content, not mixing in model name or timestamp
+    /// - Ensure the same conversation uses the same session_id across all turns
+    /// - Maximize prompt caching hit rate
     ///
-    /// 优先级:
-    /// 1. metadata.user_id (客户端显式提供)
-    /// 2. 第一条用户消息的 SHA256 哈希
+    /// Priority:
+    /// 1. metadata.user_id (explicitly provided by client)
+    /// 2. SHA256 hash of first user message
     pub fn extract_session_id(request: &ClaudeRequest) -> String {
-        // 1. 优先使用 metadata 中的 user_id
+        // 1. priorityuse metadata in  user_id
         if let Some(metadata) = &request.metadata {
             if let Some(user_id) = &metadata.user_id {
                 if !user_id.is_empty() && !user_id.contains("session-") {
@@ -28,7 +28,7 @@ impl SessionManager {
             }
         }
 
-        // 2. 备选方案：基于第一条用户消息的 SHA256 哈希
+        // 2. Fallback: SHA256 hash based on first user message
         let mut hasher = Sha256::new();
 
         let mut content_found = false;
@@ -52,16 +52,16 @@ impl SessionManager {
             };
 
             let clean_text = text.trim();
-            // 跳过过短的消息 (可能是 CLI 的探测消息) 或含有系统标签的消息
+            // Skip too short messages (may be CLI probe messages) or messages containing system tags
             if clean_text.len() > 10 && !clean_text.contains("<system-reminder>") {
                 hasher.update(clean_text.as_bytes());
                 content_found = true;
-                break; // 只取第一条关键消息作为锚点
+                break; // Only take the first key message as anchor
             }
         }
 
         if !content_found {
-            // 如果没找到有意义的内容，退化为对最后一条消息进行哈希
+            // If no meaningful content found, fallback to hashing the last message
             if let Some(last_msg) = request.messages.last() {
                 hasher.update(format!("{:?}", last_msg.content).as_bytes());
             }
@@ -79,7 +79,7 @@ impl SessionManager {
         sid
     }
 
-    /// 根据 OpenAI 请求生成稳定的会话指纹
+    /// Generate stable session fingerprint based on OpenAI request
     pub fn extract_openai_session_id(request: &OpenAIRequest) -> String {
         let mut hasher = Sha256::new();
 
@@ -124,7 +124,7 @@ impl SessionManager {
         sid
     }
 
-    /// 根据 Gemini 原生请求 (JSON) 生成稳定的会话指纹
+    /// Generate stable session fingerprint based on Gemini native request (JSON)
     pub fn extract_gemini_session_id(request: &Value, _model_name: &str) -> String {
         let mut hasher = Sha256::new();
 
@@ -155,7 +155,7 @@ impl SessionManager {
         }
 
         if !content_found {
-            // 兜底：对整个 Body 的首个 user part 进行摘要
+            // Fallback: hash the entire body or first user part
             hasher.update(request.to_string().as_bytes());
         }
 

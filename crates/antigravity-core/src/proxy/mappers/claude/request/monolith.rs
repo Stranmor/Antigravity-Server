@@ -126,8 +126,8 @@ pub fn transform_claude_request_in(
         is_thinking_enabled = false;
     }
 
-    // [New Strategy] 智能降级: 检查历史消息是否与 Thinking 模式兼容
-    // 如果处于未带 Thinking 的工具调用链中，必须临时禁用 Thinking
+    // [New Strategy] Smart fallback: check if history messages are compatible with Thinking mode
+    // If in a tool call chain that doesn't have Thinking, must temporarily disable Thinking
     if is_thinking_enabled {
         let should_disable = should_disable_thinking_due_to_history(&claude_req.messages);
         if should_disable {
@@ -222,7 +222,7 @@ pub fn transform_claude_request_in(
         "safetySettings": safety_settings,
     });
 
-    // 深度清理 [undefined] 字符串 (Cherry Studio 等客户端常见注入)
+    // Deep cleanup of [undefined] strings (commonly injected by Cherry Studio and other clients)
     crate::proxy::mappers::request_config::deep_clean_undefined(&mut inner_request);
 
     if let Some(sys_inst) = system_instruction {
@@ -235,7 +235,7 @@ pub fn transform_claude_request_in(
 
     if let Some(tools_val) = tools {
         inner_request["tools"] = tools_val;
-        // 显式设置工具配置模式为 VALIDATED
+        // Explicitly set tool config mode as VALIDATED
         inner_request["toolConfig"] = json!({
             "functionCallingConfig": {
                 "mode": "VALIDATED"
@@ -268,10 +268,10 @@ pub fn transform_claude_request_in(
         }
     }
 
-    // 生成 requestId
+    // generate requestId
     let request_id = format!("agent-{}", uuid::Uuid::new_v4());
 
-    // 构建最终请求体
+    // Build final request body
     let mut body = json!({
         "project": project_id,
         "requestId": request_id,
@@ -281,15 +281,15 @@ pub fn transform_claude_request_in(
         "requestType": config.request_type,
     });
 
-    // 如果提供了 metadata.user_id，则复用为 sessionId
+    // If metadata.user_id is provided, reuse it as sessionId
     if let Some(metadata) = &claude_req.metadata {
         if let Some(user_id) = &metadata.user_id {
             body["request"]["sessionId"] = json!(user_id);
         }
     }
 
-    // [FIX #593] 最后一道防线: 递归深度清理所有 cache_control 字段
-    // 确保发送给 Antigravity 的请求中不包含任何 cache_control
+    // [FIX #593] Final defense line: recursively deep-clean all cache_control fields
+    // Ensure requests sent to Antigravity contain no cache_control
     deep_clean_cache_control(&mut body);
     tracing::debug!("[DEBUG-593] Final deep clean complete, request ready to send");
 

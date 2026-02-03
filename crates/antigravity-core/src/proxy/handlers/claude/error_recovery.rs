@@ -89,7 +89,7 @@ pub fn apply_background_task_cleanup(
     original_model: &str,
 ) {
     tracing::info!(
-        "[{}][AUTO] 检测到后台任务,强制降级: {} -> {}",
+        "[{}][AUTO] detecttoafterbackgroundtask,forcefallback: {} -> {}",
         trace_id,
         original_model,
         downgrade_model
@@ -116,7 +116,7 @@ pub fn apply_user_request_cleanup(request: &mut ClaudeRequest, trace_id: &str, m
     use crate::proxy::mappers::claude::remove_trailing_unsigned_thinking;
 
     tracing::debug!(
-        "[{}][USER] 用户交互请求,保持映射: {}",
+        "[{}][USER] userinteractiverequest,maintainmapping: {}",
         trace_id,
         mapped_model
     );

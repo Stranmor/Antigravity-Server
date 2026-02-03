@@ -1,5 +1,5 @@
-// OpenAI Stream 收集器 - 将 SSE 流转换为完整的 JSON 响应
-// 用于非 Stream 请求的自动转换
+// OpenAI Stream Collector - Converts SSE stream to complete JSON response
+// For non-stream request auto-conversion
 
 use super::models::*;
 use bytes::Bytes;
@@ -7,13 +7,13 @@ use futures::StreamExt;
 use serde_json::Value;
 use std::io;
 
-/// SSE 事件类型
+/// SSE event type
 #[derive(Debug, Clone)]
 struct SseEvent {
     data: Value,
 }
 
-/// 解析 SSE 行
+/// Parse SSE line
 fn parse_sse_line(line: &str) -> Option<(String, String)> {
     if let Some(colon_pos) = line.find(':') {
         let key = &line[..colon_pos];
@@ -24,7 +24,7 @@ fn parse_sse_line(line: &str) -> Option<(String, String)> {
     }
 }
 
-/// 将 OpenAI SSE Stream 收集为完整的 OpenAIResponse
+/// Collect OpenAI SSE Stream to complete OpenAIResponse
 pub async fn collect_openai_stream_to_json<S>(mut stream: S) -> Result<OpenAIResponse, String>
 where
     S: futures::Stream<Item = Result<Bytes, io::Error>> + Unpin,
@@ -32,14 +32,14 @@ where
     let mut chunks = Vec::new();
     let mut current_data = String::new();
 
-    // 1. 收集所有 SSE 事件
+    // 1. Collect all SSE events
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.map_err(|e| format!("Stream error: {}", e))?;
         let text = String::from_utf8_lossy(&chunk);
 
         for line in text.lines() {
             if line.is_empty() {
-                // 空行表示事件结束
+                // Empty line indicates event end
                 if !current_data.is_empty() {
                     if let Ok(data) = serde_json::from_str::<Value>(&current_data) {
                         chunks.push(SseEvent { data });
@@ -57,7 +57,7 @@ where
         }
     }
 
-    // 2. 重建 OpenAIResponse
+    // 2. Rebuild OpenAIResponse
     let mut response = OpenAIResponse {
         id: "chatcmpl-unknown".to_string(),
         object: "chat.completion".to_string(),
@@ -73,7 +73,7 @@ where
     let mut finish_reason: Option<String> = None;
 
     for event in chunks {
-        // 提取基本信息
+        // Extract basic info
         if let Some(id) = event.data.get("id").and_then(|v| v.as_str()) {
             response.id = id.to_string();
         }
@@ -84,28 +84,28 @@ where
             response.created = created;
         }
 
-        // 处理 choices
+        // handle choices
         if let Some(choices_arr) = event.data.get("choices").and_then(|v| v.as_array()) {
             for choice in choices_arr {
                 if let Some(delta) = choice.get("delta") {
-                    // 累积 content
+                    // Accumulate content
                     if let Some(text) = delta.get("content").and_then(|v| v.as_str()) {
                         content.push_str(text);
                     }
 
-                    // 累积 reasoning_content (思考过程)
+                    // Accumulate reasoning_content (thinking process)
                     if let Some(reasoning) = delta.get("reasoning_content").and_then(|v| v.as_str())
                     {
                         reasoning_content.push_str(reasoning);
                     }
 
-                    // 累积 tool_calls
+                    // Accumulate tool_calls
                     if let Some(tc_arr) = delta.get("tool_calls").and_then(|v| v.as_array()) {
                         for tc in tc_arr {
                             let index =
                                 tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
 
-                            // 确保 tool_calls 有足够的空间
+                            // Ensure tool_calls has enough space
                             while tool_calls.len() <= index {
                                 tool_calls.push(ToolCall {
                                     id: String::new(),
@@ -132,7 +132,7 @@ where
                     }
                 }
 
-                // 获取 finish_reason
+                // get finish_reason
                 if let Some(reason) = choice.get("finish_reason").and_then(|v| v.as_str()) {
                     finish_reason = Some(reason.to_string());
                 }
@@ -146,7 +146,7 @@ where
         }
     }
 
-    // 3. 构建最终的 choice
+    // 3. Build final choice
     let message = if !tool_calls.is_empty() {
         OpenAIMessage {
             role: "assistant".to_string(),

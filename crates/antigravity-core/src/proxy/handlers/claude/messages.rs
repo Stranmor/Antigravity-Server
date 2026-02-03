@@ -189,7 +189,7 @@ pub async fn handle_messages(
 
         let status = response.status();
 
-        // 成功
+        // success
         if status.is_success() {
             token_manager.mark_account_success(&email);
             token_manager.clear_session_failures(&session_id_str);

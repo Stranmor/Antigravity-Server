@@ -218,12 +218,12 @@ impl StreamingState {
         self.trailing_signature.take()
     }
 
-    /// 处理 SSE 解析错误，实现优雅降级
+    /// Handle SSE parse error, implement graceful fallback
     ///
-    /// 当 SSE stream 中发生解析错误时:
-    /// 1. 安全关闭当前 block
-    /// 2. 递增错误计数器
-    /// 3. 在 debug 模式下输出错误信息
+    /// When SSE stream parse error occurs:
+    /// 1. Safely close current block
+    /// 2. Increment error counter
+    /// 3. Output error info in debug mode
     #[allow(dead_code)] // Prepared for future error recovery implementation
     pub fn handle_parse_error(&mut self, raw_data: &str) -> Vec<Bytes> {
         let mut chunks = Vec::new();
@@ -236,13 +236,13 @@ impl StreamingState {
             raw_data.len()
         );
 
-        // 安全关闭当前 block
+        // Safely close current block
         if self.block_type != BlockType::None {
             self.last_valid_state = Some(self.block_type);
             chunks.extend(self.end_block());
         }
 
-        // Debug 模式下输出详细错误信息
+        // Output detailed error info in debug mode
         #[cfg(debug_assertions)]
         {
             let preview = if raw_data.len() > 100 {
@@ -253,9 +253,9 @@ impl StreamingState {
             tracing::debug!("[SSE-Parser] Failed chunk preview: {}", preview);
         }
 
-        // 错误率过高时发出警告并尝试发送错误信号
+        // When error rate is too high, emit warning and attempt to send error signal
         if self.parse_error_count > 3 {
-            // 降低阈值,更早通知用户
+            // Lower threshold to notify user earlier
             tracing::error!(
                 "[SSE-Parser] High error rate detected ({} errors). Stream may be corrupted.",
                 self.parse_error_count
@@ -269,11 +269,11 @@ impl StreamingState {
                     "type": "error",
                     "error": {
                         "type": "network_error",
-                        "message": "网络连接不稳定,请检查您的网络或代理设置。",
+                        "message": "Network connection unstable, please check your network or proxy settings.",
                         "code": "stream_decode_error",
                         "details": {
                             "error_count": self.parse_error_count,
-                            "suggestion": "请尝试: 1) 检查网络连接 2) 更换代理节点 3) 稍后重试"
+                            "suggestion": "Please try: 1) Check network connection 2) Switch proxy node 3) Retry later"
                         }
                     }
                 }),
@@ -283,14 +283,14 @@ impl StreamingState {
         chunks
     }
 
-    /// 重置错误状态 (recovery 后调用)
+    /// Reset error state (call after recovery)
     #[allow(dead_code)]
     pub fn reset_error_state(&mut self) {
         self.parse_error_count = 0;
         self.last_valid_state = None;
     }
 
-    /// 获取错误计数 (用于监控)
+    /// Get error count (for monitoring)
     #[allow(dead_code)]
     pub fn get_error_count(&self) -> usize {
         self.parse_error_count

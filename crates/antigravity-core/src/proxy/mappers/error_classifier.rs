@@ -1,12 +1,12 @@
-// 错误分类模块 - 将底层错误转换为用户友好的消息
+// Error classification module - converts low-level errors to user-friendly messages
 use reqwest::Error;
 
-/// 分类流式响应错误并返回错误类型、英文消息和 i18n key
+/// Classify streaming response errors and return error type, English message and i18n key
 ///
-/// 返回值: (错误类型, 英文错误消息, i18n_key)
-/// - 错误类型: 用于日志和错误码
-/// - 英文消息: fallback 消息,供非浏览器客户端使用
-/// - i18n_key: 前端翻译键,供浏览器客户端本地化
+/// Return value: (error_type, English error message, i18n_key)
+/// - error_type: for logging and error codes
+/// - English message: fallback message for non-browser clients
+/// - i18n_key: frontend translation key for browser client localization
 pub fn classify_stream_error(error: &Error) -> (&'static str, &'static str, &'static str) {
     if error.is_timeout() {
         (
@@ -47,7 +47,7 @@ mod tests {
 
     #[test]
     fn test_classify_timeout_error() {
-        // 创建一个模拟的超时错误
+        // createasimulate timeouterror
         let url = "http://example.com";
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_millis(1))
@@ -104,7 +104,7 @@ mod tests {
 
     #[test]
     fn test_i18n_keys_format() {
-        // 验证所有错误类型都有正确的 i18n_key 格式
+        // Verify all error types have correct i18n_key format
         let test_cases = vec![
             ("timeout_error", "errors.stream.timeout_error"),
             ("connection_error", "errors.stream.connection_error"),
@@ -113,7 +113,7 @@ mod tests {
             ("unknown_error", "errors.stream.unknown_error"),
         ];
 
-        // 这里我们只验证 i18n_key 格式
+        // Here we only verify i18n_key format
         for (expected_type, expected_key) in test_cases {
             assert_eq!(format!("errors.stream.{}", expected_type), expected_key);
         }

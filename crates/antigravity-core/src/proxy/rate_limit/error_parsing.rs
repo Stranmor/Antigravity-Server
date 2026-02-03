@@ -69,7 +69,7 @@ impl RateLimitTracker {
                         .as_secs();
                     if elapsed > FAILURE_COUNT_EXPIRY_SECONDS {
                         tracing::debug!(
-                            "账号 {} 失败计数已过期（{}秒），重置为 0",
+                            "account {} failure count expired ({} seconds), reset to 0",
                             account_id,
                             elapsed
                         );
@@ -85,25 +85,25 @@ impl RateLimitTracker {
                         let lockout = match failure_count {
                             1 => {
                                 tracing::warn!(
-                                    "检测到配额耗尽 (QUOTA_EXHAUSTED)，第1次失败，锁定 60秒"
+                                    "Detected quota exhausted (QUOTA_EXHAUSTED), 1st failure, locking for 60 seconds"
                                 );
                                 QUOTA_LOCKOUT_TIER_1
                             }
                             2 => {
                                 tracing::warn!(
-                                    "检测到配额耗尽 (QUOTA_EXHAUSTED)，第2次连续失败，锁定 5分钟"
+                                    "Detected quota exhausted (QUOTA_EXHAUSTED), 2nd consecutive failure, locking for 5 minutes"
                                 );
                                 QUOTA_LOCKOUT_TIER_2
                             }
                             3 => {
                                 tracing::warn!(
-                                    "检测到配额耗尽 (QUOTA_EXHAUSTED)，第3次连续失败，锁定 30分钟"
+                                    "Detected quota exhausted (QUOTA_EXHAUSTED), 3rd consecutive failure, locking for 30 minutes"
                                 );
                                 QUOTA_LOCKOUT_TIER_3
                             }
                             _ => {
                                 tracing::warn!(
-                                    "检测到配额耗尽 (QUOTA_EXHAUSTED)，第{}次连续失败，锁定 2小时",
+                                    "Detected quota exhausted (QUOTA_EXHAUSTED), {} consecutive failures, locking for 2 hours",
                                     failure_count
                                 );
                                 QUOTA_LOCKOUT_TIER_4
@@ -112,18 +112,25 @@ impl RateLimitTracker {
                         lockout
                     }
                     RateLimitReason::RateLimitExceeded => {
-                        tracing::debug!("检测到速率限制 (RATE_LIMIT_EXCEEDED)，使用默认值 5秒");
+                        tracing::debug!(
+                            "Detected rate limit (RATE_LIMIT_EXCEEDED), using default 5 seconds"
+                        );
                         RATE_LIMIT_DEFAULT_SECONDS
                     }
                     RateLimitReason::ModelCapacityExhausted => {
                         unreachable!("ModelCapacityExhausted should be handled by early return")
                     }
                     RateLimitReason::ServerError => {
-                        tracing::warn!("检测到 5xx 错误 ({}), 执行 20s 软避让...", status);
+                        tracing::warn!(
+                            "Detected 5xx error ({}), applying 20s soft backoff...",
+                            status
+                        );
                         20
                     }
                     RateLimitReason::Unknown => {
-                        tracing::debug!("无法解析 429 限流原因, 使用默认值 60秒");
+                        tracing::debug!(
+                            "Cannot parse 429 rate limit reason, using default 60 seconds"
+                        );
                         60
                     }
                 }
@@ -142,7 +149,7 @@ impl RateLimitTracker {
         self.limits.insert(key, info.clone());
 
         tracing::warn!(
-            "账号 {} [{}] 限流类型: {:?}, 重置延时: {}秒",
+            "account {} [{}] rate limit type: {:?}, reset delay: {} seconds",
             account_id,
             status,
             reason,

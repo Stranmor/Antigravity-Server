@@ -10,9 +10,9 @@ pub fn build_generation_config(
 ) -> Value {
     let mut config = json!({});
 
-    // Thinking 配置
+    // Thinking config
     if let Some(thinking) = &claude_req.thinking {
-        // [New Check] 必须 is_thinking_enabled 为真才生成 thinkingConfig
+        // [New Check] must is_thinking_enabled astrueonly thengenerate thinkingConfig
         if thinking.type_ == "enabled" && is_thinking_enabled {
             let mut thinking_config = json!({"includeThoughts": true});
 
@@ -31,7 +31,7 @@ pub fn build_generation_config(
         }
     }
 
-    // 其他参数
+    // Other parameters
     if let Some(temp) = claude_req.temperature {
         config["temperature"] = json!(temp);
     }
@@ -60,17 +60,17 @@ pub fn build_generation_config(
         }
     }
 
-    // web_search 强制 candidateCount=1
+    // web_search force candidateCount=1
     /*if has_web_search {
         config["candidateCount"] = json!(1);
     }*/
 
-    // max_tokens 映射为 maxOutputTokens
+    // max_tokens mappingas maxOutputTokens
     // [FIX] Use client's max_tokens if provided, otherwise use high default (65536)
     // Gemini supports up to 65536 output tokens for most models
     let mut final_max_tokens: i64 = claude_req.max_tokens.map(|t| t as i64).unwrap_or(65536);
 
-    // [NEW] 确保 maxOutputTokens 大于 thinkingBudget (API 强约束)
+    // [NEW] Ensure maxOutputTokens is greater than thinkingBudget (API strict constraint)
     if let Some(thinking_config) = config.get("thinkingConfig") {
         if let Some(budget) = thinking_config
             .get("thinkingBudget")
@@ -89,7 +89,7 @@ pub fn build_generation_config(
 
     config["maxOutputTokens"] = json!(final_max_tokens);
 
-    // [优化] 设置全局停止序列,防止流式输出冗余 (控制在 4 个以内)
+    // [optimize] Set global stop sequences to prevent streaming output redundancy (control within 4 tokens)
     config["stopSequences"] = json!(["<|user|>", "<|end_of_turn|>", "\n\nHuman:"]);
 
     config

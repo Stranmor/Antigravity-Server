@@ -1,30 +1,30 @@
-// Gemini v1internal 包装/解包
+// Gemini v1internal wrap/unwrap
 use serde_json::{json, Value};
 
-/// 包装请求体为 v1internal 格式
+/// wraprequestbodyas v1internal format
 pub fn wrap_request(
     body: &Value,
     project_id: &str,
     mapped_model: &str,
     session_id: Option<&str>,
 ) -> Value {
-    // 优先使用传入的 mapped_model，其次尝试从 body 获取
+    // Priority: use passed mapped_model, otherwise attempt to get from body
     let original_model = body
         .get("model")
         .and_then(|v| v.as_str())
         .unwrap_or(mapped_model);
 
-    // 如果 mapped_model 是空的，则使用 original_model
+    // If mapped_model is empty, use original_model
     let final_model_name = if !mapped_model.is_empty() {
         mapped_model
     } else {
         original_model
     };
 
-    // 复制 body 以便修改
+    // Copy body for modification
     let mut inner_request = body.clone();
 
-    // 深度清理 [undefined] 字符串 (Cherry Studio 等客户端常见注入)
+    // Deep cleanup [undefined] strings (commonly injected by Cherry Studio and other clients)
     crate::proxy::mappers::request_config::deep_clean_undefined(&mut inner_request);
 
     // [FIX #765] Inject thought_signature into functionCall parts
@@ -84,7 +84,7 @@ pub fn wrap_request(
     // This caused upstream to return empty/invalid responses, leading to 'NoneType' object has no attribute 'strip' in Python clients.
     // relying on upstream defaults or user provided values is safer.
 
-    // 提取 tools 列表以进行联网探测 (Gemini 风格可能是嵌套的)
+    // Extract tools list for network detection (Gemini style may be nested)
     let tools_val: Option<Vec<Value>> = inner_request
         .get("tools")
         .and_then(|t| t.as_array())
@@ -105,7 +105,7 @@ pub fn wrap_request(
             for tool in tools_arr {
                 if let Some(decls) = tool.get_mut("functionDeclarations") {
                     if let Some(decls_arr) = decls.as_array_mut() {
-                        // 1. 过滤掉联网关键字函数
+                        // 1. Filter out network keyword functions
                         decls_arr.retain(|decl| {
                             if let Some(name) = decl.get("name").and_then(|v| v.as_str()) {
                                 if name == "web_search" || name == "google_search" {
@@ -115,13 +115,13 @@ pub fn wrap_request(
                             true
                         });
 
-                        // 2. 清洗剩余 Schema
-                        // [FIX] Gemini CLI 使用 parametersJsonSchema，而标准 Gemini API 使用 parameters
-                        // 需要将 parametersJsonSchema 重命名为 parameters
+                        // 2. Clean remaining Schema
+                        // [FIX] Gemini CLI uses parametersJsonSchema, while standard Gemini API uses parameters
+                        // Need to rename parametersJsonSchema to parameters
                         for decl in decls_arr {
-                            // 检测并转换字段名
+                            // detectandconvertfieldname
                             if let Some(decl_obj) = decl.as_object_mut() {
-                                // 如果存在 parametersJsonSchema，将其重命名为 parameters
+                                // If parametersJsonSchema exists, rename it to parameters
                                 if let Some(params_json_schema) =
                                     decl_obj.remove("parametersJsonSchema")
                                 {
@@ -131,7 +131,7 @@ pub fn wrap_request(
                                     );
                                     decl_obj.insert("parameters".to_string(), params);
                                 } else if let Some(params) = decl_obj.get_mut("parameters") {
-                                    // 标准 parameters 字段
+                                    // standard parameters field
                                     crate::proxy::common::json_schema::clean_json_schema(params);
                                 }
                             }
@@ -174,15 +174,15 @@ pub fn wrap_request(
             }
         }
     } else {
-        // [NEW] 只在非图像生成模式下注入 Antigravity 身份 (原始简化版)
+        // [NEW] Only inject Antigravity identity in non-image generation mode (simplified version)
         let antigravity_identity = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.\n\
         You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.\n\
         **Absolute paths only**\n\
         **Proactiveness**";
 
-        // [HYBRID] 检查是否已有 systemInstruction
+        // [HYBRID] checkwhetheralreadyhave systemInstruction
         if let Some(system_instruction) = inner_request.get_mut("systemInstruction") {
-            // [NEW] 补全 role: user
+            // [NEW] complete role: user
             if let Some(obj) = system_instruction.as_object_mut() {
                 if !obj.contains_key("role") {
                     obj.insert("role".to_string(), json!("user"));
@@ -191,7 +191,7 @@ pub fn wrap_request(
 
             if let Some(parts) = system_instruction.get_mut("parts") {
                 if let Some(parts_array) = parts.as_array_mut() {
-                    // 检查第一个 part 是否已包含 Antigravity 身份
+                    // Check if first part already contains Antigravity identity
                     let has_antigravity = parts_array
                         .first()
                         .and_then(|p| p.get("text"))
@@ -200,13 +200,13 @@ pub fn wrap_request(
                         .unwrap_or(false);
 
                     if !has_antigravity {
-                        // 在前面插入 Antigravity 身份
+                        // Insert Antigravity identity at the beginning
                         parts_array.insert(0, json!({"text": antigravity_identity}));
                     }
                 }
             }
         } else {
-            // 没有 systemInstruction,创建一个新的
+            // No systemInstruction, create a new one
             inner_request["systemInstruction"] = json!({
                 "role": "user",
                 "parts": [{"text": antigravity_identity}]
@@ -216,7 +216,7 @@ pub fn wrap_request(
 
     let final_request = json!({
         "project": project_id,
-        "requestId": format!("agent-{}", uuid::Uuid::new_v4()), // 修正为 agent- 前缀
+        "requestId": format!("agent-{}", uuid::Uuid::new_v4()), // Fixed with agent- prefix
         "request": inner_request,
         "model": config.final_model,
         "userAgent": "antigravity",

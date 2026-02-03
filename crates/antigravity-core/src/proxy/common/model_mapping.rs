@@ -1,16 +1,16 @@
-// 模型名称映射
+// modelnamemapping
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
 static CLAUDE_TO_GEMINI: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     let mut m = HashMap::new();
 
-    // 直接支持的模型
+    // directlysupport model
     m.insert("claude-opus-4-5-thinking", "claude-opus-4-5-thinking");
     m.insert("claude-sonnet-4-5", "claude-sonnet-4-5");
     m.insert("claude-sonnet-4-5-thinking", "claude-sonnet-4-5-thinking");
 
-    // 别名映射
+    // aliasmapping
     m.insert("claude-sonnet-4-5-20250929", "claude-sonnet-4-5-thinking");
     m.insert("claude-3-5-sonnet-20241022", "claude-sonnet-4-5");
     m.insert("claude-3-5-sonnet-20240620", "claude-sonnet-4-5");
@@ -21,7 +21,7 @@ static CLAUDE_TO_GEMINI: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|
     m.insert("claude-haiku-4-5", "gemini-3-flash"); // [DEFAULT] Haiku 4.5 → Flash for cost efficiency
     m.insert("claude-3-haiku-20240307", "claude-sonnet-4-5");
     m.insert("claude-haiku-4-5-20251001", "claude-sonnet-4-5");
-    // OpenAI 协议映射表
+    // OpenAI protocolmappingtable
     m.insert("gpt-4", "gemini-2.5-flash");
     m.insert("gpt-4-turbo", "gemini-2.5-flash");
     m.insert("gpt-4-turbo-preview", "gemini-2.5-flash");
@@ -42,13 +42,13 @@ static CLAUDE_TO_GEMINI: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|
     m.insert("gpt-3.5-turbo-1106", "gemini-2.5-flash");
     m.insert("gpt-3.5-turbo-0613", "gemini-2.5-flash");
 
-    // Gemini 协议映射表
+    // Gemini protocolmappingtable
     m.insert("gemini-2.5-flash-lite", "gemini-2.5-flash-lite");
     m.insert("gemini-2.5-flash-thinking", "gemini-2.5-flash-thinking");
     m.insert("gemini-3-pro-low", "gemini-3-pro-preview");
     m.insert("gemini-3-pro-high", "gemini-3-pro-preview");
     m.insert("gemini-3-pro-preview", "gemini-3-pro-preview");
-    m.insert("gemini-3-pro", "gemini-3-pro-preview"); // [FIX PR #368] 统一映射到 preview
+    m.insert("gemini-3-pro", "gemini-3-pro-preview"); // [FIX PR #368] unifiedmappingto preview
     m.insert("gemini-2.5-flash", "gemini-2.5-flash");
     m.insert("gemini-3-flash", "gemini-3-flash");
     m.insert("gemini-3-flash-high", "gemini-3-flash"); // [DEFAULT] flash-high → flash
@@ -84,24 +84,24 @@ pub fn map_claude_model_to_gemini(input: &str) -> String {
     "claude-sonnet-4-5".to_string()
 }
 
-/// 获取所有内置支持的模型列表关键字
+/// getallbuilt-insupport modellistkeyword
 pub fn get_supported_models() -> Vec<String> {
     CLAUDE_TO_GEMINI.keys().map(|s| s.to_string()).collect()
 }
 
-/// 动态获取所有可用模型列表 (包含内置与用户自定义)
+/// dynamicgetallavailablemodellist (containbuilt-inandusercustom)
 pub async fn get_all_dynamic_models(
     custom_mapping: &tokio::sync::RwLock<std::collections::HashMap<String, String>>,
 ) -> Vec<String> {
     use std::collections::HashSet;
     let mut model_ids = HashSet::new();
 
-    // 1. 获取所有内置映射模型
+    // 1. getallbuilt-inmappingmodel
     for m in get_supported_models() {
         model_ids.insert(m);
     }
 
-    // 2. 获取所有自定义映射模型 (Custom)
+    // 2. getallcustommappingmodel (Custom)
     {
         let mapping = custom_mapping.read().await;
         for key in mapping.keys() {
@@ -130,12 +130,12 @@ pub async fn get_all_dynamic_models(
     sorted_ids
 }
 
-/// 核心模型路由解析引擎
-/// 优先级：精确匹配 > 通配符匹配 > 系统默认映射
+/// coremodelrouteparseengine
+/// priority：exactmatch > wildcardmatch > systemdefaultmapping
 ///
-/// # 参数
-/// - `original_model`: 原始模型名称
-/// - `custom_mapping`: 用户自定义映射表
+/// # parameter
+/// - `original_model`: originalmodelname
+/// - `custom_mapping`: usercustommappingtable
 ///
 /// Normalize any physical model name to one of the 5 standard protection IDs.
 /// This ensures quota protection works consistently regardless of API versioning or request variations.

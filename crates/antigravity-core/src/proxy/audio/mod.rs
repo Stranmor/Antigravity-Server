@@ -50,7 +50,7 @@ impl AudioProcessor {
         let ext = Path::new(filename)
             .extension()
             .and_then(|s| s.to_str())
-            .ok_or("无法获取文件扩展名")?;
+            .ok_or("Failed to get file extension")?;
 
         match ext.to_lowercase().as_str() {
             "mp3" => Ok("audio/mp3".to_string()),
@@ -59,7 +59,7 @@ impl AudioProcessor {
             "ogg" => Ok("audio/ogg".to_string()),
             "flac" => Ok("audio/flac".to_string()),
             "aiff" | "aif" => Ok("audio/aiff".to_string()),
-            _ => Err(format!("不支持的音频格式: {}", ext)),
+            _ => Err(format!("Unsupported audio format: {}", ext)),
         }
     }
 
@@ -76,12 +76,12 @@ impl AudioProcessor {
         MAX_SIZE
     }
 
-    /// 将音频数据编码为 Base64
+    /// Encode audio data to Base64
     pub fn encode_to_base64(audio_data: &[u8]) -> String {
         general_purpose::STANDARD.encode(audio_data)
     }
 
-    /// 判断文件是否超过大小限制
+    /// Check if file exceeds size limit
     pub fn exceeds_size_limit(size_bytes: usize) -> bool {
         const MAX_SIZE: usize = 15 * 1024 * 1024; // 15MB
         size_bytes > MAX_SIZE

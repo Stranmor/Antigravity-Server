@@ -1,12 +1,12 @@
-// Claude 辅助函数
-// JSON Schema 清理、签名处理等
+// Claude helper functions
+// JSON Schema cleanup, signature handling, etc.
 
-// 已移除未使用的 Value 导入
+// Already removed unused Value import
 
-// Note: uppercase_schema_types 函数已移除 (用于将 JSON Schema 类型名转大写)
-// 例如: "string" -> "STRING", "integer" -> "INTEGER"
+// Note: uppercase_schema_types function already removed (for converting JSON Schema type names to uppercase)
+// e.g.: "string" -> "STRING", "integer" -> "INTEGER"
 
-/// 根据模型名称获取上下文 Token 限制
+/// Get context token limit based on model name
 pub fn get_context_limit_for_model(model: &str) -> u32 {
     if model.contains("pro") {
         2_097_152 // 2M for Pro
@@ -24,36 +24,36 @@ pub fn to_claude_usage(
     let prompt_tokens = usage_metadata.prompt_token_count.unwrap_or(0);
     let cached_tokens = usage_metadata.cached_content_token_count.unwrap_or(0);
 
-    // 【智能阈值回归算法】- 既利用大窗口，又在临界点引导压缩
+    // [Smart threshold regression algorithm] - Utilize large window while guiding compression at critical points
     let total_raw = prompt_tokens;
 
     let scaled_total = if scaling_enabled && total_raw > 0 {
         const SCALING_THRESHOLD: u32 = 30_000;
-        const TARGET_MAX: f64 = 195_000.0; // 接近 Claude 的 200k 限制
+        const TARGET_MAX: f64 = 195_000.0; // Close to Claude's 200k limit
 
         if total_raw <= SCALING_THRESHOLD {
             total_raw
         } else {
-            // 设置回归触发点：当真实用量达到限制的 70% 时开始回归
+            // Set regression trigger point: start regression when actual usage reaches 70% of limit
             let perception_start = (context_limit as f64 * 0.7) as u32;
 
             if total_raw <= perception_start {
-                // 第一阶段：安全区 - 维持原有的 sqrt 激进压缩
+                // Phase 1: Safe zone - maintain original sqrt aggressive compression
                 let excess = (total_raw - SCALING_THRESHOLD) as f64;
-                // 系数 25.0 使 100k -> ~50k (保持与原逻辑一致的舒适度)
+                // Coefficient 25.0 makes 100k -> ~50k (maintain same comfort level as original logic)
                 let compressed_excess = excess.sqrt() * 25.0;
                 (SCALING_THRESHOLD as f64 + compressed_excess) as u32
             } else {
-                // 第二阶段：回归区 - 从 70% 到 100% 线性回归到 195k
-                // 计算当前处于 70% - 100% 的比例
+                // Phase 2: Regression zone - linear regression from 70% to 100% towards 195k
+                // Calculate current position in 70% - 100% ratio
                 let range = context_limit as f64 * 0.3;
                 let progress = (total_raw - perception_start) as f64 / range;
 
-                // 计算第一阶段末端的数值作为起点
+                // Calculate phase 1 endpoint value as starting point
                 let base_excess = (perception_start - SCALING_THRESHOLD) as f64;
                 let start_value = SCALING_THRESHOLD as f64 + base_excess.sqrt() * 25.0;
 
-                // 线性插值回归
+                // Linear interpolation regression
                 let regression = (TARGET_MAX - start_value) * progress;
                 (start_value + regression) as u32
             }
@@ -62,7 +62,7 @@ pub fn to_claude_usage(
         total_raw
     };
 
-    // 【调试日志】方便手动验证
+    // [Debug log] For manual verification
     if scaling_enabled && total_raw > 30_000 {
         tracing::debug!(
             "[Claude-Scaling] Raw Tokens: {}, Scaled Report: {}, Ratio: {:.2}%",
@@ -72,7 +72,7 @@ pub fn to_claude_usage(
         );
     }
 
-    // 按比例分配缩放后的总量到 input 和 cache_read
+    // Distribute scaled total to input and cache_read by ratio
     let (reported_input, reported_cache) = if total_raw > 0 {
         let cache_ratio = (cached_tokens as f64) / (total_raw as f64);
         let sc_cache = (scaled_total as f64 * cache_ratio) as u32;
@@ -93,9 +93,9 @@ pub fn to_claude_usage(
 #[cfg(test)]
 mod tests {
     use super::*;
-    // 移除了未使用的 serde_json::json
+    // Removed unused serde_json::json
 
-    // 已移除对 uppercase_schema_types 的过期测试
+    // Already removed expired test for uppercase_schema_types
 
     #[test]
     fn test_to_claude_usage() {
@@ -112,7 +112,7 @@ mod tests {
         assert_eq!(claude_usage.input_tokens, 100);
         assert_eq!(claude_usage.output_tokens, 50);
 
-        // 测试 70% 负载 ( percepción_start = 700k )
+        // test 70% load ( percepción_start = 700k )
         let usage_70 = UsageMetadata {
             prompt_token_count: Some(700_000),
             candidates_token_count: Some(10),
@@ -123,7 +123,7 @@ mod tests {
         // sqrt(670k) * 25 + 30k = 818.5 * 25 + 30k = 20462 + 30k = 50462
         assert!(res_70.input_tokens > 50000 && res_70.input_tokens < 51000);
 
-        // 测试 100% 负载 ( 1M )
+        // test 100% load ( 1M )
         let usage_100 = UsageMetadata {
             prompt_token_count: Some(1_000_000),
             candidates_token_count: Some(10),
@@ -131,10 +131,10 @@ mod tests {
             cached_content_token_count: None,
         };
         let res_100 = to_claude_usage(&usage_100, true, 1_000_000);
-        // 应该非常接近 195,000
+        // Should be very close to 195,000
         assert_eq!(res_100.input_tokens, 195_000);
 
-        // 测试 90% 负载 ( 900k )
+        // test 90% load ( 900k )
         let usage_90 = UsageMetadata {
             prompt_token_count: Some(900_000),
             candidates_token_count: Some(10),

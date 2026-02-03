@@ -180,7 +180,7 @@ fn test_complex_tool_result() {
 
 #[test]
 fn test_cache_control_cleanup() {
-    // 模拟 VS Code 插件发送的包含 cache_control 的历史消息
+    // simulate VS Code pluginsend containing cache_control  historymessage
     let req = ClaudeRequest {
         model: "claude-sonnet-4-5".to_string(),
         messages: vec![
@@ -194,7 +194,7 @@ fn test_cache_control_cleanup() {
                     ContentBlock::Thinking {
                         thinking: "Let me think...".to_string(),
                         signature: Some("sig123".to_string()),
-                        cache_control: Some(json!({"type": "ephemeral"})), // 这个应该被清理
+                        cache_control: Some(json!({"type": "ephemeral"})), // thisshouldbecleanup
                     },
                     ContentBlock::Text {
                         text: "Here is my response".to_string(),
@@ -209,7 +209,7 @@ fn test_cache_control_cleanup() {
                         media_type: "image/png".to_string(),
                         data: "iVBORw0KGgo=".to_string(),
                     },
-                    cache_control: Some(json!({"type": "ephemeral"})), // 这个也应该被清理
+                    cache_control: Some(json!({"type": "ephemeral"})), // thisalsoshouldbecleanup
                 }]),
             },
         ],
@@ -228,19 +228,19 @@ fn test_cache_control_cleanup() {
     let result = transform_claude_request_in(&req, "test-project", false);
     assert!(result.is_ok());
 
-    // 验证请求成功转换
+    // verifyrequestsuccessconvert
     let body = result.unwrap();
     assert_eq!(body["project"], "test-project");
 
-    // 注意: cache_control 的清理发生在内部,我们无法直接从 JSON 输出验证
-    // 但如果没有清理,后续发送到 Anthropic API 时会报错
-    // 这个测试主要确保清理逻辑不会导致转换失败
+    // note: cache_control  cleanuphappens ininternal,wecannotdirectlyfrom JSON outputverify
+    // but ifdoes not havecleanup,subsequentlysend to Anthropic API whenwill error
+    // thistestmainlyensurecleanuplogicwill notcauseconvertfailed
 }
 
 #[test]
 fn test_thinking_mode_auto_disable_on_tool_use_history() {
-    // [场景] 历史消息中有一个工具调用链，且 Assistant 消息没有 Thinking 块
-    // 期望: 系统自动降级，禁用 Thinking 模式，以避免 400 错误
+    // [scenario] historymessageinhave atoolcall chain，and Assistant messagedoes not have Thinking block
+    // expected: systemautofallback，disable Thinking mode，toavoid 400 error
     let req = ClaudeRequest {
         model: "claude-sonnet-4-5".to_string(),
         messages: vec![
@@ -248,7 +248,7 @@ fn test_thinking_mode_auto_disable_on_tool_use_history() {
                 role: "user".to_string(),
                 content: MessageContent::String("Check files".to_string()),
             },
-            // Assistant 使用工具，但在非 Thinking 模式下
+            // Assistant usetool，butatnon- Thinking mode下
             Message {
                 role: "assistant".to_string(),
                 content: MessageContent::Array(vec![
@@ -264,7 +264,7 @@ fn test_thinking_mode_auto_disable_on_tool_use_history() {
                     },
                 ]),
             },
-            // 用户返回工具结果
+            // userreturntoolresult
             Message {
                 role: "user".to_string(),
                 content: MessageContent::Array(vec![ContentBlock::ToolResult {
@@ -302,8 +302,8 @@ fn test_thinking_mode_auto_disable_on_tool_use_history() {
     let body = result.unwrap();
     let request = &body["request"];
 
-    // 验证: generationConfig 中不应包含 thinkingConfig (因为被降级了)
-    // 即使请求中明确启用了 thinking
+    // verify: generationConfig innot应containing thinkingConfig (becausebefallback)
+    // even ifrequestinexplicitlyenable thinking
     if let Some(gen_config) = request.get("generationConfig") {
         assert!(
             gen_config.get("thinkingConfig").is_none(),
@@ -311,13 +311,13 @@ fn test_thinking_mode_auto_disable_on_tool_use_history() {
         );
     }
 
-    // 验证: 依然能生成有效的请求体
+    // verify: stillcangeneratevalid requestbody
     assert!(request.get("contents").is_some());
 }
 
 #[test]
 fn test_thinking_block_not_prepend_when_disabled() {
-    // 验证当 thinking 未启用时,不会补全 thinking 块
+    // verifywhen thinking not yetenablewhen,will notcomplete thinking block
     let req = ClaudeRequest {
         model: "claude-sonnet-4-5".to_string(),
         messages: vec![
@@ -339,7 +339,7 @@ fn test_thinking_block_not_prepend_when_disabled() {
         temperature: None,
         top_p: None,
         top_k: None,
-        thinking: None, // 未启用 thinking
+        thinking: None, // not yetenable thinking
         metadata: None,
         output_config: None,
     };
@@ -358,22 +358,22 @@ fn test_thinking_block_not_prepend_when_disabled() {
 
     let parts = last_model_msg["parts"].as_array().unwrap();
 
-    // 验证没有补全 thinking 块
+    // verifydoes not havecomplete thinking block
     assert_eq!(parts.len(), 1, "Should only have the original text block");
     assert_eq!(parts[0]["text"], "Response");
 }
 
 #[test]
 fn test_thinking_block_empty_content_fix() {
-    // [场景] 客户端发送了一个内容为空的 thinking 块
-    // 期望: 自动填充 "..."
+    // [scenario] clientsendacontentis empty  thinking block
+    // expected: autopad "..."
     let req = ClaudeRequest {
         model: "claude-sonnet-4-5".to_string(),
         messages: vec![Message {
             role: "assistant".to_string(),
             content: MessageContent::Array(vec![
                 ContentBlock::Thinking {
-                    thinking: "".to_string(), // 空内容
+                    thinking: "".to_string(), // emptycontent
                     signature: Some("sig".to_string()),
                     cache_control: None,
                 },
@@ -403,7 +403,7 @@ fn test_thinking_block_empty_content_fix() {
     let contents = body["request"]["contents"].as_array().unwrap();
     let parts = contents[0]["parts"].as_array().unwrap();
 
-    // 验证 thinking 块
+    // verify thinking block
     assert_eq!(
         parts[0]["text"], "...",
         "Empty thinking should be filled with ..."
@@ -416,8 +416,8 @@ fn test_thinking_block_empty_content_fix() {
 
 #[test]
 fn test_redacted_thinking_degradation() {
-    // [场景] 客户端包含 RedactedThinking
-    // 期望: 降级为普通文本，不带 thought: true
+    // [scenario] clientcontaining RedactedThinking
+    // expected: fallbackasnormaltext，notwith thought: true
     let req = ClaudeRequest {
         model: "claude-sonnet-4-5".to_string(),
         messages: vec![Message {
@@ -448,7 +448,7 @@ fn test_redacted_thinking_degradation() {
     let body = result.unwrap();
     let parts = body["request"]["contents"][0]["parts"].as_array().unwrap();
 
-    // 验证 RedactedThinking -> Text
+    // verify RedactedThinking -> Text
     let text = parts[0]["text"].as_str().unwrap();
     assert!(text.contains("[Redacted Thinking: some data]"));
     assert!(
