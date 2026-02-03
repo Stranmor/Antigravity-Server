@@ -54,7 +54,6 @@ impl StreamingState {
             trailing_signature: None,
             web_search_query: None,
             grounding_chunks: None,
-            // [IMPROVED] 初始化 error recovery 字段
             parse_error_count: 0,
             last_valid_state: None,
             model_name: None,
@@ -67,7 +66,6 @@ impl StreamingState {
         }
     }
 
-    /// 发送 SSE 事件
     pub fn emit(&self, event_type: &str, data: serde_json::Value) -> Bytes {
         let sse = format!(
             "event: {}\ndata: {}\n\n",
@@ -77,7 +75,6 @@ impl StreamingState {
         Bytes::from(sse)
     }
 
-    /// 发送 message_start 事件
     pub fn emit_message_start(&mut self, raw_json: &serde_json::Value) -> Bytes {
         if self.message_start_sent {
             return Bytes::new();
@@ -129,7 +126,6 @@ impl StreamingState {
         result
     }
 
-    /// 开始新的内容块
     pub fn start_block(
         &mut self,
         block_type: BlockType,
@@ -153,7 +149,6 @@ impl StreamingState {
         chunks
     }
 
-    /// 结束当前内容块
     pub fn end_block(&mut self) -> Vec<Bytes> {
         if self.block_type == BlockType::None {
             return vec![];
@@ -161,7 +156,7 @@ impl StreamingState {
 
         let mut chunks = Vec::new();
 
-        // Thinking 块结束时发送暂存的签名
+        // Emit pending signature when Thinking block ends
         if self.block_type == BlockType::Thinking && self.signatures.has_pending() {
             if let Some(signature) = self.signatures.consume() {
                 chunks.push(self.emit_delta("signature_delta", json!({ "signature": signature })));
@@ -182,7 +177,6 @@ impl StreamingState {
         chunks
     }
 
-    /// 发送 delta 事件
     pub fn emit_delta(&self, delta_type: &str, delta_content: serde_json::Value) -> Bytes {
         let mut delta = json!({ "type": delta_type });
         if let serde_json::Value::Object(map) = delta_content {
@@ -205,30 +199,21 @@ impl StreamingState {
         self.used_tool = true;
     }
 
-    /// 获取当前块类型
     pub fn current_block_type(&self) -> BlockType {
         self.block_type
     }
-
-    /// 获取当前块索引
     pub fn current_block_index(&self) -> usize {
         self.block_index
     }
-
-    /// 存储签名
     pub fn store_signature(&mut self, signature: Option<String>) {
         self.signatures.store(signature);
     }
-
-    /// 设置 trailing signature
     pub fn set_trailing_signature(&mut self, signature: Option<String>) {
         self.trailing_signature = signature;
     }
-
     pub fn has_trailing_signature(&self) -> bool {
         self.trailing_signature.is_some()
     }
-
     pub fn take_trailing_signature(&mut self) -> Option<String> {
         self.trailing_signature.take()
     }

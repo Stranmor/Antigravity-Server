@@ -5,13 +5,11 @@ use std::{collections::HashSet, path::PathBuf};
 impl TokenManager {
     pub async fn load_accounts(&self) -> Result<usize, String> {
         let accounts_dir = self.data_dir.join("accounts");
-
         if !accounts_dir.exists() {
             return Err(format!("Accounts directory not found: {:?}", accounts_dir));
         }
 
         let mut new_tokens: Vec<(String, ProxyToken)> = Vec::new();
-
         let mut entries = tokio::fs::read_dir(&accounts_dir)
             .await
             .map_err(|e| format!("Failed to read accounts directory: {}", e))?;

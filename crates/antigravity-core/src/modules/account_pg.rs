@@ -1,11 +1,14 @@
 use crate::models::{Account, QuotaData, TokenData};
 use crate::modules::account_pg_crud::{
-    create_account_impl, delete_account_impl, delete_accounts_impl, get_account_by_email_impl,
-    get_account_impl, list_accounts_impl, update_account_impl, upsert_account_impl,
+    create_account_impl, delete_account_impl, delete_accounts_impl, update_account_impl,
+    upsert_account_impl,
 };
 use crate::modules::account_pg_events::{
     get_account_health_impl, get_current_account_id_impl, get_events_impl, log_event_impl,
     log_request_impl, set_current_account_id_impl, update_quota_impl,
+};
+use crate::modules::account_pg_query::{
+    get_account_by_email_impl, get_account_impl, list_accounts_impl,
 };
 use crate::modules::repository::{
     AccountEvent, AccountHealth, AccountRepository, RepoResult, RepositoryError, RequestLog,

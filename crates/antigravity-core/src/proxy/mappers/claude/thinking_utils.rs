@@ -12,7 +12,6 @@ pub struct ConversationState {
     pub last_assistant_idx: Option<usize>,
 }
 
-/// Analyze the conversation to detect tool loops or interrupted tool calls
 pub fn analyze_conversation_state(messages: &[Message]) -> ConversationState {
     let mut state = ConversationState::default();
 
@@ -77,18 +76,9 @@ pub fn analyze_conversation_state(messages: &[Message]) -> ConversationState {
         }
     }
 
-    // Check for interrupted tool: Last assistant message has ToolUse, but no corresponding ToolResult in next user msg
-    // (This is harder to detect perfectly on a stateless request, but usually if we are
-    //  in a state where we have ToolUse but the conversation seems "broken" or stripped)
-    // Actually, in the proxy context, we typically see:
-    // ... Assistant (ToolUse) -> User (ToolResult) : Normal Loop
-    // ... Assistant (ToolUse) -> User (Text) : Interrupted (User cancelled)
-
-    // For "Thinking Utils", we care about the case where valid signatures are missing.
-    // If we are in a tool loop (last msg is ToolResult), and the *preceding* Assistant message
-    // had its Thinking block stripped (due to invalid sig), then we are in a "Broken Tool Loop".
-    // Gemini/Claude will reject a ToolResult if the preceding Assistant message didn't start with Thinking.
-
+    // Detection: Assistant(ToolUse) -> User(ToolResult) = Normal Loop
+    //           Assistant(ToolUse) -> User(Text) = Interrupted
+    // Broken loop = ToolResult without preceding Thinking block (stripped due to invalid sig)
     state
 }
 
@@ -170,12 +160,10 @@ pub fn close_tool_loop_for_thinking(messages: &mut Vec<Message>) {
     }
 }
 
-/// Cache the relationship between a signature and its model family
-pub fn cache_signature_family(signature: &str, family: &str) {
-    SignatureCache::global().cache_thinking_family(signature.to_string(), family.to_string());
+pub fn cache_signature_family(sig: &str, family: &str) {
+    SignatureCache::global().cache_thinking_family(sig.to_string(), family.to_string());
 }
 
-/// Get the model family origin of a signature
 pub fn get_signature_family(signature: &str) -> Option<String> {
     SignatureCache::global().get_signature_family(signature)
 }
