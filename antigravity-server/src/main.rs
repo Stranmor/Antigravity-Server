@@ -33,6 +33,10 @@ mod config_sync;
 mod scheduler;
 mod state;
 
+mod account_commands;
+mod config_commands;
+mod warmup_commands;
+
 use antigravity_core::modules::account_pg::PostgresAccountRepository;
 use antigravity_core::modules::repository::AccountRepository;
 use antigravity_core::proxy::server::AxumServer;
