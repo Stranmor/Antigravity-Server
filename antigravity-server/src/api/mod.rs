@@ -124,15 +124,11 @@ async fn list_accounts(
 ) -> Result<Json<Vec<AccountInfo>>, (StatusCode, String)> {
     let current_id = state.get_current_account().ok().flatten().map(|a| a.id);
 
-    let accounts = if let Some(repo) = state.repository() {
-        repo.list_accounts()
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-    } else {
-        state
-            .list_accounts()
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?
-    };
+    // Always use JSON storage for list_accounts to get fresh quota data
+    // PostgreSQL repository doesn't sync quota updates yet
+    let accounts = state
+        .list_accounts()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     let infos: Vec<AccountInfo> = accounts
         .into_iter()
