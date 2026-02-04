@@ -24,7 +24,7 @@ pub async fn acquire_token(
             .get_token_forced(forced, &config.final_model)
             .await
         {
-            Ok((token, email, project, guard)) => {
+            Ok((token, project, email, guard)) => {
                 return Ok((token, project, email, guard));
             }
             Err(e) => {

@@ -87,8 +87,8 @@ impl TokenManager {
 
         Ok((
             token.access_token,
-            token.email,
             token.project_id.unwrap_or_default(),
+            token.email,
             guard,
         ))
     }

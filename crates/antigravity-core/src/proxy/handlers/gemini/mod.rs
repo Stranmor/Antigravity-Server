@@ -91,7 +91,7 @@ pub async fn handle_generate(
                 .get_token_forced(forced, &config.final_model)
                 .await
             {
-                Ok((token, email, project, guard)) => (token, project, email, guard),
+                Ok((token, project, email, guard)) => (token, project, email, guard),
                 Err(e) => {
                     warn!(
                         "[Gemini] Forced account {} failed: {}, using smart routing",

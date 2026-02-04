@@ -32,7 +32,7 @@ pub async fn acquire_token(
 
     if let Some(forced) = force_account {
         match token_manager.get_token_forced(forced, final_model).await {
-            Ok((token, email, project, guard)) => {
+            Ok((token, project, email, guard)) => {
                 return Ok(TokenAcquisitionResult {
                     access_token: token,
                     project_id: project,
@@ -60,7 +60,7 @@ pub async fn acquire_token(
         )
         .await
     {
-        Ok((token, email, project, guard)) => Ok(TokenAcquisitionResult {
+        Ok((token, project, email, guard)) => Ok(TokenAcquisitionResult {
             access_token: token,
             project_id: project,
             email,
