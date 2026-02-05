@@ -14,6 +14,37 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, Response};
 
 const API_BASE: &str = "/api";
+const API_KEY_STORAGE_KEY: &str = "antigravity_api_key";
+
+/// Get API key from localStorage
+pub fn get_stored_api_key() -> Option<String> {
+    let window = web_sys::window()?;
+    let storage = window.local_storage().ok()??;
+    storage.get_item(API_KEY_STORAGE_KEY).ok()?
+}
+
+/// Store API key in localStorage
+pub fn set_stored_api_key(key: &str) {
+    if let Some(window) = web_sys::window() {
+        if let Ok(Some(storage)) = window.local_storage() {
+            let _ = storage.set_item(API_KEY_STORAGE_KEY, key);
+        }
+    }
+}
+
+/// Remove API key from localStorage
+pub fn clear_stored_api_key() {
+    if let Some(window) = web_sys::window() {
+        if let Ok(Some(storage)) = window.local_storage() {
+            let _ = storage.remove_item(API_KEY_STORAGE_KEY);
+        }
+    }
+}
+
+/// Check if user is authenticated (has API key stored)
+pub fn is_authenticated() -> bool {
+    get_stored_api_key().is_some()
+}
 
 /// Make a GET request to the API
 pub async fn api_get<R: DeserializeOwned>(endpoint: &str) -> Result<R, String> {
@@ -30,25 +61,31 @@ pub async fn api_get<R: DeserializeOwned>(endpoint: &str) -> Result<R, String> {
         .set("Content-Type", "application/json")
         .map_err(|e| format!("Failed to set headers: {:?}", e))?;
 
+    if let Some(api_key) = get_stored_api_key() {
+        request
+            .headers()
+            .set("Authorization", &format!("Bearer {}", api_key))
+            .map_err(|e| format!("Failed to set auth header: {:?}", e))?;
+    }
+
     let window = web_sys::window().ok_or("No window")?;
     let resp_value = JsFuture::from(window.fetch_with_request(&request))
         .await
         .map_err(|e| format!("Fetch failed: {:?}", e))?;
 
-    let resp: Response = resp_value
-        .dyn_into()
-        .map_err(|_| "Response is not a Response")?;
+    let resp: Response = resp_value.dyn_into().map_err(|_| "Response is not a Response")?;
+
+    if resp.status() == 401 {
+        return Err("Unauthorized".to_string());
+    }
 
     if !resp.ok() {
         return Err(format!("HTTP error: {}", resp.status()));
     }
 
-    let json = JsFuture::from(
-        resp.json()
-            .map_err(|e| format!("JSON parse failed: {:?}", e))?,
-    )
-    .await
-    .map_err(|e| format!("JSON future failed: {:?}", e))?;
+    let json = JsFuture::from(resp.json().map_err(|e| format!("JSON parse failed: {:?}", e))?)
+        .await
+        .map_err(|e| format!("JSON future failed: {:?}", e))?;
 
     serde_wasm_bindgen::from_value(json).map_err(|e| format!("Deserialize failed: {}", e))
 }
@@ -75,25 +112,31 @@ pub async fn api_post<A: Serialize, R: DeserializeOwned>(
         .set("Content-Type", "application/json")
         .map_err(|e| format!("Failed to set headers: {:?}", e))?;
 
+    if let Some(api_key) = get_stored_api_key() {
+        request
+            .headers()
+            .set("Authorization", &format!("Bearer {}", api_key))
+            .map_err(|e| format!("Failed to set auth header: {:?}", e))?;
+    }
+
     let window = web_sys::window().ok_or("No window")?;
     let resp_value = JsFuture::from(window.fetch_with_request(&request))
         .await
         .map_err(|e| format!("Fetch failed: {:?}", e))?;
 
-    let resp: Response = resp_value
-        .dyn_into()
-        .map_err(|_| "Response is not a Response")?;
+    let resp: Response = resp_value.dyn_into().map_err(|_| "Response is not a Response")?;
+
+    if resp.status() == 401 {
+        return Err("Unauthorized".to_string());
+    }
 
     if !resp.ok() {
         return Err(format!("HTTP error: {}", resp.status()));
     }
 
-    let json = JsFuture::from(
-        resp.json()
-            .map_err(|e| format!("JSON parse failed: {:?}", e))?,
-    )
-    .await
-    .map_err(|e| format!("JSON future failed: {:?}", e))?;
+    let json = JsFuture::from(resp.json().map_err(|e| format!("JSON parse failed: {:?}", e))?)
+        .await
+        .map_err(|e| format!("JSON future failed: {:?}", e))?;
 
     serde_wasm_bindgen::from_value(json).map_err(|e| format!("Deserialize failed: {}", e))
 }
@@ -104,4 +147,10 @@ pub mod commands {
     pub use super::config::*;
     pub use super::proxy::*;
     pub use super::system::*;
+}
+
+pub mod auth {
+    pub use super::{
+        clear_stored_api_key, get_stored_api_key, is_authenticated, set_stored_api_key,
+    };
 }

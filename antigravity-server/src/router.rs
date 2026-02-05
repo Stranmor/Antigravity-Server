@@ -1,5 +1,6 @@
 use axum::{
-    extract::DefaultBodyLimit, http::StatusCode, response::IntoResponse, routing::get, Router,
+    extract::DefaultBodyLimit, http::StatusCode, middleware, response::IntoResponse, routing::get,
+    Router,
 };
 use std::sync::Arc;
 use tower_http::{
@@ -10,6 +11,7 @@ use tower_http::{
 
 use crate::api;
 use crate::state::AppState;
+use antigravity_core::proxy::middleware::admin_auth_middleware;
 use antigravity_core::proxy::server::AxumServer;
 
 pub async fn build_router(state: AppState, _axum_server: Arc<AxumServer>) -> Router {
@@ -18,8 +20,17 @@ pub async fn build_router(state: AppState, _axum_server: Arc<AxumServer>) -> Rou
     let static_dir =
         std::env::var("ANTIGRAVITY_STATIC_DIR").unwrap_or_else(|_| "./src-leptos/dist".to_string());
 
-    let api_routes = Router::new()
+    // Security config for admin auth middleware
+    let security_config = state.inner.security_config.clone();
+
+    // Protected API routes (require Bearer token)
+    let protected_api = Router::new()
         .nest("/api", api::router())
+        .layer(middleware::from_fn_with_state(security_config, admin_auth_middleware))
+        .with_state(state.clone());
+
+    // Public routes (no auth required)
+    let public_routes = Router::new()
         .route("/health", get(health_check))
         .route("/healthz", get(health_check))
         .route("/version", get(version_info))
@@ -30,24 +41,17 @@ pub async fn build_router(state: AppState, _axum_server: Arc<AxumServer>) -> Rou
         .append_index_html_on_directories(true)
         .fallback(ServeFile::new(&index_path));
 
-    api_routes
+    protected_api
+        .merge(public_routes)
         .merge(proxy_router)
         .fallback_service(spa_service)
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
         .layer(TraceLayer::new_for_http())
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
-        )
+        .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))
 }
 
 async fn health_check() -> impl IntoResponse {
-    (
-        StatusCode::OK,
-        axum::Json(serde_json::json!({"status": "ok"})),
-    )
+    (StatusCode::OK, axum::Json(serde_json::json!({"status": "ok"})))
 }
 
 async fn version_info() -> impl IntoResponse {

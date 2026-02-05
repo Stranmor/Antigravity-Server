@@ -1,11 +1,13 @@
 //! Main App component with routing
 
+use crate::api::auth::is_authenticated;
 use crate::components::Sidebar;
-use crate::pages::{Accounts, ApiProxy, Dashboard, Monitor, Settings};
+use crate::pages::{Accounts, ApiProxy, Dashboard, Login, Monitor, Settings};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::{
     components::{Route, Router, Routes},
+    hooks::use_navigate,
     path,
 };
 use log;
@@ -41,11 +43,32 @@ impl Default for AppState {
 /// Root App component
 #[component]
 pub fn App() -> impl IntoView {
-    // Create global state
+    view! {
+        <Router>
+            <Routes fallback=|| "Page not found">
+                <Route path=path!("/login") view=Login />
+                <Route path=path!("/") view=AuthenticatedApp />
+                <Route path=path!("/accounts") view=AuthenticatedApp />
+                <Route path=path!("/proxy") view=AuthenticatedApp />
+                <Route path=path!("/settings") view=AuthenticatedApp />
+                <Route path=path!("/monitor") view=AuthenticatedApp />
+            </Routes>
+        </Router>
+    }
+}
+
+#[component]
+fn AuthenticatedApp() -> impl IntoView {
+    let navigate = use_navigate();
+
+    if !is_authenticated() {
+        navigate("/login", Default::default());
+        return view! { <div>"Redirecting..."</div> }.into_any();
+    }
+
     let state = AppState::new();
     provide_context(state.clone());
 
-    // Load initial data
     let init_state = state.clone();
     Effect::new(move |_| {
         let s = init_state.clone();
@@ -55,21 +78,20 @@ pub fn App() -> impl IntoView {
     });
 
     view! {
-        <Router>
-            <div class="app-container">
-                <Sidebar />
-                <main class="main-content">
-                    <Routes fallback=|| "Page not found">
-                        <Route path=path!("/") view=Dashboard />
-                        <Route path=path!("/accounts") view=Accounts />
-                        <Route path=path!("/proxy") view=ApiProxy />
-                        <Route path=path!("/settings") view=Settings />
-                        <Route path=path!("/monitor") view=Monitor />
-                    </Routes>
-                </main>
-            </div>
-        </Router>
+        <div class="app-container">
+            <Sidebar />
+            <main class="main-content">
+                <Routes fallback=|| "Page not found">
+                    <Route path=path!("/") view=Dashboard />
+                    <Route path=path!("/accounts") view=Accounts />
+                    <Route path=path!("/proxy") view=ApiProxy />
+                    <Route path=path!("/settings") view=Settings />
+                    <Route path=path!("/monitor") view=Monitor />
+                </Routes>
+            </main>
+        </div>
     }
+    .into_any()
 }
 
 /// Load initial application data from Tauri backend

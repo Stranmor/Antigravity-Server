@@ -35,7 +35,7 @@ fn constant_time_compare(a: &str, b: &str) -> bool {
 }
 
 fn is_health_check(path: &str) -> bool {
-    path == "/healthz" || path == "/api/health" || path == "/health" || path == "/api/status"
+    path == "/healthz" || path == "/api/health" || path == "/health"
 }
 
 async fn auth_middleware_internal(
@@ -63,20 +63,21 @@ async fn auth_middleware_internal(
     let security = security.read().await.clone();
     let effective_mode = security.effective_auth_mode();
 
-    if !force_strict {
+    // force_strict=true: ALWAYS require auth (for admin endpoints)
+    // force_strict=false: respect auth_mode setting
+    if force_strict {
+        // Admin endpoints: only skip auth for health checks
+        if health {
+            return Ok(next.run(request).await);
+        }
+        // Otherwise, ALWAYS require auth regardless of auth_mode
+    } else {
+        // Proxy endpoints: respect auth_mode
         if matches!(effective_mode, ProxyAuthMode::Off) {
             return Ok(next.run(request).await);
         }
 
         if matches!(effective_mode, ProxyAuthMode::AllExceptHealth) && health {
-            return Ok(next.run(request).await);
-        }
-    } else {
-        if matches!(effective_mode, ProxyAuthMode::Off) {
-            return Ok(next.run(request).await);
-        }
-
-        if health {
             return Ok(next.run(request).await);
         }
     }
@@ -86,18 +87,8 @@ async fn auth_middleware_internal(
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer ").or(Some(s)))
-        .or_else(|| {
-            request
-                .headers()
-                .get("x-api-key")
-                .and_then(|h| h.to_str().ok())
-        })
-        .or_else(|| {
-            request
-                .headers()
-                .get("x-goog-api-key")
-                .and_then(|h| h.to_str().ok())
-        });
+        .or_else(|| request.headers().get("x-api-key").and_then(|h| h.to_str().ok()))
+        .or_else(|| request.headers().get("x-goog-api-key").and_then(|h| h.to_str().ok()));
 
     if security.api_key.is_empty() {
         if force_strict {

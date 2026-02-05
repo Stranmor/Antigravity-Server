@@ -20,7 +20,8 @@ web-sys = { version = "0.3", features = [
     "Navigator", 
     "Clipboard",
     "console",
-    "HtmlInputElement"
+    "HtmlInputElement",
+    "Storage"
 ] }
 
 # Serialization (for Tauri IPC)
