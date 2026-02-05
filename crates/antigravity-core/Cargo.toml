@@ -69,7 +69,5 @@ tauri-compat = []
 custom_handlers = []
 
 [dev-dependencies]
-wiremock = "0.6"
 axum-test = "16"
-tokio-test = "0.4"
 tempfile = "3"

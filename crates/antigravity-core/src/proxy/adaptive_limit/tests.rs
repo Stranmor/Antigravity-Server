@@ -30,7 +30,7 @@ fn test_probe_strategy() {
 #[test]
 fn test_tracker_usage_ratio() {
     let tracker = AdaptiveLimitTracker::new(0.85, AIMDController::default());
-    assert_eq!(tracker.usage_ratio(), 0.0);
+    assert!((tracker.usage_ratio() - 0.0).abs() < f64::EPSILON);
 
     // Simulate requests
     for _ in 0..6 {

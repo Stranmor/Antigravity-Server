@@ -50,6 +50,18 @@
     clippy::derive_partial_eq_without_eq,
     reason = "Some types intentionally don't implement Eq"
 )]
+// Test-only lints: allow panic!, println!, etc. in test code
+#![cfg_attr(
+    test,
+    allow(
+        clippy::panic,
+        clippy::print_stdout,
+        clippy::float_cmp,
+        clippy::unnecessary_join,
+        clippy::needless_collect,
+        clippy::assertions_on_result_states
+    )
+)]
 
 pub mod error;
 pub mod models;

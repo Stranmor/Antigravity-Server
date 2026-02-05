@@ -103,7 +103,7 @@ mod tests {
             AudioProcessor::detect_mime_type_from_extension("audio.wav").unwrap(),
             "audio/wav"
         );
-        assert!(AudioProcessor::detect_mime_type_from_extension("audio.txt").is_err());
+        let _ = AudioProcessor::detect_mime_type_from_extension("audio.txt").unwrap_err();
     }
 
     #[test]

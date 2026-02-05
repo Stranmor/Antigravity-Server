@@ -230,11 +230,11 @@ fn test_tier_weight_scoring() {
         w + (active as f32) * w
     };
 
-    assert_eq!(tier_weight(Some("ws-ai-ultra-business-tier")), 0.1);
-    assert_eq!(tier_weight(Some("g1-ultra-tier")), 0.25);
-    assert_eq!(tier_weight(Some("g1-pro-tier")), 0.8);
-    assert_eq!(tier_weight(Some("free-tier")), 1.0);
-    assert_eq!(tier_weight(None), 1.25);
+    assert!((tier_weight(Some("ws-ai-ultra-business-tier")) - 0.1).abs() < f32::EPSILON);
+    assert!((tier_weight(Some("g1-ultra-tier")) - 0.25).abs() < f32::EPSILON);
+    assert!((tier_weight(Some("g1-pro-tier")) - 0.8).abs() < f32::EPSILON);
+    assert!((tier_weight(Some("free-tier")) - 1.0).abs() < f32::EPSILON);
+    assert!((tier_weight(None) - 1.25).abs() < f32::EPSILON);
 
     assert!(score(Some("ultra-business"), 0) < score(Some("ultra"), 0));
     assert!(score(Some("ultra"), 0) < score(Some("free"), 0));
