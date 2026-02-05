@@ -59,19 +59,9 @@ fn transform_reasoning_content(
                     "thoughtSignature": sig
                 });
                 parts.push(thought_part);
-            } else if ctx.actual_include_thinking {
-                // No signature but thinking enabled - will likely fail with 400
-                tracing::warn!(
-                    "[OpenAI-Thinking] No signature for reasoning_content, sending without (may cause 400)"
-                );
-                parts.push(json!({
-                    "text": reasoning,
-                    "thought": true,
-                }));
             } else {
-                // Thinking disabled - downgrade to regular text
                 tracing::warn!(
-                    "[OpenAI-Thinking] Thinking disabled, downgrading reasoning_content to text"
+                    "[OpenAI-Thinking] No signature available, downgrading reasoning_content to text"
                 );
                 parts.push(json!({"text": reasoning}));
             }
