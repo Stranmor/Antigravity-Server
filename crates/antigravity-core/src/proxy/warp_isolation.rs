@@ -96,10 +96,7 @@ impl WarpIsolationManager {
         let path = Path::new(&self.mapping_path);
 
         if !path.exists() {
-            warn!(
-                "WARP mapping file not found: {}. IP isolation disabled.",
-                self.mapping_path
-            );
+            warn!("WARP mapping file not found: {}. IP isolation disabled.", self.mapping_path);
             *self.enabled.write().await = false;
             return Ok(0);
         }
@@ -121,19 +118,13 @@ impl WarpIsolationManager {
             account_map.insert(entry.id.clone(), entry.socks5_endpoint.clone());
             email_map.insert(entry.email.clone(), entry.id.clone());
 
-            debug!(
-                "WARP mapping: {} ({}) -> {}",
-                entry.email, entry.id, entry.socks5_endpoint
-            );
+            debug!("WARP mapping: {} ({}) -> {}", entry.email, entry.id, entry.socks5_endpoint);
         }
 
         let count = account_map.len();
         *self.enabled.write().await = count > 0;
 
-        info!(
-            "Loaded {} WARP account mappings from {}",
-            count, self.mapping_path
-        );
+        info!("Loaded {} WARP account mappings from {}", count, self.mapping_path);
 
         Ok(count)
     }
@@ -189,15 +180,10 @@ impl WarpIsolationManager {
             builder = builder.proxy(proxy);
             debug!("Using WARP proxy {} for account {}", proxy_url, account_id);
         } else {
-            debug!(
-                "No WARP proxy for account {}, using direct connection",
-                account_id
-            );
+            debug!("No WARP proxy for account {}, using direct connection", account_id);
         }
 
-        builder
-            .build()
-            .map_err(|e| format!("Failed to build reqwest client: {}", e))
+        builder.build().map_err(|e| format!("Failed to build reqwest client: {}", e))
     }
 }
 

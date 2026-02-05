@@ -1,10 +1,10 @@
-mod actions;
-mod quick_start;
-mod routing;
-mod scheduling;
-mod state;
-mod test_mapping;
-mod zai;
+pub(crate) mod actions;
+pub(crate) mod quick_start;
+pub(crate) mod routing;
+pub(crate) mod scheduling;
+pub(crate) mod state;
+pub(crate) mod test_mapping;
+pub(crate) mod zai;
 
 use actions::{load_config_on_mount, on_copy, on_generate_key, on_save_config, on_toggle};
 use quick_start::QuickStart;
@@ -19,8 +19,9 @@ use crate::app::AppState;
 use crate::components::{Button, ButtonVariant};
 use leptos::prelude::*;
 
+/// API Proxy configuration page.
 #[component]
-pub fn ApiProxy() -> impl IntoView {
+pub(crate) fn ApiProxy() -> impl IntoView {
     let app_state = expect_context::<AppState>();
     let ps = ProxyState::new();
 
@@ -78,12 +79,14 @@ pub fn ApiProxy() -> impl IntoView {
 
             <Show when=move || message.get().is_some()>
                 {move || {
-                    let (msg, is_error) = message.get().unwrap();
+                    let Some((msg, is_error)) = message.get() else {
+                        return view! { <div></div> }.into_any();
+                    };
                     view! {
                         <div class=format!("alert {}", if is_error { "alert--error" } else { "alert--success" })>
                             <span>{msg}</span>
                         </div>
-                    }
+                    }.into_any()
                 }}
             </Show>
 

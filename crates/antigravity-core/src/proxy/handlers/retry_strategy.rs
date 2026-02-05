@@ -1,3 +1,8 @@
+//! Retry strategy and stream peeking for upstream requests.
+//!
+//! This module provides retry logic with various backoff strategies,
+//! stream peeking for early error detection, and model detection endpoints.
+
 use crate::proxy::server::AppState;
 use axum::{extract::Json, extract::State, http::StatusCode, response::IntoResponse};
 use bytes::Bytes;
@@ -8,14 +13,28 @@ use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use tracing::{debug, info};
 
+/// Strategy for retrying failed requests.
 #[derive(Debug, Clone)]
 pub enum RetryStrategy {
+    /// Do not retry.
     NoRetry,
+    /// Retry after a fixed delay.
     FixedDelay(Duration),
-    LinearBackoff { base_ms: u64 },
-    ExponentialBackoff { base_ms: u64, max_ms: u64 },
+    /// Retry with linearly increasing delay.
+    LinearBackoff {
+        /// Base delay in milliseconds.
+        base_ms: u64,
+    },
+    /// Retry with exponentially increasing delay.
+    ExponentialBackoff {
+        /// Base delay in milliseconds.
+        base_ms: u64,
+        /// Maximum delay in milliseconds.
+        max_ms: u64,
+    },
 }
 
+/// Determines the appropriate retry strategy based on error conditions.
 pub fn determine_retry_strategy(
     status_code: u16,
     error_text: &str,
@@ -29,7 +48,7 @@ pub fn determine_retry_strategy(
                 || error_text.contains("Corrupted thought signature")) =>
         {
             RetryStrategy::FixedDelay(Duration::from_millis(200))
-        }
+        },
         429 => {
             if let Some(delay_ms) = crate::proxy::upstream::retry::parse_retry_delay(error_text) {
                 let actual_delay = delay_ms.saturating_add(200).min(30_000);
@@ -37,17 +56,17 @@ pub fn determine_retry_strategy(
             } else {
                 RetryStrategy::LinearBackoff { base_ms: 5000 }
             }
-        }
-        503 | 529 => RetryStrategy::ExponentialBackoff {
-            base_ms: 10000,
-            max_ms: 60000,
         },
+        503 | 529 => RetryStrategy::ExponentialBackoff { base_ms: 10000, max_ms: 60000 },
         500 => RetryStrategy::LinearBackoff { base_ms: 3000 },
         401 | 403 => RetryStrategy::FixedDelay(Duration::from_millis(200)),
         _ => RetryStrategy::NoRetry,
     }
 }
 
+/// Applies the retry strategy, sleeping if needed.
+///
+/// Returns `true` if retry should proceed, `false` otherwise.
 pub async fn apply_retry_strategy(
     strategy: RetryStrategy,
     attempt: usize,
@@ -57,16 +76,13 @@ pub async fn apply_retry_strategy(
 ) -> bool {
     match strategy {
         RetryStrategy::NoRetry => {
-            debug!(
-                "[{}] Non-retryable error {}, stopping",
-                trace_id, status_code
-            );
+            debug!("[{}] Non-retryable error {}, stopping", trace_id, status_code);
             false
-        }
+        },
         RetryStrategy::FixedDelay(duration) => {
             let base_ms = duration.as_millis() as u64;
             info!(
-                "[{}] ⏱️ Retry with fixed delay: status={}, attempt={}/{}, delay={}ms",
+                "[{}] Retry with fixed delay: status={}, attempt={}/{}, delay={}ms",
                 trace_id,
                 status_code,
                 attempt + 1,
@@ -75,11 +91,11 @@ pub async fn apply_retry_strategy(
             );
             sleep(duration).await;
             true
-        }
+        },
         RetryStrategy::LinearBackoff { base_ms } => {
             let calculated_ms = base_ms * (attempt as u64 + 1);
             info!(
-                "[{}] ⏱️ Retry with linear backoff: status={}, attempt={}/{}, delay={}ms",
+                "[{}] Retry with linear backoff: status={}, attempt={}/{}, delay={}ms",
                 trace_id,
                 status_code,
                 attempt + 1,
@@ -88,11 +104,11 @@ pub async fn apply_retry_strategy(
             );
             sleep(Duration::from_millis(calculated_ms)).await;
             true
-        }
+        },
         RetryStrategy::ExponentialBackoff { base_ms, max_ms } => {
             let calculated_ms = (base_ms * 2_u64.pow(attempt as u32)).min(max_ms);
             info!(
-                "[{}] ⏱️ Retry with exponential backoff: status={}, attempt={}/{}, delay={}ms",
+                "[{}] Retry with exponential backoff: status={}, attempt={}/{}, delay={}ms",
                 trace_id,
                 status_code,
                 attempt + 1,
@@ -101,17 +117,22 @@ pub async fn apply_retry_strategy(
             );
             sleep(Duration::from_millis(calculated_ms)).await;
             true
-        }
+        },
     }
 }
 
+/// Checks if the status code warrants account rotation.
 pub fn should_rotate_account(status_code: u16) -> bool {
     matches!(status_code, 429 | 401 | 403 | 500)
 }
 
+/// Configuration for stream peeking.
 pub struct PeekConfig {
+    /// Maximum heartbeats before giving up.
     pub max_heartbeats: u32,
+    /// Maximum total duration for peeking.
     pub max_peek_duration: Duration,
+    /// Timeout for a single chunk.
     pub single_chunk_timeout: Duration,
 }
 
@@ -126,6 +147,7 @@ impl Default for PeekConfig {
 }
 
 impl PeekConfig {
+    /// Creates configuration optimized for OpenAI-compatible endpoints.
     pub fn openai() -> Self {
         Self {
             max_heartbeats: 20,
@@ -135,11 +157,15 @@ impl PeekConfig {
     }
 }
 
+/// Result of peeking at a stream.
 pub enum PeekResult<S> {
+    /// Successfully got data and the remaining stream.
     Data(Bytes, S),
+    /// Should retry with the given reason.
     Retry(String),
 }
 
+/// Peeks at the first data chunk of a stream, skipping heartbeats.
 pub async fn peek_first_data_chunk<S, E>(
     mut stream: Pin<Box<S>>,
     config: &PeekConfig,
@@ -202,16 +228,12 @@ where
                 }
 
                 return PeekResult::Data(bytes, stream);
-            }
+            },
             Ok(Some(Err(e))) => {
-                tracing::warn!(
-                    "[{}] Stream error during peek: {}, retrying...",
-                    trace_id,
-                    e
-                );
+                tracing::warn!("[{}] Stream error during peek: {}, retrying...", trace_id, e);
                 crate::proxy::prometheus::record_peek_retry("stream_error");
                 return PeekResult::Retry(format!("Stream error during peek: {}", e));
-            }
+            },
             Ok(None) => {
                 tracing::warn!(
                     "[{}] Stream ended during peek (Empty Response), retrying...",
@@ -219,7 +241,7 @@ where
                 );
                 crate::proxy::prometheus::record_peek_retry("empty_response");
                 return PeekResult::Retry("Empty response stream during peek".to_string());
-            }
+            },
             Err(_) => {
                 tracing::warn!(
                     "[{}] Timeout waiting for first data ({}s), retrying...",
@@ -228,13 +250,12 @@ where
                 );
                 crate::proxy::prometheus::record_peek_retry("chunk_timeout");
                 return PeekResult::Retry("Timeout waiting for first data".to_string());
-            }
+            },
         }
     }
 }
 
-/// Detects model capabilities and configuration
-/// POST /v1/models/detect
+/// Detects model capabilities and configuration.
 pub async fn handle_detect_model(
     State(state): State<AppState>,
     Json(body): Json<Value>,
@@ -245,20 +266,32 @@ pub async fn handle_detect_model(
         return (StatusCode::BAD_REQUEST, "Missing 'model' field").into_response();
     }
 
-    // 1. Resolve mapping
-    let (mapped_model, reason) =
-        crate::proxy::common::resolve_model_route(model_name, &*state.custom_mapping.read().await);
+    let (mapped_model, reason) = match crate::proxy::common::resolve_model_route(
+        model_name,
+        &*state.custom_mapping.read().await,
+    ) {
+        Ok(result) => result,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": e,
+                    "model": model_name,
+                    "available": false
+                })),
+            )
+                .into_response();
+        },
+    };
 
-    // 2. Resolve capabilities
     let config = crate::proxy::mappers::request_config::resolve_request_config(
         model_name,
         &mapped_model,
-        &None, // We don't check tools for static capability detection
+        &None,
         None,
         None,
     );
 
-    // 3. Construct response
     let mut response = json!({
         "model": model_name,
         "mapped_model": mapped_model,
@@ -272,7 +305,7 @@ pub async fn handle_detect_model(
 
     if let Some(img_conf) = config.image_config {
         if let Some(obj) = response.as_object_mut() {
-            obj.insert("config".to_string(), img_conf);
+            let _: Option<Value> = obj.insert("config".to_string(), img_conf);
         }
     }
 

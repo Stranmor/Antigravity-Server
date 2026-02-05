@@ -1,10 +1,10 @@
-mod account_row;
-mod actions;
-mod content;
-mod filter_types;
-mod header;
-mod modals;
-mod toolbar;
+pub(crate) mod account_row;
+pub(crate) mod actions;
+pub(crate) mod content;
+pub(crate) mod filter_types;
+pub(crate) mod header;
+pub(crate) mod modals;
+pub(crate) mod toolbar;
 
 use crate::api_models::Account;
 use crate::app::AppState;
@@ -15,13 +15,14 @@ use std::collections::HashSet;
 use actions::AccountActions;
 use content::AccountsContent;
 use filter_types::{is_pro_tier, is_ultra_tier, needs_phone_verification};
-pub use filter_types::{FilterType, ViewMode};
+pub(crate) use filter_types::{FilterType, ViewMode};
 use header::{Header, MessageBanner};
 use modals::Modals;
 use toolbar::Toolbar;
 
+/// Accounts page displaying all user accounts with filtering, selection, and management.
 #[component]
-pub fn Accounts() -> impl IntoView {
+pub(crate) fn Accounts() -> impl IntoView {
     let state = expect_context::<AppState>();
 
     let view_mode = RwSignal::new(ViewMode::List);
@@ -95,7 +96,7 @@ pub fn Accounts() -> impl IntoView {
                     FilterType::Free => !is_pro_tier(tier) && !is_ultra_tier(tier),
                     FilterType::NeedsVerification => {
                         needs_phone_verification(a.proxy_disabled_reason.as_ref())
-                    }
+                    },
                 }
             })
             .collect::<Vec<_>>()
@@ -106,10 +107,7 @@ pub fn Accounts() -> impl IntoView {
         let page = current_page.get();
         let per_page = items_per_page.get();
         let start = (page - 1) * per_page;
-        all.into_iter()
-            .skip(start)
-            .take(per_page)
-            .collect::<Vec<_>>()
+        all.into_iter().skip(start).take(per_page).collect::<Vec<_>>()
     });
 
     let total_pages = Memo::new(move |_| {
@@ -125,7 +123,7 @@ pub fn Accounts() -> impl IntoView {
         !page_accounts.is_empty() && page_accounts.iter().all(|a| selected.contains(&a.id))
     });
 
-    Effect::new(move |_| {
+    let _effect = Effect::new(move |_| {
         let _ = filter.get();
         let _ = search_query.get();
         current_page.set(1);
@@ -163,11 +161,8 @@ pub fn Accounts() -> impl IntoView {
     });
 
     let on_toggle_all = move || {
-        let page_ids: HashSet<String> = paginated_accounts
-            .get()
-            .iter()
-            .map(|a| a.id.clone())
-            .collect();
+        let page_ids: HashSet<String> =
+            paginated_accounts.get().iter().map(|a| a.id.clone()).collect();
         if all_page_selected.get() {
             selected_ids.update(|ids| {
                 for id in &page_ids {

@@ -56,20 +56,14 @@ pub async fn handle_warmup(
             StatusCode::OK,
             Json(WarmupResponse {
                 success: true,
-                message: format!(
-                    "Skipped warmup for {} (2.5 models not supported)",
-                    req.model
-                ),
+                message: format!("Skipped warmup for {} (2.5 models not supported)", req.model),
                 error: None,
             }),
         )
             .into_response();
     }
 
-    info!(
-        "[Warmup-API] ========== START: email={}, model={} ==========",
-        req.email, req.model
-    );
+    info!("[Warmup-API] ========== START: email={}, model={} ==========", req.email, req.model);
 
     // ===== step 1: get Token =====
     let (access_token, project_id) =
@@ -79,10 +73,7 @@ pub async fn handle_warmup(
             match state.token_manager.get_token_by_email(&req.email).await {
                 Ok((at, pid, _)) => (at, pid),
                 Err(e) => {
-                    warn!(
-                        "[Warmup-API] Step 1 FAILED: Token error for {}: {}",
-                        req.email, e
-                    );
+                    warn!("[Warmup-API] Step 1 FAILED: Token error for {}: {}", req.email, e);
                     return (
                         StatusCode::BAD_REQUEST,
                         Json(WarmupResponse {
@@ -92,7 +83,7 @@ pub async fn handle_warmup(
                         }),
                     )
                         .into_response();
-                }
+                },
             }
         };
 
@@ -146,7 +137,7 @@ pub async fn handle_warmup(
                     }),
                 )
                     .into_response();
-            }
+            },
         }
     } else {
         // Gemini model：use wrap_request
@@ -226,10 +217,7 @@ pub async fn handle_warmup(
         Ok(response) => {
             let status = response.status();
             let mut response = if status.is_success() {
-                info!(
-                    "[Warmup-API] ========== SUCCESS: {} / {} ==========",
-                    req.email, req.model
-                );
+                info!("[Warmup-API] ========== SUCCESS: {} / {} ==========", req.email, req.model);
                 (
                     StatusCode::OK,
                     Json(WarmupResponse {
@@ -262,7 +250,7 @@ pub async fn handle_warmup(
             }
 
             response
-        }
+        },
         Err(e) => {
             warn!(
                 "[Warmup-API] ========== ERROR: {} / {} - {} ==========",
@@ -288,6 +276,6 @@ pub async fn handle_warmup(
             }
 
             response
-        }
+        },
     }
 }

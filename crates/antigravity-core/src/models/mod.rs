@@ -1,3 +1,5 @@
+//! Re-exports of core model types from antigravity-types.
+
 pub use antigravity_types::models::account;
 pub use antigravity_types::models::config;
 pub use antigravity_types::models::quota;

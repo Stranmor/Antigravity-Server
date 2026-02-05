@@ -40,24 +40,15 @@ fn test_session_signature() {
 
     // Store first signature
     cache.cache_session_signature("sid-test123", sig1.clone());
-    assert_eq!(
-        cache.get_session_signature("sid-test123"),
-        Some(sig1.clone())
-    );
+    assert_eq!(cache.get_session_signature("sid-test123"), Some(sig1.clone()));
 
     // Longer signature should replace
     cache.cache_session_signature("sid-test123", sig2.clone());
-    assert_eq!(
-        cache.get_session_signature("sid-test123"),
-        Some(sig2.clone())
-    );
+    assert_eq!(cache.get_session_signature("sid-test123"), Some(sig2.clone()));
 
     // Shorter valid signature should NOT replace
     cache.cache_session_signature("sid-test123", sig1.clone());
-    assert_eq!(
-        cache.get_session_signature("sid-test123"),
-        Some(sig2.clone())
-    );
+    assert_eq!(cache.get_session_signature("sid-test123"), Some(sig2.clone()));
 
     // Too short signature should be ignored entirely
     cache.cache_session_signature("sid-test123", sig3);

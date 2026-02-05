@@ -10,7 +10,7 @@ pub struct ProxySecurityConfig {
 impl ProxySecurityConfig {
     pub fn from_proxy_config(config: &ProxyConfig) -> Self {
         Self {
-            auth_mode: config.auth_mode.clone(),
+            auth_mode: config.auth_mode,
             api_key: config.api_key.clone(),
             allow_lan_access: config.allow_lan_access,
         }
@@ -24,8 +24,10 @@ impl ProxySecurityConfig {
                 } else {
                     ProxyAuthMode::Off
                 }
-            }
-            ref other => other.clone(),
+            },
+            ProxyAuthMode::Off => ProxyAuthMode::Off,
+            ProxyAuthMode::Strict => ProxyAuthMode::Strict,
+            ProxyAuthMode::AllExceptHealth => ProxyAuthMode::AllExceptHealth,
         }
     }
 }
@@ -51,9 +53,6 @@ mod tests {
             api_key: "sk-test".to_string(),
             allow_lan_access: true,
         };
-        assert!(matches!(
-            s.effective_auth_mode(),
-            ProxyAuthMode::AllExceptHealth
-        ));
+        assert!(matches!(s.effective_auth_mode(), ProxyAuthMode::AllExceptHealth));
     }
 }

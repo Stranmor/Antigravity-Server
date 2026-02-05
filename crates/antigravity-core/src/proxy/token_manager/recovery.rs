@@ -27,7 +27,7 @@ impl TokenManager {
                 );
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-                for t in tokens_snapshot.iter() {
+                for t in tokens_snapshot {
                     if attempted.contains(&t.email) {
                         continue;
                     }
@@ -55,7 +55,7 @@ impl TokenManager {
                 );
                 self.rate_limit_tracker.clear_all();
 
-                for t in tokens_snapshot.iter() {
+                for t in tokens_snapshot {
                     if attempted.contains(&t.email) {
                         continue;
                     }

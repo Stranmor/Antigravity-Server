@@ -15,9 +15,7 @@ pub fn update_account_quota(account_id: &str, quota: QuotaData) -> Result<(), St
     use crate::modules::config::load_config;
     use crate::proxy::common::model_mapping::normalize_to_standard_id;
 
-    let _lock = ACCOUNT_INDEX_LOCK
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let _lock = ACCOUNT_INDEX_LOCK.lock().map_err(|e| format!("Lock error: {}", e))?;
 
     let mut account = load_account(account_id)?;
     account.update_quota(quota.clone());
@@ -25,7 +23,7 @@ pub fn update_account_quota(account_id: &str, quota: QuotaData) -> Result<(), St
     let config_result = load_config();
     if let Ok(config) = config_result {
         if config.quota_protection.enabled {
-            let threshold = config.quota_protection.threshold_percentage as i32;
+            let threshold = i32::from(config.quota_protection.threshold_percentage);
 
             if quota.is_forbidden {
                 logger::log_info(&format!(
@@ -51,11 +49,7 @@ pub fn update_account_quota(account_id: &str, quota: QuotaData) -> Result<(), St
                         None => continue,
                     };
 
-                    if !config
-                        .quota_protection
-                        .monitored_models
-                        .contains(&standard_id)
-                    {
+                    if !config.quota_protection.monitored_models.contains(&standard_id) {
                         continue;
                     }
 
@@ -80,10 +74,7 @@ pub fn update_account_quota(account_id: &str, quota: QuotaData) -> Result<(), St
             }
 
             if account.proxy_disabled
-                && account
-                    .proxy_disabled_reason
-                    .as_ref()
-                    .is_some_and(|r| r == "quota_protection")
+                && account.proxy_disabled_reason.as_ref().is_some_and(|r| r == "quota_protection")
             {
                 logger::log_info(&format!(
                     "[Quota] Migrating account {} from account-level to model-level protection",

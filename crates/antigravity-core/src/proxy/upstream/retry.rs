@@ -1,10 +1,11 @@
 // 429 retry strategy
 // Duration parse
 
-use once_cell::sync::Lazy;
 use regex::Regex;
+use std::sync::LazyLock;
 
-static DURATION_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"([\d.]+)\s*(ms|s|m|h)").unwrap());
+static DURATION_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"([\d.]+)\s*(ms|s|m|h)").expect("Invalid regex"));
 
 /// Parse Duration string (e.g., "1.5s", "200ms", "1h16m0.667s")
 pub fn parse_duration_ms(duration_str: &str) -> Option<u64> {
@@ -21,7 +22,7 @@ pub fn parse_duration_ms(duration_str: &str) -> Option<u64> {
             "s" => total_ms += value * 1000.0,
             "m" => total_ms += value * 60.0 * 1000.0,
             "h" => total_ms += value * 60.0 * 60.0 * 1000.0,
-            _ => {}
+            _ => {},
         }
     }
 
@@ -52,10 +53,8 @@ pub fn parse_retry_delay(error_text: &str) -> Option<u64> {
 
     // method2: metadata.quotaResetDelay
     for detail in details {
-        if let Some(quota_delay) = detail
-            .get("metadata")
-            .and_then(|m| m.get("quotaResetDelay"))
-            .and_then(|v| v.as_str())
+        if let Some(quota_delay) =
+            detail.get("metadata").and_then(|m| m.get("quotaResetDelay")).and_then(|v| v.as_str())
         {
             return parse_duration_ms(quota_delay);
         }
@@ -72,7 +71,7 @@ mod tests {
     fn test_parse_duration_ms() {
         assert_eq!(parse_duration_ms("1.5s"), Some(1500));
         assert_eq!(parse_duration_ms("200ms"), Some(200));
-        assert_eq!(parse_duration_ms("1h16m0.667s"), Some(4560667));
+        assert_eq!(parse_duration_ms("1h16m0.667s"), Some(4_560_667));
         assert_eq!(parse_duration_ms("invalid"), None);
     }
 

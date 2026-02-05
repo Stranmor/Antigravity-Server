@@ -1,7 +1,6 @@
 //! Formatting utilities for monitor page
 
-/// Format timestamp to HH:MM:SS
-pub fn format_timestamp(ts: i64) -> String {
+pub(crate) fn format_timestamp(ts: i64) -> String {
     // Backend stores timestamp in MILLISECONDS, convert to seconds first
     let ts_secs = ts / 1000;
     let secs = ts_secs % 86400;
@@ -11,8 +10,7 @@ pub fn format_timestamp(ts: i64) -> String {
     format!("{:02}:{:02}:{:02}", hours, mins, s)
 }
 
-/// Format timestamp to full date-time string
-pub fn format_timestamp_full(ts: i64) -> String {
+pub(crate) fn format_timestamp_full(ts: i64) -> String {
     // Backend stores timestamp in MILLISECONDS, convert to seconds first
     let ts_secs = ts / 1000;
     let days_since_epoch = ts_secs / 86400;
@@ -27,14 +25,10 @@ pub fn format_timestamp_full(ts: i64) -> String {
     let month = day_of_year / 30 + 1;
     let day = day_of_year % 30 + 1;
 
-    format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        year, month, day, hours, mins, s
-    )
+    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", year, month, day, hours, mins, s)
 }
 
-/// Format token count with K/M suffix
-pub fn format_tokens(tokens: u64) -> String {
+pub(crate) fn format_tokens(tokens: u64) -> String {
     if tokens >= 1_000_000 {
         format!("{:.1}M", tokens as f64 / 1_000_000.0)
     } else if tokens >= 1_000 {

@@ -21,10 +21,7 @@ async fn test_error_threshold() {
 
 #[tokio::test]
 async fn test_success_resets_errors() {
-    let _config = HealthConfig {
-        error_threshold: 3,
-        ..Default::default()
-    };
+    let _config = HealthConfig { error_threshold: 3, ..Default::default() };
     let monitor = HealthMonitor::new();
 
     monitor.register_account("test-1".to_string(), "test@example.com".to_string());
@@ -42,10 +39,7 @@ async fn test_success_resets_errors() {
 
 #[tokio::test]
 async fn test_force_enable() {
-    let config = HealthConfig {
-        error_threshold: 1,
-        ..Default::default()
-    };
+    let config = HealthConfig { error_threshold: 1, ..Default::default() };
     let monitor = HealthMonitor::with_config(config);
 
     monitor.register_account("test-1".to_string(), "test@example.com".to_string());
@@ -59,23 +53,11 @@ async fn test_force_enable() {
 
 #[test]
 fn test_error_type_from_status() {
-    assert_eq!(
-        ErrorType::from_status_code(401),
-        Some(ErrorType::Unauthorized)
-    );
+    assert_eq!(ErrorType::from_status_code(401), Some(ErrorType::Unauthorized));
     assert_eq!(ErrorType::from_status_code(403), Some(ErrorType::Forbidden));
-    assert_eq!(
-        ErrorType::from_status_code(429),
-        Some(ErrorType::RateLimited)
-    );
-    assert_eq!(
-        ErrorType::from_status_code(500),
-        Some(ErrorType::ServerError)
-    );
-    assert_eq!(
-        ErrorType::from_status_code(502),
-        Some(ErrorType::ServerError)
-    );
+    assert_eq!(ErrorType::from_status_code(429), Some(ErrorType::RateLimited));
+    assert_eq!(ErrorType::from_status_code(500), Some(ErrorType::ServerError));
+    assert_eq!(ErrorType::from_status_code(502), Some(ErrorType::ServerError));
     assert_eq!(ErrorType::from_status_code(200), None);
     assert_eq!(ErrorType::from_status_code(400), None);
 }
@@ -103,10 +85,7 @@ fn test_register_and_unregister() {
 fn test_disabled_count() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        let config = HealthConfig {
-            error_threshold: 1,
-            ..Default::default()
-        };
+        let config = HealthConfig { error_threshold: 1, ..Default::default() };
         let monitor = HealthMonitor::with_config(config);
 
         monitor.register_account("acc1".to_string(), "a@test.com".to_string());

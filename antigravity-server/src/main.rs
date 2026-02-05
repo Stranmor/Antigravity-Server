@@ -7,6 +7,17 @@
 //!
 //! Access via: http://localhost:8045
 
+// Crate-level lint configuration
+#![allow(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "CLI application uses stdout/stderr for user output"
+)]
+#![allow(
+    clippy::clone_on_ref_ptr,
+    reason = "Arc::clone() vs .clone() is stylistic, both are correct"
+)]
+
 use anyhow::Result;
 use clap::Parser;
 use std::sync::Arc;
@@ -70,7 +81,7 @@ async fn run_server(port: u16) -> Result<()> {
         Err(e) => {
             tracing::warn!("⚠️ Failed to load config, using defaults: {}", e);
             Default::default()
-        }
+        },
     };
     let initial_proxy_config = initial_app_config.proxy;
 
@@ -78,10 +89,10 @@ async fn run_server(port: u16) -> Result<()> {
     match token_manager.load_accounts().await {
         Ok(count) => {
             tracing::info!("📊 Loaded {} accounts into token manager", count);
-        }
+        },
         Err(e) => {
             tracing::warn!("⚠️ Could not load accounts into token manager: {}", e);
-        }
+        },
     }
 
     token_manager.start_auto_cleanup();
@@ -92,11 +103,10 @@ async fn run_server(port: u16) -> Result<()> {
         antigravity_core::proxy::warp_isolation::DEFAULT_WARP_MAPPING_PATH.to_string()
     });
 
-    let warp_manager = Arc::new(
-        antigravity_core::proxy::warp_isolation::WarpIsolationManager::with_path(
+    let warp_manager =
+        Arc::new(antigravity_core::proxy::warp_isolation::WarpIsolationManager::with_path(
             &warp_mapping_path,
-        ),
-    );
+        ));
 
     match warp_manager.load_mappings().await {
         Ok(count) if count > 0 => {
@@ -104,15 +114,15 @@ async fn run_server(port: u16) -> Result<()> {
                 "🔐 WARP IP isolation enabled: {} accounts mapped to SOCKS5 proxies",
                 count
             );
-        }
+        },
         Ok(_) => {
             tracing::info!(
                 "ℹ️ WARP IP isolation: no mappings found (direct connections will be used)"
             );
-        }
+        },
         Err(e) => {
             tracing::warn!("⚠️ WARP IP isolation disabled: {}", e);
-        }
+        },
     }
 
     let monitor = Arc::new(antigravity_core::proxy::ProxyMonitor::new());
@@ -139,22 +149,22 @@ async fn run_server(port: u16) -> Result<()> {
                         {
                             tracing::warn!("⚠️ JSON migration skipped or failed: {}", e);
                         }
-                        Some(Arc::new(repo) as Arc<dyn AccountRepository>)
+                        Some(Arc::new(repo))
                     }
-                }
+                },
                 Err(e) => {
                     tracing::error!(
                         "❌ PostgreSQL connection failed: {}. Falling back to JSON storage.",
                         e
                     );
                     None
-                }
+                },
             }
-        }
+        },
         Err(_) => {
             info!("ℹ️ DATABASE_URL not set, using JSON file storage");
             None
-        }
+        },
     };
 
     let server_config = antigravity_core::proxy::server::ServerStartConfig {
@@ -168,7 +178,7 @@ async fn run_server(port: u16) -> Result<()> {
         ),
         zai: initial_proxy_config.zai.clone(),
         monitor: monitor.clone(),
-        experimental: initial_proxy_config.experimental.clone(),
+        experimental: initial_proxy_config.experimental,
         adaptive_limits: Arc::new(antigravity_core::proxy::AdaptiveLimitManager::new(
             0.85,
             antigravity_core::proxy::AIMDController::default(),
@@ -207,22 +217,11 @@ async fn run_server(port: u16) -> Result<()> {
     let app = router::build_router(state, axum_server).await;
 
     info!("🌐 Server listening on http://{}", local_addr);
-    info!(
-        "📊 WebUI available at http://localhost:{}/",
-        local_addr.port()
-    );
-    info!(
-        "🔌 API available at http://localhost:{}/api/",
-        local_addr.port()
-    );
-    info!(
-        "🔀 Proxy endpoints at http://localhost:{}/v1/",
-        local_addr.port()
-    );
+    info!("📊 WebUI available at http://localhost:{}/", local_addr.port());
+    info!("🔌 API available at http://localhost:{}/api/", local_addr.port());
+    info!("🔀 Proxy endpoints at http://localhost:{}/v1/", local_addr.port());
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(server_utils::shutdown_signal())
-        .await?;
+    axum::serve(listener, app).with_graceful_shutdown(server_utils::shutdown_signal()).await?;
 
     info!("👋 Server shutdown complete");
     Ok(())

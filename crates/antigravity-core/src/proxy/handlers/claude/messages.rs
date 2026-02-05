@@ -8,7 +8,7 @@ use axum::{
     extract::{Json, State},
     response::{IntoResponse, Response},
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 use tracing::{debug, info};
 
 use super::dispatch::{decide_dispatch_mode, forward_to_zai};
@@ -28,15 +28,10 @@ pub async fn handle_messages(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
-    let force_account = headers
-        .get("X-Force-Account")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
+    let force_account =
+        headers.get("X-Force-Account").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
 
-    tracing::debug!(
-        "handle_messages called. Body JSON len: {}",
-        body.to_string().len()
-    );
+    tracing::debug!("handle_messages called. Body JSON len: {}", body.to_string().len());
 
     let trace_id = generate_trace_id();
 
@@ -66,7 +61,7 @@ pub async fn handle_messages(
             Err(e) => {
                 tracing::error!("{}", e);
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-            }
+            },
         }
     }
 
@@ -76,7 +71,6 @@ pub async fn handle_messages(
     log_request_info(&trace_id, &request);
     log_request_debug(&trace_id, &request, &latest_msg);
 
-    let _session_id: Option<&str> = None;
     let upstream = state.upstream.clone();
     let mut request_for_body = request.clone();
     let token_manager = state.token_manager.clone();
@@ -96,16 +90,24 @@ pub async fn handle_messages(
         let session_id_str = extract_session_id(&request_for_body);
         let session_id = Some(session_id_str.as_str());
 
-        let (mapped_model_temp, reason) = crate::proxy::common::resolve_model_route(
+        let (mapped_model_temp, reason) = match crate::proxy::common::resolve_model_route(
             &request_for_body.model,
             &*state.custom_mapping.read().await,
-        );
+        ) {
+            Ok(result) => result,
+            Err(e) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"error": {"message": e, "type": "invalid_request_error"}})),
+                )
+                    .into_response()
+            },
+        };
 
-        let tools_val: Option<Vec<Value>> = request_for_body.tools.as_ref().map(|list| {
-            list.iter()
-                .filter_map(|t| serde_json::to_value(t).ok())
-                .collect()
-        });
+        let tools_val: Option<Vec<Value>> = request_for_body
+            .tools
+            .as_ref()
+            .map(|list| list.iter().filter_map(|t| serde_json::to_value(t).ok()).collect());
 
         let config = crate::proxy::mappers::request_config::resolve_request_config(
             &request_for_body.model,
@@ -175,16 +177,11 @@ pub async fn handle_messages(
             Ok(r) => r,
             Err(e) => {
                 last_error = e.clone();
-                debug!(
-                    "Request failed on attempt {}/{}: {}",
-                    attempt + 1,
-                    max_attempts,
-                    e
-                );
+                debug!("Request failed on attempt {}/{}: {}", attempt + 1, max_attempts, e);
                 attempt += 1;
                 grace_retry_used = false;
                 continue;
-            }
+            },
         };
 
         let status = response.status();
@@ -225,7 +222,7 @@ pub async fn handle_messages(
                         attempt += 1;
                         grace_retry_used = false;
                         continue;
-                    }
+                    },
                 }
             } else {
                 let ctx = ResponseContext {
@@ -248,10 +245,7 @@ pub async fn handle_messages(
             .and_then(|h| h.to_str().ok())
             .map(|s| s.to_string());
 
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| format!("HTTP {}", status));
+        let error_text = response.text().await.unwrap_or_else(|_| format!("HTTP {}", status));
         last_error = format!("HTTP {}: {}", status_code, error_text);
         debug!("[{}] Upstream Error Response: {}", trace_id, error_text);
 
@@ -281,7 +275,7 @@ pub async fn handle_messages(
             ErrorAction::Retry => {
                 attempt += 1;
                 continue;
-            }
+            },
             ErrorAction::Return(resp) => return resp,
         }
     }

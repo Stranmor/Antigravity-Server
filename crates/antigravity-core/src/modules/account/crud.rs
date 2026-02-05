@@ -16,9 +16,7 @@ pub fn add_account(
     name: Option<String>,
     token: TokenData,
 ) -> Result<Account, String> {
-    let _lock = ACCOUNT_INDEX_LOCK
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let _lock = ACCOUNT_INDEX_LOCK.lock().map_err(|e| format!("Lock error: {}", e))?;
     let mut index = load_account_index()?;
 
     if index.accounts.iter().any(|s| s.email == email) {
@@ -53,16 +51,11 @@ pub fn upsert_account(
     name: Option<String>,
     token: TokenData,
 ) -> Result<Account, String> {
-    let _lock = ACCOUNT_INDEX_LOCK
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let _lock = ACCOUNT_INDEX_LOCK.lock().map_err(|e| format!("Lock error: {}", e))?;
     let mut index = load_account_index()?;
 
-    let existing_account_id = index
-        .accounts
-        .iter()
-        .find(|s| s.email == email)
-        .map(|s| s.id.clone());
+    let existing_account_id =
+        index.accounts.iter().find(|s| s.email == email).map(|s| s.id.clone());
 
     if let Some(account_id) = existing_account_id {
         match load_account(&account_id) {
@@ -89,7 +82,7 @@ pub fn upsert_account(
                 }
 
                 return Ok(account);
-            }
+            },
             Err(e) => {
                 logger::log_warn(&format!(
                     "Account {} file missing ({}), recreating...",
@@ -105,7 +98,7 @@ pub fn upsert_account(
                 }
 
                 return Ok(account);
-            }
+            },
         }
     }
 
@@ -115,9 +108,7 @@ pub fn upsert_account(
 
 /// Delete an account by ID.
 pub fn delete_account(account_id: &str) -> Result<(), String> {
-    let _lock = ACCOUNT_INDEX_LOCK
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let _lock = ACCOUNT_INDEX_LOCK.lock().map_err(|e| format!("Lock error: {}", e))?;
     let mut index = load_account_index()?;
 
     let original_len = index.accounts.len();
@@ -146,9 +137,7 @@ pub fn delete_account(account_id: &str) -> Result<(), String> {
 
 /// Batch delete accounts.
 pub fn delete_accounts(account_ids: &[String]) -> Result<(), String> {
-    let _lock = ACCOUNT_INDEX_LOCK
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let _lock = ACCOUNT_INDEX_LOCK.lock().map_err(|e| format!("Lock error: {}", e))?;
     let mut index = load_account_index()?;
     let accounts_dir = get_accounts_dir()?;
 
@@ -174,16 +163,11 @@ pub fn delete_accounts(account_ids: &[String]) -> Result<(), String> {
 
 /// Reorder accounts based on the provided ID order.
 pub fn reorder_accounts(account_ids: &[String]) -> Result<(), String> {
-    let _lock = ACCOUNT_INDEX_LOCK
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
+    let _lock = ACCOUNT_INDEX_LOCK.lock().map_err(|e| format!("Lock error: {}", e))?;
     let mut index = load_account_index()?;
 
-    let id_to_summary: std::collections::HashMap<_, _> = index
-        .accounts
-        .iter()
-        .map(|s| (s.id.clone(), s.clone()))
-        .collect();
+    let id_to_summary: std::collections::HashMap<_, _> =
+        index.accounts.iter().map(|s| (s.id.clone(), s.clone())).collect();
 
     let mut new_accounts = Vec::new();
     for id in account_ids {
@@ -200,10 +184,7 @@ pub fn reorder_accounts(account_ids: &[String]) -> Result<(), String> {
 
     index.accounts = new_accounts;
 
-    logger::log_info(&format!(
-        "Account order updated, {} accounts",
-        index.accounts.len()
-    ));
+    logger::log_info(&format!("Account order updated, {} accounts", index.accounts.len()));
 
     save_account_index(&index)
 }

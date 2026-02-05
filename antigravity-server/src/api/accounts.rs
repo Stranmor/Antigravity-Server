@@ -28,9 +28,7 @@ pub async fn list_accounts(
 ) -> Result<Json<Vec<AccountInfo>>, (StatusCode, String)> {
     let current_id = state.get_current_account().ok().flatten().map(|a| a.id);
 
-    let accounts = state
-        .list_accounts()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let accounts = state.list_accounts().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     let infos: Vec<AccountInfo> = accounts
         .into_iter()
@@ -103,7 +101,7 @@ pub async fn delete_account_handler(
         account::delete_account(&payload.account_id)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     }
-    let _ = state.reload_accounts().await;
+    drop(state.reload_accounts().await);
     Ok(Json(true))
 }
 
@@ -124,7 +122,7 @@ pub async fn delete_accounts_handler(
         account::delete_accounts(&payload.account_ids)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     }
-    let _ = state.reload_accounts().await;
+    drop(state.reload_accounts().await);
     Ok(Json(true))
 }
 
@@ -162,10 +160,8 @@ pub async fn add_account_by_token(
                 .await
                 .map_err(|e| format!("User info failed: {}", e))?;
 
-            let refresh_token = token_response
-                .refresh_token
-                .clone()
-                .unwrap_or_else(|| token.clone());
+            let refresh_token =
+                token_response.refresh_token.clone().unwrap_or_else(|| token.clone());
 
             let token_data = TokenData::new(
                 token_response.access_token,
@@ -184,8 +180,8 @@ pub async fn add_account_by_token(
         });
     }
 
-    let mut success_count = 0;
-    let mut fail_count = 0;
+    let mut success_count = 0_usize;
+    let mut fail_count = 0_usize;
     let mut added_accounts = Vec::new();
     let mut errors = Vec::new();
 
@@ -210,7 +206,7 @@ pub async fn add_account_by_token(
 
                 match upsert_result {
                     Ok(acc) => {
-                        success_count += 1;
+                        success_count = success_count.saturating_add(1);
                         added_accounts.push(AccountInfo {
                             id: acc.id.clone(),
                             email: acc.email.clone(),
@@ -226,31 +222,31 @@ pub async fn add_account_by_token(
                                 .and_then(|q| q.subscription_tier.clone()),
                             quota: acc.quota.clone(),
                         });
-                    }
+                    },
                     Err(e) => {
-                        fail_count += 1;
+                        fail_count = fail_count.saturating_add(1);
                         errors.push(format!("{}: {}", token_result.email, e));
-                        tracing::warn!("Failed to upsert account: {}", errors.last().unwrap());
-                    }
+                        if let Some(last_err) = errors.last() {
+                            tracing::warn!("Failed to upsert account: {last_err}");
+                        }
+                    },
                 }
-            }
+            },
             Ok(Err(e)) => {
-                fail_count += 1;
+                fail_count = fail_count.saturating_add(1);
                 errors.push(e);
-                tracing::warn!("Failed to add account: {}", errors.last().unwrap());
-            }
+                if let Some(last_err) = errors.last() {
+                    tracing::warn!("Failed to add account: {last_err}");
+                }
+            },
             Err(e) => {
-                fail_count += 1;
-                tracing::error!("Task panicked: {}", e);
-            }
+                fail_count = fail_count.saturating_add(1);
+                tracing::error!("Task panicked: {e}");
+            },
         }
     }
 
-    let _ = state.reload_accounts().await;
+    drop(state.reload_accounts().await);
 
-    Ok(Json(AddByTokenResponse {
-        success_count,
-        fail_count,
-        accounts: added_accounts,
-    }))
+    Ok(Json(AddByTokenResponse { success_count, fail_count, accounts: added_accounts }))
 }

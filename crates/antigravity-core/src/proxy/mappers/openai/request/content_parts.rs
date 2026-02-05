@@ -21,14 +21,14 @@ pub fn transform_content_block(block: &OpenAIContentBlock) -> Option<Value> {
             } else {
                 None
             }
-        }
+        },
         OpenAIContentBlock::VideoUrl { video_url } => transform_video_url(video_url),
     }
 }
 
 fn transform_image_url(image_url: &OpenAIImageUrl) -> Option<Value> {
     if image_url.url.starts_with("data:") {
-        if let Some(pos) = image_url.url.find(",") {
+        if let Some(pos) = image_url.url.find(',') {
             let mime_part = &image_url.url[5..pos];
             let mime_type = mime_part.split(';').next().unwrap_or("image/jpeg");
             let data = &image_url.url[pos + 1..];

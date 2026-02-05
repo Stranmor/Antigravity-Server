@@ -3,8 +3,9 @@
 use crate::api_models::Account;
 use leptos::prelude::*;
 
+/// Current account section showing active account details.
 #[component]
-pub fn CurrentAccountSection(current_account: Memo<Option<Account>>) -> impl IntoView {
+pub(crate) fn CurrentAccountSection(current_account: Memo<Option<Account>>) -> impl IntoView {
     view! {
         <section class="dashboard-card">
             <h2>"Current Account"</h2>

@@ -1,11 +1,18 @@
+//! JSON to PostgreSQL migration utilities.
+//!
+//! This module provides functions to migrate account data from JSON files
+//! to PostgreSQL database, with verification and statistics tracking.
+
 use crate::models::Account;
 use crate::modules::account::{get_accounts_dir, load_account_index};
 use crate::modules::account_pg::PostgresAccountRepository;
 use crate::modules::repository::AccountRepository;
 use tracing::{error, info, warn};
 
+/// Key used to track migration completion in app_settings.
 const MIGRATION_KEY: &str = "json_migration_completed";
 
+/// Migrates accounts from JSON files to PostgreSQL.
 pub async fn migrate_json_to_postgres(
     repo: &PostgresAccountRepository,
 ) -> Result<MigrationStats, String> {
@@ -44,7 +51,7 @@ pub async fn migrate_json_to_postgres(
                 error!("Failed to read {}: {}", summary.id, e);
                 stats.failed += 1;
                 continue;
-            }
+            },
         };
 
         let account: Account = match serde_json::from_str(&content) {
@@ -53,7 +60,7 @@ pub async fn migrate_json_to_postgres(
                 error!("Failed to parse {}: {}", summary.id, e);
                 stats.failed += 1;
                 continue;
-            }
+            },
         };
 
         match repo.get_account_by_email(&account.email).await {
@@ -75,7 +82,7 @@ pub async fn migrate_json_to_postgres(
                 } else {
                     stats.updated += 1;
                 }
-            }
+            },
             Ok(None) => {
                 match repo
                     .create_account(
@@ -110,17 +117,17 @@ pub async fn migrate_json_to_postgres(
 
                         stats.migrated += 1;
                         info!("Migrated: {}", account.email);
-                    }
+                    },
                     Err(e) => {
                         error!("Failed to create {}: {}", account.email, e);
                         stats.failed += 1;
-                    }
+                    },
                 }
-            }
+            },
             Err(e) => {
                 error!("Failed to check existence of {}: {}", account.email, e);
                 stats.failed += 1;
-            }
+            },
         }
     }
 
@@ -137,30 +144,24 @@ pub async fn migrate_json_to_postgres(
                             if let Err(e) = repo.set_current_account_id(&pg_account.id).await {
                                 warn!("Failed to set current account ID: {}", e);
                             }
-                        }
+                        },
                         Ok(None) => {
                             warn!(
                                 "Current account {} not found in PostgreSQL after migration",
                                 account.email
                             );
-                        }
+                        },
                         Err(e) => {
                             warn!("Failed to lookup current account {}: {}", account.email, e);
-                        }
+                        },
                     },
                     Err(e) => {
-                        warn!(
-                            "Failed to parse current account JSON {}: {}",
-                            current_json_id, e
-                        );
-                    }
+                        warn!("Failed to parse current account JSON {}: {}", current_json_id, e);
+                    },
                 },
                 Err(e) => {
-                    warn!(
-                        "Failed to read current account file {}: {}",
-                        current_json_id, e
-                    );
-                }
+                    warn!("Failed to read current account file {}: {}", current_json_id, e);
+                },
             }
         }
     }
@@ -183,28 +184,31 @@ pub async fn migrate_json_to_postgres(
     Ok(stats)
 }
 
+/// Statistics from a migration run.
 #[derive(Default, Debug)]
 pub struct MigrationStats {
+    /// Number of accounts successfully migrated.
     pub migrated: usize,
+    /// Number of existing accounts updated.
     pub updated: usize,
+    /// Number of accounts skipped.
     pub skipped: usize,
+    /// Number of accounts that failed to migrate.
     pub failed: usize,
 }
 
+/// Verifies migration completeness by comparing JSON and PostgreSQL.
 pub async fn verify_migration(
     repo: &PostgresAccountRepository,
 ) -> Result<VerificationResult, String> {
-    let json_index = load_account_index().map_err(|e| e.to_string())?;
+    let json_index = load_account_index().map_err(|e| e.clone())?;
     let pg_accounts = repo.list_accounts().await.map_err(|e| e.to_string())?;
 
     let json_count = json_index.accounts.len();
     let pg_count = pg_accounts.len();
 
-    let json_emails: std::collections::HashSet<_> = json_index
-        .accounts
-        .iter()
-        .map(|a| a.email.clone())
-        .collect();
+    let json_emails: std::collections::HashSet<_> =
+        json_index.accounts.iter().map(|a| a.email.clone()).collect();
     let pg_emails: std::collections::HashSet<_> =
         pg_accounts.iter().map(|a| a.email.clone()).collect();
 
@@ -212,20 +216,20 @@ pub async fn verify_migration(
     let extra_in_pg: Vec<_> = pg_emails.difference(&json_emails).cloned().collect();
     let is_complete = json_count == pg_count && missing_in_pg.is_empty();
 
-    Ok(VerificationResult {
-        json_count,
-        pg_count,
-        missing_in_pg,
-        extra_in_pg,
-        is_complete,
-    })
+    Ok(VerificationResult { json_count, pg_count, missing_in_pg, extra_in_pg, is_complete })
 }
 
+/// Result of migration verification.
 #[derive(Debug)]
 pub struct VerificationResult {
+    /// Number of accounts in JSON files.
     pub json_count: usize,
+    /// Number of accounts in PostgreSQL.
     pub pg_count: usize,
+    /// Accounts in JSON but not in PostgreSQL.
     pub missing_in_pg: Vec<String>,
+    /// Accounts in PostgreSQL but not in JSON.
     pub extra_in_pg: Vec<String>,
+    /// Whether migration is complete.
     pub is_complete: bool,
 }

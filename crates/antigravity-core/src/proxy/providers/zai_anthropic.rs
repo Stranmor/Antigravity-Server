@@ -38,11 +38,7 @@ fn map_model_for_zai(original: &str, state: &crate::proxy::ZaiConfig) -> String 
 
 fn join_base_url(base: &str, path: &str) -> Result<String, String> {
     let base = base.trim_end_matches('/');
-    let path = if path.starts_with('/') {
-        path.to_string()
-    } else {
-        format!("/{}", path)
-    };
+    let path = if path.starts_with('/') { path.to_string() } else { format!("/{}", path) };
     Ok(format!("{}{}", base, path))
 }
 
@@ -75,12 +71,12 @@ fn copy_passthrough_headers(incoming: &HeaderMap) -> HeaderMap {
         match key.as_str() {
             "content-type" | "accept" | "anthropic-version" | "user-agent" => {
                 out.insert(k.clone(), v.clone());
-            }
+            },
             // Some clients use these for streaming; safe to pass through.
             "accept-encoding" | "cache-control" => {
                 out.insert(k.clone(), v.clone());
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 
@@ -114,21 +110,18 @@ pub fn deep_remove_cache_control(value: &mut Value) {
     match value {
         Value::Object(map) => {
             if let Some(v) = map.remove("cache_control") {
-                tracing::info!(
-                    "[ISSUE-744] Deep Cleaning found nested cache_control: {:?}",
-                    v
-                );
+                tracing::info!("[ISSUE-744] Deep Cleaning found nested cache_control: {:?}", v);
             }
             for v in map.values_mut() {
                 deep_remove_cache_control(v);
             }
-        }
+        },
         Value::Array(arr) => {
             for v in arr {
                 deep_remove_cache_control(v);
             }
-        }
-        _ => {}
+        },
+        _ => {},
     }
 }
 
@@ -169,17 +162,12 @@ pub async fn forward_anthropic_json(
     set_zai_auth(&mut headers, incoming_headers, &zai.api_key);
 
     // Ensure JSON content type.
-    headers
-        .entry(header::CONTENT_TYPE)
-        .or_insert(HeaderValue::from_static("application/json"));
+    headers.entry(header::CONTENT_TYPE).or_insert(HeaderValue::from_static("application/json"));
 
     // [FIX #290] Clean cache_control before sending to Anthropic API
     // This prevents "Extra inputs are not permitted" errors
     if let Some(cc) = body.get("cache_control") {
-        tracing::info!(
-            "[ISSUE-744] Deep cleaning cache_control from ROOT: {:?}",
-            cc
-        );
+        tracing::info!("[ISSUE-744] Deep cleaning cache_control from ROOT: {:?}", cc);
     }
     deep_remove_cache_control(&mut body);
 
@@ -188,26 +176,16 @@ pub async fn forward_anthropic_json(
     let body_bytes = serde_json::to_vec(&body).unwrap_or_default();
     let body_len = body_bytes.len();
 
-    tracing::debug!(
-        "Forwarding request to z.ai (len: {} bytes): {}",
-        body_len,
-        url
-    );
+    tracing::debug!("Forwarding request to z.ai (len: {} bytes): {}", body_len, url);
 
-    let req = client
-        .request(method, &url)
-        .headers(headers)
-        .body(body_bytes); // Use .body(Vec<u8>) instead of .json()
+    let req = client.request(method, &url).headers(headers).body(body_bytes); // Use .body(Vec<u8>) instead of .json()
 
     let resp = match req.send().await {
         Ok(r) => r,
         Err(e) => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                format!("Upstream request failed: {}", e),
-            )
+            return (StatusCode::BAD_GATEWAY, format!("Upstream request failed: {}", e))
                 .into_response();
-        }
+        },
     };
 
     let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
@@ -224,10 +202,6 @@ pub async fn forward_anthropic_json(
     });
 
     out.body(Body::from_stream(stream)).unwrap_or_else(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to build response",
-        )
-            .into_response()
+        (StatusCode::INTERNAL_SERVER_ERROR, "Failed to build response").into_response()
     })
 }

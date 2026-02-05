@@ -7,7 +7,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 #[component]
-pub fn OAuthTab(
+pub(crate) fn OAuthTab(
     status: RwSignal<AddAccountStatus>,
     message: RwSignal<String>,
     oauth_url: RwSignal<String>,
@@ -20,7 +20,7 @@ pub fn OAuthTab(
         if !url.is_empty() {
             if let Some(window) = web_sys::window() {
                 let clipboard = window.navigator().clipboard();
-                let _ = clipboard.write_text(&url);
+                drop(clipboard.write_text(&url));
                 url_copied.set(true);
                 spawn_local(async move {
                     gloo_timers::future::TimeoutFuture::new(1500).await;
@@ -34,7 +34,7 @@ pub fn OAuthTab(
         let url = oauth_url.get();
         if !url.is_empty() {
             if let Some(window) = web_sys::window() {
-                let _ = window.open_with_url_and_target(&url, "_blank");
+                drop(window.open_with_url_and_target(&url, "_blank"));
             }
         }
     };
@@ -45,7 +45,7 @@ pub fn OAuthTab(
         let url = oauth_url.get();
         if !url.is_empty() {
             if let Some(window) = web_sys::window() {
-                let _ = window.open_with_url_and_target(&url, "_blank");
+                drop(window.open_with_url_and_target(&url, "_blank"));
             }
         }
         message
@@ -65,11 +65,11 @@ pub fn OAuthTab(
                         gloo_timers::future::TimeoutFuture::new(1500).await;
                         is_open.set(false);
                     });
-                }
+                },
                 Err(e) => {
                     status.set(AddAccountStatus::Error);
                     message.set(format!("Error: {}", e));
-                }
+                },
             }
         });
     };
@@ -121,7 +121,7 @@ pub fn OAuthTab(
 }
 
 #[component]
-pub fn TokenTab(
+pub(crate) fn TokenTab(
     status: RwSignal<AddAccountStatus>,
     message: RwSignal<String>,
     refresh_token_input: RwSignal<String>,
@@ -165,11 +165,11 @@ pub fn TokenTab(
                         status.set(AddAccountStatus::Error);
                         message.set(format!("All {} token(s) failed to add", fail));
                     }
-                }
+                },
                 Err(e) => {
                     status.set(AddAccountStatus::Error);
                     message.set(format!("Error: {}", e));
-                }
+                },
             }
         });
     };
@@ -196,7 +196,7 @@ pub fn TokenTab(
 }
 
 #[component]
-pub fn ImportTab() -> impl IntoView {
+pub(crate) fn ImportTab() -> impl IntoView {
     view! {
         <div class="import-tab">
             <h3>"Import from Local DB"</h3>

@@ -32,11 +32,10 @@ fn escape_html(s: &str) -> String {
 
 /// Get OAuth redirect URI based on port and optional host override.
 pub fn get_oauth_redirect_uri_with_port(port: u16) -> String {
-    if let Ok(host) = std::env::var("ANTIGRAVITY_OAUTH_HOST") {
-        format!("{}/api/oauth/callback", host)
-    } else {
-        format!("http://127.0.0.1:{}/api/oauth/callback", port)
-    }
+    std::env::var("ANTIGRAVITY_OAUTH_HOST").map_or_else(
+        |_| format!("http://127.0.0.1:{port}/api/oauth/callback"),
+        |host| format!("{host}/api/oauth/callback"),
+    )
 }
 
 // ============ Response Types ============
@@ -83,20 +82,18 @@ pub async fn get_oauth_url(State(state): State<AppState>) -> Json<OAuthUrlRespon
     let port = state.get_bound_port();
     let redirect_uri = get_oauth_redirect_uri_with_port(port);
     let oauth_state = state.generate_oauth_state();
-    let url = oauth::get_auth_url_with_state(&redirect_uri, &oauth_state);
+    let url = oauth::get_auth_url_with_state(&redirect_uri, &oauth_state)
+        .unwrap_or_else(|e| format!("Error: {e}"));
 
-    Json(OAuthUrlResponse {
-        url,
-        redirect_uri,
-        state: oauth_state,
-    })
+    Json(OAuthUrlResponse { url, redirect_uri, state: oauth_state })
 }
 
 pub async fn start_oauth_login(State(state): State<AppState>) -> Json<OAuthLoginResponse> {
     let port = state.get_bound_port();
     let redirect_uri = get_oauth_redirect_uri_with_port(port);
     let oauth_state = state.generate_oauth_state();
-    let url = oauth::get_auth_url_with_state(&redirect_uri, &oauth_state);
+    let url = oauth::get_auth_url_with_state(&redirect_uri, &oauth_state)
+        .unwrap_or_else(|e| format!("Error: {e}"));
 
     Json(OAuthLoginResponse {
         url,
@@ -152,7 +149,7 @@ pub async fn handle_oauth_callback(
                 &format!("Error: {}", escape_html(&e)),
             ))
             .into_response()
-        }
+        },
     };
 
     let Some(refresh_token) = token_res.refresh_token else {
@@ -181,7 +178,7 @@ pub async fn handle_oauth_callback(
                 &format!("Error: {}", escape_html(&e)),
             ))
             .into_response()
-        }
+        },
     };
 
     let token_data = TokenData::new(
@@ -193,11 +190,8 @@ pub async fn handle_oauth_callback(
         None,
     );
 
-    match account::upsert_account(
-        user_info.email.clone(),
-        user_info.get_display_name(),
-        token_data,
-    ) {
+    match account::upsert_account(user_info.email.clone(), user_info.get_display_name(), token_data)
+    {
         Ok(acc) => {
             let _ = app_state.reload_accounts().await;
 
@@ -218,12 +212,11 @@ pub async fn handle_oauth_callback(
                 escape_html(&acc.email)
             ))
             .into_response()
-        }
-        Err(e) => Html(error_page(
-            "❌ Failed to Save Account",
-            &format!("Error: {}", escape_html(&e)),
-        ))
-        .into_response(),
+        },
+        Err(e) => {
+            Html(error_page("❌ Failed to Save Account", &format!("Error: {}", escape_html(&e))))
+                .into_response()
+        },
     }
 }
 
@@ -234,10 +227,7 @@ pub async fn submit_oauth_code(
     use axum::http::StatusCode;
 
     if !app_state.validate_oauth_state(&payload.state) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Invalid or expired OAuth state".to_string(),
-        ));
+        return Err((StatusCode::BAD_REQUEST, "Invalid or expired OAuth state".to_string()));
     }
 
     let port = app_state.get_bound_port();
@@ -245,30 +235,17 @@ pub async fn submit_oauth_code(
 
     let token_res = oauth::exchange_code(&payload.code, &redirect_uri)
         .await
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                format!("Failed to exchange code: {}", e),
-            )
-        })?;
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Failed to exchange code: {}", e)))?;
 
-    let user_info = oauth::get_user_info(&token_res.access_token)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to get user info: {}", e),
-            )
-        })?;
+    let user_info = oauth::get_user_info(&token_res.access_token).await.map_err(|e| {
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get user info: {}", e))
+    })?;
 
     let token_data = TokenData::new(
         token_res.access_token,
-        token_res.refresh_token.ok_or_else(|| {
-            (
-                StatusCode::BAD_REQUEST,
-                "No refresh token in response".to_string(),
-            )
-        })?,
+        token_res
+            .refresh_token
+            .ok_or_else(|| (StatusCode::BAD_REQUEST, "No refresh token in response".to_string()))?,
         token_res.expires_in,
         Some(user_info.email.clone()),
         None,
@@ -276,12 +253,7 @@ pub async fn submit_oauth_code(
     );
 
     account::upsert_account(user_info.email.clone(), user_info.name.clone(), token_data).map_err(
-        |e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to add account: {}", e),
-            )
-        },
+        |e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to add account: {}", e)),
     )?;
 
     let _ = app_state.reload_accounts().await;

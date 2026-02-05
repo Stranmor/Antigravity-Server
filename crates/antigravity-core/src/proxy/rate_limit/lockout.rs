@@ -15,10 +15,7 @@ impl RateLimitTracker {
         let failure_count = {
             let mut entry = self.failure_counts.entry(key.clone()).or_insert((0, now));
 
-            let elapsed = now
-                .duration_since(entry.1)
-                .unwrap_or(Duration::from_secs(0))
-                .as_secs();
+            let elapsed = now.duration_since(entry.1).unwrap_or(Duration::from_secs(0)).as_secs();
             if elapsed > FAILURE_COUNT_EXPIRY_SECONDS {
                 *entry = (0, now);
             }
@@ -64,10 +61,7 @@ impl RateLimitTracker {
         model: Option<String>,
     ) {
         let now = SystemTime::now();
-        let retry_sec = reset_time
-            .duration_since(now)
-            .map(|d| d.as_secs())
-            .unwrap_or(60);
+        let retry_sec = reset_time.duration_since(now).map(|d| d.as_secs()).unwrap_or(60);
 
         let info = RateLimitInfo {
             reset_time,
@@ -108,16 +102,13 @@ impl RateLimitTracker {
             Ok(dt) => {
                 let ts = dt.timestamp();
                 if ts < 0 {
-                    tracing::warn!(
-                        "quotarefreshtime '{}' at 1970 before，ignore",
-                        reset_time_str
-                    );
+                    tracing::warn!("quotarefreshtime '{}' at 1970 before，ignore", reset_time_str);
                     return false;
                 }
-                let reset_time = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(ts as u64);
+                let reset_time = SystemTime::UNIX_EPOCH + Duration::from_secs(ts as u64);
                 self.set_lockout_until(account_id, reset_time, reason, model);
                 true
-            }
+            },
             Err(e) => {
                 tracing::warn!(
                     "Cannot parse quota refresh time '{}': {}, will use default backoff strategy",
@@ -125,7 +116,7 @@ impl RateLimitTracker {
                     e
                 );
                 false
-            }
+            },
         }
     }
 
@@ -138,10 +129,7 @@ impl RateLimitTracker {
         reason: RateLimitReason,
     ) {
         let now = SystemTime::now();
-        let retry_sec = reset_time
-            .duration_since(now)
-            .map(|d| d.as_secs())
-            .unwrap_or(60);
+        let retry_sec = reset_time.duration_since(now).map(|d| d.as_secs()).unwrap_or(60);
 
         let key = RateLimitKey::model(account_id, model);
         let info = RateLimitInfo {
@@ -171,10 +159,7 @@ impl RateLimitTracker {
         let failure_count = {
             let mut entry = self.failure_counts.entry(key.clone()).or_insert((0, now));
 
-            let elapsed = now
-                .duration_since(entry.1)
-                .unwrap_or(Duration::from_secs(0))
-                .as_secs();
+            let elapsed = now.duration_since(entry.1).unwrap_or(Duration::from_secs(0)).as_secs();
             if elapsed > FAILURE_COUNT_EXPIRY_SECONDS {
                 *entry = (0, now);
             }

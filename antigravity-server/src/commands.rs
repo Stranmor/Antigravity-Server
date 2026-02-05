@@ -20,18 +20,16 @@ pub async fn handle_account_command(cmd: AccountCommands) -> Result<()> {
         AccountCommands::List { json } => account_commands_impl::list_accounts(json).await,
         AccountCommands::Add { token, file } => {
             account_commands_impl::add_account(token, file).await
-        }
+        },
         AccountCommands::Remove { identifier } => {
             account_commands_impl::remove_account(&identifier).await
-        }
-        AccountCommands::Toggle {
-            identifier,
-            enable,
-            disable,
-        } => account_commands_impl::toggle_account(&identifier, enable, disable).await,
+        },
+        AccountCommands::Toggle { identifier, enable, disable } => {
+            account_commands_impl::toggle_account(&identifier, enable, disable).await
+        },
         AccountCommands::Refresh { identifier } => {
             account_commands_impl::refresh_quota(&identifier).await
-        }
+        },
     }
 }
 
@@ -55,10 +53,7 @@ pub async fn handle_warmup(all: bool, email: Option<String>) -> Result<()> {
 
 pub async fn handle_status() -> Result<()> {
     let accounts = account::list_accounts().map_err(|e| anyhow::anyhow!(e))?;
-    let active = accounts
-        .iter()
-        .filter(|a| !a.disabled && !a.proxy_disabled)
-        .count();
+    let active = accounts.iter().filter(|a| !a.disabled && !a.proxy_disabled).count();
 
     println!("{}", "Antigravity Server Status".cyan().bold());
     println!("  Accounts: {} total, {} active", accounts.len(), active);
@@ -77,7 +72,7 @@ pub async fn handle_generate_key() -> Result<()> {
     let api_key = format!("sk-{}", key);
 
     core_config::update_config(|config| {
-        config.proxy.api_key = api_key.clone();
+        config.proxy.api_key.clone_from(&api_key);
     })
     .map_err(|e| anyhow::anyhow!(e))?;
 

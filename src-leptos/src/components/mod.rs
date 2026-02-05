@@ -1,25 +1,23 @@
 //! Reusable UI components
 
-mod account_card;
-mod account_details_modal;
-mod add_account_modal;
-mod button;
-mod collapsible_card;
-mod modal;
-mod pagination;
-mod select;
-mod sidebar;
-mod stats_card;
-mod tooltip;
+pub(crate) mod account_card;
+pub(crate) mod account_details_modal;
+pub(crate) mod add_account_modal;
+pub(crate) mod button;
+pub(crate) mod collapsible_card;
+pub(crate) mod modal;
+pub(crate) mod pagination;
+pub(crate) mod select;
+pub(crate) mod sidebar;
+pub(crate) mod stats_card;
 
-pub use account_card::AccountCard;
-pub use account_details_modal::AccountDetailsModal;
-pub use add_account_modal::AddAccountModal;
-pub use button::{Button, ButtonVariant};
-pub use collapsible_card::CollapsibleCard;
-pub use modal::{Modal, ModalType};
-pub use pagination::Pagination;
-pub use select::Select;
-pub use sidebar::Sidebar;
-pub use stats_card::StatsCard;
-pub use tooltip::Tooltip;
+pub(crate) use account_card::AccountCard;
+pub(crate) use account_details_modal::AccountDetailsModal;
+pub(crate) use add_account_modal::AddAccountModal;
+pub(crate) use button::{Button, ButtonVariant};
+pub(crate) use collapsible_card::CollapsibleCard;
+pub(crate) use modal::{Modal, ModalType};
+pub(crate) use pagination::Pagination;
+pub(crate) use select::Select;
+pub(crate) use sidebar::Sidebar;
+pub(crate) use stats_card::StatsCard;

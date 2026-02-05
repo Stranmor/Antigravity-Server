@@ -3,8 +3,9 @@ use leptos::prelude::*;
 
 use super::filter_types::{FilterType, ViewMode};
 
+/// Toolbar with search, view toggle, and filter tabs.
 #[component]
-pub fn Toolbar(
+pub(crate) fn Toolbar(
     search_query: RwSignal<String>,
     view_mode: RwSignal<ViewMode>,
     filter: RwSignal<FilterType>,

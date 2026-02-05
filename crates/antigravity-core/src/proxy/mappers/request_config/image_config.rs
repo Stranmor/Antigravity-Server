@@ -48,14 +48,14 @@ pub fn parse_image_config_with_params(
         match q.to_lowercase().as_str() {
             "hd" | "4k" => {
                 config.insert("imageSize".to_string(), json!("4K"));
-            }
+            },
             "medium" | "2k" => {
                 config.insert("imageSize".to_string(), json!("2K"));
-            }
+            },
             "standard" | "1k" => {
                 config.insert("imageSize".to_string(), json!("1K"));
-            }
-            _ => {}
+            },
+            _ => {},
         }
     } else {
         let is_hd = model_name.contains("-4k") || model_name.contains("-hd");
@@ -68,10 +68,7 @@ pub fn parse_image_config_with_params(
         }
     }
 
-    (
-        serde_json::Value::Object(config),
-        "gemini-3-pro-image".to_string(),
-    )
+    (Value::Object(config), "gemini-3-pro-image".to_string())
 }
 
 pub fn calculate_aspect_ratio_from_size(size: &str) -> &'static str {
@@ -86,7 +83,7 @@ pub fn calculate_aspect_ratio_from_size(size: &str) -> &'static str {
         "5:4" => return "5:4",
         "4:5" => return "4:5",
         "1:1" => return "1:1",
-        _ => {}
+        _ => {},
     }
 
     if let Some((w_str, h_str)) = size.split_once('x') {

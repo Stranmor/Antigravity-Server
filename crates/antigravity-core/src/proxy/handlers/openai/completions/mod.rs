@@ -10,10 +10,7 @@ pub async fn handle_completions(
     State(state): State<AppState>,
     Json(mut body): Json<Value>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    info!(
-        "Received /v1/completions or /v1/responses payload: {:?}",
-        body
-    );
+    info!("Received /v1/completions or /v1/responses payload: {:?}", body);
     let is_codex_style = normalize_request_body(&mut body);
     let mut openai_req: OpenAIRequest = serde_json::from_value(body.clone())
         .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid request: {}", e)))?;
@@ -31,10 +28,13 @@ pub async fn handle_completions(
     let mut grace_retry_used = false;
 
     for attempt in 0..max_attempts {
-        let (mapped_model, _reason) = crate::proxy::common::resolve_model_route(
+        let (mapped_model, _reason) = match crate::proxy::common::resolve_model_route(
             &openai_req.model,
             &*state.custom_mapping.read().await,
-        );
+        ) {
+            Ok(result) => result,
+            Err(e) => return Err((StatusCode::BAD_REQUEST, e)),
+        };
         let tools_val: Option<Vec<Value>> = openai_req.tools.as_ref().map(|list| list.to_vec());
         let config = crate::proxy::mappers::request_config::resolve_request_config(
             &openai_req.model,
@@ -49,21 +49,13 @@ pub async fn handle_completions(
         let force_rotate = attempt > 0;
 
         let (access_token, project_id, email, _guard) = match token_manager
-            .get_token(
-                &config.request_type,
-                force_rotate,
-                session_id,
-                &config.final_model,
-            )
+            .get_token(&config.request_type, force_rotate, session_id, &config.final_model)
             .await
         {
             Ok(t) => t,
             Err(e) => {
-                return Err((
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    format!("Token error: {}", e),
-                ));
-            }
+                return Err((StatusCode::SERVICE_UNAVAILABLE, format!("Token error: {}", e)));
+            },
         };
 
         last_email = Some(email.clone());
@@ -72,19 +64,11 @@ pub async fn handle_completions(
         let gemini_body = transform_openai_request(&openai_req, &project_id, &mapped_model);
         debug!(
             "[Codex-Request] Transformed Gemini Body ({} parts)",
-            gemini_body
-                .get("contents")
-                .and_then(|c| c.as_array())
-                .map(|a| a.len())
-                .unwrap_or(0)
+            gemini_body.get("contents").and_then(|c| c.as_array()).map(|a| a.len()).unwrap_or(0)
         );
 
         let list_response = openai_req.stream;
-        let method = if list_response {
-            "streamGenerateContent"
-        } else {
-            "generateContent"
-        };
+        let method = if list_response { "streamGenerateContent" } else { "generateContent" };
         let query_string = if list_response { Some("alt=sse") } else { None };
 
         // Get per-account WARP proxy for IP isolation
@@ -104,14 +88,9 @@ pub async fn handle_completions(
             Ok(r) => r,
             Err(e) => {
                 last_error = e.clone();
-                debug!(
-                    "Codex Request failed on attempt {}/{}: {}",
-                    attempt + 1,
-                    max_attempts,
-                    e
-                );
+                debug!("Codex Request failed on attempt {}/{}: {}", attempt + 1, max_attempts, e);
                 continue;
-            }
+            },
         };
 
         let status = response.status();
@@ -149,7 +128,7 @@ pub async fn handle_completions(
                     PeekResult::Retry(err) => {
                         last_error = err;
                         continue;
-                    }
+                    },
                 };
 
                 match first_data_chunk {
@@ -161,7 +140,7 @@ pub async fn handle_completions(
                             &mapped_model,
                         )
                         .into_response());
-                    }
+                    },
                     None => {
                         tracing::warn!(
                             "[{}] Stream ended immediately (Empty Response), retrying...",
@@ -169,7 +148,7 @@ pub async fn handle_completions(
                         );
                         last_error = "Empty response stream (None)".to_string();
                         continue;
-                    }
+                    },
                 }
             }
 
@@ -181,7 +160,7 @@ pub async fn handle_completions(
             let chat_resp = transform_openai_response(&gemini_resp);
             let legacy_resp = response_mapper::map_chat_to_legacy_response(&chat_resp);
 
-            return Ok(axum::Json(legacy_resp).into_response());
+            return Ok(Json(legacy_resp).into_response());
         }
 
         // Handle errors and retry
@@ -191,23 +170,14 @@ pub async fn handle_completions(
             .get("Retry-After")
             .and_then(|h| h.to_str().ok())
             .map(|s| s.to_string());
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| format!("HTTP {}", status_code));
+        let error_text = response.text().await.unwrap_or_else(|_| format!("HTTP {}", status_code));
         last_error = format!("HTTP {}: {}", status_code, error_text);
 
-        tracing::error!(
-            "[Codex-Upstream] Error Response {}: {}",
-            status_code,
-            error_text
-        );
+        tracing::error!("[Codex-Upstream] Error Response {}: {}", status_code, error_text);
 
         // Grace retry for transient 429
         if status_code == 429 && !grace_retry_used {
-            let reason = token_manager
-                .rate_limit_tracker()
-                .parse_rate_limit_reason(&error_text);
+            let reason = token_manager.rate_limit_tracker().parse_rate_limit_reason(&error_text);
             if reason == crate::proxy::rate_limit::RateLimitReason::RateLimitExceeded {
                 grace_retry_used = true;
                 tracing::info!("[{}] 🔄 Grace retry on {}, waiting 1s", trace_id, email);
@@ -236,14 +206,7 @@ pub async fn handle_completions(
         }
 
         let strategy = determine_retry_strategy(status_code, &error_text, false);
-        if apply_retry_strategy(
-            strategy,
-            attempt,
-            MAX_RETRY_ATTEMPTS,
-            status_code,
-            &trace_id,
-        )
-        .await
+        if apply_retry_strategy(strategy, attempt, MAX_RETRY_ATTEMPTS, status_code, &trace_id).await
         {
             continue;
         } else {

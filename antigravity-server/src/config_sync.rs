@@ -9,15 +9,12 @@ const SYNC_INTERVAL_SECS: u64 = 60;
 pub fn start_auto_config_sync(state: Arc<AppState>, remote_url: String) {
     let url_for_log = remote_url.clone();
 
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-    {
+    let client = match reqwest::Client::builder().timeout(Duration::from_secs(30)).build() {
         Ok(c) => c,
         Err(e) => {
             tracing::error!("❌ Failed to create HTTP client for config sync: {}", e);
             return;
-        }
+        },
     };
 
     tokio::spawn(async move {

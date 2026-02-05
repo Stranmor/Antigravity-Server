@@ -32,10 +32,8 @@ pub async fn handle_chat_completions(
     headers: HeaderMap,
     Json(mut body): Json<Value>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let force_account = headers
-        .get("X-Force-Account")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
+    let force_account =
+        headers.get("X-Force-Account").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
 
     if is_responses_format(&body) {
         convert_responses_to_chat(&mut body);
@@ -62,10 +60,13 @@ pub async fn handle_chat_completions(
         std::collections::HashSet::new();
 
     while attempt < max_attempts {
-        let (mapped_model, reason) = crate::proxy::common::resolve_model_route(
+        let (mapped_model, reason) = match crate::proxy::common::resolve_model_route(
             &openai_req.model,
             &*state.custom_mapping.read().await,
-        );
+        ) {
+            Ok(result) => result,
+            Err(e) => return Err((StatusCode::BAD_REQUEST, e)),
+        };
         let tools_val: Option<Vec<Value>> = openai_req.tools.as_ref().map(|list| list.to_vec());
         let config = crate::proxy::mappers::request_config::resolve_request_config(
             &openai_req.model,
@@ -125,7 +126,7 @@ pub async fn handle_chat_completions(
                 attempt += 1;
                 grace_retry_used = false;
                 continue;
-            }
+            },
         };
 
         let status = response.status();
@@ -157,14 +158,14 @@ pub async fn handle_chat_completions(
                         Json(json),
                     )
                         .into_response());
-                }
+                },
                 StreamResult::Retry(err) => {
                     last_error = err;
                     attempted_accounts.insert(email.clone());
                     attempt += 1;
                     grace_retry_used = false;
                     continue;
-                }
+                },
                 StreamResult::EmptyStream => {
                     warn!("[{}] Stream ended immediately, rotating...", trace_id);
                     last_error = "Empty response stream".to_string();
@@ -172,7 +173,7 @@ pub async fn handle_chat_completions(
                     attempt += 1;
                     grace_retry_used = false;
                     continue;
-                }
+                },
             }
         }
 
@@ -182,16 +183,10 @@ pub async fn handle_chat_completions(
             .get("Retry-After")
             .and_then(|h| h.to_str().ok())
             .map(|s| s.to_string());
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| format!("HTTP {}", status_code));
+        let error_text = response.text().await.unwrap_or_else(|_| format!("HTTP {}", status_code));
         last_error = format!("HTTP {}: {}", status_code, error_text);
 
-        error!(
-            "[OpenAI-Upstream] Error Response {}: {}",
-            status_code, error_text
-        );
+        error!("[OpenAI-Upstream] Error Response {}: {}", status_code, error_text);
 
         if let Some(new_grace) = handle_grace_retry(
             status_code,
@@ -238,10 +233,10 @@ pub async fn handle_chat_completions(
                     grace_retry_used = false;
                     continue;
                 }
-            }
+            },
             ErrorAction::ReturnError(code, email, text) => {
                 return Ok((code, [("X-Account-Email", email)], text).into_response());
-            }
+            },
         }
 
         if handle_auth_errors(

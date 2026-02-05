@@ -48,12 +48,8 @@ const SUGGESTION_KEYWORDS: &[&str] = &[
 
 const SYSTEM_KEYWORDS: &[&str] = &["Warmup", "<system-reminder>", "This is a system message"];
 
-const PROBE_KEYWORDS: &[&str] = &[
-    "check current directory",
-    "list available tools",
-    "verify environment",
-    "test connection",
-];
+const PROBE_KEYWORDS: &[&str] =
+    &["check current directory", "list available tools", "verify environment", "test connection"];
 
 pub fn detect_background_task_type(request: &ClaudeRequest) -> Option<BackgroundTaskType> {
     let last_user_msg = extract_last_user_message_for_detection(request)?;
@@ -94,35 +90,30 @@ fn matches_keywords(text: &str, keywords: &[&str]) -> bool {
 }
 
 fn extract_last_user_message_for_detection(request: &ClaudeRequest) -> Option<String> {
-    request
-        .messages
-        .iter()
-        .rev()
-        .filter(|m| m.role == "user")
-        .find_map(|m| {
-            let content = match &m.content {
-                crate::proxy::mappers::claude::models::MessageContent::String(s) => s.to_string(),
-                crate::proxy::mappers::claude::models::MessageContent::Array(arr) => arr
-                    .iter()
-                    .filter_map(|block| match block {
-                        crate::proxy::mappers::claude::models::ContentBlock::Text { text } => {
-                            Some(text.as_str())
-                        }
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" "),
-            };
+    request.messages.iter().rev().filter(|m| m.role == "user").find_map(|m| {
+        let content = match &m.content {
+            crate::proxy::mappers::claude::models::MessageContent::String(s) => s.to_string(),
+            crate::proxy::mappers::claude::models::MessageContent::Array(arr) => arr
+                .iter()
+                .filter_map(|block| match block {
+                    crate::proxy::mappers::claude::models::ContentBlock::Text { text } => {
+                        Some(text.as_str())
+                    },
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(" "),
+        };
 
-            if content.trim().is_empty()
-                || content.starts_with("Warmup")
-                || content.contains("<system-reminder>")
-            {
-                None
-            } else {
-                Some(content)
-            }
-        })
+        if content.trim().is_empty()
+            || content.starts_with("Warmup")
+            || content.contains("<system-reminder>")
+        {
+            None
+        } else {
+            Some(content)
+        }
+    })
 }
 
 pub fn select_background_model(task_type: BackgroundTaskType) -> &'static str {

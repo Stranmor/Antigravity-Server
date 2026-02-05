@@ -81,10 +81,7 @@ fn test_sanitize_removes_base64_image() {
     assert_eq!(blocks.len(), 2);
     assert_eq!(blocks[0]["type"], "text");
     assert_eq!(blocks[0]["text"], "some text");
-    assert!(blocks[1]["text"]
-        .as_str()
-        .unwrap()
-        .contains("[image omitted"));
+    assert!(blocks[1]["text"].as_str().unwrap().contains("[image omitted"));
 }
 
 #[test]

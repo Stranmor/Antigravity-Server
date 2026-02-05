@@ -30,10 +30,8 @@ pub async fn build_health_response(
             let elapsed = instant.elapsed().as_secs();
             let remaining = cooldown_secs.saturating_sub(elapsed);
 
-            let unix_ts = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_secs() - elapsed)
-                .ok();
+            let unix_ts =
+                SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() - elapsed).ok();
 
             (unix_ts, Some(remaining))
         } else {
@@ -45,11 +43,8 @@ pub async fn build_health_response(
     let last_error_message = health.last_error_message.read().await.clone();
 
     let total = total_successes + total_errors;
-    let success_rate = if total > 0 {
-        (f64::from(total_successes) / f64::from(total)) * 100.0
-    } else {
-        100.0
-    };
+    let success_rate =
+        if total > 0 { (f64::from(total_successes) / f64::from(total)) * 100.0 } else { 100.0 };
 
     AccountHealthResponse {
         account_id: health.account_id.clone(),

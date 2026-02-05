@@ -2,8 +2,9 @@ use crate::app::AppState;
 use crate::components::{Button, ButtonVariant};
 use leptos::prelude::*;
 
+/// Page header with action buttons.
 #[component]
-pub fn Header(
+pub(crate) fn Header(
     state: AppState,
     sync_pending: RwSignal<bool>,
     refresh_pending: RwSignal<bool>,
@@ -51,17 +52,20 @@ pub fn Header(
     }
 }
 
+/// Message banner for success/error notifications.
 #[component]
-pub fn MessageBanner(message: RwSignal<Option<(String, bool)>>) -> impl IntoView {
+pub(crate) fn MessageBanner(message: RwSignal<Option<(String, bool)>>) -> impl IntoView {
     view! {
         <Show when=move || message.get().is_some()>
             {move || {
-                let (msg, is_error) = message.get().unwrap();
+                let Some((msg, is_error)) = message.get() else {
+                    return view! { <div></div> }.into_any();
+                };
                 view! {
                     <div class=format!("alert {}", if is_error { "alert--error" } else { "alert--success" })>
                         <span>{msg}</span>
                     </div>
-                }
+                }.into_any()
             }}
         </Show>
     }

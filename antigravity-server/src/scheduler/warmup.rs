@@ -18,7 +18,7 @@ pub fn start(state: AppState) {
             Err(e) => {
                 tracing::error!("[Scheduler] Failed to get data dir: {}", e);
                 return;
-            }
+            },
         };
 
         let scheduler_state = Arc::new(Mutex::new(SchedulerState::new_async(data_dir).await));
@@ -52,7 +52,7 @@ pub fn start(state: AppState) {
             } else {
                 warmup_config.interval_minutes
             };
-            let interval_secs = (interval_minutes as i64) * 60;
+            let interval_secs = i64::from(interval_minutes) * 60_i64;
 
             if let Some(last) = last_warmup_check {
                 if now - last < interval_secs {
@@ -65,10 +65,7 @@ pub fn start(state: AppState) {
             tracing::info!("[Scheduler] Starting warmup scan...");
 
             let models_to_warmup: Vec<String> = if warmup_config.models.is_empty() {
-                DEFAULT_WARMUP_MODELS
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect()
+                DEFAULT_WARMUP_MODELS.iter().map(|s| s.to_string()).collect()
             } else {
                 warmup_config.models.clone()
             };
@@ -78,18 +75,14 @@ pub fn start(state: AppState) {
                 Err(e) => {
                     tracing::warn!("[Scheduler] Failed to list accounts: {}", e);
                     continue;
-                }
+                },
             };
 
             if accounts.is_empty() {
                 continue;
             }
 
-            let mode_desc = if warmup_config.only_low_quota {
-                "low quota"
-            } else {
-                "100% quota"
-            };
+            let mode_desc = if warmup_config.only_low_quota { "low quota" } else { "100% quota" };
             tracing::info!(
                 "[Scheduler] Scanning {} accounts for {} models...",
                 accounts.len(),
@@ -126,7 +119,7 @@ pub fn start(state: AppState) {
                         let should_warmup = if warmup_config.only_low_quota {
                             model.percentage < LOW_QUOTA_THRESHOLD
                         } else {
-                            model.percentage == 100
+                            model.percentage == 100_i32
                         };
 
                         if should_warmup {
@@ -144,16 +137,18 @@ pub fn start(state: AppState) {
                         }
                     }
                 }
+                drop(scheduler);
             }
 
             {
                 let mut scheduler = scheduler_state.lock().await;
-                let cutoff = now - 86400;
+                let cutoff = now - 86400_i64;
                 let cleaned = scheduler.cleanup_stale(cutoff);
                 if cleaned > 0 {
                     tracing::debug!("[Scheduler] Cleaned up {} stale history entries", cleaned);
                 }
                 scheduler.save_history_async().await;
+                drop(scheduler);
             }
 
             if !accounts_to_warmup.is_empty() {
@@ -169,9 +164,11 @@ pub fn start(state: AppState) {
 
                 tracing::info!("[Scheduler] Triggering {} account warmups...", total);
 
-                let mut success = 0;
+                let mut success = 0_usize;
 
-                for email in &accounts_to_warmup {
+                // Convert HashSet to Vec for deterministic iteration
+                let emails_to_warmup: Vec<_> = accounts_to_warmup.into_iter().collect();
+                for email in &emails_to_warmup {
                     let mut acc = match accounts.iter().find(|a| &a.email == email).cloned() {
                         Some(a) => a,
                         None => continue,
@@ -195,10 +192,10 @@ pub fn start(state: AppState) {
                             success += 1;
                             let mut scheduler = scheduler_state.lock().await;
                             scheduler.record_warmup(email, now);
-                        }
+                        },
                         Err(e) => {
                             tracing::warn!("[Scheduler] Warmup failed for {}: {}", email, e);
-                        }
+                        },
                     }
 
                     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -207,21 +204,15 @@ pub fn start(state: AppState) {
                 {
                     let scheduler = scheduler_state.lock().await;
                     scheduler.save_history_async().await;
+                    drop(scheduler);
                 }
 
-                tracing::info!(
-                    "[Scheduler] Warmup completed: {}/{} successful",
-                    success,
-                    total
-                );
+                tracing::info!("[Scheduler] Warmup completed: {}/{} successful", success, total);
 
                 tokio::time::sleep(Duration::from_secs(2)).await;
-                let _ = state.reload_accounts().await;
+                drop(state.reload_accounts().await);
             } else if skipped_cooldown > 0 {
-                tracing::info!(
-                    "[Scheduler] Scan complete, all {} in cooldown",
-                    skipped_cooldown
-                );
+                tracing::info!("[Scheduler] Scan complete, all {} in cooldown", skipped_cooldown);
             } else if skipped_disabled > 0 {
                 tracing::debug!(
                     "[Scheduler] Scan complete, {} disabled, no matching models",

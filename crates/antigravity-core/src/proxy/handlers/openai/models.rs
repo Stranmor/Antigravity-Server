@@ -12,7 +12,7 @@ pub async fn handle_list_models(State(state): State<AppState>) -> impl IntoRespo
             json!({
                 "id": id,
                 "object": "model",
-                "created": 1706745600,
+                "created": 1_706_745_600,
                 "owned_by": "antigravity"
             })
         })

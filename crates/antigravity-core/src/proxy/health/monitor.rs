@@ -29,11 +29,7 @@ impl HealthMonitor {
     pub fn with_config(config: HealthConfig) -> Arc<Self> {
         let (shutdown_tx, _) = tokio::sync::watch::channel(false);
 
-        Arc::new(Self {
-            accounts: DashMap::new(),
-            config: RwLock::new(config),
-            shutdown_tx,
-        })
+        Arc::new(Self { accounts: DashMap::new(), config: RwLock::new(config), shutdown_tx })
     }
 
     /// Start the background recovery task
@@ -198,11 +194,7 @@ impl HealthMonitor {
                     *disabled_at = None;
                 }
 
-                tracing::info!(
-                    "✅ Account {} ({}) manually re-enabled",
-                    account_id,
-                    health.email
-                );
+                tracing::info!("✅ Account {} ({}) manually re-enabled", account_id, health.email);
 
                 return true;
             }
@@ -234,9 +226,7 @@ impl HealthMonitor {
 
     /// Check if an account is available (not disabled)
     pub fn is_available(&self, account_id: &str) -> bool {
-        self.accounts
-            .get(account_id)
-            .is_none_or(|h| !h.is_disabled())
+        self.accounts.get(account_id).is_none_or(|h| !h.is_disabled())
     }
 
     /// Get current configuration
@@ -246,8 +236,7 @@ impl HealthMonitor {
 
     /// Update configuration
     pub async fn update_config(&self, new_config: HealthConfig) {
-        let mut config = self.config.write().await;
-        *config = new_config;
+        *self.config.write().await = new_config;
         tracing::info!("Health monitor configuration updated");
     }
 
@@ -259,18 +248,12 @@ impl HealthMonitor {
 
     /// Get count of disabled accounts
     pub fn disabled_count(&self) -> usize {
-        self.accounts
-            .iter()
-            .filter(|e| e.value().is_disabled())
-            .count()
+        self.accounts.iter().filter(|e| e.value().is_disabled()).count()
     }
 
     /// Get count of healthy accounts
     pub fn healthy_count(&self) -> usize {
-        self.accounts
-            .iter()
-            .filter(|e| !e.value().is_disabled())
-            .count()
+        self.accounts.iter().filter(|e| !e.value().is_disabled()).count()
     }
 
     /// Shutdown the monitor

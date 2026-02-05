@@ -24,14 +24,12 @@ impl TokenManager {
                     entry.timestamp = token.timestamp;
                 }
 
-                if let Err(e) = self
-                    .save_refreshed_token(&token.account_id, &token_response)
-                    .await
+                if let Err(e) = self.save_refreshed_token(&token.account_id, &token_response).await
                 {
                     tracing::debug!("Failed to save refreshed token ({}): {}", token.email, e);
                 }
                 Ok(())
-            }
+            },
             Err(e) => {
                 tracing::error!("Token refresh failed ({}): {}", token.email, e);
                 if e.contains("\"invalid_grant\"") || e.contains("invalid_grant") {
@@ -45,7 +43,7 @@ impl TokenManager {
                     self.tokens.remove(&token.account_id);
                 }
                 Err(format!("Token refresh failed: {}", e))
-            }
+            },
         }
     }
 
@@ -63,14 +61,11 @@ impl TokenManager {
                 let _ = self.save_project_id(&token.account_id, &pid).await;
                 token.project_id = Some(pid.clone());
                 Ok(pid)
-            }
+            },
             Err(e) => {
                 tracing::error!("Failed to fetch project_id for {}: {}", token.email, e);
-                Err(format!(
-                    "Failed to fetch project_id for {}: {}",
-                    token.email, e
-                ))
-            }
+                Err(format!("Failed to fetch project_id for {}: {}", token.email, e))
+            },
         }
     }
 }

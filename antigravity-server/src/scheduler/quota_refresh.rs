@@ -22,7 +22,7 @@ pub fn start_quota_refresh(state: AppState) {
                 Err(e) => {
                     tracing::warn!("[QuotaRefresh] Failed to load config: {}", e);
                     continue;
-                }
+                },
             };
 
             if !app_config.auto_refresh {
@@ -30,24 +30,19 @@ pub fn start_quota_refresh(state: AppState) {
             }
 
             let now = Utc::now().timestamp();
-            let interval_minutes = if app_config.refresh_interval < 5 {
-                15
-            } else {
-                app_config.refresh_interval
-            };
-            let interval_secs = (interval_minutes as i64) * 60;
+            let interval_minutes =
+                if app_config.refresh_interval < 5 { 15 } else { app_config.refresh_interval };
+            let interval_secs = i64::from(interval_minutes) * 60_i64;
 
             let accounts = match account::list_accounts() {
                 Ok(accs) => accs,
                 Err(e) => {
                     tracing::warn!("[QuotaRefresh] Failed to list accounts: {}", e);
                     continue;
-                }
+                },
             };
-            let enabled_accounts: Vec<_> = accounts
-                .into_iter()
-                .filter(|a| !a.disabled && !a.proxy_disabled)
-                .collect();
+            let enabled_accounts: Vec<_> =
+                accounts.into_iter().filter(|a| !a.disabled && !a.proxy_disabled).collect();
 
             let needs_immediate: Vec<_> = enabled_accounts
                 .iter()
@@ -79,14 +74,14 @@ pub fn start_quota_refresh(state: AppState) {
                                 "[QuotaRefresh] Immediate refresh: {}",
                                 acc_clone.email
                             );
-                        }
+                        },
                         Err(e) => {
                             tracing::warn!(
                                 "[QuotaRefresh] Failed immediate refresh {}: {}",
                                 acc_clone.email,
                                 e
                             );
-                        }
+                        },
                     }
                     tokio::time::sleep(Duration::from_millis(300)).await;
                 }
@@ -129,19 +124,15 @@ pub fn start_quota_refresh(state: AppState) {
                                             .await;
                                 }
                                 success += 1;
-                            }
+                            },
                             Err(e) => {
                                 tracing::warn!("[QuotaRefresh] Failed {}: {}", acc.email, e);
-                            }
+                            },
                         }
                         tokio::time::sleep(Duration::from_millis(500)).await;
                     }
 
-                    tracing::info!(
-                        "[QuotaRefresh] Full refresh: {}/{} accounts",
-                        success,
-                        total
-                    );
+                    tracing::info!("[QuotaRefresh] Full refresh: {}/{} accounts", success, total);
                     let _ = state.reload_accounts().await;
                 }
             }

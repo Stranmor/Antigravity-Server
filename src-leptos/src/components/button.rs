@@ -2,17 +2,23 @@
 
 use leptos::prelude::*;
 
-#[derive(Clone, Copy, Default, PartialEq)]
-pub enum ButtonVariant {
+/// Button style variant.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub(crate) enum ButtonVariant {
+    /// Primary action button.
     #[default]
     Primary,
+    /// Secondary action button.
     Secondary,
+    /// Dangerous/destructive action.
     Danger,
+    /// Ghost/minimal button.
     Ghost,
 }
 
 impl ButtonVariant {
-    pub fn class(&self) -> &'static str {
+    /// Returns the CSS class for this variant.
+    pub(crate) fn class(&self) -> &'static str {
         match self {
             ButtonVariant::Primary => "btn--primary",
             ButtonVariant::Secondary => "btn--secondary",
@@ -23,7 +29,7 @@ impl ButtonVariant {
 }
 
 #[component]
-pub fn Button(
+pub(crate) fn Button(
     /// Button text content
     #[prop(into)]
     text: String,

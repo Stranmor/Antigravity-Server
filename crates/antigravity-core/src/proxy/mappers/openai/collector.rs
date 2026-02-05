@@ -150,11 +150,7 @@ where
     let message = if !tool_calls.is_empty() {
         OpenAIMessage {
             role: "assistant".to_string(),
-            content: if content.is_empty() {
-                None
-            } else {
-                Some(OpenAIContent::String(content))
-            },
+            content: if content.is_empty() { None } else { Some(OpenAIContent::String(content)) },
             tool_calls: Some(tool_calls),
             reasoning_content: if reasoning_content.is_empty() {
                 None
@@ -179,11 +175,7 @@ where
         }
     };
 
-    response.choices.push(Choice {
-        index: 0,
-        message,
-        finish_reason,
-    });
+    response.choices.push(Choice { index: 0, message, finish_reason });
 
     Ok(response)
 }
@@ -202,11 +194,8 @@ mod tests {
             "data: [DONE]\n\n",
         ];
 
-        let byte_stream = stream::iter(
-            sse_data
-                .into_iter()
-                .map(|s| Ok::<Bytes, io::Error>(Bytes::from(s))),
-        );
+        let byte_stream =
+            stream::iter(sse_data.into_iter().map(|s| Ok::<Bytes, io::Error>(Bytes::from(s))));
 
         let result = collect_openai_stream_to_json(byte_stream).await;
         assert!(result.is_ok());

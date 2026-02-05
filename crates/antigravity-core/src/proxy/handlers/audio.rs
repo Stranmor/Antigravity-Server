@@ -38,15 +38,15 @@ pub async fn handle_audio_transcription(
                         .map_err(|e| (StatusCode::BAD_REQUEST, format!("readfilefailed: {}", e)))?
                         .to_vec(),
                 );
-            }
+            },
             "model" => {
                 // Ignore client-provided model (whisper-1, etc.) — always use gemini-3-pro for audio
                 let _ = field.text().await;
-            }
+            },
             "prompt" => {
                 prompt = field.text().await.unwrap_or(prompt);
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 
@@ -136,30 +136,17 @@ pub async fn handle_audio_transcription(
             warp_proxy.as_deref(),
         )
         .await
-        .map_err(|e| {
-            (
-                StatusCode::BAD_GATEWAY,
-                format!("upstreamRequest failed: {}", e),
-            )
-        })?;
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("upstreamRequest failed: {}", e)))?;
 
     if !response.status().is_success() {
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Unknown error".to_string());
-        return Err((
-            StatusCode::BAD_GATEWAY,
-            format!("Gemini API error: {}", error_text),
-        ));
+        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        return Err((StatusCode::BAD_GATEWAY, format!("Gemini API error: {}", error_text)));
     }
 
-    let result: Value = response.json().await.map_err(|e| {
-        (
-            StatusCode::BAD_GATEWAY,
-            format!("parseResponse failed: {}", e),
-        )
-    })?;
+    let result: Value = response
+        .json()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("parseResponse failed: {}", e)))?;
 
     // 9. extracttextresponse（unwrap v1internal response）
     let inner_response = result.get("response").unwrap_or(&result);
@@ -173,10 +160,7 @@ pub async fn handle_audio_transcription(
         .and_then(|t| t.as_str())
         .unwrap_or("");
 
-    info!(
-        "audiotranscriptioncomplete，return {} character",
-        text.len()
-    );
+    info!("audiotranscriptioncomplete，return {} character", text.len());
 
     // 10. returnstandardformatresponse
     Ok((

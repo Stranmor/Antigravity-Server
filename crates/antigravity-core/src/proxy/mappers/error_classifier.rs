@@ -33,11 +33,7 @@ pub fn classify_stream_error(error: &Error) -> (&'static str, &'static str, &'st
             "errors.stream.stream_error",
         )
     } else {
-        (
-            "unknown_error",
-            "Unknown error occurred",
-            "errors.stream.unknown_error",
-        )
+        ("unknown_error", "Unknown error occurred", "errors.stream.unknown_error")
     }
 }
 
@@ -81,7 +77,7 @@ mod tests {
             Ok(_) => {
                 // Network returned a response - skip error classification test
                 return;
-            }
+            },
         };
 
         let (error_type, message, i18n_key) = classify_stream_error(&error);

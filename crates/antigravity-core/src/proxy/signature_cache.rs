@@ -20,10 +20,7 @@ struct CacheEntry<T> {
 
 impl<T> CacheEntry<T> {
     fn new(data: T) -> Self {
-        Self {
-            data,
-            timestamp: SystemTime::now(),
-        }
+        Self { data, timestamp: SystemTime::now() }
     }
 
     fn is_expired(&self) -> bool {
@@ -75,10 +72,7 @@ impl SignatureCache {
         }
 
         if let Ok(mut cache) = self.tool_signatures.write() {
-            tracing::debug!(
-                "[SignatureCache] Caching tool signature for id: {}",
-                tool_use_id
-            );
+            tracing::debug!("[SignatureCache] Caching tool signature for id: {}", tool_use_id);
             cache.insert(tool_use_id.to_string(), CacheEntry::new(signature));
 
             // Clean up expired entries when limit is reached
@@ -102,10 +96,7 @@ impl SignatureCache {
         if let Ok(cache) = self.tool_signatures.read() {
             if let Some(entry) = cache.get(tool_use_id) {
                 if !entry.is_expired() {
-                    tracing::debug!(
-                        "[SignatureCache] Hit tool signature for id: {}",
-                        tool_use_id
-                    );
+                    tracing::debug!("[SignatureCache] Hit tool signature for id: {}", tool_use_id);
                     return Some(entry.data.clone());
                 }
             }
@@ -173,7 +164,7 @@ impl SignatureCache {
                 Some(existing) => {
                     // Expired entries should be replaced
                     existing.is_expired() || signature.len() > existing.data.len()
-                }
+                },
             };
 
             if should_store {

@@ -14,7 +14,7 @@ pub fn decode_signature(sig: &str) -> String {
                     decoded_str.len()
                 );
                 decoded_str
-            }
+            },
             Err(_) => sig.to_string(),
         },
         Err(_) => sig.to_string(),
@@ -68,11 +68,8 @@ pub fn parse_mcp_xml(text: &str) -> McpXmlParseResult {
             let end_tag = format!("</{}>", tool_name);
 
             if let Some(close_idx) = text.find(&end_tag) {
-                let text_before = if start_idx > 0 {
-                    Some(text[..start_idx].to_string())
-                } else {
-                    None
-                };
+                let text_before =
+                    if start_idx > 0 { Some(text[..start_idx].to_string()) } else { None };
 
                 let input_str = &text[actual_tag_end + 1..close_idx];
                 let input_json: serde_json::Value = serde_json::from_str(input_str.trim())

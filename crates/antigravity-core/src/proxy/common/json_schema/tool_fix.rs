@@ -26,11 +26,7 @@ fn fix_single_arg_recursive(value: &mut Value, schema: &Value) {
         return;
     }
 
-    let schema_type = schema
-        .get("type")
-        .and_then(|t| t.as_str())
-        .unwrap_or("")
-        .to_lowercase();
+    let schema_type = schema.get("type").and_then(|t| t.as_str()).unwrap_or("").to_lowercase();
     if schema_type == "array" {
         if let Some(items_schema) = schema.get("items") {
             if let Some(arr) = value.as_array_mut() {
@@ -58,13 +54,13 @@ fn fix_single_arg_recursive(value: &mut Value, schema: &Value) {
                     }
                 }
             }
-        }
+        },
         "boolean" => {
             if let Some(s) = value.as_str() {
                 match s.to_lowercase().as_str() {
                     "true" | "1" | "yes" | "on" => *value = Value::Bool(true),
                     "false" | "0" | "no" | "off" => *value = Value::Bool(false),
-                    _ => {}
+                    _ => {},
                 }
             } else if let Some(n) = value.as_i64() {
                 if n == 1 {
@@ -73,12 +69,12 @@ fn fix_single_arg_recursive(value: &mut Value, schema: &Value) {
                     *value = Value::Bool(false);
                 }
             }
-        }
+        },
         "string" => {
             if !value.is_string() && !value.is_null() && !value.is_object() && !value.is_array() {
                 *value = Value::String(value.to_string());
             }
-        }
-        _ => {}
+        },
+        _ => {},
     }
 }

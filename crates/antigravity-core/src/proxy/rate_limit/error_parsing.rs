@@ -57,16 +57,14 @@ impl RateLimitTracker {
                 } else {
                     s
                 }
-            }
+            },
             None => {
                 let failure_count = {
                     let now = SystemTime::now();
                     let key = RateLimitKey::from_optional_model(account_id, model.as_deref());
                     let mut entry = self.failure_counts.entry(key).or_insert((0, now));
-                    let elapsed = now
-                        .duration_since(entry.1)
-                        .unwrap_or(Duration::from_secs(0))
-                        .as_secs();
+                    let elapsed =
+                        now.duration_since(entry.1).unwrap_or(Duration::from_secs(0)).as_secs();
                     if elapsed > FAILURE_COUNT_EXPIRY_SECONDS {
                         tracing::debug!(
                             "account {} failure count expired ({} seconds), reset to 0",
@@ -88,53 +86,54 @@ impl RateLimitTracker {
                                     "Detected quota exhausted (QUOTA_EXHAUSTED), 1st failure, locking for 60 seconds"
                                 );
                                 QUOTA_LOCKOUT_TIER_1
-                            }
+                            },
                             2 => {
                                 tracing::warn!(
                                     "Detected quota exhausted (QUOTA_EXHAUSTED), 2nd consecutive failure, locking for 5 minutes"
                                 );
                                 QUOTA_LOCKOUT_TIER_2
-                            }
+                            },
                             3 => {
                                 tracing::warn!(
                                     "Detected quota exhausted (QUOTA_EXHAUSTED), 3rd consecutive failure, locking for 30 minutes"
                                 );
                                 QUOTA_LOCKOUT_TIER_3
-                            }
+                            },
                             _ => {
                                 tracing::warn!(
                                     "Detected quota exhausted (QUOTA_EXHAUSTED), {} consecutive failures, locking for 2 hours",
                                     failure_count
                                 );
                                 QUOTA_LOCKOUT_TIER_4
-                            }
+                            },
                         };
                         lockout
-                    }
+                    },
                     RateLimitReason::RateLimitExceeded => {
                         tracing::debug!(
                             "Detected rate limit (RATE_LIMIT_EXCEEDED), using default 5 seconds"
                         );
                         RATE_LIMIT_DEFAULT_SECONDS
-                    }
+                    },
                     RateLimitReason::ModelCapacityExhausted => {
-                        unreachable!("ModelCapacityExhausted should be handled by early return")
-                    }
+                        tracing::error!("ModelCapacityExhausted reached unexpected code path");
+                        RATE_LIMIT_DEFAULT_SECONDS
+                    },
                     RateLimitReason::ServerError => {
                         tracing::warn!(
                             "Detected 5xx error ({}), applying 20s soft backoff...",
                             status
                         );
                         20
-                    }
+                    },
                     RateLimitReason::Unknown => {
                         tracing::debug!(
                             "Cannot parse 429 rate limit reason, using default 60 seconds"
                         );
                         60
-                    }
+                    },
                 }
-            }
+            },
         };
 
         let info = RateLimitInfo {
@@ -179,10 +178,8 @@ impl RateLimitTracker {
                         _ => RateLimitReason::Unknown,
                     };
                 }
-                if let Some(msg) = json
-                    .get("error")
-                    .and_then(|e| e.get("message"))
-                    .and_then(|v| v.as_str())
+                if let Some(msg) =
+                    json.get("error").and_then(|e| e.get("message")).and_then(|v| v.as_str())
                 {
                     let msg_lower = msg.to_lowercase();
                     if msg_lower.contains("per minute") || msg_lower.contains("rate limit") {

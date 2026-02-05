@@ -69,12 +69,10 @@ pub async fn add_account(token: Option<String>, file: Option<std::path::PathBuf>
 
 async fn add_by_token(refresh_token: &str) -> Result<()> {
     println!("{}", "Validating refresh token...".cyan());
-    let token_response = oauth::refresh_access_token(refresh_token)
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    let user_info = oauth::get_user_info(&token_response.access_token)
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
+    let token_response =
+        oauth::refresh_access_token(refresh_token).await.map_err(|e| anyhow::anyhow!(e))?;
+    let user_info =
+        oauth::get_user_info(&token_response.access_token).await.map_err(|e| anyhow::anyhow!(e))?;
     let token_data = TokenData::new(
         token_response.access_token,
         refresh_token.to_string(),
@@ -83,12 +81,9 @@ async fn add_by_token(refresh_token: &str) -> Result<()> {
         None,
         None,
     );
-    let acc = account::upsert_account(
-        user_info.email.clone(),
-        user_info.get_display_name(),
-        token_data,
-    )
-    .map_err(|e| anyhow::anyhow!(e))?;
+    let acc =
+        account::upsert_account(user_info.email.clone(), user_info.get_display_name(), token_data)
+            .map_err(|e| anyhow::anyhow!(e))?;
     println!("{} Account added: {}", "✓".green(), acc.email.green());
     Ok(())
 }
@@ -138,13 +133,8 @@ pub async fn refresh_quota(identifier: &str) -> Result<()> {
         .into_iter()
         .find(|a| a.email == identifier || a.id == identifier)
         .context("Account not found")?;
-    println!(
-        "{}",
-        format!("Refreshing quota for {}...", acc.email).cyan()
-    );
-    account::fetch_quota_with_retry(&mut acc)
-        .await
-        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    println!("{}", format!("Refreshing quota for {}...", acc.email).cyan());
+    account::fetch_quota_with_retry(&mut acc).await.map_err(|e| anyhow::anyhow!(e.to_string()))?;
     account::update_account_quota_async(acc.id.clone(), acc.quota.clone().unwrap_or_default())
         .await
         .map_err(|e| anyhow::anyhow!(e))?;
@@ -170,16 +160,13 @@ async fn refresh_all_quotas() -> Result<()> {
                 }
                 println!("{}", "✓".green());
                 success += 1;
-            }
+            },
             Err(e) => {
                 println!("{} ({})", "✗".red(), e);
                 failed += 1;
-            }
+            },
         }
     }
-    println!(
-        "\n{}/{} accounts refreshed ({} failed)",
-        success, total, failed
-    );
+    println!("\n{}/{} accounts refreshed ({} failed)", success, total, failed);
     Ok(())
 }

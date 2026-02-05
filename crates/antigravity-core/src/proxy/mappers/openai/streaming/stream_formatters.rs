@@ -1,17 +1,15 @@
-// OpenAI SSE stream formatting helpers
+//! OpenAI SSE stream formatting helpers.
+
 use serde_json::{json, Value};
 
-/// Format an SSE data line
+/// Formats an SSE data line.
 #[inline]
-pub fn sse_line(data: &Value) -> String {
-    format!(
-        "data: {}\n\n",
-        serde_json::to_string(data).unwrap_or_default()
-    )
+pub(crate) fn sse_line(data: &Value) -> String {
+    format!("data: {}\n\n", serde_json::to_string(data).unwrap_or_default())
 }
 
-/// Create a content delta chunk
-pub fn content_chunk(
+/// Creates a content delta chunk.
+pub(crate) fn content_chunk(
     stream_id: &str,
     created_ts: i64,
     model: &str,
@@ -32,8 +30,8 @@ pub fn content_chunk(
     })
 }
 
-/// Create a reasoning content chunk (for thought/thinking)
-pub fn reasoning_chunk(
+/// Creates a reasoning content chunk (for thought/thinking).
+pub(crate) fn reasoning_chunk(
     stream_id: &str,
     created_ts: i64,
     model: &str,
@@ -57,8 +55,8 @@ pub fn reasoning_chunk(
     })
 }
 
-/// Create a tool call chunk
-pub fn tool_call_chunk(
+/// Creates a tool call chunk.
+pub(crate) fn tool_call_chunk(
     stream_id: &str,
     created_ts: i64,
     model: &str,
@@ -91,8 +89,8 @@ pub fn tool_call_chunk(
     })
 }
 
-/// Create an error chunk
-pub fn error_chunk(
+/// Creates an error chunk.
+pub(crate) fn error_chunk(
     stream_id: &str,
     created_ts: i64,
     model: &str,
@@ -115,8 +113,8 @@ pub fn error_chunk(
     })
 }
 
-/// Create a usage chunk
-pub fn usage_chunk(
+/// Creates a usage chunk.
+pub(crate) fn usage_chunk(
     stream_id: &str,
     created_ts: i64,
     model: &str,
@@ -132,8 +130,8 @@ pub fn usage_chunk(
     })
 }
 
-/// Format grounding metadata as markdown text
-pub fn format_grounding_metadata(grounding: &Value) -> String {
+/// Formats grounding metadata as markdown text.
+pub(crate) fn format_grounding_metadata(grounding: &Value) -> String {
     let mut result = String::new();
 
     if let Some(queries) = grounding.get("webSearchQueries").and_then(|q| q.as_array()) {
@@ -148,10 +146,7 @@ pub fn format_grounding_metadata(grounding: &Value) -> String {
         let mut links = Vec::new();
         for (i, chunk) in chunks.iter().enumerate() {
             if let Some(web) = chunk.get("web") {
-                let title = web
-                    .get("title")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Web Source");
+                let title = web.get("title").and_then(|v| v.as_str()).unwrap_or("Web Source");
                 let uri = web.get("uri").and_then(|v| v.as_str()).unwrap_or("#");
                 links.push(format!("[{}] [{}]({})", i + 1, title, uri));
             }
@@ -165,8 +160,8 @@ pub fn format_grounding_metadata(grounding: &Value) -> String {
     result
 }
 
-/// Map Gemini finish reason to OpenAI format
-pub fn map_finish_reason(gemini_reason: &str) -> &'static str {
+/// Maps Gemini finish reason to OpenAI format.
+pub(crate) fn map_finish_reason(gemini_reason: &str) -> &'static str {
     match gemini_reason {
         "STOP" => "stop",
         "MAX_TOKENS" => "length",
@@ -176,14 +171,12 @@ pub fn map_finish_reason(gemini_reason: &str) -> &'static str {
     }
 }
 
-/// Generate a tool call ID from function call JSON
-pub fn generate_call_id(func_call: &Value) -> String {
+/// Generates a tool call ID from function call JSON.
+pub(crate) fn generate_call_id(func_call: &Value) -> String {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
     let mut hasher = DefaultHasher::new();
-    serde_json::to_string(func_call)
-        .unwrap_or_default()
-        .hash(&mut hasher);
+    serde_json::to_string(func_call).unwrap_or_default().hash(&mut hasher);
     format!("call_{:x}", hasher.finish())
 }

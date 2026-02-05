@@ -23,15 +23,8 @@ mod tests {
 
         let models = get_all_dynamic_models(&custom_mapping).await;
 
-        assert!(
-            !models.is_empty(),
-            "Should include default models even with empty custom mapping"
-        );
-        assert!(
-            models.len() > 10,
-            "Should have many built-in models, got {}",
-            models.len()
-        );
+        assert!(!models.is_empty(), "Should include default models even with empty custom mapping");
+        assert!(models.len() > 10, "Should have many built-in models, got {}", models.len());
     }
 
     #[tokio::test]
@@ -42,10 +35,7 @@ mod tests {
 
         let image_models: Vec<_> = models.iter().filter(|m| m.contains("image")).collect();
 
-        assert!(
-            !image_models.is_empty(),
-            "Should include image generation models"
-        );
+        assert!(!image_models.is_empty(), "Should include image generation models");
     }
 }
 
@@ -69,9 +59,8 @@ mod integration_tests {
             std::env::temp_dir().join(format!("antigravity-test-{}", uuid::Uuid::new_v4()));
         let token_manager = Arc::new(TokenManager::new(temp_dir));
         let custom_mapping = Arc::new(RwLock::new(HashMap::new()));
-        let upstream_proxy = Arc::new(RwLock::new(
-            antigravity_types::models::UpstreamProxyConfig::default(),
-        ));
+        let upstream_proxy =
+            Arc::new(RwLock::new(antigravity_types::models::UpstreamProxyConfig::default()));
         let security_config = Arc::new(RwLock::new(ProxySecurityConfig {
             auth_mode: antigravity_types::models::ProxyAuthMode::Off,
             api_key: "test-key".to_string(),
@@ -79,9 +68,8 @@ mod integration_tests {
         }));
         let zai = Arc::new(RwLock::new(antigravity_types::models::ZaiConfig::default()));
         let monitor = Arc::new(ProxyMonitor::new());
-        let experimental = Arc::new(RwLock::new(
-            antigravity_types::models::ExperimentalConfig::default(),
-        ));
+        let experimental =
+            Arc::new(RwLock::new(antigravity_types::models::ExperimentalConfig::default()));
         let adaptive_limits = Arc::new(AdaptiveLimitManager::default());
         let health_monitor = HealthMonitor::new();
         let circuit_breaker = Arc::new(CircuitBreakerManager::new());
@@ -118,10 +106,7 @@ mod integration_tests {
     /// Builds a test router with only the /v1/models endpoint
     fn build_models_router(state: AppState) -> Router {
         Router::new()
-            .route(
-                "/v1/models",
-                get(crate::proxy::handlers::openai::handle_list_models),
-            )
+            .route("/v1/models", get(crate::proxy::handlers::openai::handle_list_models))
             .with_state(state)
     }
 
@@ -130,10 +115,7 @@ mod integration_tests {
         let state = create_test_app_state();
         let app = build_models_router(state);
 
-        let response = axum_test::TestServer::new(app)
-            .unwrap()
-            .get("/v1/models")
-            .await;
+        let response = axum_test::TestServer::new(app).unwrap().get("/v1/models").await;
 
         response.assert_status_ok();
     }
@@ -143,10 +125,7 @@ mod integration_tests {
         let state = create_test_app_state();
         let app = build_models_router(state);
 
-        let response = axum_test::TestServer::new(app)
-            .unwrap()
-            .get("/v1/models")
-            .await;
+        let response = axum_test::TestServer::new(app).unwrap().get("/v1/models").await;
 
         let json: serde_json::Value = response.json();
 
@@ -159,10 +138,7 @@ mod integration_tests {
         let state = create_test_app_state();
         let app = build_models_router(state);
 
-        let response = axum_test::TestServer::new(app)
-            .unwrap()
-            .get("/v1/models")
-            .await;
+        let response = axum_test::TestServer::new(app).unwrap().get("/v1/models").await;
 
         let json: serde_json::Value = response.json();
         let data = json["data"].as_array().unwrap();
@@ -181,32 +157,20 @@ mod integration_tests {
     async fn test_list_models_includes_custom_mapping() {
         let mapping = HashMap::from([
             ("my-custom-gpt".to_string(), "gemini-3-pro-high".to_string()),
-            (
-                "test-model-alias".to_string(),
-                "claude-opus-4-5".to_string(),
-            ),
+            ("test-model-alias".to_string(), "claude-opus-4-5".to_string()),
         ]);
         let state = create_test_app_state_with_mapping(mapping);
         let app = build_models_router(state);
 
-        let response = axum_test::TestServer::new(app)
-            .unwrap()
-            .get("/v1/models")
-            .await;
+        let response = axum_test::TestServer::new(app).unwrap().get("/v1/models").await;
 
         let json: serde_json::Value = response.json();
         let data = json["data"].as_array().unwrap();
 
         let model_ids: Vec<&str> = data.iter().filter_map(|m| m["id"].as_str()).collect();
 
-        assert!(
-            model_ids.contains(&"my-custom-gpt"),
-            "Custom model not found in list"
-        );
-        assert!(
-            model_ids.contains(&"test-model-alias"),
-            "Test alias not found in list"
-        );
+        assert!(model_ids.contains(&"my-custom-gpt"), "Custom model not found in list");
+        assert!(model_ids.contains(&"test-model-alias"), "Test alias not found in list");
     }
 
     #[tokio::test]
@@ -214,10 +178,7 @@ mod integration_tests {
         let state = create_test_app_state();
         let app = build_models_router(state);
 
-        let response = axum_test::TestServer::new(app)
-            .unwrap()
-            .get("/v1/models")
-            .await;
+        let response = axum_test::TestServer::new(app).unwrap().get("/v1/models").await;
 
         let json: serde_json::Value = response.json();
         let data = json["data"].as_array().unwrap();
@@ -228,10 +189,7 @@ mod integration_tests {
             .filter(|id| id.contains("image"))
             .collect();
 
-        assert!(
-            !image_models.is_empty(),
-            "No image models found in response"
-        );
+        assert!(!image_models.is_empty(), "No image models found in response");
     }
 
     fn build_chat_completions_router(state: AppState) -> Router {
@@ -309,10 +267,7 @@ mod integration_tests {
     fn build_models_router_with_auth(state: AppState) -> Router {
         let security_config = state.security_config.clone();
         Router::new()
-            .route(
-                "/v1/models",
-                get(crate::proxy::handlers::openai::handle_list_models),
-            )
+            .route("/v1/models", get(crate::proxy::handlers::openai::handle_list_models))
             .layer(axum::middleware::from_fn_with_state(
                 security_config,
                 crate::proxy::middleware::auth_middleware,
@@ -328,10 +283,7 @@ mod integration_tests {
         );
         let app = build_models_router_with_auth(state);
 
-        let response = axum_test::TestServer::new(app)
-            .unwrap()
-            .get("/v1/models")
-            .await;
+        let response = axum_test::TestServer::new(app).unwrap().get("/v1/models").await;
 
         response.assert_status(axum::http::StatusCode::UNAUTHORIZED);
     }

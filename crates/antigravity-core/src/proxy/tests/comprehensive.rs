@@ -46,10 +46,8 @@ mod tests {
         let request = &body["request"];
 
         // verify thinkingConfig whetherexist (即 thinking modenot yetbedisable)
-        let has_thinking_config = request
-            .get("generationConfig")
-            .and_then(|g| g.get("thinkingConfig"))
-            .is_some();
+        let has_thinking_config =
+            request.get("generationConfig").and_then(|g| g.get("thinkingConfig")).is_some();
 
         assert!(
             has_thinking_config,
@@ -102,11 +100,7 @@ mod tests {
         close_tool_loop_for_thinking(&mut messages);
 
         // 4. verifywhetherinject合成message
-        assert_eq!(
-            messages.len(),
-            5,
-            "Should have injected 2 synthetic messages"
-        );
+        assert_eq!(messages.len(), 5, "Should have injected 2 synthetic messages");
 
         // verify倒数第二条is Assistant   "Completed" message
         let injected_assistant = &messages[3];

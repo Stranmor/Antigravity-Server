@@ -34,7 +34,7 @@ pub struct AppStateInner {
     pub token_manager: Arc<TokenManager>,
     pub monitor: Arc<ProxyMonitor>,
     pub proxy_config: Arc<RwLock<ProxyConfig>>,
-    #[allow(dead_code)] // Reserved for future hot-reload (listener restart)
+    #[allow(dead_code, reason = "Reserved for future hot-reload (listener restart)")]
     pub axum_server: Arc<AxumServer>,
     pub custom_mapping: Arc<RwLock<std::collections::HashMap<String, String>>>,
     pub mapping_timestamps: Arc<RwLock<std::collections::HashMap<String, i64>>>,
@@ -47,7 +47,7 @@ pub struct AppStateInner {
     pub warp_isolation: Option<Arc<WarpIsolationManager>>,
     pub oauth_states: Arc<DashMap<String, Instant>>,
     pub bound_port: AtomicU16,
-    #[allow(dead_code)] // WIP: PostgreSQL migration, will be used in phase 7
+    #[allow(dead_code, reason = "WIP: PostgreSQL migration, will be used in phase 7")]
     pub repository: Option<Arc<dyn AccountRepository>>,
 }
 
@@ -62,11 +62,10 @@ impl AppState {
         repository: Option<Arc<dyn AccountRepository>>,
     ) -> Result<Self> {
         let custom_mapping = Arc::new(RwLock::new(proxy_config.custom_mapping.clone()));
-        let security_config = Arc::new(RwLock::new(ProxySecurityConfig::from_proxy_config(
-            &proxy_config,
-        )));
+        let security_config =
+            Arc::new(RwLock::new(ProxySecurityConfig::from_proxy_config(&proxy_config)));
         let zai_config = Arc::new(RwLock::new(proxy_config.zai.clone()));
-        let experimental_config = Arc::new(RwLock::new(proxy_config.experimental.clone()));
+        let experimental_config = Arc::new(RwLock::new(proxy_config.experimental));
 
         let adaptive_limits = Arc::new(AdaptiveLimitManager::new(
             0.85,
@@ -77,9 +76,7 @@ impl AppState {
 
         health_monitor.start_recovery_task();
 
-        token_manager
-            .set_adaptive_limits(adaptive_limits.clone())
-            .await;
+        token_manager.set_adaptive_limits(adaptive_limits.clone()).await;
 
         tracing::info!("AIMD rate limiting system initialized");
 

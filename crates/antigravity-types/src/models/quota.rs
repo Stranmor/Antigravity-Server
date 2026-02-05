@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Model quota information.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModelQuota {
     /// Model name
     pub name: String,
@@ -28,6 +28,7 @@ impl ModelQuota {
 
 /// Parse a reset time string like "4h 30m", "0h 0m", "45m", "2h" into seconds.
 /// Returns 0 for unparseable strings or already-expired times.
+#[allow(clippy::indexing_slicing, reason = "Index bounds are checked by enumerate loop")]
 pub fn parse_reset_time(s: &str) -> i64 {
     let s = s.trim();
     let mut total_seconds: i64 = 0;
@@ -36,29 +37,25 @@ pub fn parse_reset_time(s: &str) -> i64 {
     for (i, &b) in bytes.iter().enumerate() {
         if b == b'h' || b == b'H' {
             let num_end = i;
-            let num_start = bytes[..num_end]
-                .iter()
-                .rposition(|&c| !c.is_ascii_digit())
-                .map(|p| p + 1)
-                .unwrap_or(0);
-            if let Ok(hours) = std::str::from_utf8(&bytes[num_start..num_end])
-                .unwrap_or("")
-                .parse::<i64>()
-            {
-                total_seconds += hours * 3600;
+            let num_start = bytes
+                .get(..num_end)
+                .and_then(|slice| slice.iter().rposition(|&c| !c.is_ascii_digit()))
+                .map_or(0, |p| p.saturating_add(1));
+            if let Some(slice) = bytes.get(num_start..num_end) {
+                if let Ok(hours) = std::str::from_utf8(slice).unwrap_or("").parse::<i64>() {
+                    total_seconds = total_seconds.saturating_add(hours.saturating_mul(3600));
+                }
             }
         } else if b == b'm' || b == b'M' {
             let num_end = i;
-            let num_start = bytes[..num_end]
-                .iter()
-                .rposition(|&c| !c.is_ascii_digit())
-                .map(|p| p + 1)
-                .unwrap_or(0);
-            if let Ok(minutes) = std::str::from_utf8(&bytes[num_start..num_end])
-                .unwrap_or("")
-                .parse::<i64>()
-            {
-                total_seconds += minutes * 60;
+            let num_start = bytes
+                .get(..num_end)
+                .and_then(|slice| slice.iter().rposition(|&c| !c.is_ascii_digit()))
+                .map_or(0, |p| p.saturating_add(1));
+            if let Some(slice) = bytes.get(num_start..num_end) {
+                if let Ok(minutes) = std::str::from_utf8(slice).unwrap_or("").parse::<i64>() {
+                    total_seconds = total_seconds.saturating_add(minutes.saturating_mul(60));
+                }
             }
         }
     }
@@ -67,7 +64,7 @@ pub fn parse_reset_time(s: &str) -> i64 {
 }
 
 /// Aggregated quota data for an account.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct QuotaData {
     /// Per-model quota information
     pub models: Vec<ModelQuota>,
@@ -94,19 +91,13 @@ impl QuotaData {
 
     /// Add a model quota entry.
     pub fn add_model(&mut self, name: String, percentage: i32, reset_time: String) {
-        self.models.push(ModelQuota {
-            name,
-            percentage,
-            reset_time,
-        });
+        self.models.push(ModelQuota { name, percentage, reset_time });
     }
 
     /// Get quota for a specific model by name prefix.
     pub fn get_model_quota(&self, prefix: &str) -> Option<&ModelQuota> {
         let prefix_lower = prefix.to_lowercase();
-        self.models
-            .iter()
-            .find(|m| m.name.to_lowercase().contains(&prefix_lower))
+        self.models.iter().find(|m| m.name.to_lowercase().contains(&prefix_lower))
     }
 
     /// Check if any model is below the given threshold percentage.
@@ -122,12 +113,12 @@ impl QuotaData {
     /// Check if any model's quota has reset and needs refresh.
     /// Returns true if any model has reset_time <= 0 (quota already refreshed by Google).
     pub fn needs_refresh(&self) -> bool {
-        self.models.iter().any(|m| m.has_reset())
+        self.models.iter().any(ModelQuota::has_reset)
     }
 
     /// Get the minimum reset time in seconds across all models.
     pub fn min_reset_seconds(&self) -> Option<i64> {
-        self.models.iter().map(|m| m.reset_time_seconds()).min()
+        self.models.iter().map(ModelQuota::reset_time_seconds).min()
     }
 }
 

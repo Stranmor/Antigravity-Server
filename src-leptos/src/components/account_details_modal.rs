@@ -7,7 +7,7 @@ use crate::formatters::{format_time_remaining, get_time_remaining_color};
 use leptos::prelude::*;
 
 #[component]
-pub fn AccountDetailsModal(
+pub(crate) fn AccountDetailsModal(
     /// The account to display details for (None = closed)
     account: Signal<Option<Account>>,
     /// Callback to close the modal
@@ -36,7 +36,9 @@ pub fn AccountDetailsModal(
     view! {
         <Show when=move || account.get().is_some()>
             {move || {
-                let acc = account.get().unwrap();
+                let Some(acc) = account.get() else {
+                    return view! { <div></div> }.into_any();
+                };
                 let email = acc.email.clone();
                 let models = acc.quota.as_ref().map(|q| q.models.clone()).unwrap_or_default();
 
@@ -107,7 +109,7 @@ pub fn AccountDetailsModal(
                             </footer>
                         </div>
                     </div>
-                }
+                }.into_any()
             }}
         </Show>
     }

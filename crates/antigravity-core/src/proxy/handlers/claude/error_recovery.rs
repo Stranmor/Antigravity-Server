@@ -12,11 +12,7 @@ pub fn handle_thinking_signature_error(
     for msg in request.messages.iter().rev() {
         if let MessageContent::Array(blocks) = &msg.content {
             for block in blocks.iter().rev() {
-                if let ContentBlock::Thinking {
-                    signature: Some(sig),
-                    ..
-                } = block
-                {
+                if let ContentBlock::Thinking { signature: Some(sig), .. } = block {
                     if sig.len() >= 50 {
                         preserved_sig = Some(sig.clone());
                         break;
@@ -59,8 +55,8 @@ pub fn handle_thinking_signature_error(
                             );
                             new_blocks.push(ContentBlock::Text { text: thinking });
                         }
-                    }
-                    ContentBlock::RedactedThinking { .. } => {}
+                    },
+                    ContentBlock::RedactedThinking { .. } => {},
                     _ => new_blocks.push(block),
                 }
             }
@@ -101,10 +97,7 @@ pub fn apply_background_task_cleanup(
     for msg in request.messages.iter_mut() {
         if let MessageContent::Array(blocks) = &mut msg.content {
             blocks.retain(|b| {
-                !matches!(
-                    b,
-                    ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. }
-                )
+                !matches!(b, ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. })
             });
         }
     }

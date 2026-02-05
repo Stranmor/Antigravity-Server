@@ -86,7 +86,7 @@ impl ContextManager {
                     for block in blocks {
                         total += estimate_tokens_from_str(&block.text);
                     }
-                }
+                },
             }
         }
 
@@ -96,27 +96,27 @@ impl ContextManager {
             match &msg.content {
                 MessageContent::String(s) => {
                     total += estimate_tokens_from_str(s);
-                }
+                },
                 MessageContent::Array(blocks) => {
                     for block in blocks {
                         match block {
                             ContentBlock::Text { text } => {
                                 total += estimate_tokens_from_str(text);
-                            }
+                            },
                             ContentBlock::Thinking { thinking, .. } => {
                                 total += estimate_tokens_from_str(thinking);
                                 total += 100;
-                            }
+                            },
                             ContentBlock::RedactedThinking { data } => {
                                 total += estimate_tokens_from_str(data);
-                            }
+                            },
                             ContentBlock::ToolUse { name, input, .. } => {
                                 total += 20;
                                 total += estimate_tokens_from_str(name);
                                 if let Ok(json_str) = serde_json::to_string(input) {
                                     total += estimate_tokens_from_str(&json_str);
                                 }
-                            }
+                            },
                             ContentBlock::ToolResult { content, .. } => {
                                 total += 10;
                                 if let Some(s) = content.as_str() {
@@ -132,11 +132,11 @@ impl ContextManager {
                                 } else if let Ok(s) = serde_json::to_string(content) {
                                     total += estimate_tokens_from_str(&s);
                                 }
-                            }
-                            _ => {}
+                            },
+                            _ => {},
                         }
                     }
-                }
+                },
             }
         }
 
@@ -179,12 +179,7 @@ impl ContextManager {
             if msg.role == "assistant" {
                 if let MessageContent::Array(blocks) = &mut msg.content {
                     for block in blocks.iter_mut() {
-                        if let ContentBlock::Thinking {
-                            thinking,
-                            signature,
-                            ..
-                        } = block
-                        {
+                        if let ContentBlock::Thinking { thinking, signature, .. } = block {
                             if signature.is_some() && thinking.len() > 10 {
                                 let original_len = thinking.len();
                                 *thinking = "...".to_string();
@@ -219,11 +214,7 @@ impl ContextManager {
             if msg.role == "assistant" {
                 if let MessageContent::Array(blocks) = &msg.content {
                     for block in blocks {
-                        if let ContentBlock::Thinking {
-                            signature: Some(sig),
-                            ..
-                        } = block
-                        {
+                        if let ContentBlock::Thinking { signature: Some(sig), .. } = block {
                             if sig.len() >= 50 {
                                 debug!(
                                     "[ContextManager] [Layer-3] Extracted last valid signature (len: {})",

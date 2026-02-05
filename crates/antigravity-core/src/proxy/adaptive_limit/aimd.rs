@@ -48,10 +48,7 @@ impl ProbeStrategy {
     }
 
     pub fn needs_secondary(&self) -> bool {
-        matches!(
-            self,
-            ProbeStrategy::DelayedHedge | ProbeStrategy::ImmediateHedge
-        )
+        matches!(self, ProbeStrategy::DelayedHedge | ProbeStrategy::ImmediateHedge)
     }
 
     pub fn is_fire_and_forget(&self) -> bool {

@@ -30,19 +30,18 @@ pub async fn create_listener(
     socket.bind(&addr.into())?;
     socket.listen(4096)?;
 
-    info!(
-        "🔌 Binding with SO_REUSEPORT to {} (zero-downtime capable)",
-        addr
-    );
+    info!("🔌 Binding with SO_REUSEPORT to {} (zero-downtime capable)", addr);
 
     Ok(tokio::net::TcpListener::from_std(socket.into())?)
 }
 
+#[allow(
+    clippy::expect_used,
+    reason = "Signal handlers are critical infrastructure, panic is appropriate on failure"
+)]
 pub async fn shutdown_signal() {
     let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
+        signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
     };
 
     #[cfg(unix)]
@@ -57,8 +56,8 @@ pub async fn shutdown_signal() {
     let terminate = std::future::pending::<()>();
 
     tokio::select! {
-        _ = ctrl_c => info!("🛑 Received Ctrl+C, initiating graceful shutdown..."),
-        _ = terminate => info!("🛑 Received SIGTERM, initiating graceful shutdown..."),
+        () = ctrl_c => info!("🛑 Received Ctrl+C, initiating graceful shutdown..."),
+        () = terminate => info!("🛑 Received SIGTERM, initiating graceful shutdown..."),
     }
 
     info!("⏳ Graceful shutdown initiated...");

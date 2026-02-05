@@ -14,7 +14,7 @@ pub fn is_warmup_request(request: &ClaudeRequest) -> bool {
                 if s.trim().starts_with("Warmup") && s.len() < 100 {
                     return true;
                 }
-            }
+            },
             crate::proxy::mappers::claude::models::MessageContent::Array(arr) => {
                 for block in arr {
                     match block {
@@ -23,7 +23,7 @@ pub fn is_warmup_request(request: &ClaudeRequest) -> bool {
                             if trimmed == "Warmup" || trimmed.starts_with("Warmup\n") {
                                 return true;
                             }
-                        }
+                        },
                         crate::proxy::mappers::claude::models::ContentBlock::ToolResult {
                             content,
                             is_error,
@@ -38,11 +38,11 @@ pub fn is_warmup_request(request: &ClaudeRequest) -> bool {
                             if *is_error == Some(true) && content_str.trim().starts_with("Warmup") {
                                 return true;
                             }
-                        }
-                        _ => {}
+                        },
+                        _ => {},
                     }
                 }
-            }
+            },
         }
     }
 
@@ -94,11 +94,6 @@ pub fn create_warmup_response(request: &ClaudeRequest, is_stream: bool) -> Respo
             }
         });
 
-        (
-            StatusCode::OK,
-            [("X-Warmup-Intercepted", "true")],
-            Json(response),
-        )
-            .into_response()
+        (StatusCode::OK, [("X-Warmup-Intercepted", "true")], Json(response)).into_response()
     }
 }

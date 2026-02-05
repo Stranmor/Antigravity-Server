@@ -16,10 +16,8 @@ pub fn transform_openai_response(gemini_response: &Value) -> OpenAIResponse {
             let mut tool_calls = Vec::new();
 
             // extract content  and  tool_calls
-            if let Some(parts) = candidate
-                .get("content")
-                .and_then(|c| c.get("parts"))
-                .and_then(|p| p.as_array())
+            if let Some(parts) =
+                candidate.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array())
             {
                 for part in parts {
                     // Capture thoughtSignature (required for Gemini 3 tool calls)
@@ -32,10 +30,8 @@ pub fn transform_openai_response(gemini_response: &Value) -> OpenAIResponse {
                     }
 
                     // Check if this part is thinking content (thought: true)
-                    let is_thought_part = part
-                        .get("thought")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
+                    let is_thought_part =
+                        part.get("thought").and_then(|v| v.as_bool()).unwrap_or(false);
 
                     // textpartial
                     if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
@@ -64,19 +60,14 @@ pub fn transform_openai_response(gemini_response: &Value) -> OpenAIResponse {
                         tool_calls.push(ToolCall {
                             id,
                             r#type: "function".to_string(),
-                            function: ToolFunction {
-                                name: name.to_string(),
-                                arguments: args,
-                            },
+                            function: ToolFunction { name: name.to_string(), arguments: args },
                         });
                     }
 
                     // Image handling (response indirectly returns image case)
                     if let Some(img) = part.get("inlineData") {
-                        let mime_type = img
-                            .get("mimeType")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("image/png");
+                        let mime_type =
+                            img.get("mimeType").and_then(|v| v.as_str()).unwrap_or("image/png");
                         let data = img.get("data").and_then(|v| v.as_str()).unwrap_or("");
                         if !data.is_empty() {
                             content_out
@@ -105,10 +96,8 @@ pub fn transform_openai_response(gemini_response: &Value) -> OpenAIResponse {
                     let mut links = Vec::new();
                     for (i, chunk) in chunks.iter().enumerate() {
                         if let Some(web) = chunk.get("web") {
-                            let title = web
-                                .get("title")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("Web Source");
+                            let title =
+                                web.get("title").and_then(|v| v.as_str()).unwrap_or("Web Source");
                             let uri = web.get("uri").and_then(|v| v.as_str()).unwrap_or("#");
                             links.push(format!("[{}] [{}]({})", i + 1, title, uri));
                         }
@@ -152,11 +141,7 @@ pub fn transform_openai_response(gemini_response: &Value) -> OpenAIResponse {
                     } else {
                         Some(thought_out)
                     },
-                    tool_calls: if tool_calls.is_empty() {
-                        None
-                    } else {
-                        Some(tool_calls)
-                    },
+                    tool_calls: if tool_calls.is_empty() { None } else { Some(tool_calls) },
                     tool_call_id: None,
                     name: None,
                 },
@@ -167,47 +152,28 @@ pub fn transform_openai_response(gemini_response: &Value) -> OpenAIResponse {
 
     // Extract and map usage metadata from Gemini to OpenAI format
     let usage = raw.get("usageMetadata").map(|u| {
-        let prompt_tokens = u
-            .get("promptTokenCount")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32;
-        let completion_tokens = u
-            .get("candidatesTokenCount")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32;
-        let total_tokens = u
-            .get("totalTokenCount")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32;
-        let cached_tokens = u
-            .get("cachedContentTokenCount")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u32);
+        let prompt_tokens = u.get("promptTokenCount").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let completion_tokens =
+            u.get("candidatesTokenCount").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let total_tokens = u.get("totalTokenCount").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let cached_tokens =
+            u.get("cachedContentTokenCount").and_then(|v| v.as_u64()).map(|v| v as u32);
 
-        super::models::OpenAIUsage {
+        OpenAIUsage {
             prompt_tokens,
             completion_tokens,
             total_tokens,
-            prompt_tokens_details: cached_tokens.map(|ct| super::models::PromptTokensDetails {
-                cached_tokens: Some(ct),
-            }),
+            prompt_tokens_details: cached_tokens
+                .map(|ct| PromptTokensDetails { cached_tokens: Some(ct) }),
             completion_tokens_details: None,
         }
     });
 
     OpenAIResponse {
-        id: raw
-            .get("responseId")
-            .and_then(|v| v.as_str())
-            .unwrap_or("resp_unknown")
-            .to_string(),
+        id: raw.get("responseId").and_then(|v| v.as_str()).unwrap_or("resp_unknown").to_string(),
         object: "chat.completion".to_string(),
         created: chrono::Utc::now().timestamp() as u64,
-        model: raw
-            .get("modelVersion")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown")
-            .to_string(),
+        model: raw.get("modelVersion").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
         choices,
         usage,
     }

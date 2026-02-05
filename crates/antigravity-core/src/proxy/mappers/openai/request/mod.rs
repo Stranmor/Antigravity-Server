@@ -43,11 +43,7 @@ pub fn transform_openai_request(
     // [NEW] Check if history messages are compatible with thinking model (whether Assistant messages are missing reasoning_content)
     let has_incompatible_assistant_history = request.messages.iter().any(|msg| {
         msg.role == "assistant"
-            && msg
-                .reasoning_content
-                .as_ref()
-                .map(|s| s.is_empty())
-                .unwrap_or(true)
+            && msg.reasoning_content.as_ref().map(|s| s.is_empty()).unwrap_or(true)
     });
 
     // Get global stored thought signature
@@ -55,11 +51,15 @@ pub fn transform_openai_request(
 
     // [NEW] Decide whether to enable Thinking feature:
     // If it's a Claude thinking model and history is incompatible and no available signature to use as placeholder, disable Thinking to prevent 400
-    let mut actual_include_thinking = is_thinking_model;
-    if is_claude_thinking && has_incompatible_assistant_history && global_thought_sig.is_none() {
+    let actual_include_thinking = if is_claude_thinking
+        && has_incompatible_assistant_history
+        && global_thought_sig.is_none()
+    {
         tracing::warn!("[OpenAI-Thinking] Incompatible assistant history detected for Claude thinking model without global signature. Disabling thinking for this request to avoid 400 error.");
-        actual_include_thinking = false;
-    }
+        false
+    } else {
+        is_thinking_model
+    };
 
     tracing::debug!(
         "[Debug] OpenAI Request: original='{}', mapped='{}', type='{}', has_image_config={}",
@@ -105,12 +105,8 @@ pub fn transform_openai_request(
         if let Some(tool_calls) = &msg.tool_calls {
             for call in tool_calls {
                 let name = &call.function.name;
-                let final_name = if name == "local_shell_call" {
-                    "shell"
-                } else {
-                    name
-                };
-                tool_id_to_name.insert(call.id.clone(), final_name.to_string());
+                let final_name = if name == "local_shell_call" { "shell" } else { name };
+                drop(tool_id_to_name.insert(call.id.clone(), final_name.to_string()));
             }
         }
     }
@@ -120,18 +116,15 @@ pub fn transform_openai_request(
     if let Some(tools) = &request.tools {
         for tool in tools {
             if let (Some(name), Some(params)) = (
-                tool.get("function")
-                    .and_then(|f| f.get("name"))
-                    .and_then(|v| v.as_str()),
+                tool.get("function").and_then(|f| f.get("name")).and_then(|v| v.as_str()),
                 tool.get("function").and_then(|f| f.get("parameters")),
             ) {
-                tool_name_to_schema.insert(name.to_string(), params.clone());
-            } else if let (Some(name), Some(params)) = (
-                tool.get("name").and_then(|v| v.as_str()),
-                tool.get("parameters"),
-            ) {
+                drop(tool_name_to_schema.insert(name.to_string(), params.clone()));
+            } else if let (Some(name), Some(params)) =
+                (tool.get("name").and_then(|v| v.as_str()), tool.get("parameters"))
+            {
                 // Handle simplified format some clients may use
-                tool_name_to_schema.insert(name.to_string(), params.clone());
+                drop(tool_name_to_schema.insert(name.to_string(), params.clone()));
             }
         }
     }
@@ -139,10 +132,7 @@ pub fn transform_openai_request(
     // Get thoughtSignature from global storage (PR #93 support)
     // (Already fetched as global_thought_sig above)
     if let Some(ref sig) = global_thought_sig {
-        tracing::debug!(
-            "Got thoughtSignature from global storage (length: {})",
-            sig.len()
-        );
+        tracing::debug!("Got thoughtSignature from global storage (length: {})", sig.len());
     }
 
     let transform_ctx = MessageTransformContext {
@@ -159,12 +149,7 @@ pub fn transform_openai_request(
         .iter()
         .filter(|msg| msg.role != "system" && msg.role != "developer")
         .map(|msg| transform_message(msg, &transform_ctx))
-        .filter(|msg| {
-            !msg["parts"]
-                .as_array()
-                .map(|a| a.is_empty())
-                .unwrap_or(true)
-        })
+        .filter(|msg| !msg["parts"].as_array().map(|a| a.is_empty()).unwrap_or(true))
         .collect();
 
     let contents = merge_consecutive_roles(contents);
@@ -200,9 +185,8 @@ pub fn transform_openai_request(
     **Proactiveness**";
 
     // [HYBRID] Check if user already provided Antigravity identity
-    let user_has_antigravity = system_instructions
-        .iter()
-        .any(|s| s.contains("You are Antigravity"));
+    let user_has_antigravity =
+        system_instructions.iter().any(|s| s.contains("You are Antigravity"));
 
     let mut parts = Vec::new();
 
@@ -227,14 +211,14 @@ pub fn transform_openai_request(
 
     if let Some(image_config) = config.image_config {
         if let Some(obj) = inner_request.as_object_mut() {
-            obj.remove("tools");
-            obj.remove("systemInstruction");
+            drop(obj.remove("tools"));
+            drop(obj.remove("systemInstruction"));
             let gen_config = obj.entry("generationConfig").or_insert_with(|| json!({}));
             if let Some(gen_obj) = gen_config.as_object_mut() {
-                gen_obj.remove("thinkingConfig");
-                gen_obj.remove("responseMimeType");
-                gen_obj.remove("responseModalities");
-                gen_obj.insert("imageConfig".to_string(), image_config);
+                drop(gen_obj.remove("thinkingConfig"));
+                drop(gen_obj.remove("responseMimeType"));
+                drop(gen_obj.remove("responseModalities"));
+                drop(gen_obj.insert("imageConfig".to_string(), image_config));
             }
         }
     }

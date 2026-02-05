@@ -1,7 +1,7 @@
 //! Add Account Modal Component
 
-mod parser;
-mod tabs;
+pub(crate) mod parser;
+pub(crate) mod tabs;
 
 use tabs::{ImportTab, OAuthTab, TokenTab};
 
@@ -9,25 +9,37 @@ use crate::api::commands;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-#[derive(Clone, Copy, PartialEq, Default)]
-pub enum AddAccountTab {
+/// Tab selection for add account modal.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub(crate) enum AddAccountTab {
+    /// OAuth authentication tab.
     #[default]
     OAuth,
+    /// Token-based authentication tab.
     Token,
+    /// Import from file tab.
     Import,
 }
 
-#[derive(Clone, Copy, PartialEq, Default)]
-pub enum AddAccountStatus {
+/// Status of add account operation.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub(crate) enum AddAccountStatus {
+    /// No operation in progress.
     #[default]
     Idle,
+    /// Operation in progress.
     Loading,
+    /// Operation completed successfully.
     Success,
+    /// Operation failed.
     Error,
 }
 
 #[component]
-pub fn AddAccountModal(is_open: RwSignal<bool>, on_account_added: Callback<()>) -> impl IntoView {
+pub(crate) fn AddAccountModal(
+    is_open: RwSignal<bool>,
+    on_account_added: Callback<()>,
+) -> impl IntoView {
     let active_tab = RwSignal::new(AddAccountTab::OAuth);
     let status = RwSignal::new(AddAccountStatus::Idle);
     let message = RwSignal::new(String::new());
@@ -35,7 +47,7 @@ pub fn AddAccountModal(is_open: RwSignal<bool>, on_account_added: Callback<()>) 
     let url_copied = RwSignal::new(false);
     let refresh_token_input = RwSignal::new(String::new());
 
-    Effect::new(move |_| {
+    let _effect_oauth = Effect::new(move |_| {
         if is_open.get()
             && matches!(active_tab.get(), AddAccountTab::OAuth)
             && oauth_url.get().is_empty()
@@ -48,7 +60,7 @@ pub fn AddAccountModal(is_open: RwSignal<bool>, on_account_added: Callback<()>) 
         }
     });
 
-    Effect::new(move |_| {
+    let _effect_reset = Effect::new(move |_| {
         if !is_open.get() {
             status.set(AddAccountStatus::Idle);
             message.set(String::new());

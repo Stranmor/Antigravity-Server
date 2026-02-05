@@ -23,15 +23,18 @@ use thiserror::Error;
 ///
 /// Use this when you need a single error type that can represent
 /// any Antigravity error.
-#[derive(Debug, Clone, Error, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Error, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "domain", content = "error")]
 pub enum TypedError {
+    /// Wraps an account-related error
     #[error("Account error: {0}")]
     Account(#[from] AccountError),
 
+    /// Wraps a proxy operation error
     #[error("Proxy error: {0}")]
     Proxy(#[from] ProxyError),
 
+    /// Wraps a configuration error
     #[error("Config error: {0}")]
     Config(#[from] ConfigError),
 }
@@ -45,9 +48,7 @@ mod tests {
 
     #[test]
     fn test_error_serialization() {
-        let err = TypedError::Account(AccountError::NotFound {
-            id: "test-123".to_string(),
-        });
+        let err = TypedError::Account(AccountError::NotFound { id: "test-123".to_string() });
 
         let json = serde_json::to_string(&err).unwrap();
         assert!(json.contains("Account"));
@@ -59,10 +60,8 @@ mod tests {
 
     #[test]
     fn test_error_display() {
-        let err = ProxyError::RateLimited {
-            provider: "claude".to_string(),
-            retry_after_secs: Some(60),
-        };
+        let err =
+            ProxyError::RateLimited { provider: "claude".to_string(), retry_after_secs: Some(60) };
 
         let msg = format!("{}", err);
         assert!(msg.contains("claude"));

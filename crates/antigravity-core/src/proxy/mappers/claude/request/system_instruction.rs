@@ -24,7 +24,7 @@ pub fn build_system_instruction(
                 if text.contains("You are Antigravity") {
                     user_has_antigravity = true;
                 }
-            }
+            },
             SystemPrompt::Array(blocks) => {
                 for block in blocks {
                     if block.block_type == "text" && block.text.contains("You are Antigravity") {
@@ -32,7 +32,7 @@ pub fn build_system_instruction(
                         break;
                     }
                 }
-            }
+            },
         }
     }
 
@@ -64,7 +64,7 @@ pub fn build_system_instruction(
                 } else {
                     parts.push(json!({"text": text}));
                 }
-            }
+            },
             SystemPrompt::Array(blocks) => {
                 for block in blocks {
                     if block.block_type == "text" {
@@ -88,7 +88,7 @@ pub fn build_system_instruction(
                         }
                     }
                 }
-            }
+            },
         }
     }
 

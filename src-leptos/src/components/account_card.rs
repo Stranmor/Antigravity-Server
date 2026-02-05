@@ -5,7 +5,7 @@ use crate::formatters::{format_time_remaining, get_time_remaining_color};
 use leptos::prelude::*;
 
 #[component]
-pub fn AccountCard(
+pub(crate) fn AccountCard(
     #[prop(into)] account: Account,
     #[prop(into)] is_current: Signal<bool>,
     #[prop(into)] is_selected: Signal<bool>,
@@ -18,60 +18,33 @@ pub fn AccountCard(
 ) -> impl IntoView {
     let email = account.email.clone();
     let email_short = email.split('@').next().unwrap_or(&email).to_string();
-    let email_domain = email
-        .split('@')
-        .nth(1)
-        .map(|s| s.to_string())
-        .unwrap_or_default();
+    let email_domain = email.split('@').nth(1).map(|s| s.to_string()).unwrap_or_default();
     let is_disabled = account.disabled;
     let proxy_disabled = account.proxy_disabled;
 
     // Find 4 specific models by exact name (matching upstream)
     let g3_pro = account.quota.as_ref().and_then(|q| {
-        q.models
-            .iter()
-            .find(|m| m.name.to_lowercase() == "gemini-3-pro-high")
-            .cloned()
+        q.models.iter().find(|m| m.name.to_lowercase() == "gemini-3-pro-high").cloned()
     });
-    let g3_flash = account.quota.as_ref().and_then(|q| {
-        q.models
-            .iter()
-            .find(|m| m.name.to_lowercase() == "gemini-3-flash")
-            .cloned()
-    });
+    let g3_flash = account
+        .quota
+        .as_ref()
+        .and_then(|q| q.models.iter().find(|m| m.name.to_lowercase() == "gemini-3-flash").cloned());
     let g3_image = account.quota.as_ref().and_then(|q| {
-        q.models
-            .iter()
-            .find(|m| m.name.to_lowercase() == "gemini-3-pro-image")
-            .cloned()
+        q.models.iter().find(|m| m.name.to_lowercase() == "gemini-3-pro-image").cloned()
     });
     let claude = account.quota.as_ref().and_then(|q| {
-        q.models
-            .iter()
-            .find(|m| m.name.to_lowercase() == "claude-sonnet-4-5")
-            .cloned()
+        q.models.iter().find(|m| m.name.to_lowercase() == "claude-sonnet-4-5").cloned()
     });
 
     let quota_g3_pro = g3_pro.as_ref().map(|m| m.percentage).unwrap_or(0);
-    let reset_g3_pro = g3_pro
-        .as_ref()
-        .map(|m| m.reset_time.clone())
-        .unwrap_or_default();
+    let reset_g3_pro = g3_pro.as_ref().map(|m| m.reset_time.clone()).unwrap_or_default();
     let quota_g3_flash = g3_flash.as_ref().map(|m| m.percentage).unwrap_or(0);
-    let reset_g3_flash = g3_flash
-        .as_ref()
-        .map(|m| m.reset_time.clone())
-        .unwrap_or_default();
+    let reset_g3_flash = g3_flash.as_ref().map(|m| m.reset_time.clone()).unwrap_or_default();
     let quota_g3_image = g3_image.as_ref().map(|m| m.percentage).unwrap_or(0);
-    let reset_g3_image = g3_image
-        .as_ref()
-        .map(|m| m.reset_time.clone())
-        .unwrap_or_default();
+    let reset_g3_image = g3_image.as_ref().map(|m| m.reset_time.clone()).unwrap_or_default();
     let quota_claude = claude.as_ref().map(|m| m.percentage).unwrap_or(0);
-    let reset_claude = claude
-        .as_ref()
-        .map(|m| m.reset_time.clone())
-        .unwrap_or_default();
+    let reset_claude = claude.as_ref().map(|m| m.reset_time.clone()).unwrap_or_default();
 
     let g3_pro_reset_formatted = format_time_remaining(&reset_g3_pro);
     let g3_flash_reset_formatted = format_time_remaining(&reset_g3_flash);

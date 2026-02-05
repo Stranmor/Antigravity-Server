@@ -28,17 +28,10 @@ pub fn compact_saved_output_notice(text: &str, max_chars: usize) -> Option<Strin
     let raw_path = caps.name("path")?.as_str();
 
     // Clean file path (remove trailing brackets, quotes, periods)
-    let file_path = raw_path
-        .trim()
-        .trim_end_matches(&[')', ']', '"', '\'', '.'][..])
-        .trim();
+    let file_path = raw_path.trim().trim_end_matches(&[')', ']', '"', '\'', '.'][..]).trim();
 
     // Extract key lines
-    let lines: Vec<&str> = text
-        .lines()
-        .map(|l| l.trim())
-        .filter(|l| !l.is_empty())
-        .collect();
+    let lines: Vec<&str> = text.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
 
     // Find notice line
     let notice_line = lines.iter()
@@ -93,10 +86,8 @@ pub fn compact_browser_snapshot(text: &str, max_chars: usize) -> Option<String> 
         return None;
     }
 
-    let meta = format!(
-        "[page snapshot summarized to reduce prompt size; original {} chars]",
-        text.len()
-    );
+    let meta =
+        format!("[page snapshot summarized to reduce prompt size; original {} chars]", text.len());
     let overhead = meta.len() + 200;
     let budget = desired_max.saturating_sub(overhead);
 
@@ -120,10 +111,7 @@ pub fn compact_browser_snapshot(text: &str, max_chars: usize) -> Option<String> 
     let omitted = text.len().saturating_sub(head_len).saturating_sub(tail_len);
 
     let summarized = if tail.is_empty() {
-        format!(
-            "{}\n---[HEAD]---\n{}\n---[...omitted {} chars]---",
-            meta, head, omitted
-        )
+        format!("{}\n---[HEAD]---\n{}\n---[...omitted {} chars]---", meta, head, omitted)
     } else {
         format!(
             "{}\n---[HEAD]---\n{}\n---[...omitted {} chars]---\n---[TAIL]---\n{}",

@@ -9,7 +9,11 @@ use super::session::{ExperimentalConfig, StickySessionConfig, UpstreamProxyConfi
 use super::zai::ZaiConfig;
 
 /// Full proxy configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Validate)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Configuration struct - bools are intentional feature flags"
+)]
 pub struct ProxyConfig {
     /// Enable proxy server
     pub enabled: bool,
@@ -20,10 +24,10 @@ pub struct ProxyConfig {
     #[serde(default)]
     pub auth_mode: ProxyAuthMode,
     /// Port to listen on
-    #[validate(range(min = 1024, max = 65535))]
+    #[validate(range(min = 1024_u16, max = 65535_u16))]
     pub port: u16,
     /// API key for authentication
-    #[validate(length(min = 1))]
+    #[validate(length(min = 1_u64))]
     pub api_key: String,
     /// Auto-start proxy on app launch
     pub auto_start: bool,
@@ -31,7 +35,7 @@ pub struct ProxyConfig {
     #[serde(default)]
     pub custom_mapping: HashMap<String, String>,
     /// Request timeout in seconds
-    #[validate(range(min = 30, max = 3600))]
+    #[validate(range(min = 30_u64, max = 3600_u64))]
     #[serde(default = "default_request_timeout")]
     pub request_timeout: u64,
     /// Enable request logging
@@ -96,6 +100,6 @@ impl ProxyConfig {
     }
 }
 
-pub(crate) fn default_request_timeout() -> u64 {
+pub const fn default_request_timeout() -> u64 {
     120
 }

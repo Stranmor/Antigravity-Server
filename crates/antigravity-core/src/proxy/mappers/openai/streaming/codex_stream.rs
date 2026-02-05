@@ -7,7 +7,6 @@ use std::pin::Pin;
 use super::function_call_handler::process_function_call;
 use super::ssop_detector::detect_and_emit_ssop_events;
 use super::usage::extract_usage_metadata;
-use crate::proxy::mappers::openai::models::OpenAIUsage;
 use crate::proxy::mappers::signature_store::store_thought_signature;
 
 pub fn create_codex_sse_stream(
@@ -41,7 +40,6 @@ pub fn create_codex_sse_stream(
         let mut full_content = String::new();
         let mut emitted_tool_calls = std::collections::HashSet::new();
         let mut last_finish_reason = "stop".to_string();
-        let mut _accumulated_usage: Option<OpenAIUsage> = None;
 
         while let Some(item) = gemini_stream.next().await {
             match item {
@@ -59,9 +57,9 @@ pub fn create_codex_sse_stream(
                             if let Ok(mut json) = serde_json::from_str::<Value>(json_part) {
                                 let actual_data = if let Some(inner) = json.get_mut("response").map(|v| v.take()) { inner } else { json };
 
-                                // Capture usageMetadata if present
+                                // Capture usageMetadata if present (for future use)
                                 if let Some(u) = actual_data.get("usageMetadata") {
-                                    _accumulated_usage = extract_usage_metadata(u);
+                                    let _ = extract_usage_metadata(u);
                                 }
 
                                 // Capture finish reason
@@ -103,8 +101,7 @@ pub fn create_codex_sse_stream(
                                                 // Handle function call in chunk with deduplication
                                                 if let Some(func_call) = part.get("functionCall") {
                                                     let call_key = serde_json::to_string(func_call).unwrap_or_default();
-                                                    if !emitted_tool_calls.contains(&call_key) {
-                                                        emitted_tool_calls.insert(call_key);
+                                                    if emitted_tool_calls.insert(call_key) {
                                                         if let Some((added_bytes, done_bytes)) = process_function_call(func_call) {
                                                             yield Ok::<Bytes, String>(added_bytes);
                                                             yield Ok::<Bytes, String>(done_bytes);

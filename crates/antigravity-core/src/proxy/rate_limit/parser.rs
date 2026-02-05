@@ -54,25 +54,13 @@ pub fn parse_duration_string(s: &str) -> Option<u64> {
         None => {
             tracing::warn!("[timeparse] regex did not match: '{}'", s);
             return None;
-        }
+        },
     };
 
-    let hours = caps
-        .get(1)
-        .and_then(|m| m.as_str().parse::<u64>().ok())
-        .unwrap_or(0);
-    let minutes = caps
-        .get(2)
-        .and_then(|m| m.as_str().parse::<u64>().ok())
-        .unwrap_or(0);
-    let seconds = caps
-        .get(3)
-        .and_then(|m| m.as_str().parse::<f64>().ok())
-        .unwrap_or(0.0);
-    let milliseconds = caps
-        .get(4)
-        .and_then(|m| m.as_str().parse::<f64>().ok())
-        .unwrap_or(0.0);
+    let hours = caps.get(1).and_then(|m| m.as_str().parse::<u64>().ok()).unwrap_or(0);
+    let minutes = caps.get(2).and_then(|m| m.as_str().parse::<u64>().ok()).unwrap_or(0);
+    let seconds = caps.get(3).and_then(|m| m.as_str().parse::<f64>().ok()).unwrap_or(0.0);
+    let milliseconds = caps.get(4).and_then(|m| m.as_str().parse::<f64>().ok()).unwrap_or(0.0);
 
     let any_matched = caps.get(1).is_some()
         || caps.get(2).is_some()
@@ -126,10 +114,8 @@ pub fn parse_retry_time_from_body(body: &str) -> Option<u64> {
                 }
             }
 
-            if let Some(retry) = json
-                .get("error")
-                .and_then(|e| e.get("retry_after"))
-                .and_then(|v| v.as_u64())
+            if let Some(retry) =
+                json.get("error").and_then(|e| e.get("retry_after")).and_then(|v| v.as_u64())
             {
                 return Some(retry);
             }

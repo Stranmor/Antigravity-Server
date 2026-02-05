@@ -6,8 +6,9 @@ use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 use wasm_bindgen::JsCast;
 
+/// Login page for API key authentication.
 #[component]
-pub fn Login() -> impl IntoView {
+pub(crate) fn Login() -> impl IntoView {
     let api_key = RwSignal::new(String::new());
     let error = RwSignal::new(Option::<String>::None);
     let loading = RwSignal::new(false);
@@ -63,8 +64,8 @@ pub fn Login() -> impl IntoView {
     };
 
     let on_input = move |ev: web_sys::Event| {
-        let target = ev.target().unwrap();
-        let input: web_sys::HtmlInputElement = target.dyn_into().unwrap();
+        let Some(target) = ev.target() else { return };
+        let Ok(input) = target.dyn_into::<web_sys::HtmlInputElement>() else { return };
         api_key.set(input.value());
     };
 

@@ -119,12 +119,8 @@ fn test_cleanup_expired_removes_old_records() {
     );
     let cleaned = tracker.cleanup_expired();
     assert_eq!(cleaned, 1);
-    assert!(!tracker
-        .limits
-        .contains_key(&RateLimitKey::account("expired")));
-    assert!(tracker
-        .limits
-        .contains_key(&RateLimitKey::account("active")));
+    assert!(!tracker.limits.contains_key(&RateLimitKey::account("expired")));
+    assert!(tracker.limits.contains_key(&RateLimitKey::account("active")));
 }
 
 #[test]
@@ -144,8 +140,6 @@ fn test_model_level_rate_limit() {
     let tracker = RateLimitTracker::new();
     tracker.parse_from_error("acc1", 429, Some("60"), "", Some("gemini-pro".to_string()));
     assert!(tracker.is_rate_limited_for_model("acc1", "gemini-pro"));
-    let info = tracker
-        .get_for_model("acc1", "gemini-pro")
-        .expect("should have rate limit");
+    let info = tracker.get_for_model("acc1", "gemini-pro").expect("should have rate limit");
     assert_eq!(info.model, Some("gemini-pro".to_string()));
 }

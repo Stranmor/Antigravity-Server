@@ -7,8 +7,8 @@
 //! (currently 2 static URLs). No eviction is needed as entries are reused.
 
 use dashmap::DashMap;
-use once_cell::sync::Lazy;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 pub struct EndpointHealth {
@@ -18,10 +18,7 @@ pub struct EndpointHealth {
 
 impl EndpointHealth {
     pub fn new() -> Self {
-        Self {
-            failures: AtomicU32::new(0),
-            last_failure: std::sync::RwLock::new(None),
-        }
+        Self { failures: AtomicU32::new(0), last_failure: std::sync::RwLock::new(None) }
     }
 
     pub fn record_failure(&self) {
@@ -55,7 +52,7 @@ impl Default for EndpointHealth {
     }
 }
 
-pub static ENDPOINT_HEALTH: Lazy<DashMap<String, EndpointHealth>> = Lazy::new(DashMap::new);
+pub static ENDPOINT_HEALTH: LazyLock<DashMap<String, EndpointHealth>> = LazyLock::new(DashMap::new);
 
 pub const TRANSPORT_RETRY_DELAY_MS: u64 = 500;
 pub const MAX_TRANSPORT_RETRIES_PER_ENDPOINT: u32 = 1;

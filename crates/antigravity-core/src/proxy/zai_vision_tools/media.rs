@@ -30,9 +30,7 @@ pub fn mime_for_video_extension(ext: &str) -> Option<&'static str> {
 
 /// Extract file extension from path.
 pub fn file_ext(path: &std::path::Path) -> Option<String> {
-    path.extension()
-        .and_then(|s| s.to_str())
-        .map(|s| s.to_string())
+    path.extension().and_then(|s| s.to_str()).map(|s| s.to_string())
 }
 
 /// Encode file contents as base64 data URL.
@@ -55,11 +53,7 @@ pub fn image_source_to_content(image_source: &str, max_size_mb: u64) -> Result<V
     let meta = std::fs::metadata(path).map_err(|_| "Image file not found".to_string())?;
     let max_size = max_size_mb * 1024 * 1024;
     if meta.len() > max_size {
-        return Err(format!(
-            "Image file too large ({} bytes), max {} MB",
-            meta.len(),
-            max_size_mb
-        ));
+        return Err(format!("Image file too large ({} bytes), max {} MB", meta.len(), max_size_mb));
     }
 
     let ext = file_ext(path).ok_or("Unsupported image format".to_string())?;
@@ -84,11 +78,7 @@ pub fn video_source_to_content(video_source: &str, max_size_mb: u64) -> Result<V
     let meta = std::fs::metadata(path).map_err(|_| "Video file not found".to_string())?;
     let max_size = max_size_mb * 1024 * 1024;
     if meta.len() > max_size {
-        return Err(format!(
-            "Video file too large ({} bytes), max {} MB",
-            meta.len(),
-            max_size_mb
-        ));
+        return Err(format!("Video file too large ({} bytes), max {} MB", meta.len(), max_size_mb));
     }
 
     let ext = file_ext(path).ok_or("Unsupported video format".to_string())?;

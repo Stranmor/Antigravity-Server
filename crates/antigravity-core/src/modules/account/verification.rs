@@ -6,7 +6,7 @@ use super::index::load_account_index;
 use super::storage::{load_account, save_account};
 
 pub async fn mark_needs_verification_by_email(email: &str) -> Result<(), String> {
-    let index = load_account_index().map_err(|e| e.to_string())?;
+    let index = load_account_index().map_err(|e| e.clone())?;
     let account_id = index
         .accounts
         .iter()

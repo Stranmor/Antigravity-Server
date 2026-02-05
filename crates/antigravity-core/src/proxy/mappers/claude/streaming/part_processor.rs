@@ -28,13 +28,9 @@ impl<'a> PartProcessor<'a> {
                     "content_block": { "type": "thinking", "thinking": "" }
                 }),
             ));
+            chunks.push(self.state.emit_delta("thinking_delta", json!({ "thinking": "" })));
             chunks.push(
-                self.state
-                    .emit_delta("thinking_delta", json!({ "thinking": "" })),
-            );
-            chunks.push(
-                self.state
-                    .emit_delta("signature_delta", json!({ "signature": trailing_sig })),
+                self.state.emit_delta("signature_delta", json!({ "signature": trailing_sig })),
             );
             chunks.extend(self.state.end_block());
         }
@@ -54,7 +50,7 @@ impl<'a> PartProcessor<'a> {
                             decoded_str.len()
                         );
                         decoded_str
-                    }
+                    },
                     Err(_) => sig.clone(),
                 },
                 Err(_) => sig.clone(),
@@ -98,17 +94,16 @@ impl<'a> PartProcessor<'a> {
         }
 
         if self.state.current_block_type() != BlockType::Thinking {
-            chunks.extend(self.state.start_block(
-                BlockType::Thinking,
-                json!({ "type": "thinking", "thinking": "" }),
-            ));
+            chunks.extend(
+                self.state.start_block(
+                    BlockType::Thinking,
+                    json!({ "type": "thinking", "thinking": "" }),
+                ),
+            );
         }
 
         if !text.is_empty() {
-            chunks.push(
-                self.state
-                    .emit_delta("thinking_delta", json!({ "thinking": text })),
-            );
+            chunks.push(self.state.emit_delta("thinking_delta", json!({ "thinking": text })));
         }
 
         if let Some(ref sig) = signature {
@@ -118,10 +113,7 @@ impl<'a> PartProcessor<'a> {
             if let Some(session_id) = &self.state.session_id {
                 SignatureCache::global().cache_session_signature(session_id, sig.clone());
             }
-            tracing::debug!(
-                "[Claude-SSE] Captured thought_signature (len={})",
-                sig.len()
-            );
+            tracing::debug!("[Claude-SSE] Captured thought_signature (len={})", sig.len());
         }
 
         self.state.store_signature(signature);
@@ -146,8 +138,7 @@ impl<'a> PartProcessor<'a> {
             self.state.store_signature(signature);
 
             chunks.extend(
-                self.state
-                    .start_block(BlockType::Text, json!({ "type": "text", "text": "" })),
+                self.state.start_block(BlockType::Text, json!({ "type": "text", "text": "" })),
             );
             chunks.push(self.state.emit_delta("text_delta", json!({ "text": text })));
             chunks.extend(self.state.end_block());
@@ -217,8 +208,7 @@ impl<'a> PartProcessor<'a> {
 
         if self.state.current_block_type() != BlockType::Text {
             chunks.extend(
-                self.state
-                    .start_block(BlockType::Text, json!({ "type": "text", "text": "" })),
+                self.state.start_block(BlockType::Text, json!({ "type": "text", "text": "" })),
             );
         }
 
@@ -237,11 +227,7 @@ impl<'a> PartProcessor<'a> {
         self.state.mark_tool_used();
 
         let tool_id = fc.id.clone().unwrap_or_else(|| {
-            format!(
-                "{}-{}",
-                fc.name,
-                crate::proxy::common::random_id::generate_random_id()
-            )
+            format!("{}-{}", fc.name, crate::proxy::common::random_id::generate_random_id())
         });
 
         let mut tool_name = fc.name.clone();
@@ -287,8 +273,7 @@ impl<'a> PartProcessor<'a> {
             let json_str =
                 serde_json::to_string(&remapped_args).unwrap_or_else(|_| "{}".to_string());
             chunks.push(
-                self.state
-                    .emit_delta("input_json_delta", json!({ "partial_json": json_str })),
+                self.state.emit_delta("input_json_delta", json!({ "partial_json": json_str })),
             );
         }
 

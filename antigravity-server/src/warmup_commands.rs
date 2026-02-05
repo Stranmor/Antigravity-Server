@@ -12,9 +12,7 @@ pub async fn warmup_account(email: &str) -> Result<()> {
 
     println!("{}", format!("Warming up {}...", acc.email).cyan());
 
-    account::fetch_quota_with_retry(&mut acc)
-        .await
-        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    account::fetch_quota_with_retry(&mut acc).await.map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
     if let Some(quota) = acc.quota.clone() {
         account::update_account_quota_async(acc.id.clone(), quota)
@@ -27,10 +25,8 @@ pub async fn warmup_account(email: &str) -> Result<()> {
 
 pub async fn warmup_all() -> Result<()> {
     let accounts = account::list_accounts().map_err(|e| anyhow::anyhow!(e))?;
-    let enabled: Vec<_> = accounts
-        .into_iter()
-        .filter(|a| !a.disabled && !a.proxy_disabled)
-        .collect();
+    let enabled: Vec<_> =
+        accounts.into_iter().filter(|a| !a.disabled && !a.proxy_disabled).collect();
 
     let total = enabled.len();
     let mut success = 0;
@@ -44,7 +40,7 @@ pub async fn warmup_all() -> Result<()> {
                 }
                 println!("{}", "✓".green());
                 success += 1;
-            }
+            },
             Err(e) => println!("{} ({})", "✗".red(), e),
         }
     }

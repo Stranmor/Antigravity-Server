@@ -39,9 +39,7 @@ fn check_standard_locations() -> Option<std::path::PathBuf> {
         }
 
         possible_paths.push(
-            std::path::PathBuf::from(&program_files)
-                .join("Antigravity")
-                .join("Antigravity.exe"),
+            std::path::PathBuf::from(&program_files).join("Antigravity").join("Antigravity.exe"),
         );
 
         possible_paths.push(

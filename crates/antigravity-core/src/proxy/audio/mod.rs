@@ -7,6 +7,7 @@ const MAX_SIZE: usize = 15 * 1024 * 1024; // 15MB
 
 impl AudioProcessor {
     /// Detect MIME type from file magic bytes (signature)
+    #[allow(clippy::missing_asserts_for_indexing, reason = "Length checked at function start")]
     pub fn detect_mime_type_from_bytes(data: &[u8]) -> Option<String> {
         if data.len() < 12 {
             return None;
@@ -116,10 +117,7 @@ mod tests {
 
         // WAV file
         let wav = b"RIFF\x00\x00\x00\x00WAVEfmt ";
-        assert_eq!(
-            AudioProcessor::detect_mime_type_from_bytes(wav),
-            Some("audio/wav".to_string())
-        );
+        assert_eq!(AudioProcessor::detect_mime_type_from_bytes(wav), Some("audio/wav".to_string()));
 
         // FLAC file
         let flac = b"fLaC\x00\x00\x00\x00\x00\x00\x00\x00";
@@ -130,10 +128,7 @@ mod tests {
 
         // OGG file
         let ogg = b"OggS\x00\x00\x00\x00\x00\x00\x00\x00";
-        assert_eq!(
-            AudioProcessor::detect_mime_type_from_bytes(ogg),
-            Some("audio/ogg".to_string())
-        );
+        assert_eq!(AudioProcessor::detect_mime_type_from_bytes(ogg), Some("audio/ogg".to_string()));
 
         // Unknown format
         let unknown = b"UNKNOWN_FORMAT__";
@@ -144,17 +139,11 @@ mod tests {
     fn test_detect_mime_type_combined() {
         // Magic bytes take priority over extension
         let wav_data = b"RIFF\x00\x00\x00\x00WAVEfmt ";
-        assert_eq!(
-            AudioProcessor::detect_mime_type("fake.mp3", wav_data).unwrap(),
-            "audio/wav"
-        );
+        assert_eq!(AudioProcessor::detect_mime_type("fake.mp3", wav_data).unwrap(), "audio/wav");
 
         // Fallback to extension when magic bytes unknown
         let unknown = b"UNKNOWN_FORMAT__";
-        assert_eq!(
-            AudioProcessor::detect_mime_type("audio.flac", unknown).unwrap(),
-            "audio/flac"
-        );
+        assert_eq!(AudioProcessor::detect_mime_type("audio.flac", unknown).unwrap(), "audio/flac");
     }
 
     #[test]

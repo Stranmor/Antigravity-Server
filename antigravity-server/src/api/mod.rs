@@ -69,6 +69,7 @@ pub fn router() -> Router<AppState> {
         .route("/monitor/requests", get(monitor::get_monitor_requests))
         .route("/monitor/stats", get(monitor::get_monitor_stats))
         .route("/monitor/clear", post(monitor::clear_monitor_logs))
+        .route("/monitor/token-stats", get(monitor::get_token_usage_stats))
         // Config
         .route("/config", get(config::get_config))
         .route("/config", post(config::save_config))
@@ -91,10 +92,7 @@ pub fn router() -> Router<AppState> {
 }
 
 async fn api_not_found() -> impl IntoResponse {
-    (
-        StatusCode::NOT_FOUND,
-        Json(serde_json::json!({"error": "Not found"})),
-    )
+    (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "Not found"})))
 }
 
 #[derive(Serialize)]

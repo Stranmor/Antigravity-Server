@@ -34,3 +34,6 @@ coverage/
 
 # Reference projects (for development only)
 DOCKER_DEPLOYMENT.md
+.fastembed_cache/
+.fastembed_cache/
+.fastembed_cache/

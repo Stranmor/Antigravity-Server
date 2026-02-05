@@ -8,8 +8,8 @@
 //! with `CONSUMER_INVALID` errors. Only application-style UAs are accepted.
 
 /// FNV-1a hash constant (stable across Rust versions, unlike DefaultHasher).
-const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
-const FNV_PRIME: u64 = 0x100000001b3;
+const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0100_0000_01b3;
 
 /// Stable FNV-1a hash implementation.
 fn fnv1a_hash(data: &str) -> u64 {
@@ -76,15 +76,8 @@ mod tests {
     #[test]
     fn test_different_emails_distribution() {
         // Collect UAs for multiple emails to verify distribution
-        let emails = [
-            "user1@example.com",
-            "user2@example.com",
-            "user3@example.com",
-        ];
-        let uas: Vec<_> = emails
-            .iter()
-            .map(|e| get_user_agent_for_account(e))
-            .collect();
+        let emails = ["user1@example.com", "user2@example.com", "user3@example.com"];
+        let uas: Vec<_> = emails.iter().map(|e| get_user_agent_for_account(e)).collect();
 
         // At least 1 unique UA should be selected
         let unique_count = uas.iter().collect::<std::collections::HashSet<_>>().len();
@@ -94,22 +87,13 @@ mod tests {
     #[test]
     fn test_all_uas_are_application_style() {
         for ua in USER_AGENT_POOL {
-            assert!(
-                ua.starts_with("antigravity/"),
-                "UA should start with 'antigravity/'"
-            );
-            assert!(
-                !ua.contains("Mozilla"),
-                "UA must NOT contain Mozilla (browser-style)"
-            );
+            assert!(ua.starts_with("antigravity/"), "UA should start with 'antigravity/'");
+            assert!(!ua.contains("Mozilla"), "UA must NOT contain Mozilla (browser-style)");
             assert!(
                 ua.contains("windows") || ua.contains("darwin") || ua.contains("linux"),
                 "UA should contain platform identifier"
             );
-            assert!(
-                ua.contains("amd64") || ua.contains("arm64"),
-                "UA should contain architecture"
-            );
+            assert!(ua.contains("amd64") || ua.contains("arm64"), "UA should contain architecture");
         }
     }
 

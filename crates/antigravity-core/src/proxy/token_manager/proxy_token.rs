@@ -71,9 +71,7 @@ impl ProxyToken {
 
     /// Business Ultra tier: high daily quota, strict RPM limits.
     pub fn is_business_ultra(&self) -> bool {
-        self.subscription_tier
-            .as_ref()
-            .is_some_and(|t| t.contains("ultra-business"))
+        self.subscription_tier.as_ref().is_some_and(|t| t.contains("ultra-business"))
     }
 
     /// Numeric tier priority for sorting (lower = better).

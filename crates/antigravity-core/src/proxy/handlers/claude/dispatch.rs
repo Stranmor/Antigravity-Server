@@ -51,12 +51,12 @@ pub async fn decide_dispatch_mode(
                     }
                     !has_available
                 }
-            }
+            },
             ZaiDispatchMode::Pooled => {
                 let total = google_accounts.saturating_add(1).max(1);
                 let slot = state.provider_rr.fetch_add(1, Ordering::Relaxed) % total;
                 slot == 0
-            }
+            },
         }
     };
 
@@ -71,14 +71,12 @@ pub async fn forward_to_zai(
     let new_body = serde_json::to_value(request)
         .map_err(|e| format!("Failed to serialize fixed request for z.ai: {}", e))?;
 
-    Ok(
-        crate::proxy::providers::zai_anthropic::forward_anthropic_json(
-            state,
-            axum::http::Method::POST,
-            "/v1/messages",
-            headers,
-            new_body,
-        )
-        .await,
+    Ok(crate::proxy::providers::zai_anthropic::forward_anthropic_json(
+        state,
+        axum::http::Method::POST,
+        "/v1/messages",
+        headers,
+        new_body,
     )
+    .await)
 }

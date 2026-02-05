@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 /// Account data structure representing a user's API account.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Account {
     /// Unique identifier for the account
     pub id: String,
@@ -77,7 +77,7 @@ impl Account {
     }
 
     /// Check if the account is available for proxy use.
-    pub fn is_available_for_proxy(&self) -> bool {
+    pub const fn is_available_for_proxy(&self) -> bool {
         !self.disabled && !self.proxy_disabled
     }
 
@@ -102,12 +102,12 @@ impl Account {
 
     /// Add a model to the protected set (disable it for this account due to low quota).
     pub fn protect_model(&mut self, model: &str) {
-        self.protected_models.insert(model.to_string());
+        let _ = self.protected_models.insert(model.to_string());
     }
 
     /// Remove a model from the protected set (re-enable it for this account).
     pub fn unprotect_model(&mut self, model: &str) {
-        self.protected_models.remove(model);
+        let _ = self.protected_models.remove(model);
     }
 
     /// Check if any models are currently protected.
@@ -116,7 +116,7 @@ impl Account {
     }
 
     /// Get the set of protected models.
-    pub fn protected_models(&self) -> &HashSet<String> {
+    pub const fn protected_models(&self) -> &HashSet<String> {
         &self.protected_models
     }
 
@@ -140,11 +140,7 @@ pub struct AccountIndex {
 impl AccountIndex {
     /// Create a new empty account index.
     pub fn new() -> Self {
-        Self {
-            version: "2.0".to_string(),
-            accounts: Vec::new(),
-            current_account_id: None,
-        }
+        Self { version: "2.0".to_string(), accounts: Vec::new(), current_account_id: None }
     }
 }
 

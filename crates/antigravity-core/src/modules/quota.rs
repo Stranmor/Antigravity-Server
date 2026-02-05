@@ -61,15 +61,9 @@ async fn fetch_project_id(access_token: &str, email: &str) -> (Option<String>, O
 
     let res = client
         .post(format!("{}/v1internal:loadCodeAssist", CLOUD_CODE_BASE_URL))
-        .header(
-            reqwest::header::AUTHORIZATION,
-            format!("Bearer {}", access_token),
-        )
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {}", access_token))
         .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .header(
-            reqwest::header::USER_AGENT,
-            "antigravity/4.0.8 windows/amd64",
-        )
+        .header(reqwest::header::USER_AGENT, "antigravity/4.0.8 windows/amd64")
         .json(&meta)
         .send()
         .await;
@@ -102,13 +96,13 @@ async fn fetch_project_id(access_token: &str, email: &str) -> (Option<String>, O
                     res.status()
                 ));
             }
-        }
+        },
         Err(e) => {
             crate::modules::logger::log_error(&format!(
                 "❌ [{}] loadCodeAssist network error: {}",
                 email, e
             ));
-        }
+        },
     }
 
     (None, None)
@@ -170,8 +164,8 @@ pub async fn fetch_quota_inner(
                     }
 
                     // Other errors continue retry logic
+                    let text = response.text().await.unwrap_or_default();
                     if attempt < max_retries {
-                        let text = response.text().await.unwrap_or_default();
                         crate::modules::logger::log_warn(&format!(
                             "API error: {} - {} (attempt {}/{})",
                             status, text, attempt, max_retries
@@ -180,11 +174,7 @@ pub async fn fetch_quota_inner(
                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         continue;
                     } else {
-                        let text = response.text().await.unwrap_or_default();
-                        return Err(AppError::Unknown(format!(
-                            "API error: {} - {}",
-                            status, text
-                        )));
+                        return Err(AppError::Unknown(format!("API error: {} - {}", status, text)));
                     }
                 }
 
@@ -198,10 +188,8 @@ pub async fn fetch_quota_inner(
 
                 for (name, info) in quota_response.models {
                     if let Some(quota_info) = info.quota_info {
-                        let percentage = quota_info
-                            .remaining_fraction
-                            .map(|f| (f * 100.0) as i32)
-                            .unwrap_or(0);
+                        let percentage =
+                            quota_info.remaining_fraction.map(|f| (f * 100.0) as i32).unwrap_or(0);
 
                         let reset_time = quota_info.reset_time.unwrap_or_default();
 
@@ -216,7 +204,7 @@ pub async fn fetch_quota_inner(
                 quota_data.subscription_tier = subscription_tier.clone();
 
                 return Ok((quota_data, project_id.clone()));
-            }
+            },
             Err(e) => {
                 crate::modules::logger::log_warn(&format!(
                     "Request failed: {} (attempt {}/{})",
@@ -226,7 +214,7 @@ pub async fn fetch_quota_inner(
                 if attempt < max_retries {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 }
-            }
+            },
         }
     }
 
@@ -242,9 +230,7 @@ pub async fn fetch_all_quotas(
 
     for (account_id, access_token) in accounts {
         // In batch query, we pass account_id for log identification
-        let result = fetch_quota(&access_token, &account_id)
-            .await
-            .map(|(q, _)| q);
+        let result = fetch_quota(&access_token, &account_id).await.map(|(q, _)| q);
         results.push((account_id, result));
     }
 

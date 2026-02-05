@@ -30,9 +30,7 @@ pub enum RetryStrategy {
 
 #[inline]
 pub fn is_signature_error(error_text: &str) -> bool {
-    SIGNATURE_ERROR_PATTERNS
-        .iter()
-        .any(|pattern| error_text.contains(pattern))
+    SIGNATURE_ERROR_PATTERNS.iter().any(|pattern| error_text.contains(pattern))
 }
 
 pub fn determine_retry_strategy(
@@ -43,7 +41,7 @@ pub fn determine_retry_strategy(
     match status_code {
         400 if !retried_without_thinking && is_signature_error(error_text) => {
             RetryStrategy::FixedDelay(Duration::from_millis(200))
-        }
+        },
 
         429 => {
             if let Some(delay_ms) = crate::proxy::upstream::retry::parse_retry_delay(error_text) {
@@ -52,12 +50,9 @@ pub fn determine_retry_strategy(
             } else {
                 RetryStrategy::LinearBackoff { base_ms: 1000 }
             }
-        }
-
-        503 | 529 => RetryStrategy::ExponentialBackoff {
-            base_ms: 1000,
-            max_ms: 8000,
         },
+
+        503 | 529 => RetryStrategy::ExponentialBackoff { base_ms: 1000, max_ms: 8000 },
 
         500 => RetryStrategy::LinearBackoff { base_ms: 500 },
 
@@ -75,12 +70,9 @@ pub async fn apply_retry_strategy(
 ) -> bool {
     match strategy {
         RetryStrategy::NoRetry => {
-            debug!(
-                "[{}] Non-retryable error {}, stopping",
-                trace_id, status_code
-            );
+            debug!("[{}] Non-retryable error {}, stopping", trace_id, status_code);
             false
-        }
+        },
 
         RetryStrategy::FixedDelay(duration) => {
             let base_ms = duration.as_millis() as u64;
@@ -94,7 +86,7 @@ pub async fn apply_retry_strategy(
             );
             sleep(duration).await;
             true
-        }
+        },
 
         RetryStrategy::LinearBackoff { base_ms } => {
             let calculated_ms = base_ms * (attempt as u64 + 1);
@@ -108,7 +100,7 @@ pub async fn apply_retry_strategy(
             );
             sleep(Duration::from_millis(calculated_ms)).await;
             true
-        }
+        },
 
         RetryStrategy::ExponentialBackoff { base_ms, max_ms } => {
             let calculated_ms = (base_ms * 2_u64.pow(attempt as u32)).min(max_ms);
@@ -122,7 +114,7 @@ pub async fn apply_retry_strategy(
             );
             sleep(Duration::from_millis(calculated_ms)).await;
             true
-        }
+        },
     }
 }
 

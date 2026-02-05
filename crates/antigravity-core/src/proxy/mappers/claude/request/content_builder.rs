@@ -33,7 +33,7 @@ pub fn build_contents(
             if text != "(no content)" && !text.trim().is_empty() {
                 parts.push(json!({"text": text.trim()}));
             }
-        }
+        },
         MessageContent::Array(blocks) => {
             for item in blocks {
                 match item {
@@ -66,12 +66,8 @@ pub fn build_contents(
                             }
                             *previous_was_tool_result = false;
                         }
-                    }
-                    ContentBlock::Thinking {
-                        thinking,
-                        signature,
-                        ..
-                    } => {
+                    },
+                    ContentBlock::Thinking { thinking, signature, .. } => {
                         tracing::debug!(
                             "[DEBUG-TRANSFORM] Processing thinking block. Sig: {:?}",
                             signature
@@ -129,13 +125,13 @@ pub fn build_contents(
                         ) {
                             SignatureAction::UseWithSignature { part } => {
                                 parts.push(part);
-                            }
+                            },
                             SignatureAction::DowngradeToText { text } => {
                                 parts.push(json!({"text": text}));
                                 saw_non_thinking = true;
-                            }
+                            },
                         }
-                    }
+                    },
                     ContentBlock::RedactedThinking { data } => {
                         // [FIX] will RedactedThinking asnormaltexthandle，preservecontext
                         tracing::debug!("[Claude-Request] Degrade RedactedThinking to text");
@@ -144,7 +140,7 @@ pub fn build_contents(
                         }));
                         saw_non_thinking = true;
                         continue;
-                    }
+                    },
                     ContentBlock::Image { source, .. } => {
                         if source.source_type == "base64" {
                             parts.push(json!({
@@ -155,7 +151,7 @@ pub fn build_contents(
                             }));
                             saw_non_thinking = true;
                         }
-                    }
+                    },
                     ContentBlock::Document { source, .. } => {
                         if source.source_type == "base64" {
                             parts.push(json!({
@@ -166,14 +162,8 @@ pub fn build_contents(
                             }));
                             saw_non_thinking = true;
                         }
-                    }
-                    ContentBlock::ToolUse {
-                        id,
-                        name,
-                        input,
-                        signature,
-                        ..
-                    } => {
+                    },
+                    ContentBlock::ToolUse { id, name, input, signature, .. } => {
                         let mut final_input = input.clone();
 
                         // [CRITICAL FIX] Shell tool command must be an array of strings
@@ -247,13 +237,8 @@ pub fn build_contents(
                             }
                         }
                         parts.push(part);
-                    }
-                    ContentBlock::ToolResult {
-                        tool_use_id,
-                        content,
-                        is_error,
-                        ..
-                    } => {
+                    },
+                    ContentBlock::ToolResult { tool_use_id, content, is_error, .. } => {
                         current_turn_tool_result_ids.insert(tool_use_id.clone());
                         let func_name = tool_id_to_name
                             .get(tool_use_id)
@@ -269,16 +254,16 @@ pub fn build_contents(
                         );
                         parts.push(part);
                         *previous_was_tool_result = true;
-                    }
+                    },
                     // ContentBlock::RedactedThinking handled above at line 583
                     ContentBlock::ServerToolUse { .. }
                     | ContentBlock::WebSearchToolResult { .. } => {
                         // Search result blocks should not be sent back to upstream by client (already replaced by tool_result)
                         continue;
-                    }
+                    },
                 }
             }
-        }
+        },
     }
 
     if !is_assistant && !pending_tool_use_ids.is_empty() {

@@ -41,15 +41,11 @@ fn test_clean_json_schema_draft_2020_12() {
     assert!(schema["properties"].get("pattern").is_some());
     assert_eq!(schema["properties"]["pattern"]["type"], "object");
 
-    assert!(schema["properties"]["pattern"]["properties"]["regex"]
-        .get("pattern")
-        .is_none());
-    assert!(
-        schema["properties"]["pattern"]["properties"]["regex"]["description"]
-            .as_str()
-            .unwrap()
-            .contains("[Constraint: pattern: ^[a-z]+$]")
-    );
+    assert!(schema["properties"]["pattern"]["properties"]["regex"].get("pattern").is_none());
+    assert!(schema["properties"]["pattern"]["properties"]["regex"]["description"]
+        .as_str()
+        .unwrap()
+        .contains("[Constraint: pattern: ^[a-z]+$]"));
 
     assert_eq!(schema["properties"]["unit"]["type"], "string");
     assert!(schema.get("$schema").is_none());
@@ -85,10 +81,7 @@ fn test_flatten_refs() {
     clean_json_schema(&mut schema);
 
     assert_eq!(schema["properties"]["home"]["type"], "object");
-    assert_eq!(
-        schema["properties"]["home"]["properties"]["city"]["type"],
-        "string"
-    );
+    assert_eq!(schema["properties"]["home"]["properties"]["city"]["type"], "string");
 }
 
 #[test]
@@ -253,12 +246,6 @@ fn test_nullable_handling_with_description() {
     clean_json_schema(&mut schema);
 
     assert_eq!(schema["type"], "string");
-    assert!(schema["description"]
-        .as_str()
-        .unwrap()
-        .contains("User name"));
-    assert!(schema["description"]
-        .as_str()
-        .unwrap()
-        .contains("(nullable)"));
+    assert!(schema["description"].as_str().unwrap().contains("User name"));
+    assert!(schema["description"].as_str().unwrap().contains("(nullable)"));
 }

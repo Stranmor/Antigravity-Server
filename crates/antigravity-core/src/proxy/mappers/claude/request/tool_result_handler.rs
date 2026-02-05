@@ -65,10 +65,7 @@ fn truncate_if_needed(content: String) -> String {
             content.len(),
             MAX_TOOL_RESULT_CHARS
         );
-        let mut truncated = content
-            .chars()
-            .take(MAX_TOOL_RESULT_CHARS)
-            .collect::<String>();
+        let mut truncated = content.chars().take(MAX_TOOL_RESULT_CHARS).collect::<String>();
         truncated.push_str("\n...[truncated output]");
         truncated
     } else {

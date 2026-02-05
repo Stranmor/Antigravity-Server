@@ -4,8 +4,9 @@ use super::formatters::format_timestamp_full;
 use crate::api_models::ProxyRequestLog;
 use leptos::prelude::*;
 
+/// Log detail modal showing request/response data.
 #[component]
-pub fn LogDetailModal(
+pub(crate) fn LogDetailModal(
     log: ProxyRequestLog,
     on_close: impl Fn() + 'static + Clone,
 ) -> impl IntoView {

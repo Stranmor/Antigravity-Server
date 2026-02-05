@@ -1,15 +1,15 @@
 //! Page components
 
-mod accounts;
-mod dashboard;
-mod login;
-mod monitor;
-mod proxy;
-mod settings;
+pub(crate) mod accounts;
+pub(crate) mod dashboard;
+pub(crate) mod login;
+pub(crate) mod monitor;
+pub(crate) mod proxy;
+pub(crate) mod settings;
 
-pub use accounts::Accounts;
-pub use dashboard::Dashboard;
-pub use login::Login;
-pub use monitor::Monitor;
-pub use proxy::ApiProxy;
-pub use settings::Settings;
+pub(crate) use accounts::Accounts;
+pub(crate) use dashboard::Dashboard;
+pub(crate) use login::Login;
+pub(crate) use monitor::Monitor;
+pub(crate) use proxy::ApiProxy;
+pub(crate) use settings::Settings;

@@ -7,9 +7,7 @@ pub fn start_antigravity() -> Result<(), String> {
     crate::modules::logger::log_info("Starting Antigravity...");
 
     let config = crate::modules::config::load_config().ok();
-    let manual_path = config
-        .as_ref()
-        .and_then(|c| c.antigravity_executable.clone());
+    let manual_path = config.as_ref().and_then(|c| c.antigravity_executable.clone());
     let args = config.and_then(|c| c.antigravity_args.clone());
 
     if let Some(path_str) = manual_path {
@@ -62,8 +60,7 @@ fn start_from_manual_path(path_str: String, args: Option<Vec<String>>) -> Result
                     cmd.arg(arg);
                 }
             }
-            cmd.spawn()
-                .map_err(|e| format!("Start failed (open): {}", e))?;
+            cmd.spawn().map_err(|e| format!("Start failed (open): {}", e))?;
         } else {
             let mut cmd = Command::new(&path_str);
             if let Some(ref args) = args {
@@ -71,8 +68,7 @@ fn start_from_manual_path(path_str: String, args: Option<Vec<String>>) -> Result
                     cmd.arg(arg);
                 }
             }
-            cmd.spawn()
-                .map_err(|e| format!("Start failed (direct): {}", e))?;
+            cmd.spawn().map_err(|e| format!("Start failed (direct): {}", e))?;
         }
     }
 
@@ -100,15 +96,10 @@ fn start_from_default_location(args: Option<Vec<String>>) -> Result<(), String> 
                 cmd.arg(arg);
             }
         }
-        let output = cmd
-            .output()
-            .map_err(|e| format!("Cannot execute open command: {}", e))?;
+        let output = cmd.output().map_err(|e| format!("Cannot execute open command: {}", e))?;
         if !output.status.success() {
             let error = String::from_utf8_lossy(&output.stderr);
-            return Err(format!(
-                "Start failed (open exited with {}): {}",
-                output.status, error
-            ));
+            return Err(format!("Start failed (open exited with {}): {}", output.status, error));
         }
     }
 

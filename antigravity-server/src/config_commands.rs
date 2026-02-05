@@ -35,16 +35,12 @@ pub fn get_config_value(key: &str) -> Result<()> {
 pub fn set_config_value(key: &str, value: &str) -> Result<()> {
     match key {
         "proxy.port" => {
-            value
-                .parse::<u16>()
-                .map_err(|_| anyhow::anyhow!("Invalid port number: {}", value))?;
-        }
+            value.parse::<u16>().map_err(|_| anyhow::anyhow!("Invalid port number: {}", value))?;
+        },
         "proxy.enable_logging" => {
-            value
-                .parse::<bool>()
-                .map_err(|_| anyhow::anyhow!("Invalid boolean: {}", value))?;
-        }
-        "proxy.api_key" => {}
+            value.parse::<bool>().map_err(|_| anyhow::anyhow!("Invalid boolean: {}", value))?;
+        },
+        "proxy.api_key" => {},
         _ => return Err(anyhow::anyhow!("Unknown config key: {}", key)),
     }
 
@@ -52,7 +48,7 @@ pub fn set_config_value(key: &str, value: &str) -> Result<()> {
         "proxy.port" => config.proxy.port = value.parse().unwrap(),
         "proxy.api_key" => config.proxy.api_key = value.to_string(),
         "proxy.enable_logging" => config.proxy.enable_logging = value.parse().unwrap(),
-        _ => {}
+        _ => {},
     })
     .map_err(|e| anyhow::anyhow!(e))?;
 

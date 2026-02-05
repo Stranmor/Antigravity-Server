@@ -66,9 +66,7 @@ fn test_rate_limit_with_model() {
 
     // Model-specific rate limit only blocks that model, not the whole account
     assert!(manager.is_rate_limited_for_model(account_id, "gemini-pro"));
-    let info = manager
-        .rate_limit_tracker()
-        .get_for_model(account_id, "gemini-pro");
+    let info = manager.rate_limit_tracker().get_for_model(account_id, "gemini-pro");
     assert!(info.is_some());
     assert_eq!(info.unwrap().model, Some("gemini-pro".to_string()));
 }
@@ -79,13 +77,8 @@ async fn test_preferred_account_mode() {
 
     assert!(manager.get_preferred_account().await.is_none());
 
-    manager
-        .set_preferred_account(Some("fixed_account".to_string()))
-        .await;
-    assert_eq!(
-        manager.get_preferred_account().await,
-        Some("fixed_account".to_string())
-    );
+    manager.set_preferred_account(Some("fixed_account".to_string())).await;
+    assert_eq!(manager.get_preferred_account().await, Some("fixed_account".to_string()));
 
     manager.set_preferred_account(None).await;
     assert!(manager.get_preferred_account().await.is_none());
@@ -191,12 +184,8 @@ fn test_active_request_guard_try_new_respects_limit() {
 fn test_session_bindings() {
     let manager = create_test_manager();
 
-    manager
-        .session_accounts
-        .insert("session_1".to_string(), "account_a".to_string());
-    manager
-        .session_accounts
-        .insert("session_2".to_string(), "account_b".to_string());
+    manager.session_accounts.insert("session_1".to_string(), "account_a".to_string());
+    manager.session_accounts.insert("session_2".to_string(), "account_b".to_string());
 
     assert_eq!(manager.session_accounts.len(), 2);
 
@@ -210,10 +199,7 @@ fn test_session_bindings() {
 #[test]
 fn test_truncate_reason() {
     assert_eq!(truncate_reason("short", 10), "short");
-    assert_eq!(
-        truncate_reason("this is a very long reason", 10),
-        "this is a …"
-    );
+    assert_eq!(truncate_reason("this is a very long reason", 10), "this is a …");
     assert_eq!(truncate_reason("exact10chr", 10), "exact10chr");
 }
 

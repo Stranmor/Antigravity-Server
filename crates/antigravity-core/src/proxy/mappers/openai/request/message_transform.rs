@@ -13,7 +13,7 @@ pub struct MessageTransformContext<'a> {
     pub tool_name_to_schema: &'a HashMap<String, Value>,
 }
 
-pub fn transform_message(msg: &OpenAIMessage, ctx: &MessageTransformContext) -> Value {
+pub fn transform_message(msg: &OpenAIMessage, ctx: &MessageTransformContext<'_>) -> Value {
     let role = match msg.role.as_str() {
         "assistant" => "model",
         "tool" | "function" => "user",
@@ -33,7 +33,7 @@ pub fn transform_message(msg: &OpenAIMessage, ctx: &MessageTransformContext) -> 
 fn transform_reasoning_content(
     msg: &OpenAIMessage,
     role: &str,
-    ctx: &MessageTransformContext,
+    ctx: &MessageTransformContext<'_>,
     parts: &mut Vec<Value>,
 ) {
     if let Some(reasoning) = &msg.reasoning_content {
@@ -75,21 +75,21 @@ fn transform_content(msg: &OpenAIMessage, parts: &mut Vec<Value>) {
                 if !s.is_empty() {
                     parts.push(json!({"text": s}));
                 }
-            }
+            },
             OpenAIContent::Array(blocks) => {
                 for block in blocks {
                     if let Some(part) = transform_content_block(block) {
                         parts.push(part);
                     }
                 }
-            }
+            },
         }
     }
 }
 
 fn transform_tool_calls(
     msg: &OpenAIMessage,
-    ctx: &MessageTransformContext,
+    ctx: &MessageTransformContext<'_>,
     parts: &mut Vec<Value>,
 ) {
     if let Some(tool_calls) = &msg.tool_calls {
@@ -140,7 +140,7 @@ fn transform_tool_calls(
 
 fn transform_tool_response(
     msg: &OpenAIMessage,
-    ctx: &MessageTransformContext,
+    ctx: &MessageTransformContext<'_>,
     parts: &mut Vec<Value>,
 ) {
     if msg.role == "tool" || msg.role == "function" {
@@ -148,10 +148,7 @@ fn transform_tool_response(
         let final_name = if name == "local_shell_call" {
             "shell"
         } else if let Some(id) = &msg.tool_call_id {
-            ctx.tool_id_to_name
-                .get(id)
-                .map(|s| s.as_str())
-                .unwrap_or(name)
+            ctx.tool_id_to_name.get(id).map(|s| s.as_str()).unwrap_or(name)
         } else {
             name
         };

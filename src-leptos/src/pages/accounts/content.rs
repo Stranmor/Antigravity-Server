@@ -7,8 +7,9 @@ use std::collections::HashSet;
 use super::account_row::AccountRow;
 use super::filter_types::ViewMode;
 
+/// Accounts content area with list/grid view toggle.
 #[component]
-pub fn AccountsContent(
+pub(crate) fn AccountsContent(
     view_mode: RwSignal<ViewMode>,
     paginated_accounts: Memo<Vec<Account>>,
     selected_ids: RwSignal<HashSet<String>>,

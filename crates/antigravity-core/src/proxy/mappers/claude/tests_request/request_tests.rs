@@ -37,9 +37,7 @@ fn test_ephemeral_injection_debug() {
     // Now test serialization
     let serialized = serde_json::to_value(&req).unwrap();
     println!("Serialized: {}", serialized);
-    assert!(serialized["messages"][0]["content"][0]
-        .get("cache_control")
-        .is_none());
+    assert!(serialized["messages"][0]["content"][0].get("cache_control").is_none());
 }
 
 #[test]
@@ -196,9 +194,7 @@ fn test_cache_control_cleanup() {
                         signature: Some("sig123".to_string()),
                         cache_control: Some(json!({"type": "ephemeral"})), // thisshouldbecleanup
                     },
-                    ContentBlock::Text {
-                        text: "Here is my response".to_string(),
-                    },
+                    ContentBlock::Text { text: "Here is my response".to_string() },
                 ]),
             },
             Message {
@@ -252,9 +248,7 @@ fn test_thinking_mode_auto_disable_on_tool_use_history() {
             Message {
                 role: "assistant".to_string(),
                 content: MessageContent::Array(vec![
-                    ContentBlock::Text {
-                        text: "Checking...".to_string(),
-                    },
+                    ContentBlock::Text { text: "Checking...".to_string() },
                     ContentBlock::ToolUse {
                         id: "tool_1".to_string(),
                         name: "list_files".to_string(),
@@ -288,10 +282,7 @@ fn test_thinking_mode_auto_disable_on_tool_use_history() {
         temperature: None,
         top_p: None,
         top_k: None,
-        thinking: Some(ThinkingConfig {
-            type_: "enabled".to_string(),
-            budget_tokens: Some(1024),
-        }),
+        thinking: Some(ThinkingConfig { type_: "enabled".to_string(), budget_tokens: Some(1024) }),
         metadata: None,
         output_config: None,
     };
@@ -350,11 +341,7 @@ fn test_thinking_block_not_prepend_when_disabled() {
     let body = result.unwrap();
     let contents = body["request"]["contents"].as_array().unwrap();
 
-    let last_model_msg = contents
-        .iter()
-        .rev()
-        .find(|c| c["role"] == "model")
-        .unwrap();
+    let last_model_msg = contents.iter().rev().find(|c| c["role"] == "model").unwrap();
 
     let parts = last_model_msg["parts"].as_array().unwrap();
 
@@ -377,9 +364,7 @@ fn test_thinking_block_empty_content_fix() {
                     signature: Some("sig".to_string()),
                     cache_control: None,
                 },
-                ContentBlock::Text {
-                    text: "Hi".to_string(),
-                },
+                ContentBlock::Text { text: "Hi".to_string() },
             ]),
         }],
         system: None,
@@ -389,10 +374,7 @@ fn test_thinking_block_empty_content_fix() {
         temperature: None,
         top_p: None,
         top_k: None,
-        thinking: Some(ThinkingConfig {
-            type_: "enabled".to_string(),
-            budget_tokens: Some(1024),
-        }),
+        thinking: Some(ThinkingConfig { type_: "enabled".to_string(), budget_tokens: Some(1024) }),
         metadata: None,
         output_config: None,
     };
@@ -404,14 +386,8 @@ fn test_thinking_block_empty_content_fix() {
     let parts = contents[0]["parts"].as_array().unwrap();
 
     // verify thinking block
-    assert_eq!(
-        parts[0]["text"], "...",
-        "Empty thinking should be filled with ..."
-    );
-    assert!(
-        parts[0].get("thought").is_none(),
-        "Empty thinking should be downgraded to text"
-    );
+    assert_eq!(parts[0]["text"], "...", "Empty thinking should be filled with ...");
+    assert!(parts[0].get("thought").is_none(), "Empty thinking should be downgraded to text");
 }
 
 #[test]
@@ -423,12 +399,8 @@ fn test_redacted_thinking_degradation() {
         messages: vec![Message {
             role: "assistant".to_string(),
             content: MessageContent::Array(vec![
-                ContentBlock::RedactedThinking {
-                    data: "some data".to_string(),
-                },
-                ContentBlock::Text {
-                    text: "Hi".to_string(),
-                },
+                ContentBlock::RedactedThinking { data: "some data".to_string() },
+                ContentBlock::Text { text: "Hi".to_string() },
             ]),
         }],
         system: None,
@@ -451,10 +423,7 @@ fn test_redacted_thinking_degradation() {
     // verify RedactedThinking -> Text
     let text = parts[0]["text"].as_str().unwrap();
     assert!(text.contains("[Redacted Thinking: some data]"));
-    assert!(
-        parts[0].get("thought").is_none(),
-        "Redacted thinking should NOT have thought: true"
-    );
+    assert!(parts[0].get("thought").is_none(), "Redacted thinking should NOT have thought: true");
 }
 
 // ==================================================================================
@@ -467,9 +436,7 @@ fn test_thinking_blocks_sorted_first_after_compression() {
         role: "assistant".to_string(),
         content: MessageContent::Array(vec![
             // Wrong order: Text before Thinking (simulates kilo compression)
-            ContentBlock::Text {
-                text: "Some regular text".to_string(),
-            },
+            ContentBlock::Text { text: "Some regular text".to_string() },
             ContentBlock::Thinking {
                 thinking: "My thinking process".to_string(),
                 signature: Some(
@@ -477,9 +444,7 @@ fn test_thinking_blocks_sorted_first_after_compression() {
                 ),
                 cache_control: None,
             },
-            ContentBlock::Text {
-                text: "More text".to_string(),
-            },
+            ContentBlock::Text { text: "More text".to_string() },
         ]),
     }];
 
@@ -489,18 +454,9 @@ fn test_thinking_blocks_sorted_first_after_compression() {
     // Verify thinking is now first
     if let MessageContent::Array(blocks) = &messages[0].content {
         assert_eq!(blocks.len(), 3, "Should still have 3 blocks");
-        assert!(
-            matches!(blocks[0], ContentBlock::Thinking { .. }),
-            "Thinking should be first"
-        );
-        assert!(
-            matches!(blocks[1], ContentBlock::Text { .. }),
-            "Text should be second"
-        );
-        assert!(
-            matches!(blocks[2], ContentBlock::Text { .. }),
-            "Text should be third"
-        );
+        assert!(matches!(blocks[0], ContentBlock::Thinking { .. }), "Thinking should be first");
+        assert!(matches!(blocks[1], ContentBlock::Text { .. }), "Text should be second");
+        assert!(matches!(blocks[2], ContentBlock::Text { .. }), "Text should be third");
 
         // Verify content preserved
         if let ContentBlock::Thinking { thinking, .. } = &blocks[0] {
@@ -522,9 +478,7 @@ fn test_thinking_blocks_no_reorder_when_already_first() {
                 signature: Some("sig123".to_string()),
                 cache_control: None,
             },
-            ContentBlock::Text {
-                text: "Some text".to_string(),
-            },
+            ContentBlock::Text { text: "Some text".to_string() },
         ]),
     }];
 
@@ -537,25 +491,17 @@ fn test_thinking_blocks_no_reorder_when_already_first() {
             matches!(blocks[0], ContentBlock::Thinking { .. }),
             "Thinking should still be first"
         );
-        assert!(
-            matches!(blocks[1], ContentBlock::Text { .. }),
-            "Text should still be second"
-        );
+        assert!(matches!(blocks[1], ContentBlock::Text { .. }), "Text should still be second");
     }
 }
 
 #[test]
 fn test_merge_consecutive_messages() {
     let mut messages = vec![
+        Message { role: "user".to_string(), content: MessageContent::String("Hello".to_string()) },
         Message {
             role: "user".to_string(),
-            content: MessageContent::String("Hello".to_string()),
-        },
-        Message {
-            role: "user".to_string(),
-            content: MessageContent::Array(vec![ContentBlock::Text {
-                text: "World".to_string(),
-            }]),
+            content: MessageContent::Array(vec![ContentBlock::Text { text: "World".to_string() }]),
         },
         Message {
             role: "assistant".to_string(),

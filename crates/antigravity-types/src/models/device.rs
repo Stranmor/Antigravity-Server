@@ -26,7 +26,7 @@ pub struct DeviceProfile {
 }
 
 /// Historical version of a device profile for rollback support.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeviceProfileVersion {
     /// Unique version ID
     pub id: String,

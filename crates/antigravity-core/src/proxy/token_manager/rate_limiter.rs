@@ -35,8 +35,7 @@ impl TokenManager {
     }
 
     pub fn is_rate_limited_for_model(&self, account_id: &str, model: &str) -> bool {
-        self.rate_limit_tracker
-            .is_rate_limited_for_model(account_id, model)
+        self.rate_limit_tracker.is_rate_limited_for_model(account_id, model)
     }
 
     pub fn rate_limit_tracker(&self) -> &crate::proxy::rate_limit::RateLimitTracker {
@@ -71,10 +70,8 @@ impl TokenManager {
         let content = tokio::fs::read_to_string(&account_path).await.ok()?;
         let account: serde_json::Value = serde_json::from_str(&content).ok()?;
 
-        let models = account
-            .get("quota")
-            .and_then(|q| q.get("models"))
-            .and_then(|m| m.as_array())?;
+        let models =
+            account.get("quota").and_then(|q| q.get("models")).and_then(|m| m.as_array())?;
 
         models
             .iter()
@@ -91,13 +88,8 @@ impl TokenManager {
         model: Option<String>,
     ) -> bool {
         if let Some(reset_time_str) = self.get_quota_reset_time(email).await {
-            tracing::info!(
-                "Found quota reset time for account {}: {}",
-                email,
-                reset_time_str
-            );
-            self.rate_limit_tracker
-                .set_lockout_until_iso(email, &reset_time_str, reason, model)
+            tracing::info!("Found quota reset time for account {}: {}", email, reset_time_str);
+            self.rate_limit_tracker.set_lockout_until_iso(email, &reset_time_str, reason, model)
         } else {
             tracing::debug!(
                 "No quota reset time found for account {}, using default backoff",
@@ -132,7 +124,7 @@ impl TokenManager {
                     email
                 );
                 return false;
-            }
+            },
         };
 
         tracing::info!("Account {} refreshing quota in realtime...", email);
@@ -169,11 +161,11 @@ impl TokenManager {
                     );
                     false
                 }
-            }
+            },
             Err(e) => {
                 tracing::warn!("Account {} quota refresh failed: {:?}", email, e);
                 false
-            }
+            },
         }
     }
 
@@ -243,41 +235,27 @@ impl TokenManager {
                     std::time::SystemTime::now() + lockout,
                     reason,
                 );
-                tracing::info!(
-                    "{}:{} QUOTA_EXHAUSTED, 10min fallback lock",
-                    account_id,
-                    model_str
-                );
-            }
-            _ => {
-                let lockout_secs = self
-                    .rate_limit_tracker
-                    .set_adaptive_model_lockout(account_id, &model_str);
-                tracing::debug!(
-                    "{}:{} adaptive lockout: {}s",
-                    account_id,
-                    model_str,
-                    lockout_secs
-                );
-            }
+                tracing::info!("{}:{} QUOTA_EXHAUSTED, 10min fallback lock", account_id, model_str);
+            },
+            RateLimitReason::RateLimitExceeded
+            | RateLimitReason::ModelCapacityExhausted
+            | RateLimitReason::ServerError
+            | RateLimitReason::Unknown => {
+                let lockout_secs =
+                    self.rate_limit_tracker.set_adaptive_model_lockout(account_id, &model_str);
+                tracing::debug!("{}:{} adaptive lockout: {}s", account_id, model_str, lockout_secs);
+            },
         }
 
         if self
             .fetch_and_lock_with_realtime_quota(account_id, reason, Some(model_str.clone()))
             .await
         {
-            tracing::info!(
-                "{}:{} locked with precise reset time",
-                account_id,
-                model_str
-            );
+            tracing::info!("{}:{} locked with precise reset time", account_id, model_str);
             return;
         }
 
-        if self
-            .set_precise_lockout(account_id, reason, model.map(|s| s.to_string()))
-            .await
-        {
+        if self.set_precise_lockout(account_id, reason, model.map(|s| s.to_string())).await {
             tracing::info!("{}:{} locked with cached reset time", account_id, model_str);
             return;
         }

@@ -1,9 +1,11 @@
+//! Account management, storage, and PostgreSQL persistence modules.
+
 pub mod account;
 pub mod account_pg;
-pub mod account_pg_crud;
-pub mod account_pg_events;
-pub mod account_pg_helpers;
-pub mod account_pg_query;
+pub(crate) mod account_pg_crud;
+pub(crate) mod account_pg_events;
+pub(crate) mod account_pg_helpers;
+pub(crate) mod account_pg_query;
 pub mod config;
 pub mod device;
 pub mod json_migration;
@@ -14,5 +16,5 @@ pub mod process;
 pub mod proxy_db;
 pub mod quota;
 pub mod repository;
-pub mod token_extraction;
-pub mod vscode;
+pub(crate) mod token_extraction;
+pub(crate) mod vscode;

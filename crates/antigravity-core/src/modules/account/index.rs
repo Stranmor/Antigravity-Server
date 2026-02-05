@@ -1,9 +1,7 @@
 //! Account index management with atomic operations.
 
 use std::fs;
-use std::sync::Mutex;
-
-use once_cell::sync::Lazy;
+use std::sync::{LazyLock, Mutex};
 
 use crate::models::AccountIndex;
 use crate::modules::logger;
@@ -11,7 +9,7 @@ use crate::modules::logger;
 use super::paths::{get_data_dir, ACCOUNTS_INDEX};
 
 /// Global lock for account index operations to prevent concurrent corruption.
-pub static ACCOUNT_INDEX_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+pub static ACCOUNT_INDEX_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 /// Load the account index file.
 pub fn load_account_index() -> Result<AccountIndex, String> {
@@ -29,10 +27,7 @@ pub fn load_account_index() -> Result<AccountIndex, String> {
     let index: AccountIndex = serde_json::from_str(&content)
         .map_err(|e| format!("Failed to parse account index: {}", e))?;
 
-    logger::log_info(&format!(
-        "Loaded index with {} accounts",
-        index.accounts.len()
-    ));
+    logger::log_info(&format!("Loaded index with {} accounts", index.accounts.len()));
     Ok(index)
 }
 

@@ -46,16 +46,11 @@ pub async fn call_upstream_with_retry(
                     continue;
                 }
                 return UpstreamResult::Success(r);
-            }
+            },
             Err(e) => {
-                debug!(
-                    "OpenAI Request failed on attempt {}/{}: {}",
-                    attempt + 1,
-                    max_attempts,
-                    e
-                );
+                debug!("OpenAI Request failed on attempt {}/{}: {}", attempt + 1, max_attempts, e);
                 return UpstreamResult::ConnectionError(e);
-            }
+            },
         }
     }
 }

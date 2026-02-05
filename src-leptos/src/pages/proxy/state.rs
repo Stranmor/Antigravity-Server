@@ -5,9 +5,8 @@ use crate::api_models::{Protocol, ProxyAuthMode, ZaiDispatchMode};
 use leptos::prelude::*;
 use std::collections::HashMap;
 
-/// All state signals for the proxy page
 #[derive(Clone)]
-pub struct ProxyState {
+pub(crate) struct ProxyState {
     // UI state
     pub loading: RwSignal<bool>,
     pub copied: RwSignal<Option<String>>,
@@ -53,7 +52,7 @@ pub struct ProxyState {
 }
 
 impl ProxyState {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             loading: RwSignal::new(false),
             copied: RwSignal::new(None),

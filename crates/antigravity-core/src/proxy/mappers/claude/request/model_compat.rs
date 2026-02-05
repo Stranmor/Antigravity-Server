@@ -10,13 +10,13 @@ pub fn clean_thinking_fields_recursive(val: &mut Value) {
             for (_, v) in map.iter_mut() {
                 clean_thinking_fields_recursive(v);
             }
-        }
+        },
         Value::Array(arr) => {
             for v in arr.iter_mut() {
                 clean_thinking_fields_recursive(v);
             }
-        }
-        _ => {}
+        },
+        _ => {},
     }
 }
 

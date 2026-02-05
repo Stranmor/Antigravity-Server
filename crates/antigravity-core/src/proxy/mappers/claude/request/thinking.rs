@@ -8,12 +8,9 @@ pub fn should_disable_thinking_due_to_history(messages: &[Message]) -> bool {
     for msg in messages.iter().rev() {
         if msg.role == "assistant" {
             if let MessageContent::Array(blocks) = &msg.content {
-                let has_tool_use = blocks
-                    .iter()
-                    .any(|b| matches!(b, ContentBlock::ToolUse { .. }));
-                let has_thinking = blocks
-                    .iter()
-                    .any(|b| matches!(b, ContentBlock::Thinking { .. }));
+                let has_tool_use = blocks.iter().any(|b| matches!(b, ContentBlock::ToolUse { .. }));
+                let has_thinking =
+                    blocks.iter().any(|b| matches!(b, ContentBlock::Thinking { .. }));
 
                 // If has tool call but no Thinking block -> not compatible
                 if has_tool_use && !has_thinking {
@@ -41,10 +38,7 @@ pub fn should_enable_thinking_by_default(model: &str) -> bool {
 
     // Enable thinking by default for Opus 4.5 variants
     if model_lower.contains("opus-4-5") || model_lower.contains("opus-4.5") {
-        tracing::debug!(
-            "[Thinking-Mode] Auto-enabling thinking for Opus 4.5 model: {}",
-            model
-        );
+        tracing::debug!("[Thinking-Mode] Auto-enabling thinking for Opus 4.5 model: {}", model);
         return true;
     }
 
@@ -94,11 +88,7 @@ pub fn has_valid_signature_for_function_calls(
         if msg.role == "assistant" {
             if let MessageContent::Array(blocks) = &msg.content {
                 for block in blocks {
-                    if let ContentBlock::Thinking {
-                        signature: Some(sig),
-                        ..
-                    } = block
-                    {
+                    if let ContentBlock::Thinking { signature: Some(sig), .. } = block {
                         if sig.len() >= MIN_SIGNATURE_LENGTH {
                             tracing::debug!(
                                 "[Signature-Check] Found valid signature in message history (len: {})",

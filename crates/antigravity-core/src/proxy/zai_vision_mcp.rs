@@ -21,12 +21,8 @@ impl ZaiVisionMcpState {
     pub async fn create_session(&self) -> String {
         let session_id = uuid::Uuid::new_v4().to_string();
         let mut sessions = self.sessions.lock().await;
-        sessions.insert(
-            session_id.clone(),
-            ZaiVisionSession {
-                created_at: std::time::Instant::now(),
-            },
-        );
+        sessions
+            .insert(session_id.clone(), ZaiVisionSession { created_at: std::time::Instant::now() });
         session_id
     }
 

@@ -25,19 +25,13 @@ pub fn process_grounding_metadata(
     }
 
     // Generate a unique tool_use_id
-    let tool_use_id = format!(
-        "srvtoolu_{}",
-        crate::proxy::common::random_id::generate_random_id()
-    );
+    let tool_use_id = format!("srvtoolu_{}", crate::proxy::common::random_id::generate_random_id());
 
     // Build search results array
     let mut search_results = Vec::new();
     for chunk in grounding_chunks.iter() {
         if let Some(web) = chunk.get("web") {
-            let title = web
-                .get("title")
-                .and_then(|t| t.as_str())
-                .unwrap_or("Source");
+            let title = web.get("title").and_then(|t| t.as_str()).unwrap_or("Source");
             let uri = web.get("uri").and_then(|u| u.as_str()).unwrap_or("");
             if !uri.is_empty() {
                 search_results.push(json!({
@@ -54,10 +48,7 @@ pub fn process_grounding_metadata(
         return None;
     }
 
-    let search_query = search_queries
-        .first()
-        .map(|s| s.to_string())
-        .unwrap_or_default();
+    let search_query = search_queries.first().map(|s| s.to_string()).unwrap_or_default();
 
     tracing::debug!(
         "[Grounding] Emitting {} search results for query: {}",
@@ -106,20 +97,15 @@ pub fn process_grounding_metadata(
             "content": search_results
         }
     });
-    chunks.push(Bytes::from(format!(
-        "event: content_block_start\ndata: {}\n\n",
-        tool_result_start
-    )));
+    chunks
+        .push(Bytes::from(format!("event: content_block_start\ndata: {}\n\n", tool_result_start)));
 
     // web_search_tool_result block stop
     let tool_result_stop = json!({
         "type": "content_block_stop",
         "index": state.block_index
     });
-    chunks.push(Bytes::from(format!(
-        "event: content_block_stop\ndata: {}\n\n",
-        tool_result_stop
-    )));
+    chunks.push(Bytes::from(format!("event: content_block_stop\ndata: {}\n\n", tool_result_stop)));
     state.block_index += 1;
 
     Some(chunks)

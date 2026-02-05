@@ -3,16 +3,10 @@ use super::mapping::{MappingEntry, SyncableMapping};
 #[test]
 fn test_lww_tie_breaker_lexicographic() {
     let mut local = SyncableMapping::new();
-    local.entries.insert(
-        "gpt-4o".to_string(),
-        MappingEntry::with_timestamp("aaa-model", 1000),
-    );
+    local.entries.insert("gpt-4o".to_string(), MappingEntry::with_timestamp("aaa-model", 1000));
 
     let mut remote = SyncableMapping::new();
-    remote.entries.insert(
-        "gpt-4o".to_string(),
-        MappingEntry::with_timestamp("zzz-model", 1000),
-    );
+    remote.entries.insert("gpt-4o".to_string(), MappingEntry::with_timestamp("zzz-model", 1000));
 
     let updated = local.merge_lww(&remote);
 
@@ -23,16 +17,10 @@ fn test_lww_tie_breaker_lexicographic() {
 #[test]
 fn test_lww_tie_breaker_local_wins_if_greater() {
     let mut local = SyncableMapping::new();
-    local.entries.insert(
-        "gpt-4o".to_string(),
-        MappingEntry::with_timestamp("zzz-model", 1000),
-    );
+    local.entries.insert("gpt-4o".to_string(), MappingEntry::with_timestamp("zzz-model", 1000));
 
     let mut remote = SyncableMapping::new();
-    remote.entries.insert(
-        "gpt-4o".to_string(),
-        MappingEntry::with_timestamp("aaa-model", 1000),
-    );
+    remote.entries.insert("gpt-4o".to_string(), MappingEntry::with_timestamp("aaa-model", 1000));
 
     let updated = local.merge_lww(&remote);
 
@@ -43,15 +31,10 @@ fn test_lww_tie_breaker_local_wins_if_greater() {
 #[test]
 fn test_tombstone_wins_over_live_on_timestamp_tie() {
     let mut local = SyncableMapping::new();
-    local.entries.insert(
-        "gpt-4o".to_string(),
-        MappingEntry::with_timestamp("gemini-3-pro", 1000),
-    );
+    local.entries.insert("gpt-4o".to_string(), MappingEntry::with_timestamp("gemini-3-pro", 1000));
 
     let mut remote = SyncableMapping::new();
-    remote
-        .entries
-        .insert("gpt-4o".to_string(), MappingEntry::tombstone_at(1000));
+    remote.entries.insert("gpt-4o".to_string(), MappingEntry::tombstone_at(1000));
 
     let updated = local.merge_lww(&remote);
 
@@ -62,15 +45,10 @@ fn test_tombstone_wins_over_live_on_timestamp_tie() {
 #[test]
 fn test_live_does_not_override_tombstone_on_timestamp_tie() {
     let mut local = SyncableMapping::new();
-    local
-        .entries
-        .insert("gpt-4o".to_string(), MappingEntry::tombstone_at(1000));
+    local.entries.insert("gpt-4o".to_string(), MappingEntry::tombstone_at(1000));
 
     let mut remote = SyncableMapping::new();
-    remote.entries.insert(
-        "gpt-4o".to_string(),
-        MappingEntry::with_timestamp("gemini-3-pro", 1000),
-    );
+    remote.entries.insert("gpt-4o".to_string(), MappingEntry::with_timestamp("gemini-3-pro", 1000));
 
     let updated = local.merge_lww(&remote);
 
@@ -95,15 +73,10 @@ fn test_set_overwrites_tombstone() {
 #[test]
 fn test_diff_includes_tombstones() {
     let mut local = SyncableMapping::new();
-    local
-        .entries
-        .insert("gpt-4o".to_string(), MappingEntry::tombstone_at(3000));
+    local.entries.insert("gpt-4o".to_string(), MappingEntry::tombstone_at(3000));
 
     let mut remote = SyncableMapping::new();
-    remote.entries.insert(
-        "gpt-4o".to_string(),
-        MappingEntry::with_timestamp("gemini-3-pro", 2000),
-    );
+    remote.entries.insert("gpt-4o".to_string(), MappingEntry::with_timestamp("gemini-3-pro", 2000));
 
     let diff = local.diff_newer_than(&remote);
 
@@ -114,15 +87,10 @@ fn test_diff_includes_tombstones() {
 #[test]
 fn test_diff_uses_same_tiebreaker_as_merge() {
     let mut local = SyncableMapping::new();
-    local
-        .entries
-        .insert("gpt-4o".to_string(), MappingEntry::tombstone_at(1000));
+    local.entries.insert("gpt-4o".to_string(), MappingEntry::tombstone_at(1000));
 
     let mut remote = SyncableMapping::new();
-    remote.entries.insert(
-        "gpt-4o".to_string(),
-        MappingEntry::with_timestamp("gemini-3-pro", 1000),
-    );
+    remote.entries.insert("gpt-4o".to_string(), MappingEntry::with_timestamp("gemini-3-pro", 1000));
 
     let diff = local.diff_newer_than(&remote);
 
@@ -132,10 +100,7 @@ fn test_diff_uses_same_tiebreaker_as_merge() {
 #[test]
 fn test_identical_entries_no_update() {
     let mut local = SyncableMapping::new();
-    local.entries.insert(
-        "gpt-4o".to_string(),
-        MappingEntry::with_timestamp("gemini-3-pro", 1000),
-    );
+    local.entries.insert("gpt-4o".to_string(), MappingEntry::with_timestamp("gemini-3-pro", 1000));
 
     let remote = local.clone();
     let updated = local.merge_lww(&remote);

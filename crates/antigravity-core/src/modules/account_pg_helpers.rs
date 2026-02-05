@@ -1,15 +1,17 @@
+//! Helper functions for PostgreSQL account operations.
+
 use crate::models::{Account, TokenData};
 use crate::modules::repository::{AccountEventType, RepoResult, RepositoryError};
 use sqlx::Row;
 use std::collections::HashSet;
 use uuid::Uuid;
 
-/// Convert a PostgreSQL row to an Account struct
-pub fn row_to_account(row: &sqlx::postgres::PgRow) -> RepoResult<Account> {
+/// Convert a PostgreSQL row to an Account struct.
+pub(crate) fn row_to_account(row: &sqlx::postgres::PgRow) -> RepoResult<Account> {
     let id: Uuid = row.get("id");
     let protected_json: serde_json::Value = row.get("protected_models");
     let protected: HashSet<String> = serde_json::from_value(protected_json)
-        .map_err(|e| RepositoryError::Serialization(e.to_string()))?;
+        .map_err(|err| RepositoryError::Serialization(err.to_string()))?;
 
     let created_at: chrono::DateTime<chrono::Utc> = row.get("created_at");
     let last_used: chrono::DateTime<chrono::Utc> = row.get("last_used_at");
@@ -17,9 +19,8 @@ pub fn row_to_account(row: &sqlx::postgres::PgRow) -> RepoResult<Account> {
     let proxy_disabled_at: Option<chrono::DateTime<chrono::Utc>> = row.get("proxy_disabled_at");
     let expiry_timestamp: i64 = row.get("expiry_timestamp");
 
-    // Calculate expires_in from stored absolute timestamp
     let now = chrono::Utc::now().timestamp();
-    let expires_in = (expiry_timestamp - now).max(0);
+    let expires_in = (expiry_timestamp.saturating_sub(now)).max(0);
 
     Ok(Account {
         id: id.to_string(),
@@ -30,7 +31,7 @@ pub fn row_to_account(row: &sqlx::postgres::PgRow) -> RepoResult<Account> {
             refresh_token: row.get("refresh_token"),
             expires_in,
             expiry_timestamp,
-            token_type: "Bearer".to_string(),
+            token_type: "Bearer".to_owned(),
             email: row.get("token_email"),
             project_id: row.get("project_id"),
             session_id: None,
@@ -48,9 +49,9 @@ pub fn row_to_account(row: &sqlx::postgres::PgRow) -> RepoResult<Account> {
     })
 }
 
-/// Parse event type string to enum
-pub fn parse_event_type(s: &str) -> AccountEventType {
-    match s {
+/// Parse event type string to enum.
+pub(crate) fn parse_event_type(event_str: &str) -> AccountEventType {
+    match event_str {
         "account_created" => AccountEventType::Created,
         "account_updated" => AccountEventType::Updated,
         "account_deleted" => AccountEventType::Deleted,
@@ -66,7 +67,7 @@ pub fn parse_event_type(s: &str) -> AccountEventType {
     }
 }
 
-/// Map sqlx error to repository error
-pub fn map_sqlx_err(e: sqlx::Error) -> RepositoryError {
-    RepositoryError::Database(e.to_string())
+/// Map sqlx error to repository error.
+pub(crate) fn map_sqlx_err(err: sqlx::Error) -> RepositoryError {
+    RepositoryError::Database(err.to_string())
 }

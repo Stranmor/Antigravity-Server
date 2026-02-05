@@ -24,9 +24,8 @@ mod test_fixes {
         });
 
         let result = wrap_request(&body, "proj", "gemini-pro", Some(session_id));
-        let injected_sig = result["request"]["contents"][0]["parts"][0]["thoughtSignature"]
-            .as_str()
-            .unwrap();
+        let injected_sig =
+            result["request"]["contents"][0]["parts"][0]["thoughtSignature"].as_str().unwrap();
         assert_eq!(injected_sig, signature);
     }
 }
@@ -70,11 +69,7 @@ mod tests {
         });
 
         let result = wrap_request(&body, "test-proj", "gemini-pro", None);
-        let sys = result
-            .get("request")
-            .unwrap()
-            .get("systemInstruction")
-            .unwrap();
+        let sys = result.get("request").unwrap().get("systemInstruction").unwrap();
         assert_eq!(sys.get("role").unwrap(), "user");
         let parts = sys.get("parts").unwrap().as_array().unwrap();
         assert!(!parts.is_empty());
@@ -93,23 +88,11 @@ mod tests {
         });
 
         let result = wrap_request(&body, "test-proj", "gemini-pro", None);
-        let sys = result
-            .get("request")
-            .unwrap()
-            .get("systemInstruction")
-            .unwrap();
+        let sys = result.get("request").unwrap().get("systemInstruction").unwrap();
         let parts = sys.get("parts").unwrap().as_array().unwrap();
         assert_eq!(parts.len(), 2);
-        assert!(parts[0]
-            .get("text")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .contains("You are Antigravity"));
-        assert_eq!(
-            parts[1].get("text").unwrap().as_str().unwrap(),
-            "User custom prompt"
-        );
+        assert!(parts[0].get("text").unwrap().as_str().unwrap().contains("You are Antigravity"));
+        assert_eq!(parts[1].get("text").unwrap().as_str().unwrap(), "User custom prompt");
     }
 
     #[test]
@@ -122,11 +105,7 @@ mod tests {
         });
 
         let result = wrap_request(&body, "test-proj", "gemini-pro", None);
-        let sys = result
-            .get("request")
-            .unwrap()
-            .get("systemInstruction")
-            .unwrap();
+        let sys = result.get("request").unwrap().get("systemInstruction").unwrap();
         let parts = sys.get("parts").unwrap().as_array().unwrap();
         assert_eq!(parts.len(), 1);
     }

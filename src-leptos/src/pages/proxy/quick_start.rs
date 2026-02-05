@@ -2,8 +2,9 @@ use super::actions::on_copy;
 use crate::api_models::Protocol;
 use leptos::prelude::*;
 
+/// Quick start code examples for different protocols.
 #[component]
-pub fn QuickStart(
+pub(crate) fn QuickStart(
     port: RwSignal<u16>,
     api_key: RwSignal<String>,
     selected_protocol: RwSignal<Protocol>,

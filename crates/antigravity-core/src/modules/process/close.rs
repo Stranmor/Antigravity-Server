@@ -77,9 +77,7 @@ fn close_macos(timeout_secs: u64) -> Result<(), String> {
 
     if let Some(pid) = main_pid {
         crate::modules::logger::log_info(&format!("Sending SIGTERM to main process PID: {}", pid));
-        let output = Command::new("kill")
-            .args(["-15", &pid.to_string()])
-            .output();
+        let output = Command::new("kill").args(["-15", &pid.to_string()]).output();
         if let Ok(result) = output {
             if !result.status.success() {
                 let error = String::from_utf8_lossy(&result.stderr);
@@ -92,9 +90,7 @@ fn close_macos(timeout_secs: u64) -> Result<(), String> {
     } else {
         crate::modules::logger::log_warn("No main process identified, sending SIGTERM to all");
         for pid in &pids {
-            let _ = Command::new("kill")
-                .args(["-15", &pid.to_string()])
-                .output();
+            let _ = Command::new("kill").args(["-15", &pid.to_string()]).output();
         }
     }
 
@@ -182,24 +178,20 @@ fn close_linux(timeout_secs: u64) -> Result<(), String> {
         .and_then(|c| c.antigravity_executable)
         .and_then(|p| std::path::PathBuf::from(p).canonicalize().ok());
 
-    let main_pid = find_main_process_linux(&system, &pids, &manual_path);
+    let main_pid = find_main_process_linux(&system, &pids, manual_path.as_ref());
 
     if let Some(pid) = main_pid {
         crate::modules::logger::log_info(&format!(
             "Attempting graceful close of main process {} (SIGTERM)",
             pid
         ));
-        let _ = Command::new("kill")
-            .args(["-15", &pid.to_string()])
-            .output();
+        let _ = Command::new("kill").args(["-15", &pid.to_string()]).output();
     } else {
         crate::modules::logger::log_warn(
             "No main Linux process identified, sending SIGTERM to all",
         );
         for pid in &pids {
-            let _ = Command::new("kill")
-                .args(["-15", &pid.to_string()])
-                .output();
+            let _ = Command::new("kill").args(["-15", &pid.to_string()]).output();
         }
     }
 
@@ -211,7 +203,7 @@ fn close_linux(timeout_secs: u64) -> Result<(), String> {
 fn find_main_process_linux(
     system: &sysinfo::System,
     pids: &[u32],
-    manual_path: &Option<std::path::PathBuf>,
+    manual_path: Option<&std::path::PathBuf>,
 ) -> Option<u32> {
     let mut main_pid = None;
 
@@ -232,9 +224,9 @@ fn find_main_process_linux(
                 pid_u32, name, args_str
             ));
 
-            if let (Some(ref m_path), Some(p_exe)) = (manual_path, process.exe()) {
+            if let (Some(m_path), Some(p_exe)) = (manual_path, process.exe()) {
                 if let Ok(p_path) = p_exe.canonicalize() {
-                    if &p_path == m_path {
+                    if p_path == *m_path {
                         let is_helper = is_helper_by_name_or_args(&name, &args_str);
                         if !is_helper {
                             main_pid = Some(*pid_u32);

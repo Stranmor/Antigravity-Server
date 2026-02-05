@@ -11,8 +11,9 @@ fn event_target_checked(ev: &web_sys::Event) -> bool {
         .unwrap_or(false)
 }
 
+/// Quota refresh settings section.
 #[component]
-pub fn QuotaRefreshSettings() -> impl IntoView {
+pub(crate) fn QuotaRefreshSettings() -> impl IntoView {
     let state = expect_context::<AppState>();
 
     view! {

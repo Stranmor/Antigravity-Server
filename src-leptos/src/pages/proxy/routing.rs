@@ -3,8 +3,9 @@ use crate::components::{Button, ButtonVariant};
 use leptos::prelude::*;
 use std::collections::HashMap;
 
+/// Model routing configuration section.
 #[component]
-pub fn ModelRouting(
+pub(crate) fn ModelRouting(
     routing_expanded: RwSignal<bool>,
     custom_mappings: RwSignal<HashMap<String, String>>,
     new_mapping_from: RwSignal<String>,

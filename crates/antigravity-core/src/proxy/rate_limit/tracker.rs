@@ -11,10 +11,7 @@ pub struct RateLimitTracker {
 
 impl RateLimitTracker {
     pub fn new() -> Self {
-        Self {
-            limits: DashMap::new(),
-            failure_counts: DashMap::new(),
-        }
+        Self { limits: DashMap::new(), failure_counts: DashMap::new() }
     }
 
     /// Get remaining wait time in seconds for account
@@ -23,10 +20,8 @@ impl RateLimitTracker {
         if let Some(info) = self.limits.get(&key) {
             let now = SystemTime::now();
             if info.reset_time > now {
-                let duration = info
-                    .reset_time
-                    .duration_since(now)
-                    .unwrap_or(Duration::from_secs(0));
+                let duration =
+                    info.reset_time.duration_since(now).unwrap_or(Duration::from_secs(0));
                 return duration_to_secs_ceil(duration);
             }
         }
@@ -37,10 +32,7 @@ impl RateLimitTracker {
     pub fn mark_success(&self, account_id: &str) {
         let key = RateLimitKey::account(account_id);
         if self.failure_counts.remove(&key).is_some() {
-            tracing::debug!(
-                "account {} request success, reset failure count",
-                account_id
-            );
+            tracing::debug!("account {} request success, reset failure count", account_id);
         }
         self.limits.remove(&key);
     }
@@ -93,10 +85,8 @@ impl RateLimitTracker {
         let account_key = RateLimitKey::account(account_id);
         if let Some(info) = self.limits.get(&account_key) {
             if info.reset_time > now {
-                let duration = info
-                    .reset_time
-                    .duration_since(now)
-                    .unwrap_or(Duration::from_secs(0));
+                let duration =
+                    info.reset_time.duration_since(now).unwrap_or(Duration::from_secs(0));
                 max_wait = max_wait.max(duration_to_secs_ceil(duration));
             }
         }
@@ -104,10 +94,8 @@ impl RateLimitTracker {
         let model_key = RateLimitKey::model(account_id, model);
         if let Some(info) = self.limits.get(&model_key) {
             if info.reset_time > now {
-                let duration = info
-                    .reset_time
-                    .duration_since(now)
-                    .unwrap_or(Duration::from_secs(0));
+                let duration =
+                    info.reset_time.duration_since(now).unwrap_or(Duration::from_secs(0));
                 max_wait = max_wait.max(duration_to_secs_ceil(duration));
             }
         }
@@ -127,10 +115,7 @@ impl RateLimitTracker {
     /// Get seconds until rate limit reset
     pub fn get_reset_seconds(&self, account_id: &str) -> Option<u64> {
         if let Some(info) = self.get(account_id) {
-            info.reset_time
-                .duration_since(SystemTime::now())
-                .ok()
-                .map(|d| d.as_secs())
+            info.reset_time.duration_since(SystemTime::now()).ok().map(|d| d.as_secs())
         } else {
             None
         }
@@ -168,10 +153,7 @@ impl RateLimitTracker {
     pub fn clear_all(&self) {
         let count = self.limits.len();
         self.limits.clear();
-        tracing::warn!(
-            "🔄 Optimistic reset: Cleared all {} rate limit record(s)",
-            count
-        );
+        tracing::warn!("🔄 Optimistic reset: Cleared all {} rate limit record(s)", count);
     }
 }
 

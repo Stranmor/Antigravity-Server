@@ -22,9 +22,7 @@ pub fn build_client(
         builder = builder.proxy(proxy);
     }
 
-    builder
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))
+    builder.build().map_err(|e| format!("Failed to build HTTP client: {}", e))
 }
 
 /// Execute vision chat completion request to ZAI API.
@@ -64,10 +62,7 @@ pub async fn vision_chat_completion(
         return Err(format!("HTTP {}: {}", status, text));
     }
 
-    let v: Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Invalid JSON response: {}", e))?;
+    let v: Value = resp.json().await.map_err(|e| format!("Invalid JSON response: {}", e))?;
     let content = v
         .get("choices")
         .and_then(|c| c.get(0))

@@ -54,10 +54,8 @@ pub fn detect_and_emit_ssop_events(full_content: &str) -> SsopDetectionResult {
                         // Case 2: "command": "shell" (String) and "args": { "command": "..." }
                         else if let Some(cmd_str) = cmd_val.as_str() {
                             if cmd_str == "shell" || cmd_str == "local_shell" {
-                                if let Some(args) = val
-                                    .get("args")
-                                    .or(val.get("arguments"))
-                                    .or(val.get("params"))
+                                if let Some(args) =
+                                    val.get("args").or(val.get("arguments")).or(val.get("params"))
                                 {
                                     if let Some(inner_cmd) = args
                                         .get("command")
@@ -132,19 +130,12 @@ fn generate_shell_events(cmd_val: &Value) -> Vec<Bytes> {
 
     let mut hasher = DefaultHasher::new();
     "ssop_shell_call".hash(&mut hasher);
-    serde_json::to_string(cmd_val)
-        .unwrap_or_default()
-        .hash(&mut hasher);
+    serde_json::to_string(cmd_val).unwrap_or_default().hash(&mut hasher);
     let call_id = format!("call_{:x}", hasher.finish());
 
     let mut cmd_vec: Vec<String> = cmd_val
         .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str())
-                .map(|s| s.to_string())
-                .collect()
-        })
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect())
         .unwrap_or_default();
 
     // Strip "shell" or "local_shell" label if present
@@ -154,10 +145,7 @@ fn generate_shell_events(cmd_val: &Value) -> Vec<Bytes> {
 
     let final_cmd_vec = build_final_command(cmd_vec);
 
-    tracing::debug!(
-        "SSOP: Detected Shell Command in Text, Injecting Event: {:?}",
-        final_cmd_vec
-    );
+    tracing::debug!("SSOP: Detected Shell Command in Text, Injecting Event: {:?}", final_cmd_vec);
 
     // Emit added event
     let item_added_ev = json!({
@@ -208,10 +196,7 @@ fn build_final_command(cmd_vec: Vec<String>) -> Vec<String> {
         ];
     }
 
-    if matches!(
-        cmd_vec[0].as_str(),
-        "powershell" | "cmd" | "git" | "python" | "node"
-    ) {
+    if matches!(cmd_vec[0].as_str(), "powershell" | "cmd" | "git" | "python" | "node") {
         return cmd_vec;
     }
 

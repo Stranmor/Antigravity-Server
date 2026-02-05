@@ -14,9 +14,6 @@ serde_json = { workspace = true }
 # Time handling
 chrono = { workspace = true, features = ["serde"] }
 
-# Unique identifiers
-uuid = { workspace = true, features = ["v4", "serde"] }
-
 # Validation
 validator = { version = "0.20", features = ["derive"] }
 

@@ -2,8 +2,9 @@ use super::actions::on_clear_bindings;
 use crate::components::{Button, ButtonVariant};
 use leptos::prelude::*;
 
+/// Load balancing and scheduling configuration.
 #[component]
-pub fn Scheduling(
+pub(crate) fn Scheduling(
     scheduling_expanded: RwSignal<bool>,
     scheduling_mode: RwSignal<String>,
     sticky_session_ttl: RwSignal<u32>,

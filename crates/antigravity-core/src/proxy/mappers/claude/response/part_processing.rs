@@ -12,7 +12,7 @@ pub struct PartProcessingContext<'a> {
     pub has_tool_call: &'a mut bool,
 }
 
-impl<'a> PartProcessingContext<'a> {
+impl PartProcessingContext<'_> {
     pub fn process_function_call(&mut self, fc: &FunctionCall, signature: Option<String>) {
         self.flush_thinking();
         self.flush_text();
@@ -28,11 +28,7 @@ impl<'a> PartProcessingContext<'a> {
         *self.has_tool_call = true;
 
         let tool_id = fc.id.clone().unwrap_or_else(|| {
-            format!(
-                "{}-{}",
-                fc.name,
-                crate::proxy::common::random_id::generate_random_id()
-            )
+            format!("{}-{}", fc.name, crate::proxy::common::random_id::generate_random_id())
         });
 
         let mut tool_name = fc.name.clone();
@@ -156,8 +152,7 @@ impl<'a> PartProcessingContext<'a> {
         }
 
         if !current_text.is_empty() {
-            self.content_blocks
-                .push(ContentBlock::Text { text: current_text });
+            self.content_blocks.push(ContentBlock::Text { text: current_text });
         }
     }
 

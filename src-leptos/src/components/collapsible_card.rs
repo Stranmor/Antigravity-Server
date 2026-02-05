@@ -3,7 +3,7 @@
 use leptos::prelude::*;
 
 #[component]
-pub fn CollapsibleCard(
+pub(crate) fn CollapsibleCard(
     #[prop(into)] title: String,
     children: ChildrenFn,
     #[prop(default = true)] initial_expanded: bool,

@@ -54,10 +54,7 @@ pub fn build_tools(
         // For Claude CLI and other clients with MCP tools, must prioritize ensuring Function Declarations work properly.
         if !function_declarations.is_empty() {
             // If there are local tools, only use local tools, skip injecting Google Search
-            tool_obj.insert(
-                "functionDeclarations".to_string(),
-                json!(function_declarations),
-            );
+            tool_obj.insert("functionDeclarations".to_string(), json!(function_declarations));
 
             // [IMPROVED] Record reason for skipping googleSearch injection
             if has_google_search {

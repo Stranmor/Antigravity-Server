@@ -1,7 +1,7 @@
 //! Extended model mapping utilities
 //!
 //! Wraps upstream model_mapping with additional functionality:
-//! - `resolve_model_route` returning (model, reason) tuple
+//! - `resolve_model_route` returning Result<(model, reason), error>
 
 use std::collections::HashMap;
 
@@ -9,18 +9,19 @@ use std::collections::HashMap;
 /// Priority: Exact Match > Wildcard Match > System Default
 ///
 /// # Returns
-/// Tuple of (mapped_model, routing_reason)
+/// - Ok((mapped_model, routing_reason)) on success
+/// - Err(error_message) for unknown models
 pub fn resolve_model_route(
     original_model: &str,
     custom_mapping: &HashMap<String, String>,
-) -> (String, String) {
+) -> Result<(String, String), String> {
     // 1. Exact match (highest priority)
     if let Some(target) = custom_mapping.get(original_model) {
         crate::modules::logger::log_info(&format!(
             "[Router] Exact mapping: {} -> {}",
             original_model, target
         ));
-        return (target.clone(), "exact".to_string());
+        return Ok((target.clone(), "exact".to_string()));
     }
 
     // 2. Wildcard match
@@ -30,23 +31,32 @@ pub fn resolve_model_route(
                 "[Router] Wildcard mapping: {} -> {} (rule: {})",
                 original_model, target, pattern
             ));
-            return (target.clone(), format!("wildcard:{}", pattern));
+            return Ok((target.clone(), format!("wildcard:{}", pattern)));
         }
     }
 
     // 3. System default mapping (from upstream)
-    let result = super::model_mapping::map_claude_model_to_gemini(original_model);
-    let reason = if result != original_model {
-        crate::modules::logger::log_info(&format!(
-            "[Router] System default mapping: {} -> {}",
-            original_model, result
-        ));
-        "system".to_string()
-    } else {
-        "passthrough".to_string()
-    };
-
-    (result, reason)
+    match super::model_mapping::map_claude_model_to_gemini(original_model) {
+        Some(result) => {
+            let reason = if result != original_model {
+                crate::modules::logger::log_info(&format!(
+                    "[Router] System default mapping: {} -> {}",
+                    original_model, result
+                ));
+                "system".to_string()
+            } else {
+                "passthrough".to_string()
+            };
+            Ok((result, reason))
+        },
+        None => {
+            crate::modules::logger::log_info(&format!(
+                "[Router] Unknown model rejected: {}",
+                original_model
+            ));
+            Err(format!("Unknown model: {}", original_model))
+        },
+    }
 }
 
 /// Wildcard matching helper
@@ -70,7 +80,7 @@ mod tests {
         let mut mapping = HashMap::new();
         mapping.insert("test-model".to_string(), "mapped-model".to_string());
 
-        let (model, reason) = resolve_model_route("test-model", &mapping);
+        let (model, reason) = resolve_model_route("test-model", &mapping).unwrap();
         assert_eq!(model, "mapped-model");
         assert_eq!(reason, "exact");
     }
@@ -80,7 +90,7 @@ mod tests {
         let mut mapping = HashMap::new();
         mapping.insert("gpt-4*".to_string(), "gemini-2.5-pro".to_string());
 
-        let (model, reason) = resolve_model_route("gpt-4-turbo", &mapping);
+        let (model, reason) = resolve_model_route("gpt-4-turbo", &mapping).unwrap();
         assert_eq!(model, "gemini-2.5-pro");
         assert!(reason.starts_with("wildcard:"));
     }
@@ -89,8 +99,17 @@ mod tests {
     fn test_resolve_model_route_system_default() {
         let mapping = HashMap::new();
 
-        let (model, reason) = resolve_model_route("claude-opus-4-5-20251101", &mapping);
+        let (model, reason) = resolve_model_route("claude-opus-4-5-20251101", &mapping).unwrap();
         assert_eq!(model, "claude-opus-4-5-thinking");
         assert_eq!(reason, "system");
+    }
+
+    #[test]
+    fn test_resolve_model_route_unknown_returns_error() {
+        let mapping = HashMap::new();
+
+        let result = resolve_model_route("claude-sonnet-5", &mapping);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Unknown model: claude-sonnet-5");
     }
 }

@@ -1,16 +1,19 @@
-//! JSON Schema cleaning entry points and utility functions
+//! JSON Schema cleaning entry points and utility functions.
 //!
 //! Functions for preparing JSON Schema for Gemini API compatibility.
 
-use once_cell::sync::Lazy;
 use serde_json::Value;
+use std::sync::LazyLock;
 
 use super::super::tool_adapter::ToolAdapter;
 use super::super::tool_adapters::PencilAdapter;
 use super::recursive::clean_json_schema_recursive;
 
-static TOOL_ADAPTERS: Lazy<Vec<Box<dyn ToolAdapter>>> = Lazy::new(|| vec![Box::new(PencilAdapter)]);
+/// Static list of tool adapters for schema transformation.
+static TOOL_ADAPTERS: LazyLock<Vec<Box<dyn ToolAdapter>>> =
+    LazyLock::new(|| vec![Box::new(PencilAdapter)]);
 
+/// Cleans JSON schema for a specific tool, applying tool-specific adapters.
 pub fn clean_json_schema_for_tool(value: &mut Value, tool_name: &str) {
     let adapter = TOOL_ADAPTERS.iter().find(|a| a.matches(tool_name));
 
@@ -25,58 +28,44 @@ pub fn clean_json_schema_for_tool(value: &mut Value, tool_name: &str) {
     }
 }
 
-/// recursivecleanup JSON Schema toconform to Gemini interfacerequirement
+/// Recursively cleans JSON Schema to conform to Gemini interface requirements.
 ///
-/// 1. [New] expand $ref  and  $defs: willreferencereplaceasactualdefinition，solve Gemini notsupport $ref  issue
-/// 2. removeUnsupported field: $schema, additionalProperties, format, default, uniqueItems, validation fields
-/// 3. handleuniontype: ["string", "null"] -> "string"
-/// 4. [NEW] handle anyOf uniontype: anyOf: [{"type": "string"}, {"type": "null"}] -> "type": "string"
-/// 5. will type field valueconvertaslowercase (Gemini v1internal requirement)
-/// 6. removenumericvalidationfield: multipleOf, exclusiveMinimum, exclusiveMaximum etc
+/// 1. Expands $ref and $defs: replaces references with actual definitions
+/// 2. Removes unsupported fields: $schema, additionalProperties, format, default, etc.
+/// 3. Handles union types: `["string", "null"]` -> `"string"`
+/// 4. Handles anyOf union types
+/// 5. Converts type field values to lowercase (Gemini v1 internal requirement)
+/// 6. Removes numeric validation fields: multipleOf, exclusiveMinimum, etc.
 pub fn clean_json_schema(value: &mut Value) {
-    // 0. pre-handle：expand $ref (Schema Flattening)
-    // [FIX #952] recursivecollectalllevel  $defs/definitions，rather thanonlyfromrootlevelextract
     let mut all_defs = serde_json::Map::new();
     collect_all_defs(value, &mut all_defs);
 
-    // removerootlevel  $defs/definitions (maintainbackwardcompatible)
     if let Value::Object(map) = value {
-        map.remove("$defs");
-        map.remove("definitions");
+        let _ = map.remove("$defs");
+        let _ = map.remove("definitions");
     }
 
-    // [FIX #952] alwaysrun flatten_refs，even if defs is empty
-    // this waycancaptureandhandlecannotparse  $ref (fallbackas string type)
     if let Value::Object(map) = value {
         flatten_refs(map, &all_defs);
     }
 
-    // recursivecleanup
-    clean_json_schema_recursive(value);
+    let _ = clean_json_schema_recursive(value);
 }
 
-/// [NEW #952] recursivecollectalllevel  $defs  and  definitions
-///
-/// MCP tool  schema mayatanynestedleveldefinition $defs，rather thanonlyatrootlevel。
-/// thisfunctiondepthtraverseentire schema，collectalldefinitiontounified  map in。
+/// Recursively collects all $defs and definitions from all nesting levels.
 fn collect_all_defs(value: &Value, defs: &mut serde_json::Map<String, Value>) {
     if let Value::Object(map) = value {
-        // collectcurrentlevel  $defs
         if let Some(Value::Object(d)) = map.get("$defs") {
             for (k, v) in d {
-                // avoidoverwriteexisting definition（firstdefinition priority）
-                defs.entry(k.clone()).or_insert_with(|| v.clone());
+                let _ = defs.entry(k.clone()).or_insert_with(|| v.clone());
             }
         }
-        // collectcurrentlevel  definitions (Draft-07 style)
         if let Some(Value::Object(d)) = map.get("definitions") {
             for (k, v) in d {
-                defs.entry(k.clone()).or_insert_with(|| v.clone());
+                let _ = defs.entry(k.clone()).or_insert_with(|| v.clone());
             }
         }
-        // recursivehandleallchild nodes
         for (key, v) in map {
-            // skip $defs/definitions itself，avoidduplicatehandle
             if key != "$defs" && key != "definitions" {
                 collect_all_defs(v, defs);
             }
@@ -88,29 +77,20 @@ fn collect_all_defs(value: &Value, defs: &mut serde_json::Map<String, Value>) {
     }
 }
 
-/// recursiveexpand $ref
+/// Recursively expands $ref references.
 fn flatten_refs(map: &mut serde_json::Map<String, Value>, defs: &serde_json::Map<String, Value>) {
-    // checkandreplace $ref
     if let Some(Value::String(ref_path)) = map.remove("$ref") {
-        // parsereferencename (e.g. #/$defs/MyType -> MyType)
         let ref_name = ref_path.split('/').next_back().unwrap_or(&ref_path);
 
         if let Some(def_schema) = defs.get(ref_name) {
-            // willdefinition contentmergetocurrent map
             if let Value::Object(def_map) = def_schema {
                 for (k, v) in def_map {
-                    // onlywhencurrent map does not havethe key whenonly theninsert (avoidoverwrite)
-                    // butusually $ref nodeshould nothaveotherproperty
-                    map.entry(k.clone()).or_insert_with(|| v.clone());
+                    let _ = map.entry(k.clone()).or_insert_with(|| v.clone());
                 }
-
-                // recursivehandlejustmergein contentinmaycontaining  $ref
-                // note：heremaywillinfiniterecursiveifexistcircularreference，buttooldefinitionusuallyis DAG
                 flatten_refs(map, defs);
             }
         } else {
-            // [FIX #952] cannotparse  $ref: convertasloose  string type，avoid API 400 error
-            map.insert("type".to_string(), serde_json::json!("string"));
+            let _ = map.insert("type".to_string(), serde_json::json!("string"));
             let hint = format!("(Unresolved $ref: {})", ref_path);
             let desc_val = map
                 .entry("description".to_string())
@@ -126,7 +106,6 @@ fn flatten_refs(map: &mut serde_json::Map<String, Value>, defs: &serde_json::Map
         }
     }
 
-    // traversechild nodes
     for (_, v) in map.iter_mut() {
         if let Value::Object(child_map) = v {
             flatten_refs(child_map, defs);

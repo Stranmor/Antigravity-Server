@@ -84,10 +84,7 @@ impl NonStreamingProcessor {
     }
 
     fn process_part(&mut self, part: &GeminiPart) {
-        let signature = part
-            .thought_signature
-            .as_ref()
-            .map(|sig| decode_signature(sig));
+        let signature = part.thought_signature.as_ref().map(|sig| decode_signature(sig));
 
         if let Some(sig) = &signature {
             if let Some(s_id) = &self.session_id {
@@ -189,10 +186,7 @@ impl NonStreamingProcessor {
 
         ClaudeResponse {
             id: gemini_response.response_id.clone().unwrap_or_else(|| {
-                format!(
-                    "msg_{}",
-                    crate::proxy::common::random_id::generate_random_id()
-                )
+                format!("msg_{}", crate::proxy::common::random_id::generate_random_id())
             }),
             type_: "message".to_string(),
             role: "assistant".to_string(),

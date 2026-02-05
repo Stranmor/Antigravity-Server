@@ -6,7 +6,7 @@ impl TokenManager {
     pub async fn load_accounts(&self) -> Result<usize, String> {
         let accounts_dir = self.data_dir.join("accounts");
         if !accounts_dir.exists() {
-            return Err(format!("Accounts directory not found: {:?}", accounts_dir));
+            return Err(format!("Accounts directory not found: {}", accounts_dir.display()));
         }
 
         let mut new_tokens: Vec<(String, ProxyToken)> = Vec::new();
@@ -29,11 +29,11 @@ impl TokenManager {
                 Ok(Some(token)) => {
                     let account_id = token.account_id.clone();
                     new_tokens.push((account_id, token));
-                }
-                Ok(None) => {}
+                },
+                Ok(None) => {},
                 Err(e) => {
                     tracing::debug!("Failed to load account {:?}: {}", path, e);
-                }
+                },
             }
         }
 
@@ -62,19 +62,16 @@ impl TokenManager {
     }
 
     pub async fn reload_account(&self, account_id: &str) -> Result<(), String> {
-        let path = self
-            .data_dir
-            .join("accounts")
-            .join(format!("{}.json", account_id));
+        let path = self.data_dir.join("accounts").join(format!("{}.json", account_id));
         if !path.exists() {
-            return Err(format!("Account file not found: {:?}", path));
+            return Err(format!("Account file not found: {}", path.display()));
         }
 
         match self.load_single_account(&path).await {
             Ok(Some(token)) => {
                 self.tokens.insert(account_id.to_string(), token);
                 Ok(())
-            }
+            },
             Ok(None) => Err("Account load failed".to_string()),
             Err(e) => Err(format!("Failed to sync account: {}", e)),
         }
@@ -92,68 +89,38 @@ impl TokenManager {
         let account: serde_json::Value =
             serde_json::from_str(&content).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
-        if account
-            .get("disabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-        {
+        if account.get("disabled").and_then(|v| v.as_bool()).unwrap_or(false) {
             tracing::debug!(
                 "Skipping disabled account file: {:?} (email={})",
                 path,
-                account
-                    .get("email")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("<unknown>")
+                account.get("email").and_then(|v| v.as_str()).unwrap_or("<unknown>")
             );
             return Ok(None);
         }
 
-        if account
-            .get("proxy_disabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-        {
+        if account.get("proxy_disabled").and_then(|v| v.as_bool()).unwrap_or(false) {
             tracing::debug!(
                 "Skipping proxy-disabled account file: {:?} (email={})",
                 path,
-                account
-                    .get("email")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("<unknown>")
+                account.get("email").and_then(|v| v.as_str()).unwrap_or("<unknown>")
             );
             return Ok(None);
         }
 
-        let account_id = account["id"]
-            .as_str()
-            .ok_or("Missing id field")?
-            .to_string();
-        let email = account["email"]
-            .as_str()
-            .ok_or("Missing email field")?
-            .to_string();
+        let account_id = account["id"].as_str().ok_or("Missing id field")?.to_string();
+        let email = account["email"].as_str().ok_or("Missing email field")?.to_string();
 
         let token_obj = account["token"].as_object().ok_or("Missing token field")?;
 
-        let access_token = token_obj["access_token"]
-            .as_str()
-            .ok_or("Missing access_token")?
-            .to_string();
-        let refresh_token = token_obj["refresh_token"]
-            .as_str()
-            .ok_or("Missing refresh_token")?
-            .to_string();
-        let expires_in = token_obj["expires_in"]
-            .as_i64()
-            .ok_or("Missing expires_in")?;
-        let timestamp = token_obj["expiry_timestamp"]
-            .as_i64()
-            .ok_or("Missing expiry_timestamp")?;
+        let access_token =
+            token_obj["access_token"].as_str().ok_or("Missing access_token")?.to_string();
+        let refresh_token =
+            token_obj["refresh_token"].as_str().ok_or("Missing refresh_token")?.to_string();
+        let expires_in = token_obj["expires_in"].as_i64().ok_or("Missing expires_in")?;
+        let timestamp = token_obj["expiry_timestamp"].as_i64().ok_or("Missing expiry_timestamp")?;
 
-        let project_id = token_obj
-            .get("project_id")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+        let project_id =
+            token_obj.get("project_id").and_then(|v| v.as_str()).map(|s| s.to_string());
 
         let subscription_tier = account
             .get("quota")
@@ -161,19 +128,12 @@ impl TokenManager {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let remaining_quota = account
-            .get("quota")
-            .and_then(calculate_max_quota_percentage);
+        let remaining_quota = account.get("quota").and_then(calculate_max_quota_percentage);
 
         let mut protected_models: HashSet<String> = account
             .get("protected_models")
             .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str())
-                    .map(|s| s.to_string())
-                    .collect()
-            })
+            .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect())
             .unwrap_or_default();
 
         if let Some(quota) = account.get("quota") {
@@ -202,10 +162,7 @@ impl TokenManager {
 
         let health_score = self.get_health_score(&account_id);
 
-        if subscription_tier
-            .as_ref()
-            .is_some_and(|t| t.contains("ultra-business"))
-        {
+        if subscription_tier.as_ref().is_some_and(|t| t.contains("ultra-business")) {
             tracing::info!(
                 "Loaded Business-Ultra account: {} (tier={})",
                 email,
@@ -276,13 +233,11 @@ impl TokenManager {
                         entry.timestamp = token.timestamp;
                     }
 
-                    let _ = self
-                        .save_refreshed_token(&token.account_id, &token_response)
-                        .await;
-                }
+                    let _ = self.save_refreshed_token(&token.account_id, &token_response).await;
+                },
                 Err(e) => {
                     return Err(format!("Token refresh failed for {}: {}", email, e));
-                }
+                },
             }
         }
 

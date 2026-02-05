@@ -1,9 +1,14 @@
+//! Recursive JSON schema cleaning and normalization.
+
 use serde_json::Value;
 use std::collections::HashSet;
 
 use super::merge::merge_all_of;
 use super::union::extract_best_schema_from_union;
 
+/// Recursively cleans a JSON schema, normalizing types and removing unsupported fields.
+///
+/// Returns `true` if the schema is effectively nullable (contains null type).
 #[allow(clippy::single_match)]
 pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
     let mut is_effectively_nullable = false;
@@ -16,38 +21,36 @@ pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
                 let mut nullable_keys = HashSet::new();
                 for (k, v) in props {
                     if clean_json_schema_recursive(v) {
-                        nullable_keys.insert(k.clone());
+                        let _ = nullable_keys.insert(k.clone());
                     }
                 }
 
                 if !nullable_keys.is_empty() {
                     if let Some(Value::Array(req_arr)) = map.get_mut("required") {
                         req_arr.retain(|r| {
-                            r.as_str()
-                                .map(|s| !nullable_keys.contains(s))
-                                .unwrap_or(true)
+                            r.as_str().map(|s| !nullable_keys.contains(s)).unwrap_or(true)
                         });
                         if req_arr.is_empty() {
-                            map.remove("required");
+                            let _ = map.remove("required");
                         }
                     }
                 }
             } else if let Some(items) = map.get_mut("items") {
-                clean_json_schema_recursive(items);
+                let _ = clean_json_schema_recursive(items);
             } else {
                 for v in map.values_mut() {
-                    clean_json_schema_recursive(v);
+                    let _ = clean_json_schema_recursive(v);
                 }
             }
 
             if let Some(Value::Array(any_of)) = map.get_mut("anyOf") {
                 for branch in any_of.iter_mut() {
-                    clean_json_schema_recursive(branch);
+                    let _ = clean_json_schema_recursive(branch);
                 }
             }
             if let Some(Value::Array(one_of)) = map.get_mut("oneOf") {
                 for branch in one_of.iter_mut() {
-                    clean_json_schema_recursive(branch);
+                    let _ = clean_json_schema_recursive(branch);
                 }
             }
 
@@ -75,7 +78,7 @@ pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
                             {
                                 if let Some(source_props) = v.as_object() {
                                     for (pk, pv) in source_props {
-                                        target_props
+                                        let _ = target_props
                                             .entry(pk.clone())
                                             .or_insert_with(|| pv.clone());
                                     }
@@ -96,7 +99,7 @@ pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
                                 }
                             }
                         } else if !map.contains_key(&k) {
-                            map.insert(k, v);
+                            let _ = map.insert(k, v);
                         }
                     }
                 }
@@ -142,7 +145,7 @@ pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
                     let suffix = format!(" [Constraint: {}]", hints.join(", "));
                     let desc_val = map
                         .entry("description".to_string())
-                        .or_insert_with(|| Value::String("".to_string()));
+                        .or_insert_with(|| Value::String(String::new()));
                     if let Value::String(s) = desc_val {
                         if !s.contains(&suffix) {
                             s.push_str(&suffix);
@@ -159,19 +162,16 @@ pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
                     "enum",
                     "title",
                 ]);
-                let keys_to_remove: Vec<String> = map
-                    .keys()
-                    .filter(|k| !allowed_fields.contains(k.as_str()))
-                    .cloned()
-                    .collect();
+                let keys_to_remove: Vec<String> =
+                    map.keys().filter(|k| !allowed_fields.contains(k.as_str())).cloned().collect();
                 for k in keys_to_remove {
-                    map.remove(&k);
+                    let _ = map.remove(&k);
                 }
 
                 if map.get("type").and_then(|t| t.as_str()) == Some("object")
                     && !map.contains_key("properties")
                 {
-                    map.insert("properties".to_string(), serde_json::json!({}));
+                    let _ = map.insert("properties".to_string(), serde_json::json!({}));
                 }
 
                 let valid_prop_keys: Option<HashSet<String>> = map
@@ -200,7 +200,7 @@ pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
                             } else {
                                 selected_type = Some(lower);
                             }
-                        }
+                        },
                         Value::Array(arr) => {
                             for item in arr {
                                 if let Value::String(s) = item {
@@ -212,8 +212,8 @@ pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
                                     }
                                 }
                             }
-                        }
-                        _ => {}
+                        },
+                        _ => {},
                     }
                     *type_val =
                         Value::String(selected_type.unwrap_or_else(|| "string".to_string()));
@@ -222,7 +222,7 @@ pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
                 if is_effectively_nullable {
                     let desc_val = map
                         .entry("description".to_string())
-                        .or_insert_with(|| Value::String("".to_string()));
+                        .or_insert_with(|| Value::String(String::new()));
                     if let Value::String(s) = desc_val {
                         if !s.contains("nullable") {
                             if !s.is_empty() {
@@ -245,13 +245,13 @@ pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
                     }
                 }
             }
-        }
+        },
         Value::Array(arr) => {
             for item in arr.iter_mut() {
-                clean_json_schema_recursive(item);
+                let _ = clean_json_schema_recursive(item);
             }
-        }
-        _ => {}
+        },
+        _ => {},
     }
 
     is_effectively_nullable

@@ -25,15 +25,12 @@ fn is_path_active(current: &str, path: &str) -> bool {
     if path == "/" {
         current == "/"
     } else {
-        current == path
-            || current
-                .strip_prefix(path)
-                .is_some_and(|s| s.starts_with('/'))
+        current == path || current.strip_prefix(path).is_some_and(|s| s.starts_with('/'))
     }
 }
 
 #[component]
-pub fn Sidebar() -> impl IntoView {
+pub(crate) fn Sidebar() -> impl IntoView {
     let location = use_location();
 
     let nav_items: [(&str, &str, &str); 4] = [

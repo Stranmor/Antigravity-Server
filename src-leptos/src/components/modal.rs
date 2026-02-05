@@ -2,16 +2,21 @@
 
 use leptos::prelude::*;
 
-#[derive(Clone, Copy, PartialEq, Default)]
-pub enum ModalType {
+/// Modal dialog type.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub(crate) enum ModalType {
+    /// Confirmation dialog.
     #[default]
     Confirm,
+    /// Alert/info dialog.
+    #[allow(dead_code, reason = "Reserved for future use")]
     Alert,
+    /// Danger/destructive action dialog.
     Danger,
 }
 
 #[component]
-pub fn Modal(
+pub(crate) fn Modal(
     #[prop(into)] is_open: Signal<bool>,
     #[prop(into)] title: String,
     #[prop(into)] message: String,
@@ -21,20 +26,12 @@ pub fn Modal(
     #[prop(into)] on_confirm: Callback<()>,
     #[prop(into)] on_cancel: Callback<()>,
 ) -> impl IntoView {
-    let confirm_text = if confirm_text.is_empty() {
-        "Confirm".to_string()
-    } else {
-        confirm_text
-    };
-    let cancel_text = if cancel_text.is_empty() {
-        "Cancel".to_string()
-    } else {
-        cancel_text
-    };
+    let confirm_text = if confirm_text.is_empty() { "Confirm".to_string() } else { confirm_text };
+    let cancel_text = if cancel_text.is_empty() { "Cancel".to_string() } else { cancel_text };
 
     let confirm_class = match modal_type {
         ModalType::Danger => "btn btn--danger",
-        _ => "btn btn--primary",
+        ModalType::Confirm | ModalType::Alert => "btn btn--primary",
     };
 
     let on_cancel_overlay = on_cancel;

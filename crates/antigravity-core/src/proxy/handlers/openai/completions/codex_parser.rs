@@ -25,15 +25,13 @@ pub fn build_call_id_map(input_items: Option<&Vec<Value>>) -> HashMap<String, St
                     } else if item_type == "web_search_call" {
                         "google_search"
                     } else {
-                        item.get("name")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown")
+                        item.get("name").and_then(|v| v.as_str()).unwrap_or("unknown")
                     };
 
                     call_id_to_name.insert(call_id.to_string(), name.to_string());
                     tracing::debug!("Mapped call_id {} to name {}", call_id, name);
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
     }
@@ -100,15 +98,8 @@ fn parse_message_item(item: &Value) -> Value {
 
 /// Parse a function/shell/web_search call item
 fn parse_function_call_item(item: &Value, item_type: &str) -> Value {
-    let mut name = item
-        .get("name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
-    let mut args_str = item
-        .get("arguments")
-        .and_then(|v| v.as_str())
-        .unwrap_or("{}")
-        .to_string();
+    let mut name = item.get("name").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let mut args_str = item.get("arguments").and_then(|v| v.as_str()).unwrap_or("{}").to_string();
     let call_id = item
         .get("call_id")
         .and_then(|v| v.as_str())
@@ -164,10 +155,7 @@ fn parse_function_call_item(item: &Value, item_type: &str) -> Value {
 
 /// Parse a function call output item
 fn parse_function_output_item(item: &Value, call_id_to_name: &HashMap<String, String>) -> Value {
-    let call_id = item
-        .get("call_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
+    let call_id = item.get("call_id").and_then(|v| v.as_str()).unwrap_or("unknown");
     let output = item.get("output");
     let output_str = if let Some(o) = output {
         if o.is_string() {
@@ -182,10 +170,7 @@ fn parse_function_output_item(item: &Value, call_id_to_name: &HashMap<String, St
     };
 
     let name = call_id_to_name.get(call_id).cloned().unwrap_or_else(|| {
-        tracing::warn!(
-            "Unknown tool name for call_id {}, defaulting to 'shell'",
-            call_id
-        );
+        tracing::warn!("Unknown tool name for call_id {}, defaulting to 'shell'", call_id);
         "shell".to_string()
     });
 
@@ -219,14 +204,14 @@ pub fn parse_codex_input_to_messages(
             match item_type {
                 "message" => {
                     messages.push(parse_message_item(item));
-                }
+                },
                 "function_call" | "local_shell_call" | "web_search_call" => {
                     messages.push(parse_function_call_item(item, item_type));
-                }
+                },
                 "function_call_output" | "custom_tool_call_output" => {
                     messages.push(parse_function_output_item(item, &call_id_to_name));
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
     }

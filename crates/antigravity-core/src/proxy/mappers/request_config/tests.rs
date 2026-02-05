@@ -31,13 +31,8 @@ fn test_online_suffix_force_grounding() {
 
 #[test]
 fn test_image_gen_model_detection() {
-    let config = resolve_request_config(
-        "gemini-3-pro-image-2k-1",
-        "gemini-3-pro-image",
-        &None,
-        None,
-        None,
-    );
+    let config =
+        resolve_request_config("gemini-3-pro-image-2k-1", "gemini-3-pro-image", &None, None, None);
     assert_eq!(config.request_type, "image_gen");
     assert!(!config.inject_google_search);
 }

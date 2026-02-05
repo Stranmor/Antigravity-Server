@@ -1,11 +1,14 @@
+//! Account query operations for PostgreSQL.
+
 use crate::models::Account;
 use crate::modules::account_pg_helpers::{map_sqlx_err, row_to_account};
 use crate::modules::repository::{RepoResult, RepositoryError};
 use sqlx::postgres::PgPool;
 use uuid::Uuid;
 
-pub async fn get_account_impl(pool: &PgPool, id: &str) -> RepoResult<Account> {
-    let uuid = Uuid::parse_str(id).map_err(|e| RepositoryError::NotFound(e.to_string()))?;
+/// Get an account by ID.
+pub(crate) async fn get_account_impl(pool: &PgPool, id: &str) -> RepoResult<Account> {
+    let uuid = Uuid::parse_str(id).map_err(|err| RepositoryError::NotFound(err.to_string()))?;
     let row = sqlx::query(
         r#"
         SELECT a.id, a.email, a.name, a.disabled, a.disabled_reason, a.disabled_at,
@@ -26,7 +29,11 @@ pub async fn get_account_impl(pool: &PgPool, id: &str) -> RepoResult<Account> {
     row_to_account(&row)
 }
 
-pub async fn get_account_by_email_impl(pool: &PgPool, email: &str) -> RepoResult<Option<Account>> {
+/// Get an account by email address.
+pub(crate) async fn get_account_by_email_impl(
+    pool: &PgPool,
+    email: &str,
+) -> RepoResult<Option<Account>> {
     let row = sqlx::query(
         r#"
         SELECT a.id, a.email, a.name, a.disabled, a.disabled_reason, a.disabled_at,
@@ -44,12 +51,13 @@ pub async fn get_account_by_email_impl(pool: &PgPool, email: &str) -> RepoResult
     .map_err(map_sqlx_err)?;
 
     match row {
-        Some(r) => Ok(Some(row_to_account(&r)?)),
+        Some(row_data) => Ok(Some(row_to_account(&row_data)?)),
         None => Ok(None),
     }
 }
 
-pub async fn list_accounts_impl(pool: &PgPool) -> RepoResult<Vec<Account>> {
+/// List all accounts.
+pub(crate) async fn list_accounts_impl(pool: &PgPool) -> RepoResult<Vec<Account>> {
     let rows = sqlx::query(
         r#"
         SELECT a.id, a.email, a.name, a.disabled, a.disabled_reason, a.disabled_at,

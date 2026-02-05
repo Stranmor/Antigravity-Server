@@ -10,10 +10,9 @@ pub fn inject_google_search_tool(body: &mut Value) {
         if let Some(tools_arr) = tools_entry.as_array_mut() {
             // [Safety validation] If array already contains functionDeclarations, strictly prohibit injecting googleSearch
             // Because Gemini v1internal does not support mixing search and functions in one request
-            let has_functions = tools_arr.iter().any(|t| {
-                t.as_object()
-                    .is_some_and(|o| o.contains_key("functionDeclarations"))
-            });
+            let has_functions = tools_arr
+                .iter()
+                .any(|t| t.as_object().is_some_and(|o| o.contains_key("functionDeclarations")));
 
             if has_functions {
                 tracing::debug!(
@@ -44,24 +43,18 @@ pub fn deep_clean_undefined(value: &mut Value) {
     match value {
         Value::Object(map) => {
             // Remove keys with value "[undefined]"
-            map.retain(|_, v| {
-                if let Some(s) = v.as_str() {
-                    s != "[undefined]"
-                } else {
-                    true
-                }
-            });
+            map.retain(|_, v| if let Some(s) = v.as_str() { s != "[undefined]" } else { true });
             // recursivehandlenested
             for v in map.values_mut() {
                 deep_clean_undefined(v);
             }
-        }
+        },
         Value::Array(arr) => {
             for v in arr.iter_mut() {
                 deep_clean_undefined(v);
             }
-        }
-        _ => {}
+        },
+        _ => {},
     }
 }
 

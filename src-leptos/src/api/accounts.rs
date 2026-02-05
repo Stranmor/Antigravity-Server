@@ -1,26 +1,33 @@
 //! Account-related API calls
 
+use antigravity_types::models::QuotaData;
+
 use super::{api_get, api_post};
 use crate::api_models::*;
 
 #[derive(serde::Deserialize, Clone, Debug)]
-pub struct ApiAccount {
-    pub id: String,
-    pub email: String,
-    pub name: Option<String>,
-    pub disabled: bool,
+pub(crate) struct ApiAccount {
+    pub(crate) id: String,
+    pub(crate) email: String,
+    pub(crate) name: Option<String>,
+    pub(crate) disabled: bool,
     #[serde(default)]
-    pub proxy_disabled: bool,
-    pub is_current: bool,
-    pub gemini_quota: Option<i32>,
-    pub claude_quota: Option<i32>,
-    pub image_quota: Option<i32>,
-    pub subscription_tier: Option<String>,
-    pub quota: Option<antigravity_types::models::QuotaData>,
+    pub(crate) proxy_disabled: bool,
+    #[allow(dead_code)]
+    is_current: bool,
+    #[allow(dead_code)]
+    gemini_quota: Option<i32>,
+    #[allow(dead_code)]
+    claude_quota: Option<i32>,
+    #[allow(dead_code)]
+    image_quota: Option<i32>,
+    #[allow(dead_code)]
+    subscription_tier: Option<String>,
+    pub(crate) quota: Option<QuotaData>,
 }
 
 impl ApiAccount {
-    pub fn into_account(self) -> Account {
+    pub(crate) fn into_account(self) -> Account {
         use antigravity_types::models::TokenData;
         use std::collections::HashSet;
 
@@ -43,33 +50,27 @@ impl ApiAccount {
     }
 }
 
-pub async fn list_accounts() -> Result<Vec<Account>, String> {
+pub(crate) async fn list_accounts() -> Result<Vec<Account>, String> {
     let api_accounts: Vec<ApiAccount> = api_get("/accounts").await?;
     Ok(api_accounts.into_iter().map(|a| a.into_account()).collect())
 }
 
-pub async fn get_current_account() -> Result<Option<Account>, String> {
+pub(crate) async fn get_current_account() -> Result<Option<Account>, String> {
     let api_account: Option<ApiAccount> = api_get("/accounts/current").await?;
     Ok(api_account.map(|a| a.into_account()))
 }
 
-pub async fn switch_account(account_id: &str) -> Result<(), String> {
+pub(crate) async fn switch_account(account_id: &str) -> Result<(), String> {
     #[derive(serde::Serialize)]
     struct Req {
         account_id: String,
     }
 
-    let _: bool = api_post(
-        "/accounts/switch",
-        &Req {
-            account_id: account_id.to_string(),
-        },
-    )
-    .await?;
+    let _: bool = api_post("/accounts/switch", &Req { account_id: account_id.to_string() }).await?;
     Ok(())
 }
 
-pub async fn delete_account(account_id: &str) -> Result<(), String> {
+pub(crate) async fn delete_account(account_id: &str) -> Result<(), String> {
     let _: bool = api_post(
         "/accounts/delete",
         &serde_json::json!({
@@ -80,7 +81,7 @@ pub async fn delete_account(account_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub async fn delete_accounts(account_ids: &[String]) -> Result<(), String> {
+pub(crate) async fn delete_accounts(account_ids: &[String]) -> Result<(), String> {
     let _: bool = api_post(
         "/accounts/delete-batch",
         &serde_json::json!({
@@ -91,7 +92,7 @@ pub async fn delete_accounts(account_ids: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-pub async fn toggle_proxy_status(
+pub(crate) async fn toggle_proxy_status(
     account_id: &str,
     enable: bool,
     reason: Option<&str>,
@@ -106,19 +107,21 @@ pub async fn toggle_proxy_status(
         proxy_disabled: bool,
     }
 
-    let _: ToggleProxyResponse = api_post(
-        "/accounts/toggle-proxy",
-        &serde_json::json!({
-            "account_id": account_id,
-            "enable": enable,
-            "reason": reason
-        }),
-    )
-    .await?;
+    drop(
+        api_post::<_, ToggleProxyResponse>(
+            "/accounts/toggle-proxy",
+            &serde_json::json!({
+                "account_id": account_id,
+                "enable": enable,
+                "reason": reason
+            }),
+        )
+        .await?,
+    );
     Ok(())
 }
 
-pub async fn warmup_account(account_id: &str) -> Result<String, String> {
+pub(crate) async fn warmup_account(account_id: &str) -> Result<String, String> {
     #[derive(serde::Deserialize)]
     struct WarmupResponse {
         message: String,
@@ -133,33 +136,13 @@ pub async fn warmup_account(account_id: &str) -> Result<String, String> {
     Ok(response.message)
 }
 
-pub async fn warmup_all_accounts() -> Result<String, String> {
+pub(crate) async fn warmup_all_accounts() -> Result<String, String> {
     #[derive(serde::Deserialize)]
     struct WarmupResponse {
         message: String,
     }
     let response: WarmupResponse = api_post("/accounts/warmup-all", &serde_json::json!({})).await?;
     Ok(response.message)
-}
-
-// ========== OAuth ==========
-
-#[derive(serde::Deserialize)]
-struct OAuthLoginResponse {
-    url: String,
-    #[allow(dead_code)]
-    message: String,
-}
-
-pub async fn start_oauth_login() -> Result<Account, String> {
-    let response: OAuthLoginResponse = api_post("/oauth/login", &serde_json::json!({})).await?;
-
-    let window = web_sys::window().ok_or("No window")?;
-    window
-        .open_with_url_and_target(&response.url, "_blank")
-        .map_err(|e| format!("Failed to open browser: {:?}", e))?;
-
-    Err("OAuth flow started - check browser and refresh accounts list after login".to_string())
 }
 
 #[derive(serde::Deserialize)]
@@ -169,16 +152,10 @@ struct OAuthUrlResponse {
     redirect_uri: String,
 }
 
-pub async fn prepare_oauth_url() -> Result<String, String> {
+pub(crate) async fn prepare_oauth_url() -> Result<String, String> {
     let response: OAuthUrlResponse = api_get("/oauth/url").await?;
     Ok(response.url)
 }
-
-pub async fn cancel_oauth_login() -> Result<(), String> {
-    Ok(())
-}
-
-// ========== Quota ==========
 
 #[derive(serde::Deserialize)]
 struct QuotaResponse {
@@ -187,7 +164,7 @@ struct QuotaResponse {
     quota: Option<QuotaData>,
 }
 
-pub async fn fetch_account_quota(account_id: &str) -> Result<QuotaData, String> {
+pub(crate) async fn fetch_account_quota(account_id: &str) -> Result<QuotaData, String> {
     let response: QuotaResponse = api_post(
         "/accounts/refresh-quota",
         &serde_json::json!({
@@ -195,16 +172,12 @@ pub async fn fetch_account_quota(account_id: &str) -> Result<QuotaData, String> 
         }),
     )
     .await?;
-    response
-        .quota
-        .ok_or_else(|| "No quota data returned".to_string())
+    response.quota.ok_or_else(|| "No quota data returned".to_string())
 }
 
-pub async fn refresh_all_quotas() -> Result<RefreshStats, String> {
+pub(crate) async fn refresh_all_quotas() -> Result<RefreshStats, String> {
     api_post("/accounts/refresh-all-quotas", &serde_json::json!({})).await
 }
-
-// ========== Token-based Add ==========
 
 #[derive(serde::Deserialize)]
 #[allow(dead_code)]
@@ -214,7 +187,9 @@ struct AddByTokenResponse {
     accounts: Vec<Account>,
 }
 
-pub async fn add_accounts_by_token(refresh_tokens: Vec<String>) -> Result<(usize, usize), String> {
+pub(crate) async fn add_accounts_by_token(
+    refresh_tokens: Vec<String>,
+) -> Result<(usize, usize), String> {
     let response: AddByTokenResponse = api_post(
         "/accounts/add-by-token",
         &serde_json::json!({
@@ -225,12 +200,6 @@ pub async fn add_accounts_by_token(refresh_tokens: Vec<String>) -> Result<(usize
     Ok((response.success_count, response.fail_count))
 }
 
-// ========== Import ==========
-
-pub async fn sync_account_from_db() -> Result<Option<Account>, String> {
+pub(crate) async fn sync_account_from_db() -> Result<Option<Account>, String> {
     Ok(None)
-}
-
-pub async fn import_custom_db(_path: &str) -> Result<Account, String> {
-    Err("Import from file not available in browser mode".to_string())
 }

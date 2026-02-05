@@ -4,8 +4,9 @@ use crate::components::{Button, ButtonVariant, CollapsibleCard, Select};
 use leptos::prelude::*;
 use std::collections::HashMap;
 
+/// Z.ai provider configuration section.
 #[component]
-pub fn ZaiProvider(
+pub(crate) fn ZaiProvider(
     zai_expanded: RwSignal<bool>,
     zai_enabled: RwSignal<bool>,
     zai_base_url: RwSignal<String>,

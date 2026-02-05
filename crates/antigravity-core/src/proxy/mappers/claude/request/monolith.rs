@@ -58,12 +58,7 @@ pub fn transform_claude_request_in(
         .tools
         .as_ref()
         .map(|tools| {
-            tools.iter().any(|t| {
-                t.name
-                    .as_deref()
-                    .map(|n| n.starts_with("mcp__"))
-                    .unwrap_or(false)
-            })
+            tools.iter().any(|t| t.name.as_deref().map(|n| n.starts_with("mcp__")).unwrap_or(false))
         })
         .unwrap_or(false);
 
@@ -79,13 +74,13 @@ pub fn transform_claude_request_in(
         WEB_SEARCH_FALLBACK_MODEL.to_string()
     } else {
         crate::proxy::common::model_mapping::map_claude_model_to_gemini(&claude_req.model)
+            .ok_or_else(|| format!("Unknown model: {}", claude_req.model))?
     };
 
-    let tools_val: Option<Vec<Value>> = claude_req.tools.as_ref().map(|list| {
-        list.iter()
-            .map(|t| serde_json::to_value(t).unwrap_or(json!({})))
-            .collect()
-    });
+    let tools_val: Option<Vec<Value>> = claude_req
+        .tools
+        .as_ref()
+        .map(|list| list.iter().map(|t| serde_json::to_value(t).unwrap_or(json!({}))).collect());
 
     let config = crate::proxy::mappers::request_config::resolve_request_config(
         &claude_req.model,
@@ -102,11 +97,8 @@ pub fn transform_claude_request_in(
     let allow_dummy_thought = false;
 
     // Check if thinking is enabled in the request
-    let mut is_thinking_enabled = claude_req
-        .thinking
-        .as_ref()
-        .map(|t| t.type_ == "enabled")
-        .unwrap_or_else(|| {
+    let mut is_thinking_enabled =
+        claude_req.thinking.as_ref().map(|t| t.type_ == "enabled").unwrap_or_else(|| {
             // [Claude Code v2.0.67+] Default thinking enabled for Opus 4.5
             // If no thinking config is provided, enable by default for Opus models
             should_enable_thinking_by_default(&claude_req.model)
@@ -147,9 +139,7 @@ pub fn transform_claude_request_in(
         let has_thinking_history = claude_req.messages.iter().any(|m| {
             if m.role == "assistant" {
                 if let MessageContent::Array(blocks) = &m.content {
-                    return blocks
-                        .iter()
-                        .any(|b| matches!(b, ContentBlock::Thinking { .. }));
+                    return blocks.iter().any(|b| matches!(b, ContentBlock::Thinking { .. }));
                 }
             }
             false
@@ -158,9 +148,7 @@ pub fn transform_claude_request_in(
         // Check if there are function calls in the request
         let has_function_calls = claude_req.messages.iter().any(|m| {
             if let MessageContent::Array(blocks) = &m.content {
-                blocks
-                    .iter()
-                    .any(|b| matches!(b, ContentBlock::ToolUse { .. }))
+                blocks.iter().any(|b| matches!(b, ContentBlock::ToolUse { .. }))
             } else {
                 false
             }

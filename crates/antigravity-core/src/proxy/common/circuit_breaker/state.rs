@@ -15,11 +15,7 @@ pub struct CircuitBreakerConfig {
 
 impl Default for CircuitBreakerConfig {
     fn default() -> Self {
-        Self {
-            failure_threshold: 5,
-            open_duration: Duration::from_secs(60),
-            success_threshold: 2,
-        }
+        Self { failure_threshold: 5, open_duration: Duration::from_secs(60), success_threshold: 2 }
     }
 }
 

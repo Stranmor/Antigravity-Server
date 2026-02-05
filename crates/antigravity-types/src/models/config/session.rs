@@ -6,7 +6,11 @@ use validator::Validate;
 use super::enums::{SchedulingMode, UpstreamProxyMode};
 
 /// Experimental features configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, Validate)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, Validate)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Configuration struct - bools are intentional feature flags"
+)]
 pub struct ExperimentalConfig {
     /// Enable signature caching for prompt reuse
     #[serde(default = "default_true")]
@@ -23,7 +27,7 @@ pub struct ExperimentalConfig {
 }
 
 /// Sticky session configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Validate)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq, Validate)]
 pub struct StickySessionConfig {
     /// Enable sticky sessions
     #[serde(default)]
@@ -32,20 +36,20 @@ pub struct StickySessionConfig {
     #[serde(default)]
     pub mode: SchedulingMode,
     /// Session TTL in seconds
-    #[validate(range(min = 1))]
+    #[validate(range(min = 1_u32))]
     #[serde(default = "default_sticky_ttl", alias = "max_wait_seconds")]
     pub ttl: u32,
 }
 
 /// Quota protection configuration.
 /// Prevents account exhaustion by monitoring quota thresholds.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, Validate)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default, Validate)]
 pub struct QuotaProtectionConfig {
     /// Enable quota protection
     #[serde(default = "default_true")]
     pub enabled: bool,
     /// Threshold percentage (1-99) - accounts below this are considered low
-    #[validate(range(min = 1, max = 99))]
+    #[validate(range(min = 1_u8, max = 99_u8))]
     #[serde(default = "default_quota_threshold")]
     pub threshold_percentage: u8,
     /// Models to monitor for quota protection
@@ -58,7 +62,7 @@ pub struct QuotaProtectionConfig {
 
 /// Smart warmup configuration.
 /// Pre-warms accounts to maintain active sessions and quotas.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, Validate)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default, Validate)]
 pub struct SmartWarmupConfig {
     /// Enable smart warmup
     #[serde(default)]
@@ -67,7 +71,7 @@ pub struct SmartWarmupConfig {
     #[serde(default)]
     pub models: Vec<String>,
     /// Warmup interval in minutes
-    #[validate(range(min = 5, max = 1440))]
+    #[validate(range(min = 5_u32, max = 1440_u32))]
     #[serde(default = "default_warmup_interval")]
     pub interval_minutes: u32,
     /// Only warmup accounts below quota threshold
@@ -76,7 +80,7 @@ pub struct SmartWarmupConfig {
 }
 
 /// Upstream proxy configuration for outbound requests.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Validate)]
 pub struct UpstreamProxyConfig {
     /// Proxy mode: direct, system, or custom
     #[serde(default)]
@@ -92,27 +96,23 @@ pub struct UpstreamProxyConfig {
 
 impl Default for UpstreamProxyConfig {
     fn default() -> Self {
-        Self {
-            mode: UpstreamProxyMode::Direct,
-            enabled: false,
-            url: String::new(),
-        }
+        Self { mode: UpstreamProxyMode::Direct, enabled: false, url: String::new() }
     }
 }
 
 // Default value functions
-pub(crate) fn default_true() -> bool {
+pub const fn default_true() -> bool {
     true
 }
 
-pub(crate) fn default_sticky_ttl() -> u32 {
+pub const fn default_sticky_ttl() -> u32 {
     300 // 5 minutes default TTL for sticky sessions
 }
 
-pub(crate) fn default_quota_threshold() -> u8 {
+pub const fn default_quota_threshold() -> u8 {
     20
 }
 
-pub(crate) fn default_warmup_interval() -> u32 {
+pub const fn default_warmup_interval() -> u32 {
     60
 }

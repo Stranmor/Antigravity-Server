@@ -22,12 +22,7 @@ serde_json = { workspace = true }
 # HTTP
 reqwest = { workspace = true }
 axum = { version = "0.7", features = ["multipart"] }
-hyper = { workspace = true }
-hyper-util = { workspace = true }
-tower = { workspace = true }
 tower-http = { workspace = true }
-http = "1"
-http-body-util = "0.1"
 
 # Database
 rusqlite = { workspace = true }
@@ -35,7 +30,6 @@ sqlx = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
@@ -51,22 +45,13 @@ dirs = { workspace = true }
 base64 = { workspace = true }
 url = { workspace = true }
 regex = { workspace = true }
-once_cell = { workspace = true }
 dashmap = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
 bytes = { workspace = true }
-pin-project = { workspace = true }
-eventsource-stream = { workspace = true }
-
-# Validation
-validator = { version = "0.20", features = ["derive"] }
 
 # System info (for process detection)
 sysinfo = "0.31"
-
-# Image processing (for icons, etc)
-image = "0.25"
 
 # AIMD Resilience System
 metrics = "0.23"

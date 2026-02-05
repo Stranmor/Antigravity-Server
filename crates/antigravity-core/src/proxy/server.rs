@@ -15,8 +15,8 @@ use tower_http::trace::TraceLayer;
 #[derive(Clone)]
 pub struct AppState {
     pub token_manager: Arc<TokenManager>,
-    pub custom_mapping: Arc<tokio::sync::RwLock<std::collections::HashMap<String, String>>>,
-    pub upstream_proxy: Arc<tokio::sync::RwLock<antigravity_types::models::UpstreamProxyConfig>>,
+    pub custom_mapping: Arc<RwLock<std::collections::HashMap<String, String>>>,
+    pub upstream_proxy: Arc<RwLock<antigravity_types::models::UpstreamProxyConfig>>,
     pub security_config: Arc<RwLock<crate::proxy::ProxySecurityConfig>>,
     pub zai: Arc<RwLock<antigravity_types::models::ZaiConfig>>,
     pub monitor: Arc<crate::proxy::monitor::ProxyMonitor>,
@@ -34,12 +34,13 @@ pub struct AppState {
 }
 
 /// Build proxy router with shared state references for hot-reload support.
+///
 /// Unlike `build_proxy_router`, this version accepts pre-created Arc references
 /// so that external code can update the mapping at runtime.
 #[allow(clippy::too_many_arguments)]
 pub fn build_proxy_router_with_shared_state(
     token_manager: Arc<TokenManager>,
-    custom_mapping: Arc<tokio::sync::RwLock<std::collections::HashMap<String, String>>>,
+    custom_mapping: Arc<RwLock<std::collections::HashMap<String, String>>>,
     upstream_proxy: antigravity_types::models::UpstreamProxyConfig,
     security_config: Arc<RwLock<crate::proxy::ProxySecurityConfig>>,
     zai: Arc<RwLock<antigravity_types::models::ZaiConfig>>,
@@ -50,7 +51,7 @@ pub fn build_proxy_router_with_shared_state(
     circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
     warp_isolation: Option<Arc<crate::proxy::warp_isolation::WarpIsolationManager>>,
 ) -> Router<()> {
-    let proxy_state = Arc::new(tokio::sync::RwLock::new(upstream_proxy.clone()));
+    let proxy_state = Arc::new(RwLock::new(upstream_proxy.clone()));
     let provider_rr = Arc::new(AtomicUsize::new(0));
     let zai_vision_mcp_state = Arc::new(crate::proxy::zai_vision_mcp::ZaiVisionMcpState::new());
     let warp_isolation = warp_isolation
@@ -58,10 +59,10 @@ pub fn build_proxy_router_with_shared_state(
 
     let state = AppState {
         token_manager,
-        custom_mapping: custom_mapping.clone(),
+        custom_mapping: Arc::clone(&custom_mapping),
         request_timeout: 300,
-        thought_signature_map: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        upstream_proxy: proxy_state.clone(),
+        thought_signature_map: Arc::new(tokio::sync::Mutex::new(Default::default())),
+        upstream_proxy: Arc::clone(&proxy_state),
         upstream: Arc::new(crate::proxy::upstream::client::UpstreamClient::new(Some(
             upstream_proxy,
         ))),
@@ -73,7 +74,7 @@ pub fn build_proxy_router_with_shared_state(
         adaptive_limits,
         health_monitor,
         circuit_breaker,
-        security_config: security_config.clone(),
+        security_config: Arc::clone(&security_config),
         warp_isolation,
     };
 
@@ -91,14 +92,6 @@ pub fn build_proxy_router_with_shared_state(
             post(handlers::openai::handle_completions),
         )
         .route("/v1/responses", post(handlers::openai::handle_completions))
-        .route(
-            "/v1/images/generations",
-            post(handlers::openai::handle_images_generations),
-        )
-        .route(
-            "/v1/images/edits",
-            post(handlers::openai::handle_images_edits),
-        )
         .route(
             "/v1/audio/transcriptions",
             post(handlers::audio::handle_audio_transcription).layer(DefaultBodyLimit::max(
@@ -190,7 +183,7 @@ impl AxumServer {
         let addr = format!("{}:{}", self.config.host, self.config.port);
         tracing::info!("Starting Axum server on {}", addr);
 
-        let custom_mapping = Arc::new(tokio::sync::RwLock::new(self.config.custom_mapping));
+        let custom_mapping = Arc::new(RwLock::new(self.config.custom_mapping));
         let security_config = Arc::new(RwLock::new(self.config.security_config));
         let zai = Arc::new(RwLock::new(self.config.zai));
         let experimental = Arc::new(RwLock::new(self.config.experimental));
@@ -230,7 +223,7 @@ pub fn build_proxy_router(
     health_monitor: Arc<crate::proxy::HealthMonitor>,
     circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
 ) -> Router<()> {
-    let custom_mapping_state = Arc::new(tokio::sync::RwLock::new(custom_mapping));
+    let custom_mapping_state = Arc::new(RwLock::new(custom_mapping));
     let security_state = Arc::new(RwLock::new(security_config));
     let zai_state = Arc::new(RwLock::new(zai));
     let experimental_state = Arc::new(RwLock::new(experimental));

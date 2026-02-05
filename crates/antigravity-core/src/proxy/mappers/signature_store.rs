@@ -75,31 +75,19 @@ mod tests {
 
         // Store a signature
         store_thought_signature("test_signature_1234");
-        assert_eq!(
-            get_thought_signature(),
-            Some("test_signature_1234".to_string())
-        );
+        assert_eq!(get_thought_signature(), Some("test_signature_1234".to_string()));
 
         // Shorter signature should NOT overwrite
         store_thought_signature("short");
-        assert_eq!(
-            get_thought_signature(),
-            Some("test_signature_1234".to_string())
-        );
+        assert_eq!(get_thought_signature(), Some("test_signature_1234".to_string()));
 
         // Longer signature SHOULD overwrite
         store_thought_signature("test_signature_1234_longer_version");
-        assert_eq!(
-            get_thought_signature(),
-            Some("test_signature_1234_longer_version".to_string())
-        );
+        assert_eq!(get_thought_signature(), Some("test_signature_1234_longer_version".to_string()));
 
         // Take should clear
         let taken = take_thought_signature();
-        assert_eq!(
-            taken,
-            Some("test_signature_1234_longer_version".to_string())
-        );
+        assert_eq!(taken, Some("test_signature_1234_longer_version".to_string()));
         assert!(get_thought_signature().is_none());
     }
 }

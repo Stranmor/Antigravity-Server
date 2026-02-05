@@ -22,9 +22,6 @@ impl TokenManager {
     }
 
     pub(crate) fn get_health_score(&self, account_id: &str) -> f32 {
-        self.health_scores
-            .get(account_id)
-            .map(|v| *v)
-            .unwrap_or(1.0)
+        self.health_scores.get(account_id).map(|v| *v).unwrap_or(1.0)
     }
 }

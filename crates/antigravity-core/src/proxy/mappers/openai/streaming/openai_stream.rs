@@ -97,7 +97,7 @@ pub fn create_openai_sse_stream(
                                                                 "choices": [{
                                                                     "index": idx as u32,
                                                                     "delta": { "content": prefix },
-                                                                    "finish_reason": serde_json::Value::Null
+                                                                    "finish_reason": Value::Null
                                                                 }]
                                                             });
                                                             let sse_out = format!("data: {}\n\n", serde_json::to_string(&prefix_chunk).unwrap_or_default());
@@ -113,7 +113,7 @@ pub fn create_openai_sse_stream(
                                                                         "choices": [{
                                                                             "index": idx as u32,
                                                                             "delta": { "content": chunk_str },
-                                                                            "finish_reason": serde_json::Value::Null
+                                                                            "finish_reason": Value::Null
                                                                         }]
                                                                     });
                                                                     let sse_out = format!("data: {}\n\n", serde_json::to_string(&data_chunk).unwrap_or_default());
@@ -129,7 +129,7 @@ pub fn create_openai_sse_stream(
                                                                 "choices": [{
                                                                     "index": idx as u32,
                                                                     "delta": { "content": suffix },
-                                                                    "finish_reason": serde_json::Value::Null
+                                                                    "finish_reason": Value::Null
                                                                 }]
                                                             });
                                                             let sse_out = format!("data: {}\n\n", serde_json::to_string(&suffix_chunk).unwrap_or_default());
@@ -142,8 +142,7 @@ pub fn create_openai_sse_stream(
 
                                                     if let Some(func_call) = part.get("functionCall") {
                                                         let call_key = serde_json::to_string(func_call).unwrap_or_default();
-                                                        if !emitted_tool_calls.contains(&call_key) {
-                                                            emitted_tool_calls.insert(call_key);
+                                                        if emitted_tool_calls.insert(call_key) {
 
                                                             let name = func_call.get("name").and_then(|v| v.as_str()).unwrap_or("unknown");
                                                             let args = func_call.get("args").unwrap_or(&json!({})).to_string();

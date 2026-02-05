@@ -22,18 +22,9 @@ fn test_aimd_penalize() {
 #[test]
 fn test_probe_strategy() {
     assert_eq!(ProbeStrategy::from_usage_ratio(0.5), ProbeStrategy::None);
-    assert_eq!(
-        ProbeStrategy::from_usage_ratio(0.75),
-        ProbeStrategy::CheapProbe
-    );
-    assert_eq!(
-        ProbeStrategy::from_usage_ratio(0.90),
-        ProbeStrategy::DelayedHedge
-    );
-    assert_eq!(
-        ProbeStrategy::from_usage_ratio(0.99),
-        ProbeStrategy::ImmediateHedge
-    );
+    assert_eq!(ProbeStrategy::from_usage_ratio(0.75), ProbeStrategy::CheapProbe);
+    assert_eq!(ProbeStrategy::from_usage_ratio(0.90), ProbeStrategy::DelayedHedge);
+    assert_eq!(ProbeStrategy::from_usage_ratio(0.99), ProbeStrategy::ImmediateHedge);
 }
 
 #[test]

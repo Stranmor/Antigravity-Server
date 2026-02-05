@@ -43,11 +43,7 @@ impl CircuitBreakerManager {
     }
 
     pub fn with_config(config: CircuitBreakerConfig) -> Self {
-        Self {
-            config,
-            circuits: RwLock::new(HashMap::new()),
-            total_trips: AtomicU64::new(0),
-        }
+        Self { config, circuits: RwLock::new(HashMap::new()), total_trips: AtomicU64::new(0) }
     }
 
     /// Check if an account's circuit is open (should fail fast)
@@ -82,7 +78,7 @@ impl CircuitBreakerManager {
                     }
                 }
                 circuit.last_failure_reason.clone()
-            }
+            },
             CircuitState::Closed | CircuitState::HalfOpen => None,
         }
     }
@@ -121,7 +117,7 @@ impl CircuitBreakerManager {
                     return Err(remaining);
                 }
                 Err(self.config.open_duration)
-            }
+            },
             CircuitState::Closed | CircuitState::HalfOpen => Ok(()),
         }
     }
@@ -133,7 +129,7 @@ impl CircuitBreakerManager {
         match circuit.state {
             CircuitState::Closed => {
                 circuit.consecutive_failures = 0;
-            }
+            },
             CircuitState::HalfOpen => {
                 circuit.consecutive_successes += 1;
                 if circuit.consecutive_successes >= self.config.success_threshold {
@@ -156,13 +152,13 @@ impl CircuitBreakerManager {
                         None,
                     );
                 }
-            }
+            },
             CircuitState::Open => {
                 debug!(
                     account_id = %account_id,
                     "Unexpected success in open state"
                 );
-            }
+            },
         }
     }
 
@@ -196,7 +192,7 @@ impl CircuitBreakerManager {
                         Some(i32::try_from(circuit.consecutive_failures).unwrap_or(i32::MAX)),
                     );
                 }
-            }
+            },
             CircuitState::HalfOpen => {
                 warn!(
                     account_id = %account_id,
@@ -214,8 +210,8 @@ impl CircuitBreakerManager {
                     Some(reason),
                     Some(i32::try_from(circuit.consecutive_failures).unwrap_or(i32::MAX)),
                 );
-            }
-            CircuitState::Open => {}
+            },
+            CircuitState::Open => {},
         }
     }
 
@@ -238,9 +234,7 @@ impl CircuitBreakerManager {
 
     pub fn get_state(&self, account_id: &str) -> CircuitState {
         let circuits = self.circuits.read();
-        circuits
-            .get(account_id)
-            .map_or(CircuitState::Closed, |c| c.state)
+        circuits.get(account_id).map_or(CircuitState::Closed, |c| c.state)
     }
 
     pub fn total_trips(&self) -> u64 {
@@ -285,11 +279,6 @@ impl CircuitBreakerManager {
             }
         }
 
-        CircuitBreakerSummary {
-            closed,
-            open,
-            half_open,
-            total_trips: self.total_trips(),
-        }
+        CircuitBreakerSummary { closed, open, half_open, total_trips: self.total_trips() }
     }
 }

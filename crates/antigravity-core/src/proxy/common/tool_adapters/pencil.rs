@@ -126,9 +126,7 @@ mod tests {
         adapter.pre_process(&mut schema).unwrap();
 
         assert!(schema["properties"]["cornerRadius"]["description"].is_string());
-        let desc = schema["properties"]["cornerRadius"]["description"]
-            .as_str()
-            .unwrap();
+        let desc = schema["properties"]["cornerRadius"]["description"].as_str().unwrap();
         assert!(desc.contains("Visual property"));
     }
 
@@ -147,9 +145,7 @@ mod tests {
 
         adapter.pre_process(&mut schema).unwrap();
 
-        let desc = schema["properties"]["filePath"]["description"]
-            .as_str()
-            .unwrap();
+        let desc = schema["properties"]["filePath"]["description"].as_str().unwrap();
         assert!(desc.contains("absolute path"));
     }
 }

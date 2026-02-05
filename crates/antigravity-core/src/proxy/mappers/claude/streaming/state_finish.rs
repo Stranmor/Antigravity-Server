@@ -60,9 +60,7 @@ impl StreamingState {
         ));
 
         if !self.message_stop_sent {
-            chunks.push(Bytes::from(
-                "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
-            ));
+            chunks.push(Bytes::from("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"));
             self.message_stop_sent = true;
         }
 
@@ -111,10 +109,7 @@ impl StreamingState {
             let mut links = Vec::new();
             for (i, chunk) in grounding.iter().enumerate() {
                 if let Some(web) = chunk.get("web") {
-                    let title = web
-                        .get("title")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("Web Source");
+                    let title = web.get("title").and_then(|v| v.as_str()).unwrap_or("Web Source");
                     let uri = web.get("uri").and_then(|v| v.as_str()).unwrap_or("#");
                     links.push(format!("[{}] [{}]({})", i + 1, title, uri));
                 }

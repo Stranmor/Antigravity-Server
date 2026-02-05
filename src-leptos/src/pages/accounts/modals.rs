@@ -5,8 +5,9 @@ use crate::components::{AccountDetailsModal, AddAccountModal, Modal, ModalType};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
+/// Modal dialogs for account actions.
 #[component]
-pub fn Modals(
+pub(crate) fn Modals(
     delete_confirm: RwSignal<Option<String>>,
     batch_delete_confirm: RwSignal<bool>,
     toggle_proxy_confirm: RwSignal<Option<(String, bool)>>,

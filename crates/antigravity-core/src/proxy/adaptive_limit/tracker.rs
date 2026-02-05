@@ -27,9 +27,7 @@ impl AdaptiveLimitTracker {
             requests_this_minute: AtomicU64::new(0),
             minute_started_at: RwLock::new(Instant::now()),
             last_calibration: RwLock::new(
-                Instant::now()
-                    .checked_sub(Duration::from_secs(3600))
-                    .unwrap_or_else(Instant::now),
+                Instant::now().checked_sub(Duration::from_secs(3600)).unwrap_or_else(Instant::now),
             ),
             consecutive_above_threshold: AtomicU64::new(0),
             safety_margin,
@@ -57,13 +55,10 @@ impl AdaptiveLimitTracker {
         let effective_limit = effective_limit.max(aimd.min_limit).min(aimd.max_limit);
 
         let tracker = Self::new(safety_margin, aimd);
+        tracker.confirmed_limit.store(effective_limit, Ordering::Relaxed);
         tracker
-            .confirmed_limit
-            .store(effective_limit, Ordering::Relaxed);
-        tracker.working_threshold.store(
-            (effective_limit as f64 * safety_margin) as u64,
-            Ordering::Relaxed,
-        );
+            .working_threshold
+            .store((effective_limit as f64 * safety_margin) as u64, Ordering::Relaxed);
         tracker.ceiling.store(ceiling, Ordering::Relaxed);
 
         tracing::debug!(
@@ -149,16 +144,10 @@ impl AdaptiveLimitTracker {
         let threshold = self.working_threshold.load(Ordering::Relaxed);
 
         if current > threshold {
-            let consecutive = self
-                .consecutive_above_threshold
-                .fetch_add(1, Ordering::Relaxed)
-                + 1;
+            let consecutive = self.consecutive_above_threshold.fetch_add(1, Ordering::Relaxed) + 1;
 
             if consecutive >= 3 {
-                let _lock = self
-                    .limit_update_lock
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner());
+                let _lock = self.limit_update_lock.lock().unwrap_or_else(|e| e.into_inner());
 
                 let current_consecutive = self.consecutive_above_threshold.load(Ordering::Relaxed);
                 if current_consecutive >= 3 {
@@ -175,18 +164,12 @@ impl AdaptiveLimitTracker {
         if status_code == 429 {
             self.record_429();
         } else if (500..600).contains(&status_code) {
-            tracing::warn!(
-                "Received 5xx error ({}). Resetting AIMD success counter.",
-                status_code
-            );
+            tracing::warn!("Received 5xx error ({}). Resetting AIMD success counter.", status_code);
         }
     }
 
     pub fn record_429(&self) {
-        let _lock = self
-            .limit_update_lock
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _lock = self.limit_update_lock.lock().unwrap_or_else(|e| e.into_inner());
         self.maybe_reset_minute();
         let current_requests = self.requests_this_minute.load(Ordering::Relaxed);
         let old_limit = self.confirmed_limit.load(Ordering::Relaxed);
@@ -197,8 +180,7 @@ impl AdaptiveLimitTracker {
         let new_threshold = (new_limit as f64 * self.safety_margin) as u64;
 
         self.confirmed_limit.store(new_limit, Ordering::Relaxed);
-        self.working_threshold
-            .store(new_threshold, Ordering::Relaxed);
+        self.working_threshold.store(new_threshold, Ordering::Relaxed);
         self.ceiling.store(actual_limit, Ordering::Relaxed);
         match self.last_calibration.write() {
             Ok(mut guard) => *guard = Instant::now(),
@@ -218,10 +200,7 @@ impl AdaptiveLimitTracker {
     }
 
     fn expand_limit(&self) {
-        let _lock = self
-            .limit_update_lock
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _lock = self.limit_update_lock.lock().unwrap_or_else(|e| e.into_inner());
         self.expand_limit_inner();
     }
 
@@ -231,8 +210,7 @@ impl AdaptiveLimitTracker {
         let new_threshold = (new_limit as f64 * self.safety_margin) as u64;
 
         self.confirmed_limit.store(new_limit, Ordering::Relaxed);
-        self.working_threshold
-            .store(new_threshold, Ordering::Relaxed);
+        self.working_threshold.store(new_threshold, Ordering::Relaxed);
         self.ceiling.fetch_max(new_limit, Ordering::Relaxed);
         match self.last_calibration.write() {
             Ok(mut guard) => *guard = Instant::now(),
@@ -254,11 +232,7 @@ impl AdaptiveLimitTracker {
     }
 
     pub fn to_persisted(&self) -> (u64, u64, u64) {
-        let elapsed = self
-            .last_calibration
-            .read()
-            .map(|t| t.elapsed().as_secs())
-            .unwrap_or(3600);
+        let elapsed = self.last_calibration.read().map(|t| t.elapsed().as_secs()).unwrap_or(3600);
         (
             self.confirmed_limit.load(Ordering::Relaxed),
             self.ceiling.load(Ordering::Relaxed),
@@ -267,9 +241,6 @@ impl AdaptiveLimitTracker {
     }
 
     pub fn time_since_calibration(&self) -> Duration {
-        self.last_calibration
-            .read()
-            .map(|t| t.elapsed())
-            .unwrap_or(Duration::from_secs(3600))
+        self.last_calibration.read().map(|t| t.elapsed()).unwrap_or(Duration::from_secs(3600))
     }
 }

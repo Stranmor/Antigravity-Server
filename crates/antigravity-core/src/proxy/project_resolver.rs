@@ -29,10 +29,7 @@ pub async fn fetch_project_id(access_token: &str) -> Result<String, String> {
         return Err(format!("loadCodeAssist returnerror {}: {}", status, body));
     }
 
-    let data: Value = response
-        .json()
-        .await
-        .map_err(|e| format!("parseResponse failed: {}", e))?;
+    let data: Value = response.json().await.map_err(|e| format!("parseResponse failed: {}", e))?;
 
     // extract cloudaicompanionProject
     if let Some(project_id) = data.get("cloudaicompanionProject").and_then(|v| v.as_str()) {

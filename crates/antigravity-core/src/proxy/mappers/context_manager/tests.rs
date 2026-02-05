@@ -45,10 +45,7 @@ fn test_purify_history_soft() {
                 ContentBlock::Text { text: "A0".into() },
             ]),
         },
-        Message {
-            role: "user".into(),
-            content: MessageContent::String("Q1".into()),
-        },
+        Message { role: "user".into(), content: MessageContent::String("Q1".into()) },
         Message {
             role: "assistant".into(),
             content: MessageContent::Array(vec![
@@ -60,10 +57,7 @@ fn test_purify_history_soft() {
                 ContentBlock::Text { text: "A1".into() },
             ]),
         },
-        Message {
-            role: "user".into(),
-            content: MessageContent::String("Q2".into()),
-        },
+        Message { role: "user".into(), content: MessageContent::String("Q2".into()) },
         Message {
             role: "assistant".into(),
             content: MessageContent::Array(vec![
@@ -75,10 +69,7 @@ fn test_purify_history_soft() {
                 ContentBlock::Text { text: "A2".into() },
             ]),
         },
-        Message {
-            role: "user".into(),
-            content: MessageContent::String("current".into()),
-        },
+        Message { role: "user".into(), content: MessageContent::String("current".into()) },
     ];
 
     ContextManager::purify_history(&mut messages, PurificationStrategy::Soft);
@@ -107,9 +98,7 @@ fn test_purify_history_aggressive() {
                 signature: None,
                 cache_control: None,
             },
-            ContentBlock::Text {
-                text: "text".into(),
-            },
+            ContentBlock::Text { text: "text".into() },
         ]),
     }];
 

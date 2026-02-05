@@ -24,11 +24,7 @@ pub async fn acquire_token(
     force_rotate: bool,
     attempted_accounts: &HashSet<String>,
 ) -> Result<TokenAcquisitionResult, Response> {
-    let exclusions = if attempted_accounts.is_empty() {
-        None
-    } else {
-        Some(attempted_accounts)
-    };
+    let exclusions = if attempted_accounts.is_empty() { None } else { Some(attempted_accounts) };
 
     if let Some(forced) = force_account {
         match token_manager.get_token_forced(forced, final_model).await {
@@ -39,33 +35,24 @@ pub async fn acquire_token(
                     email,
                     guard,
                 });
-            }
+            },
             Err(e) => {
                 tracing::warn!(
                     "[Claude] Forced account {} failed: {}, using smart routing",
                     forced,
                     e
                 );
-            }
+            },
         }
     }
 
     match token_manager
-        .get_token_with_exclusions(
-            request_type,
-            force_rotate,
-            session_id,
-            final_model,
-            exclusions,
-        )
+        .get_token_with_exclusions(request_type, force_rotate, session_id, final_model, exclusions)
         .await
     {
-        Ok((token, project, email, guard)) => Ok(TokenAcquisitionResult {
-            access_token: token,
-            project_id: project,
-            email,
-            guard,
-        }),
+        Ok((token, project, email, guard)) => {
+            Ok(TokenAcquisitionResult { access_token: token, project_id: project, email, guard })
+        },
         Err(e) => Err(no_accounts_error(e)),
     }
 }

@@ -88,11 +88,7 @@ pub fn all_retries_exhausted_error(
     });
 
     if let Some(email) = last_email {
-        (
-            StatusCode::TOO_MANY_REQUESTS,
-            [("X-Account-Email", email)],
-            Json(error_json),
-        )
+        (StatusCode::TOO_MANY_REQUESTS, [("X-Account-Email", email)], Json(error_json))
             .into_response()
     } else {
         (StatusCode::TOO_MANY_REQUESTS, Json(error_json)).into_response()

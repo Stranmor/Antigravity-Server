@@ -36,7 +36,7 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> AppResult<QuotaDat
                 let _ = save_account_async(account.clone()).await;
             }
             return Err(AppError::OAuth(e));
-        }
+        },
     };
 
     if token.access_token != account.token.access_token {
@@ -61,10 +61,7 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> AppResult<QuotaDat
     }
 
     if account.name.is_none() || account.name.as_ref().is_some_and(|n| n.trim().is_empty()) {
-        logger::log_info(&format!(
-            "Account {} missing name, fetching...",
-            account.email
-        ));
+        logger::log_info(&format!("Account {} missing name, fetching...", account.email));
         match oauth::get_user_info(&account.token.access_token).await {
             Ok(user_info) => {
                 let display_name = user_info.get_display_name();
@@ -76,10 +73,10 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> AppResult<QuotaDat
                 {
                     logger::log_warn(&format!("Failed to save name: {}", e));
                 }
-            }
+            },
             Err(e) => {
                 logger::log_warn(&format!("Failed to get name: {}", e));
-            }
+            },
         }
     }
 
@@ -89,10 +86,7 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> AppResult<QuotaDat
         account.update_quota(quota_data.clone());
 
         if project_id.is_some() && *project_id != account.token.project_id {
-            logger::log_info(&format!(
-                "Project ID updated ({}), saving...",
-                account.email
-            ));
+            logger::log_info(&format!("Project ID updated ({}), saving...", account.email));
             account.token.project_id = project_id.clone();
             if let Err(e) = save_account_async(account.clone()).await {
                 logger::log_warn(&format!(
@@ -103,10 +97,7 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> AppResult<QuotaDat
         }
 
         if let Err(e) = update_account_quota_async(account.id.clone(), quota_data.clone()).await {
-            logger::log_warn(&format!(
-                "Failed to save quota for {}: {}",
-                account.email, e
-            ));
+            logger::log_warn(&format!("Failed to save quota for {}: {}", account.email, e));
         } else if let Ok(updated) = load_account_async(account.id.clone()).await {
             *account = updated;
         }
@@ -126,10 +117,7 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> AppResult<QuotaDat
 async fn handle_unauthorized_retry(account: &mut Account) -> AppResult<QuotaData> {
     use crate::modules::{oauth, quota};
 
-    logger::log_warn(&format!(
-        "401 Unauthorized for {}, forcing refresh...",
-        account.email
-    ));
+    logger::log_warn(&format!("401 Unauthorized for {}, forcing refresh...", account.email));
 
     let token_res = match oauth::refresh_access_token(&account.token.refresh_token).await {
         Ok(t) => t,
@@ -145,7 +133,7 @@ async fn handle_unauthorized_retry(account: &mut Account) -> AppResult<QuotaData
                 let _ = save_account_async(account.clone()).await;
             }
             return Err(AppError::OAuth(e));
-        }
+        },
     };
 
     let new_token = TokenData::new(

@@ -6,7 +6,8 @@ use tracing::debug;
 /// Represents a tool use/result round in conversation
 #[derive(Debug)]
 pub struct ToolRound {
-    pub _assistant_index: usize,
+    /// Index of the assistant message that initiated this tool round
+    pub assistant_index: usize,
     pub tool_result_indices: Vec<usize>,
     pub indices: Vec<usize>,
 }
@@ -24,12 +25,12 @@ pub fn identify_tool_rounds(messages: &[Message]) -> Vec<ToolRound> {
                         rounds.push(round);
                     }
                     current_round = Some(ToolRound {
-                        _assistant_index: i,
+                        assistant_index: i,
                         tool_result_indices: Vec::new(),
                         indices: vec![i],
                     });
                 }
-            }
+            },
             "user" => {
                 if let Some(ref mut round) = current_round {
                     if has_tool_result(&msg.content) {
@@ -39,8 +40,8 @@ pub fn identify_tool_rounds(messages: &[Message]) -> Vec<ToolRound> {
                         rounds.push(current_round.take().unwrap());
                     }
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 
@@ -59,9 +60,7 @@ pub fn identify_tool_rounds(messages: &[Message]) -> Vec<ToolRound> {
 
 fn has_tool_use(content: &MessageContent) -> bool {
     if let MessageContent::Array(blocks) = content {
-        blocks
-            .iter()
-            .any(|b| matches!(b, ContentBlock::ToolUse { .. }))
+        blocks.iter().any(|b| matches!(b, ContentBlock::ToolUse { .. }))
     } else {
         false
     }
@@ -69,9 +68,7 @@ fn has_tool_use(content: &MessageContent) -> bool {
 
 fn has_tool_result(content: &MessageContent) -> bool {
     if let MessageContent::Array(blocks) = content {
-        blocks
-            .iter()
-            .any(|b| matches!(b, ContentBlock::ToolResult { .. }))
+        blocks.iter().any(|b| matches!(b, ContentBlock::ToolResult { .. }))
     } else {
         false
     }

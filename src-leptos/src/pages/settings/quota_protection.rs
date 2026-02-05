@@ -11,8 +11,9 @@ fn event_target_checked(ev: &web_sys::Event) -> bool {
         .unwrap_or(false)
 }
 
+/// Quota protection settings section.
 #[component]
-pub fn QuotaProtectionSettings() -> impl IntoView {
+pub(crate) fn QuotaProtectionSettings() -> impl IntoView {
     let state = expect_context::<AppState>();
 
     view! {

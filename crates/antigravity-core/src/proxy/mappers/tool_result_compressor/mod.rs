@@ -81,10 +81,7 @@ pub fn compact_tool_result_text(text: &str, max_chars: usize) -> String {
     }
 
     // 3. Structured truncation
-    debug!(
-        "[ToolCompressor] Using structured truncation for {} chars",
-        cleaned_text.len()
-    );
+    debug!("[ToolCompressor] Using structured truncation for {} chars", cleaned_text.len());
     truncate_text_safe(&cleaned_text, max_chars)
 }
 
@@ -233,9 +230,6 @@ pub fn sanitize_tool_result_blocks(blocks: &mut Vec<Value>) {
 /// Detect if block is a base64 image
 fn is_base64_image(block: &Value) -> bool {
     block.get("type").and_then(|v| v.as_str()) == Some("image")
-        && block
-            .get("source")
-            .and_then(|s| s.get("type"))
-            .and_then(|v| v.as_str())
+        && block.get("source").and_then(|s| s.get("type")).and_then(|v| v.as_str())
             == Some("base64")
 }

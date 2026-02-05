@@ -16,11 +16,8 @@ async fn test_collect_simple_text_response() {
         "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
     ];
 
-    let byte_stream = stream::iter(
-        sse_data
-            .into_iter()
-            .map(|s| Ok::<Bytes, io::Error>(Bytes::from(s))),
-    );
+    let byte_stream =
+        stream::iter(sse_data.into_iter().map(|s| Ok::<Bytes, io::Error>(Bytes::from(s))));
 
     let result = collect_stream_to_json(byte_stream).await;
     assert!(result.is_ok());
@@ -49,23 +46,15 @@ async fn test_collect_thinking_response_with_signature() {
         "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
     ];
 
-    let byte_stream = stream::iter(
-        sse_data
-            .into_iter()
-            .map(|s| Ok::<Bytes, io::Error>(Bytes::from(s))),
-    );
+    let byte_stream =
+        stream::iter(sse_data.into_iter().map(|s| Ok::<Bytes, io::Error>(Bytes::from(s))));
 
     let result = collect_stream_to_json(byte_stream).await;
     assert!(result.is_ok());
 
     let response = result.unwrap();
 
-    if let ContentBlock::Thinking {
-        thinking,
-        signature,
-        ..
-    } = &response.content[0]
-    {
+    if let ContentBlock::Thinking { thinking, signature, .. } = &response.content[0] {
         assert_eq!(thinking, "I am thinking");
         assert_eq!(signature.as_deref(), Some("sig_123456"));
     } else {

@@ -7,8 +7,9 @@ use leptos::prelude::*;
 
 const VERSION: &str = env!("GIT_VERSION");
 
+/// Data storage settings section.
 #[component]
-pub fn DataStorageSettings(
+pub(crate) fn DataStorageSettings(
     data_path: RwSignal<String>,
     on_open_data: impl Fn() + 'static + Clone,
 ) -> impl IntoView {
@@ -50,8 +51,9 @@ pub fn DataStorageSettings(
     }
 }
 
+/// About section with version and update check.
 #[component]
-pub fn AboutSection(
+pub(crate) fn AboutSection(
     checking_update: RwSignal<bool>,
     update_info: RwSignal<Option<UpdateInfo>>,
     on_check_update: impl Fn() + 'static + Clone,
@@ -74,7 +76,9 @@ pub fn AboutSection(
             <div class="update-section">
                 <Show when=move || update_info.get().is_some_and(|u| u.available)>
                     {move || {
-                        let info = update_info.get().unwrap();
+                        let Some(info) = update_info.get() else {
+                            return view! { <div></div> }.into_any();
+                        };
                         view! {
                             <div class="update-available">
                                 <span class="update-badge">"NEW"</span>
@@ -83,7 +87,7 @@ pub fn AboutSection(
                                     <a href=url target="_blank" class="btn btn--primary btn--sm">"Download"</a>
                                 })}
                             </div>
-                        }
+                        }.into_any()
                     }}
                 </Show>
                 <Button
@@ -97,8 +101,9 @@ pub fn AboutSection(
     }
 }
 
+/// Maintenance section with log clearing.
 #[component]
-pub fn MaintenanceSection(on_clear_logs: impl Fn() + 'static + Clone) -> impl IntoView {
+pub(crate) fn MaintenanceSection(on_clear_logs: impl Fn() + 'static + Clone) -> impl IntoView {
     view! {
         <section class="settings-section settings-section--danger">
             <h2>"Maintenance"</h2>

@@ -11,8 +11,9 @@ fn event_target_checked(ev: &web_sys::Event) -> bool {
         .unwrap_or(false)
 }
 
+/// Smart warmup settings section.
 #[component]
-pub fn SmartWarmupSettings() -> impl IntoView {
+pub(crate) fn SmartWarmupSettings() -> impl IntoView {
     let state = expect_context::<AppState>();
 
     view! {

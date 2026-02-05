@@ -49,6 +49,10 @@ const LLM_LATENCY_BUCKETS: &[f64] = &[
 /// Must be called once at application startup before any metrics are recorded.
 ///
 /// Returns the handle that can be used to render metrics as text.
+#[allow(
+    clippy::expect_used,
+    reason = "Prometheus initialization is required for application to function"
+)]
 pub fn init_metrics() -> PrometheusHandle {
     let _ = METRICS_START_TIME.get_or_init(Instant::now);
 
@@ -56,23 +60,13 @@ pub fn init_metrics() -> PrometheusHandle {
         let builder = PrometheusBuilder::new()
             .set_buckets(LLM_LATENCY_BUCKETS)
             .expect("Failed to set histogram buckets");
-        let handle = builder
-            .install_recorder()
-            .expect("Failed to install Prometheus metrics recorder");
+        let handle =
+            builder.install_recorder().expect("Failed to install Prometheus metrics recorder");
 
         // Register metric descriptions
-        describe_counter!(
-            "antigravity_requests_total",
-            "Total number of proxy requests processed"
-        );
-        describe_histogram!(
-            "antigravity_request_duration_seconds",
-            "Request duration in seconds"
-        );
-        describe_gauge!(
-            "antigravity_accounts_total",
-            "Total number of registered accounts"
-        );
+        describe_counter!("antigravity_requests_total", "Total number of proxy requests processed");
+        describe_histogram!("antigravity_request_duration_seconds", "Request duration in seconds");
+        describe_gauge!("antigravity_accounts_total", "Total number of registered accounts");
         describe_gauge!(
             "antigravity_accounts_available",
             "Number of accounts currently available for use"
@@ -272,10 +266,7 @@ mod tests {
     fn test_detect_provider() {
         assert_eq!(detect_provider_from_url("/v1/messages"), "anthropic");
         assert_eq!(detect_provider_from_url("/v1/chat/completions"), "openai");
-        assert_eq!(
-            detect_provider_from_url("/v1beta/models/gemini-pro"),
-            "gemini"
-        );
+        assert_eq!(detect_provider_from_url("/v1beta/models/gemini-pro"), "gemini");
         assert_eq!(detect_provider_from_url("/mcp/web_search"), "mcp");
     }
 }

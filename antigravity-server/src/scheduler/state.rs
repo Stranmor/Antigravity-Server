@@ -5,12 +5,8 @@ use std::path::PathBuf;
 pub const COOLDOWN_SECONDS: i64 = 14400;
 pub const LOW_QUOTA_THRESHOLD: i32 = 50;
 
-pub const DEFAULT_WARMUP_MODELS: &[&str] = &[
-    "gemini-3-flash",
-    "claude-sonnet-4-5",
-    "gemini-3-pro-high",
-    "gemini-3-pro-image",
-];
+pub const DEFAULT_WARMUP_MODELS: &[&str] =
+    &["gemini-3-flash", "claude-sonnet-4-5", "gemini-3-pro-high", "gemini-3-pro-image"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WarmupHistory {
@@ -26,10 +22,7 @@ impl SchedulerState {
     pub async fn new_async(data_dir: PathBuf) -> Self {
         let history_path = data_dir.join("warmup_history.json");
         let history = Self::load_history_async(&history_path).await;
-        Self {
-            history,
-            history_path,
-        }
+        Self { history, history_path }
     }
 
     async fn load_history_async(path: &PathBuf) -> WarmupHistory {
@@ -39,7 +32,7 @@ impl SchedulerState {
                 Err(e) => {
                     tracing::warn!("[Scheduler] Failed to read history file: {}", e);
                     WarmupHistory::default()
-                }
+                },
             }
         } else {
             WarmupHistory::default()
@@ -53,7 +46,7 @@ impl SchedulerState {
             Err(e) => {
                 tracing::warn!("[Scheduler] Failed to serialize history: {}", e);
                 return;
-            }
+            },
         };
         if let Err(e) = tokio::fs::write(&path, content).await {
             tracing::warn!("[Scheduler] Failed to write history to {:?}: {}", path, e);
@@ -65,10 +58,7 @@ impl SchedulerState {
     }
 
     pub fn is_in_cooldown(&self, key: &str, now: i64) -> bool {
-        self.history
-            .entries
-            .get(key)
-            .is_some_and(|&ts| now - ts < COOLDOWN_SECONDS)
+        self.history.entries.get(key).is_some_and(|&ts| now - ts < COOLDOWN_SECONDS)
     }
 
     pub fn cleanup_stale(&mut self, cutoff: i64) -> usize {

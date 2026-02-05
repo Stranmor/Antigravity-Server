@@ -63,12 +63,7 @@ pub enum AccountCommands {
         #[arg(long, conflicts_with = "file", help = "Google refresh token")]
         token: Option<String>,
 
-        #[arg(
-            short,
-            long,
-            conflicts_with = "token",
-            help = "Path to account JSON file"
-        )]
+        #[arg(short, long, conflicts_with = "token", help = "Path to account JSON file")]
         file: Option<PathBuf>,
     },
 

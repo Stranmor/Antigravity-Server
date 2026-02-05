@@ -1,24 +1,39 @@
+//! Antigravity client implementation with auto-discovery and retry logic.
+
 use crate::error::ClientError;
-use crate::messages::*;
+use crate::messages::{ChatRequest, ChatResponse, ClientConfig, StreamChunk};
 use futures::Stream;
 use reqwest::Client;
 use std::pin::Pin;
 use std::time::Duration;
 use tokio_stream::StreamExt;
 
+/// HTTP client for communicating with Antigravity server.
+///
+/// Provides auto-discovery, automatic retry with exponential backoff,
+/// and both blocking and streaming chat completion APIs.
+#[derive(Debug)]
 pub struct AntigravityClient {
     client: Client,
     config: ClientConfig,
 }
 
 impl AntigravityClient {
+    /// Creates a new client with the given configuration.
+    ///
+    /// # Errors
+    /// Returns `ClientError::Request` if the HTTP client cannot be built.
     pub fn new(config: ClientConfig) -> Result<Self, ClientError> {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(config.timeout_secs))
-            .build()?;
+        let client = Client::builder().timeout(Duration::from_secs(config.timeout_secs)).build()?;
         Ok(Self { client, config })
     }
 
+    /// Auto-discovers and connects to a local Antigravity server.
+    ///
+    /// Checks `ANTIGRAVITY_URL`, `ANTIGRAVITY_PORT` env vars, then default ports.
+    ///
+    /// # Errors
+    /// Returns `ClientError::ServerNotFound` if no server responds.
     pub async fn auto_discover() -> Result<Self, ClientError> {
         let candidates = discovery_candidates();
         for base_url in candidates {
@@ -31,10 +46,7 @@ impl AntigravityClient {
     }
 
     async fn try_connect(base_url: &str) -> Result<Self, ClientError> {
-        let config = ClientConfig {
-            base_url: base_url.to_string(),
-            ..Default::default()
-        };
+        let config = ClientConfig { base_url: base_url.to_string(), ..Default::default() };
         let client = Self::new(config)?;
         let resp = client
             .client
@@ -46,19 +58,25 @@ impl AntigravityClient {
         if resp.status().is_success() {
             Ok(client)
         } else {
-            Err(ClientError::Connection(format!(
-                "Health check failed: {}",
-                resp.status()
-            )))
+            Err(ClientError::Connection(format!("Health check failed: {}", resp.status())))
         }
     }
 
+    /// Sends a chat completion request with automatic retry on transient errors.
+    ///
+    /// # Errors
+    /// Returns `ClientError` on connection failure, rate limiting, or server error.
     pub async fn chat(&self, request: ChatRequest) -> Result<ChatResponse, ClientError> {
         self.chat_with_retry(request).await
     }
 
+    #[allow(
+        clippy::arithmetic_side_effects,
+        clippy::integer_division,
+        reason = "Retry logic: attempts counter and exponential backoff are bounded by max_retries"
+    )]
     async fn chat_with_retry(&self, request: ChatRequest) -> Result<ChatResponse, ClientError> {
-        let mut attempts = 0;
+        let mut attempts = 0_u32;
         let mut delay = self.config.retry.base_delay_ms;
 
         loop {
@@ -70,18 +88,18 @@ impl AntigravityClient {
                         return Err(ClientError::Timeout(attempts));
                     }
                     let wait = retry_after.unwrap_or(delay / 1000).max(1);
-                    tracing::debug!("Rate limited, waiting {}s (attempt {})", wait, attempts);
+                    tracing::debug!("Rate limited, waiting {wait}s (attempt {attempts})");
                     tokio::time::sleep(Duration::from_secs(wait)).await;
                     delay = (delay * 2).min(self.config.retry.max_delay_ms);
-                }
+                },
                 Err(ClientError::ServerError { status, .. }) if status >= 500 => {
                     if attempts > self.config.retry.max_retries {
                         return Err(ClientError::Timeout(attempts));
                     }
-                    tracing::debug!("Server error {}, retrying (attempt {})", status, attempts);
+                    tracing::debug!("Server error {status}, retrying (attempt {attempts})");
                     tokio::time::sleep(Duration::from_millis(delay)).await;
                     delay = (delay * 2).min(self.config.retry.max_delay_ms);
-                }
+                },
                 Err(e) => return Err(e),
             }
         }
@@ -110,17 +128,19 @@ impl AntigravityClient {
 
         if !status.is_success() {
             let message = resp.text().await.unwrap_or_default();
-            return Err(ClientError::ServerError {
-                status: status.as_u16(),
-                message,
-            });
+            return Err(ClientError::ServerError { status: status.as_u16(), message });
         }
 
-        resp.json()
-            .await
-            .map_err(|e| ClientError::InvalidResponse(e.to_string()))
+        resp.json().await.map_err(|e| ClientError::InvalidResponse(e.to_string()))
     }
 
+    /// Sends a streaming chat completion request.
+    ///
+    /// Returns a stream of SSE chunks. The request is automatically modified
+    /// to enable streaming.
+    ///
+    /// # Errors
+    /// Returns `ClientError` on connection failure, rate limiting, or server error.
     pub async fn chat_stream(
         &self,
         mut request: ChatRequest,
@@ -150,10 +170,7 @@ impl AntigravityClient {
 
         if !status.is_success() {
             let message = resp.text().await.unwrap_or_default();
-            return Err(ClientError::ServerError {
-                status: status.as_u16(),
-                message,
-            });
+            return Err(ClientError::ServerError { status: status.as_u16(), message });
         }
 
         let byte_stream = resp.bytes_stream();
@@ -165,7 +182,8 @@ impl AntigravityClient {
         Ok(Box::pin(stream))
     }
 
-    pub fn config(&self) -> &ClientConfig {
+    /// Returns a reference to the client configuration.
+    pub const fn config(&self) -> &ClientConfig {
         &self.config
     }
 }
@@ -176,7 +194,7 @@ fn discovery_candidates() -> Vec<String> {
         candidates.push(url);
     }
     if let Ok(port) = std::env::var("ANTIGRAVITY_PORT") {
-        candidates.push(format!("http://127.0.0.1:{}", port));
+        candidates.push(format!("http://127.0.0.1:{port}"));
     }
     candidates.push("http://127.0.0.1:8045".to_string());
     candidates.push("http://127.0.0.1:8046".to_string());
@@ -193,7 +211,7 @@ fn parse_sse_chunk(bytes: &[u8]) -> Result<StreamChunk, ClientError> {
                 continue;
             }
             return serde_json::from_str(trimmed)
-                .map_err(|e| ClientError::Stream(format!("JSON parse error: {}", e)));
+                .map_err(|e| ClientError::Stream(format!("JSON parse error: {e}")));
         }
     }
 

@@ -45,9 +45,7 @@ async fn handle_vision_get(state: AppState, headers: HeaderMap) -> Response {
     let ping_stream =
         IntervalStream::new(tokio::time::interval(Duration::from_secs(15))).map(|_| {
             Ok::<axum::response::sse::Event, std::convert::Infallible>(
-                axum::response::sse::Event::default()
-                    .event("ping")
-                    .data("keepalive"),
+                axum::response::sse::Event::default().event("ping").data("keepalive"),
             )
         });
 
@@ -77,12 +75,9 @@ async fn handle_vision_post(state: AppState, headers: HeaderMap, body: Body) -> 
     let collected = match to_bytes(body, 100 * 1024 * 1024).await {
         Ok(b) => b,
         Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                format!("Failed to read request body: {}", e),
-            )
+            return (StatusCode::BAD_REQUEST, format!("Failed to read request body: {}", e))
                 .into_response();
-        }
+        },
     };
 
     let request_json: Value = match serde_json::from_slice(&collected) {
@@ -90,21 +85,14 @@ async fn handle_vision_post(state: AppState, headers: HeaderMap, body: Body) -> 
         Err(e) => {
             return (
                 StatusCode::BAD_REQUEST,
-                axum::Json(jsonrpc_error(
-                    Value::Null,
-                    -32700,
-                    format!("Parse error: {}", e),
-                )),
+                axum::Json(jsonrpc_error(Value::Null, -32700, format!("Parse error: {}", e))),
             )
                 .into_response();
-        }
+        },
     };
 
     let id = request_json.get("id").cloned().unwrap_or(Value::Null);
-    let method = request_json
-        .get("method")
-        .and_then(|m| m.as_str())
-        .unwrap_or_default();
+    let method = request_json.get("method").and_then(|m| m.as_str()).unwrap_or_default();
 
     if method.is_empty() {
         return (
@@ -125,22 +113,14 @@ async fn handle_vision_post(state: AppState, headers: HeaderMap, body: Body) -> 
     let Some(session_id) = mcp_session_id(&headers) else {
         return (
             StatusCode::BAD_REQUEST,
-            axum::Json(jsonrpc_error(
-                id,
-                -32000,
-                "Bad Request: missing Mcp-Session-Id",
-            )),
+            axum::Json(jsonrpc_error(id, -32000, "Bad Request: missing Mcp-Session-Id")),
         )
             .into_response();
     };
     if !state.zai_vision_mcp.has_session(&session_id).await {
         return (
             StatusCode::BAD_REQUEST,
-            axum::Json(jsonrpc_error(
-                id,
-                -32000,
-                "Bad Request: invalid Mcp-Session-Id",
-            )),
+            axum::Json(jsonrpc_error(id, -32000, "Bad Request: invalid Mcp-Session-Id")),
         )
             .into_response();
     }
@@ -182,15 +162,11 @@ async fn handle_method(
         "tools/list" => {
             let result = json!({ "tools": crate::proxy::zai_vision_tools::tool_specs() });
             (StatusCode::OK, axum::Json(jsonrpc_result(id, result))).into_response()
-        }
+        },
         "tools/call" => handle_tools_call(state, request_json, id).await,
         _ => (
             StatusCode::BAD_REQUEST,
-            axum::Json(jsonrpc_error(
-                id,
-                -32601,
-                format!("Method not found: {}", method),
-            )),
+            axum::Json(jsonrpc_error(id, -32601, format!("Method not found: {}", method))),
         )
             .into_response(),
     }
@@ -206,13 +182,10 @@ async fn handle_tools_call(state: &AppState, request_json: &Value, id: Value) ->
                 axum::Json(jsonrpc_error(id, -32602, "Missing params.name")),
             )
                 .into_response();
-        }
+        },
     };
 
-    let arguments = params
-        .get("arguments")
-        .cloned()
-        .unwrap_or(Value::Object(Default::default()));
+    let arguments = params.get("arguments").cloned().unwrap_or(Value::Object(Default::default()));
 
     let zai = state.zai.read().await.clone();
     let upstream_proxy = state.upstream_proxy.read().await.clone();

@@ -36,10 +36,8 @@ pub async fn call_tool(
                 .get("output_type")
                 .and_then(|v| v.as_str())
                 .ok_or("Missing output_type")?;
-            let prompt = arguments
-                .get("prompt")
-                .and_then(|v| v.as_str())
-                .ok_or("Missing prompt")?;
+            let prompt =
+                arguments.get("prompt").and_then(|v| v.as_str()).ok_or("Missing prompt")?;
 
             let system_prompt = match output_type {
                 "code" => {
@@ -57,7 +55,7 @@ pub async fn call_tool(
 
             let image = image_source_to_content(image_source, 5)?;
             vision_chat_completion(&client, api_key, system_prompt, vec![image], prompt).await?
-        }
+        },
         "extract_text_from_screenshot" => {
             let image_source = arguments
                 .get("image_source")
@@ -76,7 +74,7 @@ pub async fn call_tool(
             let image = image_source_to_content(image_source, 5)?;
             let system_prompt = "Extract text from the screenshot accurately. Preserve code formatting. If unsure, say what is uncertain.";
             vision_chat_completion(&client, api_key, system_prompt, vec![image], &prompt).await?
-        }
+        },
         "diagnose_error_screenshot" => {
             let image_source = arguments
                 .get("image_source")
@@ -95,7 +93,7 @@ pub async fn call_tool(
             let image = image_source_to_content(image_source, 5)?;
             let system_prompt = "Diagnose the error shown in the screenshot. Identify root cause, propose fixes and verification steps.";
             vision_chat_completion(&client, api_key, system_prompt, vec![image], &prompt).await?
-        }
+        },
         "understand_technical_diagram" => {
             let image_source = arguments
                 .get("image_source")
@@ -114,7 +112,7 @@ pub async fn call_tool(
             let image = image_source_to_content(image_source, 5)?;
             let system_prompt = "Explain the technical diagram. Describe components, relationships, data flows, and key assumptions.";
             vision_chat_completion(&client, api_key, system_prompt, vec![image], &prompt).await?
-        }
+        },
         "analyze_data_visualization" => {
             let image_source = arguments
                 .get("image_source")
@@ -133,7 +131,7 @@ pub async fn call_tool(
             let image = image_source_to_content(image_source, 5)?;
             let system_prompt = "Analyze the chart/dashboard and extract insights, trends, anomalies, and recommendations.";
             vision_chat_completion(&client, api_key, system_prompt, vec![image], &prompt).await?
-        }
+        },
         "ui_diff_check" => {
             let expected = arguments
                 .get("expected_image_source")
@@ -143,10 +141,8 @@ pub async fn call_tool(
                 .get("actual_image_source")
                 .and_then(|v| v.as_str())
                 .ok_or("Missing actual_image_source")?;
-            let prompt = arguments
-                .get("prompt")
-                .and_then(|v| v.as_str())
-                .ok_or("Missing prompt")?;
+            let prompt =
+                arguments.get("prompt").and_then(|v| v.as_str()).ok_or("Missing prompt")?;
 
             let expected_img = image_source_to_content(expected, 5)?;
             let actual_img = image_source_to_content(actual, 5)?;
@@ -159,33 +155,29 @@ pub async fn call_tool(
                 prompt,
             )
             .await?
-        }
+        },
         "analyze_image" => {
             let image_source = arguments
                 .get("image_source")
                 .and_then(|v| v.as_str())
                 .ok_or("Missing image_source")?;
-            let prompt = arguments
-                .get("prompt")
-                .and_then(|v| v.as_str())
-                .ok_or("Missing prompt")?;
+            let prompt =
+                arguments.get("prompt").and_then(|v| v.as_str()).ok_or("Missing prompt")?;
             let image = image_source_to_content(image_source, 5)?;
             let system_prompt = "Analyze the image. Be precise and include relevant details.";
             vision_chat_completion(&client, api_key, system_prompt, vec![image], prompt).await?
-        }
+        },
         "analyze_video" => {
             let video_source = arguments
                 .get("video_source")
                 .and_then(|v| v.as_str())
                 .ok_or("Missing video_source")?;
-            let prompt = arguments
-                .get("prompt")
-                .and_then(|v| v.as_str())
-                .ok_or("Missing prompt")?;
+            let prompt =
+                arguments.get("prompt").and_then(|v| v.as_str()).ok_or("Missing prompt")?;
             let video = video_source_to_content(video_source, 8)?;
             let system_prompt = "Analyze the video content according to the user's request.";
             vision_chat_completion(&client, api_key, system_prompt, vec![video], prompt).await?
-        }
+        },
         _ => return Err("Unknown tool".to_string()),
     };
 

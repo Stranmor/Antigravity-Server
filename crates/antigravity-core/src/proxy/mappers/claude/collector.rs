@@ -47,10 +47,7 @@ where
                 // Empty line indicates event end
                 if !current_data.is_empty() {
                     if let Ok(data) = serde_json::from_str::<Value>(&current_data) {
-                        events.push(SseEvent {
-                            event_type: current_event_type.clone(),
-                            data,
-                        });
+                        events.push(SseEvent { event_type: current_event_type.clone(), data });
                     }
                     current_event_type.clear();
                     current_data.clear();
@@ -59,7 +56,7 @@ where
                 match key.as_str() {
                     "event" => current_event_type = value,
                     "data" => current_data = value,
-                    _ => {}
+                    _ => {},
                 }
             }
         }
@@ -107,7 +104,7 @@ where
                         }
                     }
                 }
-            }
+            },
 
             "content_block_start" => {
                 if let Some(content_block) = event.data.get("content_block") {
@@ -121,16 +118,16 @@ where
                                     .get("signature")
                                     .and_then(|v| v.as_str())
                                     .map(|s| s.to_string());
-                            }
+                            },
                             "tool_use" => {
                                 current_tool_use = Some(content_block.clone());
                                 current_tool_input.clear();
-                            }
-                            _ => {}
+                            },
+                            _ => {},
                         }
                     }
                 }
-            }
+            },
 
             "content_block_delta" => {
                 if let Some(delta) = event.data.get("delta") {
@@ -140,7 +137,7 @@ where
                                 if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
                                     current_text.push_str(text);
                                 }
-                            }
+                            },
                             "thinking_delta" => {
                                 if let Some(thinking) =
                                     delta.get("thinking").and_then(|v| v.as_str())
@@ -151,26 +148,24 @@ where
                                 if let Some(sig) = delta.get("signature").and_then(|v| v.as_str()) {
                                     current_signature = Some(sig.to_string());
                                 }
-                            }
+                            },
                             "input_json_delta" => {
                                 if let Some(partial_json) =
                                     delta.get("partial_json").and_then(|v| v.as_str())
                                 {
                                     current_tool_input.push_str(partial_json);
                                 }
-                            }
-                            _ => {}
+                            },
+                            _ => {},
                         }
                     }
                 }
-            }
+            },
 
             "content_block_stop" => {
                 // Complete current block
                 if !current_text.is_empty() {
-                    response.content.push(ContentBlock::Text {
-                        text: current_text.clone(),
-                    });
+                    response.content.push(ContentBlock::Text { text: current_text.clone() });
                     current_text.clear();
                 } else if !current_thinking.is_empty() {
                     response.content.push(ContentBlock::Thinking {
@@ -206,7 +201,7 @@ where
                     });
                     current_tool_input.clear();
                 }
-            }
+            },
 
             "message_delta" => {
                 if let Some(delta) = event.data.get("delta") {
@@ -219,21 +214,21 @@ where
                         response.usage = u;
                     }
                 }
-            }
+            },
 
             "message_stop" => {
                 // Stream end
                 break;
-            }
+            },
 
             "error" => {
                 // Error event
                 return Err(format!("Stream error: {:?}", event.data));
-            }
+            },
 
             _ => {
                 // Ignore unknown event types
-            }
+            },
         }
     }
 

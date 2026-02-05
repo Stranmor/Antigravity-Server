@@ -26,11 +26,11 @@ impl SafetyThreshold {
     /// Get threshold from environment variable or default to Off
     pub fn from_env() -> Self {
         match std::env::var("GEMINI_SAFETY_THRESHOLD").as_deref() {
-            Ok("OFF") | Ok("off") => SafetyThreshold::Off,
-            Ok("LOW") | Ok("low") => SafetyThreshold::BlockLowAndAbove,
-            Ok("MEDIUM") | Ok("medium") => SafetyThreshold::BlockMediumAndAbove,
-            Ok("HIGH") | Ok("high") => SafetyThreshold::BlockOnlyHigh,
-            Ok("NONE") | Ok("none") => SafetyThreshold::BlockNone,
+            Ok("OFF" | "off") => SafetyThreshold::Off,
+            Ok("LOW" | "low") => SafetyThreshold::BlockLowAndAbove,
+            Ok("MEDIUM" | "medium") => SafetyThreshold::BlockMediumAndAbove,
+            Ok("HIGH" | "high") => SafetyThreshold::BlockOnlyHigh,
+            Ok("NONE" | "none") => SafetyThreshold::BlockNone,
             _ => SafetyThreshold::Off, // Default: maintain current behavior
         }
     }

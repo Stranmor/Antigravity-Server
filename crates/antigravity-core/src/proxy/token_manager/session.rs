@@ -25,10 +25,7 @@ impl TokenManager {
 
     /// Get current failure count for a session.
     pub fn get_session_failures(&self, session_id: &str) -> u32 {
-        self.session_failures
-            .get(session_id)
-            .map(|c| c.load(Ordering::SeqCst))
-            .unwrap_or(0)
+        self.session_failures.get(session_id).map(|c| c.load(Ordering::SeqCst)).unwrap_or(0)
     }
 
     /// Clear binding for a specific session.
@@ -75,8 +72,7 @@ impl TokenManager {
         if enable_session_affinity {
             let current_binding = self.session_accounts.get(session_id).map(|v| v.clone());
             if current_binding.as_ref() != Some(&email.to_string()) {
-                self.session_accounts
-                    .insert(session_id.to_string(), email.to_string());
+                self.session_accounts.insert(session_id.to_string(), email.to_string());
                 if let Some(ref old) = current_binding {
                     tracing::info!(
                         "Sticky Session: Rebound session {} from {} to {} (cache continuity)",

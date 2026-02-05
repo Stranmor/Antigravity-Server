@@ -207,9 +207,7 @@ pub fn emit_force_stop(state: &mut StreamingState) -> Vec<Bytes> {
     if !state.message_stop_sent {
         let mut chunks = state.emit_finish(None, None);
         if chunks.is_empty() {
-            chunks.push(Bytes::from(
-                "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
-            ));
+            chunks.push(Bytes::from("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"));
             state.message_stop_sent = true;
         }
         return chunks;
@@ -229,10 +227,8 @@ mod tests {
         let chunks = result.unwrap();
         assert!(!chunks.is_empty());
 
-        let all_text: String = chunks
-            .iter()
-            .map(|b| String::from_utf8(b.to_vec()).unwrap_or_default())
-            .collect();
+        let all_text: String =
+            chunks.iter().map(|b| String::from_utf8(b.to_vec()).unwrap_or_default()).collect();
         assert!(all_text.contains("message_stop"));
     }
 
@@ -249,10 +245,8 @@ mod tests {
         assert!(!chunks.is_empty());
 
         // Should contain message_start and text delta
-        let all_text: String = chunks
-            .iter()
-            .map(|b| String::from_utf8(b.to_vec()).unwrap_or_default())
-            .collect();
+        let all_text: String =
+            chunks.iter().map(|b| String::from_utf8(b.to_vec()).unwrap_or_default()).collect();
 
         assert!(all_text.contains("message_start"));
         assert!(all_text.contains("content_block_start"));

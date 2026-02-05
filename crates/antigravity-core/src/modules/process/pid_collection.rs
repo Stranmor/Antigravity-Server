@@ -8,7 +8,7 @@ use super::detection::{get_current_exe_path, is_helper_process};
 
 #[cfg(target_os = "linux")]
 /// Get current process and all direct relatives (ancestors + descendants) PID set.
-pub(crate) fn get_self_family_pids(system: &sysinfo::System) -> std::collections::HashSet<u32> {
+pub(crate) fn get_self_family_pids(system: &System) -> std::collections::HashSet<u32> {
     let current_pid = std::process::id();
     let mut family_pids = std::collections::HashSet::new();
     family_pids.insert(current_pid);
@@ -119,9 +119,8 @@ pub(crate) fn get_antigravity_pids() -> Vec<u32> {
                     {
                         if m_path_str[..m_idx + 4] == p_path_str[..p_idx + 4] {
                             let args = process.cmd();
-                            let is_helper_by_args = args
-                                .iter()
-                                .any(|arg| arg.to_string_lossy().contains("--type="));
+                            let is_helper_by_args =
+                                args.iter().any(|arg| arg.to_string_lossy().contains("--type="));
                             let is_helper_by_name = _name.contains("helper")
                                 || _name.contains("plugin")
                                 || _name.contains("renderer")
@@ -146,11 +145,7 @@ pub(crate) fn get_antigravity_pids() -> Vec<u32> {
             }
         }
 
-        let exe_path = process
-            .exe()
-            .and_then(|p| p.to_str())
-            .unwrap_or("")
-            .to_lowercase();
+        let exe_path = process.exe().and_then(|p| p.to_str()).unwrap_or("").to_lowercase();
 
         let args = process.cmd();
         let args_str = args

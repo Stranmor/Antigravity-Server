@@ -13,8 +13,8 @@ impl TokenManager {
 
     pub async fn update_routing_config(&self, new_config: SmartRoutingConfig) {
         let mut config = self.routing_config.write().await;
+        tracing::debug!("Smart routing configuration updated: {:?}", new_config);
         *config = new_config;
-        tracing::debug!("Smart routing configuration updated: {:?}", *config);
     }
 
     pub fn is_model_protected(&self, account_id: &str, model: &str) -> bool {

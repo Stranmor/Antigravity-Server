@@ -8,8 +8,9 @@ use std::collections::HashSet;
 
 use super::filter_types::quota_class;
 
+/// Account table row component for list view.
 #[component]
-pub fn AccountRow(
+pub(crate) fn AccountRow(
     account: Account,
     selected_ids: RwSignal<HashSet<String>>,
     refreshing_ids: RwSignal<HashSet<String>>,
@@ -37,10 +38,8 @@ pub fn AccountRow(
     let email = account.email.clone();
     let is_disabled = account.disabled;
     let proxy_disabled = account.proxy_disabled;
-    let needs_verification = account
-        .proxy_disabled_reason
-        .as_ref()
-        .is_some_and(|r| r == "phone_verification_required");
+    let needs_verification =
+        account.proxy_disabled_reason.as_ref().is_some_and(|r| r == "phone_verification_required");
 
     let tier = account
         .quota
@@ -56,26 +55,22 @@ pub fn AccountRow(
         "tier-free"
     };
 
-    let g3_pro = account.quota.as_ref().and_then(|q| {
-        q.models
-            .iter()
-            .find(|m| m.name.to_lowercase() == "gemini-3-pro-high")
-    });
-    let g3_flash = account.quota.as_ref().and_then(|q| {
-        q.models
-            .iter()
-            .find(|m| m.name.to_lowercase() == "gemini-3-flash")
-    });
-    let g3_image = account.quota.as_ref().and_then(|q| {
-        q.models
-            .iter()
-            .find(|m| m.name.to_lowercase() == "gemini-3-pro-image")
-    });
-    let claude = account.quota.as_ref().and_then(|q| {
-        q.models
-            .iter()
-            .find(|m| m.name.to_lowercase() == "claude-sonnet-4-5")
-    });
+    let g3_pro = account
+        .quota
+        .as_ref()
+        .and_then(|q| q.models.iter().find(|m| m.name.to_lowercase() == "gemini-3-pro-high"));
+    let g3_flash = account
+        .quota
+        .as_ref()
+        .and_then(|q| q.models.iter().find(|m| m.name.to_lowercase() == "gemini-3-flash"));
+    let g3_image = account
+        .quota
+        .as_ref()
+        .and_then(|q| q.models.iter().find(|m| m.name.to_lowercase() == "gemini-3-pro-image"));
+    let claude = account
+        .quota
+        .as_ref()
+        .and_then(|q| q.models.iter().find(|m| m.name.to_lowercase() == "claude-sonnet-4-5"));
 
     let quota_g3_pro = g3_pro.map(|m| m.percentage).unwrap_or(0);
     let reset_g3_pro = g3_pro.map(|m| m.reset_time.clone()).unwrap_or_default();
@@ -205,6 +200,7 @@ pub fn AccountRow(
     }
 }
 
+/// Quota display cell with progress bar and reset timer.
 #[component]
 fn QuotaCell(label: &'static str, percent: i32, reset_time: String) -> impl IntoView {
     let has_reset = !reset_time.is_empty();
@@ -213,11 +209,7 @@ fn QuotaCell(label: &'static str, percent: i32, reset_time: String) -> impl Into
     } else {
         String::new()
     };
-    let formatted = if has_reset {
-        format_time_remaining(&reset_time)
-    } else {
-        String::new()
-    };
+    let formatted = if has_reset { format_time_remaining(&reset_time) } else { String::new() };
 
     view! {
         <div class="quota-cell">

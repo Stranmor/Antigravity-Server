@@ -28,9 +28,7 @@ pub fn validate_thinking_signature(
                         family,
                         mapped_model
                     );
-                    return SignatureAction::DowngradeToText {
-                        text: thinking.to_string(),
-                    };
+                    return SignatureAction::DowngradeToText { text: thinking.to_string() };
                 }
                 *last_thought_signature = Some(sig.clone());
                 let mut part = json!({
@@ -40,7 +38,7 @@ pub fn validate_thinking_signature(
                 });
                 crate::proxy::common::json_schema::clean_json_schema(&mut part);
                 SignatureAction::UseWithSignature { part }
-            }
+            },
             None => {
                 if sig.len() >= MIN_SIGNATURE_LENGTH {
                     tracing::debug!(
@@ -60,17 +58,13 @@ pub fn validate_thinking_signature(
                         "[Thinking-Signature] Unknown signature origin and too short (len: {}). Downgrading to text.",
                         sig.len()
                     );
-                    SignatureAction::DowngradeToText {
-                        text: thinking.to_string(),
-                    }
+                    SignatureAction::DowngradeToText { text: thinking.to_string() }
                 }
-            }
+            },
         }
     } else {
         tracing::warn!("[Thinking-Signature] No signature provided. Downgrading to text.");
-        SignatureAction::DowngradeToText {
-            text: thinking.to_string(),
-        }
+        SignatureAction::DowngradeToText { text: thinking.to_string() }
     }
 }
 
@@ -136,7 +130,7 @@ pub fn should_use_tool_signature(
                 );
                 false
             }
-        }
+        },
         None => {
             if sig.len() >= MIN_SIGNATURE_LENGTH {
                 tracing::debug!(
@@ -155,7 +149,7 @@ pub fn should_use_tool_signature(
             } else {
                 true
             }
-        }
+        },
     }
 }
 
@@ -198,8 +192,7 @@ pub fn ensure_thinking_block_first(parts: &mut Vec<Value>) {
             );
         } else if let Some(p0) = parts.get_mut(0) {
             if p0.get("thought").is_none() {
-                p0.as_object_mut()
-                    .map(|obj| obj.insert("thought".to_string(), json!(true)));
+                p0.as_object_mut().map(|obj| obj.insert("thought".to_string(), json!(true)));
             }
         }
     }

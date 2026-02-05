@@ -4,7 +4,7 @@ use super::Account;
 use serde::{Deserialize, Serialize};
 
 /// Proxy service status.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ProxyStatus {
     /// Whether the proxy is running
     pub running: bool,
@@ -17,7 +17,7 @@ pub struct ProxyStatus {
 }
 
 /// Dashboard statistics derived from account data.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct DashboardStats {
     /// Total number of accounts
     pub total_accounts: usize,
@@ -39,11 +39,16 @@ pub struct DashboardStats {
 
 impl DashboardStats {
     /// Calculate statistics from a list of accounts.
+    #[allow(
+        clippy::arithmetic_side_effects,
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::integer_division,
+        reason = "Statistics calculation with bounded values, len() fits in i32"
+    )]
     pub fn from_accounts(accounts: &[Account]) -> Self {
-        let mut stats = Self {
-            total_accounts: accounts.len(),
-            ..Default::default()
-        };
+        let mut stats = Self { total_accounts: accounts.len(), ..Default::default() };
 
         if accounts.is_empty() {
             return stats;
@@ -54,7 +59,7 @@ impl DashboardStats {
         let mut claude_sum = 0i32;
 
         for account in accounts {
-            if let Some(quota) = &account.quota {
+            if let Some(ref quota) = account.quota {
                 for model in &quota.models {
                     let percent = model.percentage;
 
@@ -70,11 +75,7 @@ impl DashboardStats {
                 }
 
                 // Tier determination
-                let tier = quota
-                    .subscription_tier
-                    .clone()
-                    .unwrap_or_default()
-                    .to_lowercase();
+                let tier = quota.subscription_tier.clone().unwrap_or_default().to_lowercase();
                 if tier.contains("ultra") {
                     stats.ultra_count += 1;
                 } else if tier.contains("pro") {
@@ -84,7 +85,7 @@ impl DashboardStats {
                 }
 
                 // Low quota check (remaining < 20%)
-                let any_low = quota.models.iter().any(|m| m.percentage < 20);
+                let any_low = quota.models.iter().any(|m| m.percentage < 20_i32);
                 if any_low {
                     stats.low_quota_count += 1;
                 }
@@ -93,8 +94,12 @@ impl DashboardStats {
             }
         }
 
+        #[allow(
+            clippy::as_conversions,
+            reason = "usize to i32 is safe for account counts < 2 billion"
+        )]
         let n = accounts.len() as i32;
-        if n > 0 {
+        if n > 0_i32 {
             stats.avg_gemini_quota = gemini_sum / n;
             stats.avg_gemini_image_quota = gemini_image_sum / n;
             stats.avg_claude_quota = claude_sum / n;
@@ -105,7 +110,7 @@ impl DashboardStats {
 }
 
 /// Token refresh operation statistics.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct RefreshStats {
     /// Total accounts attempted
     pub total: usize,
@@ -116,7 +121,7 @@ pub struct RefreshStats {
 }
 
 /// Proxy request statistics.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ProxyStats {
     /// Total requests processed
     pub total_requests: u64,
@@ -136,6 +141,12 @@ pub struct ProxyStats {
 
 impl ProxyStats {
     /// Calculate success rate as a percentage.
+    #[allow(
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        clippy::float_arithmetic,
+        reason = "Percentage calculation requires floating point, u64 to f64 is safe for counts"
+    )]
     pub fn success_rate(&self) -> f64 {
         if self.total_requests == 0 {
             return 100.0;
@@ -145,7 +156,7 @@ impl ProxyStats {
 }
 
 /// Individual proxy request log entry.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProxyRequestLog {
     /// Unique request ID
     pub id: String,
@@ -177,14 +188,57 @@ pub struct ProxyRequestLog {
     pub request_body: Option<String>,
     /// Response body (truncated)
     pub response_body: Option<String>,
-    /// Input tokens used
+    /// Input tokens used (non-cached)
     pub input_tokens: Option<u32>,
     /// Output tokens generated
     pub output_tokens: Option<u32>,
+    /// Cached input tokens (from prompt cache)
+    pub cached_tokens: Option<u32>,
+}
+
+/// Token usage statistics over a time period.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
+pub struct TokenUsageStats {
+    /// Total input tokens consumed.
+    pub total_input: u64,
+    /// Total output tokens generated.
+    pub total_output: u64,
+    /// Total cached tokens used.
+    pub total_cached: u64,
+    /// Total number of requests.
+    pub total_requests: u64,
+    /// Time range in seconds.
+    pub time_range_secs: u64,
+    /// Average input tokens per request.
+    pub avg_input_per_request: f64,
+    /// Average output tokens per request.
+    pub avg_output_per_request: f64,
+    /// Average cached tokens per request.
+    pub avg_cached_per_request: f64,
+    /// Average tokens per minute.
+    pub avg_tokens_per_minute: f64,
+    /// Average tokens per hour.
+    pub avg_tokens_per_hour: f64,
+    /// Average tokens per day.
+    pub avg_tokens_per_day: f64,
+    /// Requests in the last hour.
+    pub requests_last_hour: u64,
+    /// Tokens used in the last hour.
+    pub tokens_last_hour: u64,
+    /// Cached tokens in the last hour.
+    pub cached_last_hour: u64,
+    /// Requests in the last 24 hours.
+    pub requests_last_24h: u64,
+    /// Tokens used in the last 24 hours.
+    pub tokens_last_24h: u64,
+    /// Cached tokens in the last 24 hours.
+    pub cached_last_24h: u64,
+    /// Cache hit rate as percentage.
+    pub cache_hit_rate: f64,
 }
 
 /// Application update information.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct UpdateInfo {
     /// Whether an update is available
     pub available: bool,

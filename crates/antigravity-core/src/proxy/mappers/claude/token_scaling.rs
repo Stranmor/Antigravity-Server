@@ -146,6 +146,6 @@ mod tests {
         // 900k is 2/3 of the way.
         // Start: ~50462, End: 195000. Diff: ~144538.
         // Value: 50462 + 2/3 * 144538 = 50462 + 96358 = 146820
-        assert!(res_90.input_tokens > 146000 && res_90.input_tokens < 147500);
+        assert!(res_90.input_tokens > 146_000 && res_90.input_tokens < 147_500);
     }
 }

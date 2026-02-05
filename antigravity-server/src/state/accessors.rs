@@ -49,6 +49,10 @@ impl AppState {
         self.inner.monitor.get_stats().await
     }
 
+    pub fn get_token_usage_stats(&self) -> antigravity_types::models::TokenUsageStats {
+        antigravity_core::modules::proxy_db::get_token_usage_stats().unwrap_or_default()
+    }
+
     pub async fn get_proxy_logs(
         &self,
         limit: Option<usize>,
@@ -64,6 +68,10 @@ impl AppState {
         self.inner.token_manager.len()
     }
 
+    #[allow(
+        clippy::significant_drop_tightening,
+        reason = "Each config section is updated in separate scope for clarity"
+    )]
     pub async fn hot_reload_proxy_config(&self) {
         match antigravity_core::modules::config::load_config() {
             Ok(app_config) => {
@@ -85,17 +93,17 @@ impl AppState {
                 }
                 {
                     let mut experimental = self.inner.experimental_config.write().await;
-                    *experimental = proxy_config.experimental.clone();
+                    *experimental = proxy_config.experimental;
                 }
 
                 let mut inner_proxy_config = self.inner.proxy_config.write().await;
                 *inner_proxy_config = proxy_config;
 
                 tracing::info!("Proxy configuration hot reloaded successfully.");
-            }
+            },
             Err(e) => {
                 tracing::error!("Failed to hot reload proxy configuration: {}", e);
-            }
+            },
         }
     }
 
@@ -104,11 +112,11 @@ impl AppState {
             Ok(count) => {
                 tracing::info!("Reloaded {} accounts into token manager", count);
                 Ok(count)
-            }
+            },
             Err(e) => {
                 tracing::error!("Failed to reload accounts: {}", e);
                 Err(e)
-            }
+            },
         }
     }
 
@@ -154,9 +162,7 @@ impl AppState {
             .take(32)
             .map(char::from)
             .collect();
-        self.inner
-            .oauth_states
-            .insert(state.clone(), Instant::now());
+        self.inner.oauth_states.insert(state.clone(), Instant::now());
         state
     }
 
@@ -174,23 +180,21 @@ impl AppState {
             .retain(|_, created_at: &mut Instant| created_at.elapsed().as_secs() < 600);
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "API for future PostgreSQL integration")]
     pub fn repository(&self) -> Option<&Arc<dyn AccountRepository>> {
         self.inner.repository.as_ref()
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "API for future PostgreSQL integration")]
     pub fn has_database(&self) -> bool {
         self.inner.repository.is_some()
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "API for future PostgreSQL integration")]
     pub async fn list_accounts_db(&self) -> RepoResult<Vec<Account>> {
         match &self.inner.repository {
             Some(repo) => repo.list_accounts().await,
-            None => Err(RepositoryError::Database(
-                "No database configured".to_string(),
-            )),
+            None => Err(RepositoryError::Database("No database configured".to_string())),
         }
     }
 }

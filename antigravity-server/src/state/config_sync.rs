@@ -3,6 +3,10 @@
 use super::{current_timestamp_ms, get_instance_id, AppState};
 
 impl AppState {
+    #[allow(
+        clippy::significant_drop_tightening,
+        reason = "Both locks needed for consistent snapshot"
+    )]
     pub async fn get_syncable_mapping(&self) -> antigravity_types::SyncableMapping {
         use antigravity_types::MappingEntry;
 
@@ -12,20 +16,19 @@ impl AppState {
         let entries = mapping
             .iter()
             .map(|(k, v)| {
-                let ts = timestamps
-                    .get(k)
-                    .copied()
-                    .unwrap_or_else(current_timestamp_ms);
+                let ts = timestamps.get(k).copied().unwrap_or_else(current_timestamp_ms);
                 (k.clone(), MappingEntry::with_timestamp(v.clone(), ts))
             })
             .collect();
 
-        antigravity_types::SyncableMapping {
-            entries,
-            instance_id: Some(get_instance_id()),
-        }
+        antigravity_types::SyncableMapping { entries, instance_id: Some(get_instance_id()) }
     }
 
+    #[allow(
+        clippy::significant_drop_tightening,
+        clippy::iter_over_hash_type,
+        reason = "Both locks needed for atomic merge, iteration order doesn't matter for LWW merge"
+    )]
     pub async fn sync_with_remote(
         &self,
         remote: &antigravity_types::SyncableMapping,
@@ -36,7 +39,7 @@ impl AppState {
             let mut mapping = self.inner.custom_mapping.write().await;
             let mut timestamps = self.inner.mapping_timestamps.write().await;
 
-            let local_entries: std::collections::HashMap<_, _> = mapping
+            let local_entries: std::collections::BTreeMap<_, _> = mapping
                 .iter()
                 .map(|(k, v)| {
                     let ts = timestamps.get(k).copied().unwrap_or(0);
@@ -60,11 +63,7 @@ impl AppState {
                 }
             }
 
-            let persist = if updated > 0 {
-                Some(mapping.clone())
-            } else {
-                None
-            };
+            let persist = if updated > 0 { Some(mapping.clone()) } else { None };
 
             (persist, updated, diff)
         };
@@ -83,22 +82,26 @@ impl AppState {
         (inbound, diff)
     }
 
+    #[allow(clippy::iter_over_hash_type, reason = "Iteration order doesn't matter for LWW merge")]
     pub async fn merge_remote_mapping(&self, remote: &antigravity_types::SyncableMapping) -> usize {
         let mapping_to_persist = {
             let mut mapping = self.inner.custom_mapping.write().await;
             let mut timestamps = self.inner.mapping_timestamps.write().await;
 
-            let mut updated = 0;
+            let mut updated = 0_usize;
 
             for (key, remote_entry) in &remote.entries {
-                let local_ts = timestamps.get(key).copied().unwrap_or(0);
+                let local_ts = timestamps.get(key).copied().unwrap_or(0_i64);
 
                 if remote_entry.updated_at > local_ts {
                     mapping.insert(key.clone(), remote_entry.target.clone());
                     timestamps.insert(key.clone(), remote_entry.updated_at);
-                    updated += 1;
+                    updated = updated.saturating_add(1);
                 }
             }
+
+            // Drop timestamps early - no longer needed after loop
+            drop(timestamps);
 
             if updated > 0 {
                 tracing::info!(
@@ -137,8 +140,7 @@ impl AppState {
         .await
         .map_err(|e| format!("spawn_blocking failed: {}", e))??;
 
-        let mut proxy_config = self.inner.proxy_config.write().await;
-        proxy_config.custom_mapping = mapping.clone();
+        self.inner.proxy_config.write().await.custom_mapping = mapping.clone();
 
         Ok(())
     }

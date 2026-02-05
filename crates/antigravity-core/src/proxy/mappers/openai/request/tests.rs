@@ -46,10 +46,7 @@ fn test_transform_openai_request_multimodal() {
     let parts = &result["request"]["contents"][0]["parts"];
     assert_eq!(parts.as_array().unwrap().len(), 2);
     assert_eq!(parts[0]["text"].as_str().unwrap(), "What is in this image?");
-    assert_eq!(
-        parts[1]["inlineData"]["mimeType"].as_str().unwrap(),
-        "image/png"
-    );
+    assert_eq!(parts[1]["inlineData"]["mimeType"].as_str().unwrap(), "image/png");
 }
 
 #[test]

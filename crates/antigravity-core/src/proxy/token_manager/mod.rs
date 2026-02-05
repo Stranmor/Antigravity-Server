@@ -73,10 +73,7 @@ impl TokenManager {
     }
 
     pub fn get_active_requests(&self, email: &str) -> u32 {
-        self.active_requests
-            .get(email)
-            .map(|c| c.load(Ordering::SeqCst))
-            .unwrap_or(0)
+        self.active_requests.get(email).map(|c| c.load(Ordering::SeqCst)).unwrap_or(0)
     }
 
     pub async fn set_adaptive_limits(&self, tracker: Arc<AdaptiveLimitManager>) {
@@ -102,10 +99,7 @@ impl TokenManager {
                 session_failures.retain(|_, v| v.load(Ordering::Relaxed) > 0);
                 let cleaned_sessions = before - session_failures.len();
                 if cleaned_sessions > 0 {
-                    tracing::debug!(
-                        "Cleaned {} stale session failure record(s)",
-                        cleaned_sessions
-                    );
+                    tracing::debug!("Cleaned {} stale session failure record(s)", cleaned_sessions);
                 }
             }
         });
@@ -123,10 +117,10 @@ impl TokenManager {
                 match manager.reload_all_accounts().await {
                     Ok(count) => {
                         tracing::debug!("Auto-sync: Reloaded {} account(s) from disk", count);
-                    }
+                    },
                     Err(e) => {
                         tracing::warn!("Auto-sync: Failed to reload accounts: {}", e);
-                    }
+                    },
                 }
             }
         });

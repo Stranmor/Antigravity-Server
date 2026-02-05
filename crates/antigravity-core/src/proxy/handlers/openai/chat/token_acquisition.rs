@@ -20,27 +20,17 @@ pub async fn acquire_token(
     attempted_accounts: &HashSet<String>,
 ) -> Result<TokenResult, String> {
     if let Some(forced) = force_account {
-        match token_manager
-            .get_token_forced(forced, &config.final_model)
-            .await
-        {
+        match token_manager.get_token_forced(forced, &config.final_model).await {
             Ok((token, project, email, guard)) => {
                 return Ok((token, project, email, guard));
-            }
+            },
             Err(e) => {
-                warn!(
-                    "[OpenAI] Forced account {} failed: {}, using smart routing",
-                    forced, e
-                );
-            }
+                warn!("[OpenAI] Forced account {} failed: {}, using smart routing", forced, e);
+            },
         }
     }
 
-    let exclusions = if attempted_accounts.is_empty() {
-        None
-    } else {
-        Some(attempted_accounts)
-    };
+    let exclusions = if attempted_accounts.is_empty() { None } else { Some(attempted_accounts) };
 
     token_manager
         .get_token_with_exclusions(

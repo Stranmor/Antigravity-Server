@@ -18,6 +18,7 @@ pub async fn get_monitor_requests(
     Json(logs)
 }
 
+#[allow(clippy::similar_names, reason = "state/stats naming is clear in context")]
 pub async fn get_monitor_stats(
     State(state): State<AppState>,
 ) -> Json<antigravity_types::models::ProxyStats> {
@@ -28,4 +29,10 @@ pub async fn get_monitor_stats(
 pub async fn clear_monitor_logs(State(state): State<AppState>) -> Json<bool> {
     state.clear_proxy_logs().await;
     Json(true)
+}
+
+pub async fn get_token_usage_stats(
+    State(state): State<AppState>,
+) -> Json<antigravity_types::models::TokenUsageStats> {
+    Json(state.get_token_usage_stats())
 }

@@ -12,17 +12,23 @@ use leptos_router::{
 };
 use log;
 
-/// Global application state
-#[derive(Clone)]
+/// Global application state shared across components.
+#[derive(Clone, Copy, Debug)]
 pub struct AppState {
+    /// List of user accounts.
     pub accounts: RwSignal<Vec<crate::api_models::Account>>,
+    /// Currently selected account ID.
     pub current_account_id: RwSignal<Option<String>>,
+    /// Application configuration.
     pub config: RwSignal<Option<crate::api_models::AppConfig>>,
+    /// Current proxy service status.
     pub proxy_status: RwSignal<crate::api_models::ProxyStatus>,
+    /// Loading indicator state.
     pub loading: RwSignal<bool>,
 }
 
 impl AppState {
+    /// Creates a new AppState with default values.
     pub fn new() -> Self {
         Self {
             accounts: RwSignal::new(vec![]),
@@ -67,11 +73,10 @@ fn AuthenticatedApp() -> impl IntoView {
     }
 
     let state = AppState::new();
-    provide_context(state.clone());
+    provide_context(state);
 
-    let init_state = state.clone();
-    Effect::new(move |_| {
-        let s = init_state.clone();
+    let _init_effect = Effect::new(move |_| {
+        let s = state;
         spawn_local(async move {
             load_initial_data(s).await;
         });

@@ -54,14 +54,11 @@ pub(super) fn merge_all_of(map: &mut serde_json::Map<String, Value>) {
         }
 
         if !merged_required.is_empty() {
-            let existing_reqs = map
-                .entry("required".to_string())
-                .or_insert_with(|| Value::Array(Vec::new()));
+            let existing_reqs =
+                map.entry("required".to_string()).or_insert_with(|| Value::Array(Vec::new()));
             if let Value::Array(req_arr) = existing_reqs {
-                let mut current_reqs: HashSet<String> = req_arr
-                    .iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect();
+                let mut current_reqs: HashSet<String> =
+                    req_arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
                 for req in merged_required {
                     if current_reqs.insert(req.clone()) {
                         req_arr.push(Value::String(req));

@@ -54,10 +54,7 @@ pub async fn get_aimd_status(State(state): State<AppState>) -> Json<AimdStatusRe
     let adaptive_limits = state.adaptive_limits();
     let accounts = adaptive_limits.all_stats();
 
-    Json(AimdStatusResponse {
-        tracked_accounts: adaptive_limits.len(),
-        accounts,
-    })
+    Json(AimdStatusResponse { tracked_accounts: adaptive_limits.len(), accounts })
 }
 
 pub async fn get_metrics(
@@ -67,20 +64,10 @@ pub async fn get_metrics(
     use axum::response::IntoResponse;
 
     let accounts = state.list_accounts().unwrap_or_default();
-    let available = accounts
-        .iter()
-        .filter(|a| !a.disabled && !a.proxy_disabled)
-        .count();
+    let available = accounts.iter().filter(|a| !a.disabled && !a.proxy_disabled).count();
     antigravity_core::proxy::prometheus::update_account_gauges(accounts.len(), available);
     antigravity_core::proxy::prometheus::update_uptime_gauge();
     let metrics = antigravity_core::proxy::prometheus::render_metrics();
 
-    (
-        [(
-            header::CONTENT_TYPE,
-            "text/plain; version=0.0.4; charset=utf-8",
-        )],
-        metrics,
-    )
-        .into_response()
+    ([(header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")], metrics).into_response()
 }

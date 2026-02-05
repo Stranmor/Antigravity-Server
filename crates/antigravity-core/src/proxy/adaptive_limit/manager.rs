@@ -11,11 +11,7 @@ pub struct AdaptiveLimitManager {
 
 impl AdaptiveLimitManager {
     pub fn new(safety_margin: f64, aimd: AIMDController) -> Self {
-        Self {
-            trackers: DashMap::new(),
-            safety_margin,
-            aimd,
-        }
+        Self { trackers: DashMap::new(), safety_margin, aimd }
     }
 
     pub fn get_or_create(

@@ -1,19 +1,27 @@
+//! Logging system initialization and management.
+//!
+//! This module provides logging setup with console and file output,
+//! automatic log rotation, and cleanup of old log files.
+
 use crate::modules::account::get_data_dir;
 use std::fs;
 use std::path::PathBuf;
 use tracing::{error, info, warn};
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{
+    fmt, fmt::time::FormatTime, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter,
+};
 
-// Custom local timezone time formatter
+/// Custom time formatter using local timezone.
 struct LocalTimer;
 
-impl tracing_subscriber::fmt::time::FormatTime for LocalTimer {
-    fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
+impl FormatTime for LocalTimer {
+    fn format_time(&self, w: &mut fmt::format::Writer<'_>) -> std::fmt::Result {
         let now = chrono::Local::now();
         write!(w, "{}", now.to_rfc3339())
     }
 }
 
+/// Gets the log directory path, creating it if necessary.
 pub fn get_log_dir() -> Result<PathBuf, String> {
     let data_dir = get_data_dir()?;
     let log_dir = data_dir.join("logs");
@@ -34,9 +42,9 @@ pub fn init_logger() {
     let log_dir = match get_log_dir() {
         Ok(dir) => dir,
         Err(e) => {
-            eprintln!("Failed to initialize log directory: {}", e);
+            tracing::error!("Failed to initialize log directory: {}", e);
             return;
-        }
+        },
     };
 
     // 1. Set up file appender with daily rolling
@@ -70,6 +78,10 @@ pub fn init_logger() {
 
     // Leak _guard to ensure its lifetime extends to program exit
     // This is the recommended approach when using tracing_appender::non_blocking
+    #[allow(
+        clippy::mem_forget,
+        reason = "Intentional leak to keep guard alive for program lifetime"
+    )]
     std::mem::forget(_guard);
 
     info!("Logger initialized (console + file persistence)");
@@ -112,10 +124,8 @@ pub fn cleanup_old_logs(days_to_keep: u64) -> Result<(), String> {
         // Get file modification time
         if let Ok(metadata) = fs::metadata(&path) {
             if let Ok(modified) = metadata.modified() {
-                let modified_secs = modified
-                    .duration_since(UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
+                let modified_secs =
+                    modified.duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
 
                 // If file is older than cutoff, delete it
                 if modified_secs < cutoff_time {
@@ -134,10 +144,7 @@ pub fn cleanup_old_logs(days_to_keep: u64) -> Result<(), String> {
 
     if deleted_count > 0 {
         let size_mb = total_size_freed as f64 / 1024.0 / 1024.0;
-        info!(
-            "Log cleanup complete: deleted {} files, freed {:.2} MB",
-            deleted_count, size_mb
-        );
+        info!("Log cleanup complete: deleted {} files, freed {:.2} MB", deleted_count, size_mb);
     }
 
     Ok(())

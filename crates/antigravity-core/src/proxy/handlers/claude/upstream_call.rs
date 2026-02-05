@@ -27,30 +27,15 @@ pub fn prepare_upstream_call(
         );
     }
 
-    let method = if actual_stream {
-        "streamGenerateContent"
-    } else {
-        "generateContent"
-    };
+    let method = if actual_stream { "streamGenerateContent" } else { "generateContent" };
     let query = if actual_stream { Some("alt=sse") } else { None };
 
     let mut extra_headers = HashMap::new();
     if request_with_mapped.thinking.is_some() && request_with_mapped.tools.is_some() {
-        extra_headers.insert(
-            "anthropic-beta".to_string(),
-            "interleaved-thinking-2025-05-14".to_string(),
-        );
-        tracing::debug!(
-            "[{}] Added Beta Header: interleaved-thinking-2025-05-14",
-            trace_id
-        );
+        extra_headers
+            .insert("anthropic-beta".to_string(), "interleaved-thinking-2025-05-14".to_string());
+        tracing::debug!("[{}] Added Beta Header: interleaved-thinking-2025-05-14", trace_id);
     }
 
-    UpstreamCallConfig {
-        method,
-        query,
-        extra_headers,
-        client_wants_stream,
-        actual_stream,
-    }
+    UpstreamCallConfig { method, query, extra_headers, client_wants_stream, actual_stream }
 }

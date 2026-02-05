@@ -19,9 +19,7 @@ pub fn build_client(
             .map_err(|e| format!("Invalid upstream proxy url: {}", e))?;
         builder = builder.proxy(proxy);
     }
-    builder
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))
+    builder.build().map_err(|e| format!("Failed to build HTTP client: {}", e))
 }
 
 fn copy_passthrough_headers(incoming: &HeaderMap) -> HeaderMap {
@@ -31,8 +29,8 @@ fn copy_passthrough_headers(incoming: &HeaderMap) -> HeaderMap {
         match key.as_str() {
             "content-type" | "accept" | "user-agent" => {
                 out.insert(k.clone(), v.clone());
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
     out
@@ -62,12 +60,9 @@ async fn forward_mcp(
     let collected = match to_bytes(body, 100 * 1024 * 1024).await {
         Ok(b) => b,
         Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                format!("Failed to read request body: {}", e),
-            )
+            return (StatusCode::BAD_REQUEST, format!("Failed to read request body: {}", e))
                 .into_response();
-        }
+        },
     };
 
     let mut headers = copy_passthrough_headers(&incoming_headers);
@@ -75,20 +70,14 @@ async fn forward_mcp(
         headers.insert(header::AUTHORIZATION, v);
     }
 
-    let req = client
-        .request(method, upstream_url)
-        .headers(headers)
-        .body(collected);
+    let req = client.request(method, upstream_url).headers(headers).body(collected);
 
     let resp = match req.send().await {
         Ok(r) => r,
         Err(e) => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                format!("Upstream request failed: {}", e),
-            )
+            return (StatusCode::BAD_GATEWAY, format!("Upstream request failed: {}", e))
                 .into_response();
-        }
+        },
     };
 
     let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
@@ -103,11 +92,7 @@ async fn forward_mcp(
     });
 
     out.body(Body::from_stream(stream)).unwrap_or_else(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to build response",
-        )
-            .into_response()
+        (StatusCode::INTERNAL_SERVER_ERROR, "Failed to build response").into_response()
     })
 }
 
@@ -122,14 +107,8 @@ pub async fn handle_web_search_prime(
         return StatusCode::NOT_FOUND.into_response();
     }
     drop(zai);
-    forward_mcp(
-        &state,
-        headers,
-        method,
-        "https://api.z.ai/api/mcp/web_search_prime/mcp",
-        body,
-    )
-    .await
+    forward_mcp(&state, headers, method, "https://api.z.ai/api/mcp/web_search_prime/mcp", body)
+        .await
 }
 
 pub async fn handle_web_reader(
@@ -143,12 +122,5 @@ pub async fn handle_web_reader(
         return StatusCode::NOT_FOUND.into_response();
     }
     drop(zai);
-    forward_mcp(
-        &state,
-        headers,
-        method,
-        "https://api.z.ai/api/mcp/web_reader/mcp",
-        body,
-    )
-    .await
+    forward_mcp(&state, headers, method, "https://api.z.ai/api/mcp/web_reader/mcp", body).await
 }

@@ -3,7 +3,7 @@
 use leptos::prelude::*;
 
 #[component]
-pub fn Select(
+pub(crate) fn Select(
     #[prop(into)] options: Signal<Vec<(String, String)>>,
     #[prop(into)] value: Signal<String>,
     #[prop(into)] on_change: Callback<String>,
@@ -13,7 +13,7 @@ pub fn Select(
     let is_open = RwSignal::new(false);
     let selected_label = RwSignal::new(String::new());
 
-    Effect::new(move |_| {
+    let _effect = Effect::new(move |_| {
         let current_value = value.get();
         let opts = options.get();
         if let Some((_, label)) = opts.iter().find(|(v, _)| v == &current_value) {

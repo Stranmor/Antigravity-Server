@@ -4,16 +4,12 @@ use std::collections::HashMap;
 #[test]
 fn test_lww_merge_remote_newer() {
     let mut local = SyncableMapping::new();
-    local.entries.insert(
-        "gpt-4o".to_string(),
-        MappingEntry::with_timestamp("gemini-3-pro", 1000),
-    );
+    local.entries.insert("gpt-4o".to_string(), MappingEntry::with_timestamp("gemini-3-pro", 1000));
 
     let mut remote = SyncableMapping::new();
-    remote.entries.insert(
-        "gpt-4o".to_string(),
-        MappingEntry::with_timestamp("gemini-3-flash", 2000),
-    );
+    remote
+        .entries
+        .insert("gpt-4o".to_string(), MappingEntry::with_timestamp("gemini-3-flash", 2000));
 
     let updated = local.merge_lww(&remote);
 
@@ -24,16 +20,12 @@ fn test_lww_merge_remote_newer() {
 #[test]
 fn test_lww_merge_local_newer() {
     let mut local = SyncableMapping::new();
-    local.entries.insert(
-        "gpt-4o".to_string(),
-        MappingEntry::with_timestamp("gemini-3-pro", 3000),
-    );
+    local.entries.insert("gpt-4o".to_string(), MappingEntry::with_timestamp("gemini-3-pro", 3000));
 
     let mut remote = SyncableMapping::new();
-    remote.entries.insert(
-        "gpt-4o".to_string(),
-        MappingEntry::with_timestamp("gemini-3-flash", 2000),
-    );
+    remote
+        .entries
+        .insert("gpt-4o".to_string(), MappingEntry::with_timestamp("gemini-3-flash", 2000));
 
     let updated = local.merge_lww(&remote);
 
@@ -44,16 +36,12 @@ fn test_lww_merge_local_newer() {
 #[test]
 fn test_lww_merge_new_keys() {
     let mut local = SyncableMapping::new();
-    local.entries.insert(
-        "gpt-4o".to_string(),
-        MappingEntry::with_timestamp("gemini-3-pro", 1000),
-    );
+    local.entries.insert("gpt-4o".to_string(), MappingEntry::with_timestamp("gemini-3-pro", 1000));
 
     let mut remote = SyncableMapping::new();
-    remote.entries.insert(
-        "claude-opus".to_string(),
-        MappingEntry::with_timestamp("claude-opus-4-5", 2000),
-    );
+    remote
+        .entries
+        .insert("claude-opus".to_string(), MappingEntry::with_timestamp("claude-opus-4-5", 2000));
 
     let updated = local.merge_lww(&remote);
 
@@ -91,28 +79,13 @@ fn test_to_simple_map() {
 #[test]
 fn test_diff_newer_than() {
     let mut local = SyncableMapping::new();
-    local.entries.insert(
-        "gpt-4o".to_string(),
-        MappingEntry::with_timestamp("gemini-3-pro", 3000),
-    );
-    local.entries.insert(
-        "claude".to_string(),
-        MappingEntry::with_timestamp("claude-opus", 1000),
-    );
-    local.entries.insert(
-        "new-model".to_string(),
-        MappingEntry::with_timestamp("target", 5000),
-    );
+    local.entries.insert("gpt-4o".to_string(), MappingEntry::with_timestamp("gemini-3-pro", 3000));
+    local.entries.insert("claude".to_string(), MappingEntry::with_timestamp("claude-opus", 1000));
+    local.entries.insert("new-model".to_string(), MappingEntry::with_timestamp("target", 5000));
 
     let mut remote = SyncableMapping::new();
-    remote.entries.insert(
-        "gpt-4o".to_string(),
-        MappingEntry::with_timestamp("old-target", 2000),
-    );
-    remote.entries.insert(
-        "claude".to_string(),
-        MappingEntry::with_timestamp("newer-target", 2000),
-    );
+    remote.entries.insert("gpt-4o".to_string(), MappingEntry::with_timestamp("old-target", 2000));
+    remote.entries.insert("claude".to_string(), MappingEntry::with_timestamp("newer-target", 2000));
 
     let diff = local.diff_newer_than(&remote);
 
@@ -161,10 +134,7 @@ fn test_tombstone_excluded_from_simple_map() {
 #[test]
 fn test_tombstone_propagates_via_merge() {
     let mut local = SyncableMapping::new();
-    local.entries.insert(
-        "gpt-4o".to_string(),
-        MappingEntry::with_timestamp("gemini-3-pro", 1000),
-    );
+    local.entries.insert("gpt-4o".to_string(), MappingEntry::with_timestamp("gemini-3-pro", 1000));
 
     let mut remote = SyncableMapping::new();
     let mut tombstone = MappingEntry::tombstone();
@@ -182,5 +152,5 @@ fn test_tombstone_propagates_via_merge() {
 fn test_current_timestamp_ms_returns_positive() {
     let ts = current_timestamp_ms();
     assert!(ts > 0);
-    assert!(ts > 1700000000000);
+    assert!(ts > 1_700_000_000_000);
 }

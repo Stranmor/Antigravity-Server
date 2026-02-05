@@ -25,12 +25,9 @@ pub async fn handle_nonstreaming_success(
     let bytes = match response.bytes().await {
         Ok(b) => b,
         Err(e) => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                format!("Failed to read body: {}", e),
-            )
+            return (StatusCode::BAD_GATEWAY, format!("Failed to read body: {}", e))
                 .into_response();
-        }
+        },
     };
 
     if let Ok(text) = String::from_utf8(bytes.to_vec()) {
@@ -41,7 +38,7 @@ pub async fn handle_nonstreaming_success(
         Ok(v) => v,
         Err(e) => {
             return (StatusCode::BAD_GATEWAY, format!("Parse error: {}", e)).into_response();
-        }
+        },
     };
 
     let raw = gemini_resp.get("response").unwrap_or(&gemini_resp);
@@ -49,12 +46,9 @@ pub async fn handle_nonstreaming_success(
     let gemini_response: GeminiResponse = match serde_json::from_value(raw.clone()) {
         Ok(r) => r,
         Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Convert error: {}", e),
-            )
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("Convert error: {}", e))
                 .into_response();
-        }
+        },
     };
 
     let s_id_owned = Some(ctx.session_id.clone());
@@ -67,12 +61,9 @@ pub async fn handle_nonstreaming_success(
     ) {
         Ok(r) => r,
         Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Transform error: {}", e),
-            )
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("Transform error: {}", e))
                 .into_response();
-        }
+        },
     };
 
     let cache_info = if let Some(cached) = claude_response.usage.cache_read_input_tokens {

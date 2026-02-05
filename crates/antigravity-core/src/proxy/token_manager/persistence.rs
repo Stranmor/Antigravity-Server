@@ -80,9 +80,7 @@ impl TokenManager {
         let path = if let Some(entry) = self.tokens.get(account_id) {
             entry.account_path.clone()
         } else {
-            self.data_dir
-                .join("accounts")
-                .join(format!("{}.json", account_id))
+            self.data_dir.join("accounts").join(format!("{}.json", account_id))
         };
 
         let lock = self.get_file_lock(account_id);

@@ -8,12 +8,12 @@ use tokio::net::TcpStream;
 pub struct SshClientFactory;
 
 impl SshClientFactory {
-    pub async fn new() -> Result<Self> {
-        Ok(SshClientFactory)
+    pub const fn new() -> Self {
+        Self
     }
 
     pub async fn connect(&self, user: &str, host: String) -> Result<SshSession> {
-        let tcp = TcpStream::connect(format!("{}:22", host)).await?;
+        let tcp = TcpStream::connect(format!("{host}:22")).await?;
         let config = SessionConfiguration::new();
         let mut session = AsyncSession::new(tcp, config)?;
         session.handshake().await?;
@@ -27,23 +27,21 @@ pub struct SshSession {
 }
 
 impl SshSession {
-    pub async fn exec_command(&mut self, command: &str) -> Result<String> {
+    pub async fn exec_command(&self, command: &str) -> Result<String> {
         let mut channel = self.session.channel_session().await?;
         channel.exec(command).await?;
         let mut buf = Vec::new();
-        channel.read_to_end(&mut buf).await?;
-        String::from_utf8(buf).map_err(|e| anyhow!("Failed to convert output to UTF-8: {}", e))
+        let _ = channel.read_to_end(&mut buf).await?;
+        String::from_utf8(buf).map_err(|e| anyhow!("Failed to convert output to UTF-8: {e}"))
     }
 
-    pub async fn close(&mut self) -> Result<()> {
-        self.session
-            .disconnect(None, "Disconnected by client", None)
-            .await?;
+    pub async fn close(&self) -> Result<()> {
+        self.session.disconnect(None, "Disconnected by client", None).await?;
         Ok(())
     }
 
     pub async fn upload_file(
-        &mut self,
+        &self,
         _remote_host: &str,
         local_path: &PathBuf,
         remote_path: &str,
@@ -60,7 +58,7 @@ impl SshSession {
             .await?;
 
         let mut local_file = fs::File::open(local_path).await?;
-        tokio::io::copy(&mut local_file, &mut channel).await?;
+        let _ = tokio::io::copy(&mut local_file, &mut channel).await?;
 
         channel.send_eof().await?;
         channel.wait_eof().await?;
@@ -71,7 +69,7 @@ impl SshSession {
     }
 
     pub async fn download_file(
-        &mut self,
+        &self,
         _remote_host: &str,
         remote_path: &str,
         local_path: &PathBuf,
@@ -79,7 +77,7 @@ impl SshSession {
         let (mut channel, _stat) = self.session.scp_recv(Path::new(remote_path)).await?;
 
         let mut local_file = fs::File::create(local_path).await?;
-        tokio::io::copy(&mut channel, &mut local_file).await?;
+        let _ = tokio::io::copy(&mut channel, &mut local_file).await?;
 
         channel.send_eof().await?;
         channel.wait_eof().await?;

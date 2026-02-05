@@ -29,19 +29,13 @@ pub fn build_headers(
     extra_headers: HashMap<String, String>,
 ) -> Result<header::HeaderMap, String> {
     let mut headers = header::HeaderMap::new();
-    headers.insert(
-        header::CONTENT_TYPE,
-        header::HeaderValue::from_static("application/json"),
-    );
+    headers.insert(header::CONTENT_TYPE, header::HeaderValue::from_static("application/json"));
     headers.insert(
         header::AUTHORIZATION,
         header::HeaderValue::from_str(&format!("Bearer {}", access_token))
             .map_err(|e| e.to_string())?,
     );
-    headers.insert(
-        header::USER_AGENT,
-        header::HeaderValue::from_static(DEFAULT_USER_AGENT),
-    );
+    headers.insert(header::USER_AGENT, header::HeaderValue::from_static(DEFAULT_USER_AGENT));
 
     for (k, v) in extra_headers {
         if let Ok(hk) = header::HeaderName::from_bytes(k.as_bytes()) {
@@ -65,10 +59,7 @@ pub async fn execute_with_fallback(
     let mut last_err: Option<String> = None;
 
     for (idx, base_url) in V1_INTERNAL_BASE_URL_FALLBACKS.iter().enumerate() {
-        if ENDPOINT_HEALTH
-            .get(*base_url)
-            .is_some_and(|h| h.should_skip())
-        {
+        if ENDPOINT_HEALTH.get(*base_url).is_some_and(|h| h.should_skip()) {
             tracing::debug!("Skipping unhealthy endpoint: {}", base_url);
             continue;
         }
@@ -78,12 +69,7 @@ pub async fn execute_with_fallback(
         let mut transport_retries: u32 = 0;
 
         loop {
-            let response = client
-                .post(&url)
-                .headers(headers.clone())
-                .json(body)
-                .send()
-                .await;
+            let response = client.post(&url).headers(headers.clone()).json(body).send().await;
 
             match response {
                 Ok(resp) => {
@@ -131,7 +117,7 @@ pub async fn execute_with_fallback(
                     }
 
                     return Ok(resp);
-                }
+                },
                 Err(e) => {
                     let msg = format!("HTTP request failed at {}: {}", base_url, e);
                     tracing::debug!("{}", msg);
@@ -150,16 +136,13 @@ pub async fn execute_with_fallback(
                         continue;
                     }
 
-                    ENDPOINT_HEALTH
-                        .entry((*base_url).to_string())
-                        .or_default()
-                        .record_failure();
+                    ENDPOINT_HEALTH.entry((*base_url).to_string()).or_default().record_failure();
 
                     if !has_next {
                         return Err(last_err.unwrap_or_else(|| "All endpoints failed".to_string()));
                     }
                     break;
-                }
+                },
             }
         }
     }
@@ -174,10 +157,7 @@ pub async fn execute_fetch_models(
     let mut last_err: Option<String> = None;
 
     for (idx, base_url) in V1_INTERNAL_BASE_URL_FALLBACKS.iter().enumerate() {
-        if ENDPOINT_HEALTH
-            .get(*base_url)
-            .is_some_and(|h| h.should_skip())
-        {
+        if ENDPOINT_HEALTH.get(*base_url).is_some_and(|h| h.should_skip()) {
             tracing::debug!("Skipping unhealthy endpoint: {}", base_url);
             continue;
         }
@@ -216,10 +196,8 @@ pub async fn execute_fetch_models(
                                 base_url
                             );
                         }
-                        let json: Value = resp
-                            .json()
-                            .await
-                            .map_err(|e| format!("Parse json failed: {}", e))?;
+                        let json: Value =
+                            resp.json().await.map_err(|e| format!("Parse json failed: {}", e))?;
                         return Ok(json);
                     }
 
@@ -234,7 +212,7 @@ pub async fn execute_fetch_models(
                     }
 
                     return Err(format!("Upstream error: {}", status));
-                }
+                },
                 Err(e) => {
                     let msg = format!("Request failed at {}: {}", base_url, e);
                     tracing::debug!("{}", msg);
@@ -253,16 +231,13 @@ pub async fn execute_fetch_models(
                         continue;
                     }
 
-                    ENDPOINT_HEALTH
-                        .entry((*base_url).to_string())
-                        .or_default()
-                        .record_failure();
+                    ENDPOINT_HEALTH.entry((*base_url).to_string()).or_default().record_failure();
 
                     if !has_next {
                         break;
                     }
                     break;
-                }
+                },
             }
         }
     }

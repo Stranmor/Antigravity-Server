@@ -19,10 +19,7 @@ fn get_antigravity_path() -> Option<PathBuf> {
 pub fn get_vscode_db_path() -> Result<PathBuf, String> {
     // First check path specified by --user-data-dir parameter
     if let Some(user_data_dir) = crate::modules::process::get_user_data_dir_from_process() {
-        let custom_db_path = user_data_dir
-            .join("User")
-            .join("globalStorage")
-            .join("state.vscdb");
+        let custom_db_path = user_data_dir.join("User").join("globalStorage").join("state.vscdb");
         if custom_db_path.exists() {
             return Ok(custom_db_path);
         }
@@ -114,8 +111,5 @@ pub fn inject_token(
     )
     .map_err(|e| format!("Failed to write Onboarding marker: {}", e))?;
 
-    Ok(format!(
-        "Token injection successful!\nDatabase: {:?}",
-        db_path
-    ))
+    Ok(format!("Token injection successful!\nDatabase: {}", db_path.display()))
 }

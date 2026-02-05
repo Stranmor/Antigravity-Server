@@ -44,16 +44,14 @@ pub async fn handle_upstream_error(
     grace_retry_used: &mut bool,
 ) -> ErrorAction {
     if ctx.status_code == 429 && !*grace_retry_used {
-        let reason = token_manager
-            .rate_limit_tracker()
-            .parse_rate_limit_reason(&ctx.error_text);
+        let reason = token_manager.rate_limit_tracker().parse_rate_limit_reason(&ctx.error_text);
         if reason == RateLimitReason::RateLimitExceeded {
             *grace_retry_used = true;
             tracing::info!(
                 "[{}] 🔄 Grace retry: RATE_LIMIT_EXCEEDED on {}, waiting 1s before retry on same account",
                 ctx.trace_id, ctx.email
             );
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
             return ErrorAction::Retry;
         }
     }
@@ -77,9 +75,7 @@ pub async fn handle_upstream_error(
             token_manager.record_session_failure(ctx.session_id_str);
             state.adaptive_limits.record_429(ctx.email);
         } else {
-            state
-                .adaptive_limits
-                .record_error(ctx.email, ctx.status_code);
+            state.adaptive_limits.record_error(ctx.email, ctx.status_code);
         }
     }
 
@@ -125,11 +121,6 @@ pub async fn handle_upstream_error(
         ctx.error_text
     );
     ErrorAction::Return(
-        (
-            ctx.status,
-            [("X-Account-Email", ctx.email)],
-            ctx.error_text.clone(),
-        )
-            .into_response(),
+        (ctx.status, [("X-Account-Email", ctx.email)], ctx.error_text.clone()).into_response(),
     )
 }

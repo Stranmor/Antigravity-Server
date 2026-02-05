@@ -49,7 +49,7 @@ pub async fn generate_api_key(
     let api_key = format!("sk-{}", key);
 
     core_config::update_config(|config| {
-        config.proxy.api_key = api_key.clone();
+        config.proxy.api_key.clone_from(&api_key);
     })
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 

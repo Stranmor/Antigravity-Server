@@ -4,8 +4,9 @@ use crate::api_models::UpstreamProxyMode;
 use crate::app::AppState;
 use leptos::prelude::*;
 
+/// Upstream proxy settings section.
 #[component]
-pub fn UpstreamProxySettings() -> impl IntoView {
+pub(crate) fn UpstreamProxySettings() -> impl IntoView {
     let state = expect_context::<AppState>();
 
     view! {

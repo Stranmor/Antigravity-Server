@@ -29,10 +29,8 @@ pub async fn handle_generate(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let force_account = headers
-        .get("X-Force-Account")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
+    let force_account =
+        headers.get("X-Force-Account").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
 
     let (model_name, method) = match model_action.rsplit_once(':') {
         Some((m, action)) => (m.to_string(), action.to_string()),
@@ -42,10 +40,7 @@ pub async fn handle_generate(
     info!("[Gemini] Request: {}/{}", model_name, method);
 
     if method != "generateContent" && method != "streamGenerateContent" {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            format!("Unsupported method: {}", method),
-        ));
+        return Err((StatusCode::BAD_REQUEST, format!("Unsupported method: {}", method)));
     }
     let is_stream = method == "streamGenerateContent";
 
@@ -59,10 +54,13 @@ pub async fn handle_generate(
     let mut attempted_accounts: HashSet<String> = HashSet::new();
 
     while attempt < max_attempts {
-        let (mapped_model, _reason) = crate::proxy::common::resolve_model_route(
+        let (mapped_model, _reason) = match crate::proxy::common::resolve_model_route(
             &model_name,
             &*state.custom_mapping.read().await,
-        );
+        ) {
+            Ok(result) => result,
+            Err(e) => return Err((StatusCode::BAD_REQUEST, e)),
+        };
 
         let tools_val: Option<Vec<Value>> =
             body.get("tools").and_then(|t| t.as_array()).map(|arr| {
@@ -87,16 +85,10 @@ pub async fn handle_generate(
         let session_id = SessionManager::extract_gemini_session_id(&body, &model_name);
 
         let (access_token, project_id, email, _guard) = if let Some(ref forced) = force_account {
-            match token_manager
-                .get_token_forced(forced, &config.final_model)
-                .await
-            {
+            match token_manager.get_token_forced(forced, &config.final_model).await {
                 Ok((token, project, email, guard)) => (token, project, email, guard),
                 Err(e) => {
-                    warn!(
-                        "[Gemini] Forced account {} failed: {}, using smart routing",
-                        forced, e
-                    );
+                    warn!("[Gemini] Forced account {} failed: {}, using smart routing", forced, e);
                     match token_manager
                         .get_token_with_exclusions(
                             &config.request_type,
@@ -117,9 +109,9 @@ pub async fn handle_generate(
                                 StatusCode::SERVICE_UNAVAILABLE,
                                 format!("Token error: {}", e),
                             ))
-                        }
+                        },
                     }
-                }
+                },
             }
         } else {
             match token_manager
@@ -128,37 +120,23 @@ pub async fn handle_generate(
                     attempt > 0,
                     Some(&session_id),
                     &config.final_model,
-                    if attempted_accounts.is_empty() {
-                        None
-                    } else {
-                        Some(&attempted_accounts)
-                    },
+                    if attempted_accounts.is_empty() { None } else { Some(&attempted_accounts) },
                 )
                 .await
             {
                 Ok(t) => t,
                 Err(e) => {
-                    return Err((
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        format!("Token error: {}", e),
-                    ))
-                }
+                    return Err((StatusCode::SERVICE_UNAVAILABLE, format!("Token error: {}", e)))
+                },
             }
         };
 
         last_email = Some(email.clone());
-        info!(
-            "[Gemini] Account: {} (type: {})",
-            email, config.request_type
-        );
+        info!("[Gemini] Account: {} (type: {})", email, config.request_type);
 
         let wrapped_body = wrap_request(&body, &project_id, &mapped_model, Some(&session_id));
         let query_string = if is_stream { Some("alt=sse") } else { None };
-        let upstream_method = if is_stream {
-            "streamGenerateContent"
-        } else {
-            "generateContent"
-        };
+        let upstream_method = if is_stream { "streamGenerateContent" } else { "generateContent" };
 
         let response = match state
             .upstream
@@ -168,15 +146,10 @@ pub async fn handle_generate(
             Ok(r) => r,
             Err(e) => {
                 last_error = e.clone();
-                debug!(
-                    "[Gemini] Attempt {}/{} failed: {}",
-                    attempt + 1,
-                    max_attempts,
-                    e
-                );
+                debug!("[Gemini] Attempt {}/{} failed: {}", attempt + 1, max_attempts, e);
                 attempt += 1;
                 continue;
-            }
+            },
         };
 
         let status = response.status();
@@ -192,7 +165,7 @@ pub async fn handle_generate(
                         attempted_accounts.insert(email.clone());
                         attempt += 1;
                         continue;
-                    }
+                    },
                 };
 
                 return build_stream_response(
@@ -214,10 +187,7 @@ pub async fn handle_generate(
             let unwrapped = unwrap_response(&resp);
             return Ok((
                 StatusCode::OK,
-                [
-                    ("X-Account-Email", email.as_str()),
-                    ("X-Mapped-Model", mapped_model.as_str()),
-                ],
+                [("X-Account-Email", email.as_str()), ("X-Mapped-Model", mapped_model.as_str())],
                 Json(unwrapped),
             )
                 .into_response());
@@ -229,10 +199,7 @@ pub async fn handle_generate(
             .get("Retry-After")
             .and_then(|h| h.to_str().ok())
             .map(|s| s.to_string());
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| format!("HTTP {}", code));
+        let error_text = response.text().await.unwrap_or_else(|_| format!("HTTP {}", code));
         last_error = format!("HTTP {}: {}", code, error_text);
 
         if matches!(code, 429 | 529 | 503 | 500 | 403 | 401) {
@@ -289,12 +256,9 @@ pub async fn handle_generate(
 
     let msg = format!("All accounts exhausted. Last: {}", last_error);
     match last_email {
-        Some(email) => Ok((
-            StatusCode::TOO_MANY_REQUESTS,
-            [("X-Account-Email", email)],
-            msg,
-        )
-            .into_response()),
+        Some(email) => {
+            Ok((StatusCode::TOO_MANY_REQUESTS, [("X-Account-Email", email)], msg).into_response())
+        },
         None => Ok((StatusCode::TOO_MANY_REQUESTS, msg).into_response()),
     }
 }

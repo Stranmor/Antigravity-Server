@@ -1,3 +1,5 @@
+//! Account CRUD operations for PostgreSQL.
+
 use crate::models::{Account, TokenData};
 use crate::modules::account_pg_events::log_event_internal_impl;
 use crate::modules::account_pg_helpers::map_sqlx_err;
@@ -7,7 +9,8 @@ use sqlx::postgres::PgPool;
 use sqlx::Row;
 use uuid::Uuid;
 
-pub async fn create_account_impl(
+/// Create a new account in the database.
+pub(crate) async fn create_account_impl(
     pool: &PgPool,
     email: String,
     name: Option<String>,
@@ -17,7 +20,10 @@ pub async fn create_account_impl(
     let now = chrono::Utc::now();
     let protected_models: Vec<String> = vec![];
 
-    let mut tx = pool.begin().await.map_err(map_sqlx_err)?;
+    let mut transaction = pool.begin().await.map_err(map_sqlx_err)?;
+
+    let protected_json = serde_json::to_value(&protected_models)
+        .map_err(|err| RepositoryError::Serialization(err.to_string()))?;
 
     sqlx::query(
         r#"INSERT INTO accounts (id, email, name, protected_models, created_at, last_used_at)
@@ -26,15 +32,15 @@ pub async fn create_account_impl(
     .bind(id)
     .bind(&email)
     .bind(&name)
-    .bind(serde_json::to_value(&protected_models).unwrap())
+    .bind(protected_json)
     .bind(now)
-    .execute(&mut *tx)
+    .execute(&mut *transaction)
     .await
-    .map_err(|e| {
-        if e.to_string().contains("duplicate") {
+    .map_err(|err| {
+        if err.to_string().contains("duplicate") {
             RepositoryError::AlreadyExists(email.clone())
         } else {
-            map_sqlx_err(e)
+            map_sqlx_err(err)
         }
     })?;
 
@@ -48,28 +54,33 @@ pub async fn create_account_impl(
     .bind(token.expiry_timestamp)
     .bind(&token.project_id)
     .bind(&token.email)
-    .execute(&mut *tx)
+    .execute(&mut *transaction)
     .await
     .map_err(map_sqlx_err)?;
 
     log_event_internal_impl(
-        &mut tx,
+        &mut transaction,
         id.to_string(),
         AccountEventType::Created,
         serde_json::json!({"email": email}),
     )
     .await?;
 
-    tx.commit().await.map_err(map_sqlx_err)?;
+    transaction.commit().await.map_err(map_sqlx_err)?;
 
     get_account_impl(pool, &id.to_string()).await
 }
 
-pub async fn update_account_impl(pool: &PgPool, account: &Account) -> RepoResult<()> {
-    let id = Uuid::parse_str(&account.id).map_err(|e| RepositoryError::NotFound(e.to_string()))?;
+/// Update an existing account in the database.
+pub(crate) async fn update_account_impl(pool: &PgPool, account: &Account) -> RepoResult<()> {
+    let id =
+        Uuid::parse_str(&account.id).map_err(|err| RepositoryError::NotFound(err.to_string()))?;
     let protected: Vec<String> = account.protected_models.iter().cloned().collect();
 
-    let mut tx = pool.begin().await.map_err(map_sqlx_err)?;
+    let mut transaction = pool.begin().await.map_err(map_sqlx_err)?;
+
+    let protected_json = serde_json::to_value(&protected)
+        .map_err(|err| RepositoryError::Serialization(err.to_string()))?;
 
     sqlx::query(
         r#"UPDATE accounts SET email = $2, name = $3, disabled = $4, disabled_reason = $5,
@@ -85,9 +96,9 @@ pub async fn update_account_impl(pool: &PgPool, account: &Account) -> RepoResult
     .bind(account.proxy_disabled)
     .bind(&account.proxy_disabled_reason)
     .bind(account.proxy_disabled_at.and_then(|ts| chrono::DateTime::from_timestamp(ts, 0)))
-    .bind(serde_json::to_value(&protected).unwrap())
+    .bind(protected_json)
     .bind(chrono::DateTime::from_timestamp(account.last_used, 0))
-    .execute(&mut *tx)
+    .execute(&mut *transaction)
     .await
     .map_err(map_sqlx_err)?;
 
@@ -101,22 +112,23 @@ pub async fn update_account_impl(pool: &PgPool, account: &Account) -> RepoResult
     .bind(account.token.expiry_timestamp)
     .bind(&account.token.project_id)
     .bind(&account.token.email)
-    .execute(&mut *tx)
+    .execute(&mut *transaction)
     .await
     .map_err(map_sqlx_err)?;
 
     log_event_internal_impl(
-        &mut tx,
+        &mut transaction,
         id.to_string(),
         AccountEventType::Updated,
         serde_json::json!({"email": account.email}),
     )
     .await?;
 
-    tx.commit().await.map_err(map_sqlx_err)
+    transaction.commit().await.map_err(map_sqlx_err)
 }
 
-pub async fn upsert_account_impl(
+/// Create or update an account by email.
+pub(crate) async fn upsert_account_impl(
     pool: &PgPool,
     email: String,
     name: Option<String>,
@@ -126,7 +138,10 @@ pub async fn upsert_account_impl(
     let now = chrono::Utc::now();
     let protected_models: Vec<String> = vec![];
 
-    let mut tx = pool.begin().await.map_err(map_sqlx_err)?;
+    let mut transaction = pool.begin().await.map_err(map_sqlx_err)?;
+
+    let protected_json = serde_json::to_value(&protected_models)
+        .map_err(|err| RepositoryError::Serialization(err.to_string()))?;
 
     let row = sqlx::query(
         r#"INSERT INTO accounts (id, email, name, protected_models, created_at, last_used_at)
@@ -139,9 +154,9 @@ pub async fn upsert_account_impl(
     .bind(id)
     .bind(&email)
     .bind(&name)
-    .bind(serde_json::to_value(&protected_models).unwrap())
+    .bind(protected_json)
     .bind(now)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut *transaction)
     .await
     .map_err(map_sqlx_err)?;
 
@@ -163,32 +178,31 @@ pub async fn upsert_account_impl(
     .bind(token.expiry_timestamp)
     .bind(&token.project_id)
     .bind(&token.email)
-    .execute(&mut *tx)
+    .execute(&mut *transaction)
     .await
     .map_err(map_sqlx_err)?;
 
     log_event_internal_impl(
-        &mut tx,
+        &mut transaction,
         account_id.to_string(),
         AccountEventType::Updated,
         serde_json::json!({"email": email, "operation": "upsert"}),
     )
     .await?;
 
-    tx.commit().await.map_err(map_sqlx_err)?;
+    transaction.commit().await.map_err(map_sqlx_err)?;
 
-    get_account_by_email_impl(pool, &email)
-        .await?
-        .ok_or(RepositoryError::NotFound(email))
+    get_account_by_email_impl(pool, &email).await?.ok_or(RepositoryError::NotFound(email))
 }
 
-pub async fn delete_account_impl(pool: &PgPool, id: &str) -> RepoResult<()> {
-    let uuid = Uuid::parse_str(id).map_err(|e| RepositoryError::NotFound(e.to_string()))?;
+/// Delete an account by ID.
+pub(crate) async fn delete_account_impl(pool: &PgPool, id: &str) -> RepoResult<()> {
+    let uuid = Uuid::parse_str(id).map_err(|err| RepositoryError::NotFound(err.to_string()))?;
 
-    let mut tx = pool.begin().await.map_err(map_sqlx_err)?;
+    let mut transaction = pool.begin().await.map_err(map_sqlx_err)?;
 
     log_event_internal_impl(
-        &mut tx,
+        &mut transaction,
         id.to_string(),
         AccountEventType::Deleted,
         serde_json::json!({}),
@@ -197,7 +211,7 @@ pub async fn delete_account_impl(pool: &PgPool, id: &str) -> RepoResult<()> {
 
     let result = sqlx::query("DELETE FROM accounts WHERE id = $1")
         .bind(uuid)
-        .execute(&mut *tx)
+        .execute(&mut *transaction)
         .await
         .map_err(map_sqlx_err)?;
 
@@ -205,11 +219,12 @@ pub async fn delete_account_impl(pool: &PgPool, id: &str) -> RepoResult<()> {
         return Err(RepositoryError::NotFound(id.to_string()));
     }
 
-    tx.commit().await.map_err(map_sqlx_err)?;
+    transaction.commit().await.map_err(map_sqlx_err)?;
     Ok(())
 }
 
-pub async fn delete_accounts_impl(pool: &PgPool, ids: &[String]) -> RepoResult<()> {
+/// Delete multiple accounts by IDs.
+pub(crate) async fn delete_accounts_impl(pool: &PgPool, ids: &[String]) -> RepoResult<()> {
     if ids.is_empty() {
         return Ok(());
     }
@@ -218,13 +233,13 @@ pub async fn delete_accounts_impl(pool: &PgPool, ids: &[String]) -> RepoResult<(
         .iter()
         .map(|id| Uuid::parse_str(id))
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| RepositoryError::NotFound(e.to_string()))?;
+        .map_err(|err| RepositoryError::NotFound(err.to_string()))?;
 
-    let mut tx = pool.begin().await.map_err(map_sqlx_err)?;
+    let mut transaction = pool.begin().await.map_err(map_sqlx_err)?;
 
     for (uuid, id) in uuids.iter().zip(ids.iter()) {
         log_event_internal_impl(
-            &mut tx,
+            &mut transaction,
             uuid.to_string(),
             AccountEventType::Deleted,
             serde_json::json!({"batch_delete": true, "original_id": id}),
@@ -234,11 +249,11 @@ pub async fn delete_accounts_impl(pool: &PgPool, ids: &[String]) -> RepoResult<(
 
     sqlx::query("DELETE FROM accounts WHERE id = ANY($1)")
         .bind(&uuids)
-        .execute(&mut *tx)
+        .execute(&mut *transaction)
         .await
         .map_err(map_sqlx_err)?;
 
-    tx.commit().await.map_err(map_sqlx_err)?;
+    transaction.commit().await.map_err(map_sqlx_err)?;
 
     Ok(())
 }

@@ -1,3 +1,5 @@
+//! Account event logging and quota management for PostgreSQL.
+
 use crate::models::QuotaData;
 use crate::modules::account_pg_helpers::{map_sqlx_err, parse_event_type};
 use crate::modules::repository::{
@@ -7,12 +9,17 @@ use sqlx::postgres::PgPool;
 use sqlx::Row;
 use uuid::Uuid;
 
-pub async fn update_quota_impl(
+/// Update quota data for an account.
+pub(crate) async fn update_quota_impl(
     pool: &PgPool,
     account_id: &str,
     quota: QuotaData,
 ) -> RepoResult<()> {
-    let uuid = Uuid::parse_str(account_id).map_err(|e| RepositoryError::NotFound(e.to_string()))?;
+    let uuid =
+        Uuid::parse_str(account_id).map_err(|err| RepositoryError::NotFound(err.to_string()))?;
+    let models_json = serde_json::to_value(&quota.models)
+        .map_err(|err| RepositoryError::Serialization(err.to_string()))?;
+
     sqlx::query(
         r#"INSERT INTO quotas (account_id, is_forbidden, models, fetched_at)
            VALUES ($1, $2, $3, NOW())
@@ -20,7 +27,7 @@ pub async fn update_quota_impl(
     )
     .bind(uuid)
     .bind(quota.is_forbidden)
-    .bind(serde_json::to_value(&quota.models).unwrap())
+    .bind(models_json)
     .execute(pool)
     .await
     .map_err(map_sqlx_err)?;
@@ -39,15 +46,17 @@ pub async fn update_quota_impl(
     Ok(())
 }
 
-pub async fn get_current_account_id_impl(pool: &PgPool) -> RepoResult<Option<String>> {
+/// Get the currently selected account ID.
+pub(crate) async fn get_current_account_id_impl(pool: &PgPool) -> RepoResult<Option<String>> {
     let row = sqlx::query("SELECT value FROM app_settings WHERE key = 'current_account_id'")
         .fetch_optional(pool)
         .await
         .map_err(map_sqlx_err)?;
-    Ok(row.map(|r| r.get::<String, _>("value")))
+    Ok(row.map(|row_data| row_data.get::<String, _>("value")))
 }
 
-pub async fn set_current_account_id_impl(pool: &PgPool, id: &str) -> RepoResult<()> {
+/// Set the currently selected account ID.
+pub(crate) async fn set_current_account_id_impl(pool: &PgPool, id: &str) -> RepoResult<()> {
     sqlx::query(
         r#"INSERT INTO app_settings (key, value) VALUES ('current_account_id', $1)
            ON CONFLICT (key) DO UPDATE SET value = $1"#,
@@ -59,9 +68,10 @@ pub async fn set_current_account_id_impl(pool: &PgPool, id: &str) -> RepoResult<
     Ok(())
 }
 
-pub async fn log_event_impl(pool: &PgPool, event: AccountEvent) -> RepoResult<()> {
-    let uuid =
-        Uuid::parse_str(&event.account_id).map_err(|e| RepositoryError::NotFound(e.to_string()))?;
+/// Log an account event.
+pub(crate) async fn log_event_impl(pool: &PgPool, event: AccountEvent) -> RepoResult<()> {
+    let uuid = Uuid::parse_str(&event.account_id)
+        .map_err(|err| RepositoryError::NotFound(err.to_string()))?;
     sqlx::query(
         "INSERT INTO account_events (account_id, event_type, metadata) VALUES ($1, $2, $3)",
     )
@@ -74,9 +84,10 @@ pub async fn log_event_impl(pool: &PgPool, event: AccountEvent) -> RepoResult<()
     Ok(())
 }
 
-pub async fn log_request_impl(pool: &PgPool, request: RequestLog) -> RepoResult<()> {
+/// Log a request for analytics.
+pub(crate) async fn log_request_impl(pool: &PgPool, request: RequestLog) -> RepoResult<()> {
     let uuid = Uuid::parse_str(&request.account_id)
-        .map_err(|e| RepositoryError::NotFound(e.to_string()))?;
+        .map_err(|err| RepositoryError::NotFound(err.to_string()))?;
     sqlx::query(
         r#"INSERT INTO requests (account_id, model, tokens_in, tokens_out, latency_ms, status_code, error_type)
            VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
@@ -94,8 +105,13 @@ pub async fn log_request_impl(pool: &PgPool, request: RequestLog) -> RepoResult<
     Ok(())
 }
 
-pub async fn get_account_health_impl(pool: &PgPool, account_id: &str) -> RepoResult<AccountHealth> {
-    let uuid = Uuid::parse_str(account_id).map_err(|e| RepositoryError::NotFound(e.to_string()))?;
+/// Get health metrics for an account.
+pub(crate) async fn get_account_health_impl(
+    pool: &PgPool,
+    account_id: &str,
+) -> RepoResult<AccountHealth> {
+    let uuid =
+        Uuid::parse_str(account_id).map_err(|err| RepositoryError::NotFound(err.to_string()))?;
     let row = sqlx::query("SELECT * FROM account_health WHERE id = $1")
         .bind(uuid)
         .fetch_optional(pool)
@@ -114,12 +130,14 @@ pub async fn get_account_health_impl(pool: &PgPool, account_id: &str) -> RepoRes
     })
 }
 
-pub async fn get_events_impl(
+/// Get recent events for an account.
+pub(crate) async fn get_events_impl(
     pool: &PgPool,
     account_id: &str,
     limit: i64,
 ) -> RepoResult<Vec<AccountEvent>> {
-    let uuid = Uuid::parse_str(account_id).map_err(|e| RepositoryError::NotFound(e.to_string()))?;
+    let uuid =
+        Uuid::parse_str(account_id).map_err(|err| RepositoryError::NotFound(err.to_string()))?;
     let rows = sqlx::query(
         "SELECT event_type, metadata, created_at FROM account_events WHERE account_id = $1 ORDER BY created_at DESC LIMIT $2",
     )
@@ -140,21 +158,22 @@ pub async fn get_events_impl(
         .collect())
 }
 
-pub async fn log_event_internal_impl(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+/// Log an event within a transaction.
+pub(crate) async fn log_event_internal_impl(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     account_id: String,
     event_type: AccountEventType,
     metadata: serde_json::Value,
 ) -> RepoResult<()> {
     let uuid =
-        Uuid::parse_str(&account_id).map_err(|e| RepositoryError::NotFound(e.to_string()))?;
+        Uuid::parse_str(&account_id).map_err(|err| RepositoryError::NotFound(err.to_string()))?;
     sqlx::query(
         "INSERT INTO account_events (account_id, event_type, metadata) VALUES ($1, $2, $3)",
     )
     .bind(uuid)
     .bind(event_type.as_str())
     .bind(metadata)
-    .execute(&mut **tx)
+    .execute(&mut **transaction)
     .await
     .map_err(map_sqlx_err)?;
     Ok(())

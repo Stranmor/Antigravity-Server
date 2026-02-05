@@ -30,13 +30,8 @@ fn test_simple_text_response() {
         response_id: Some("resp_123".to_string()),
     };
 
-    let result = transform_response(
-        &gemini_resp,
-        false,
-        1_000_000,
-        None,
-        "gemini-2.5-flash".to_string(),
-    );
+    let result =
+        transform_response(&gemini_resp, false, 1_000_000, None, "gemini-2.5-flash".to_string());
     assert!(result.is_ok());
 
     let claude_resp = result.unwrap();
@@ -47,7 +42,7 @@ fn test_simple_text_response() {
     match &claude_resp.content[0] {
         ContentBlock::Text { text } => {
             assert_eq!(text, "Hello, world!");
-        }
+        },
         _ => panic!("Expected Text block"),
     }
 }
@@ -86,34 +81,25 @@ fn test_thinking_with_signature() {
         response_id: Some("resp_456".to_string()),
     };
 
-    let result = transform_response(
-        &gemini_resp,
-        false,
-        1_000_000,
-        None,
-        "gemini-2.5-flash".to_string(),
-    );
+    let result =
+        transform_response(&gemini_resp, false, 1_000_000, None, "gemini-2.5-flash".to_string());
     assert!(result.is_ok());
 
     let claude_resp = result.unwrap();
     assert_eq!(claude_resp.content.len(), 2);
 
     match &claude_resp.content[0] {
-        ContentBlock::Thinking {
-            thinking,
-            signature,
-            ..
-        } => {
+        ContentBlock::Thinking { thinking, signature, .. } => {
             assert_eq!(thinking, "Let me think...");
             assert_eq!(signature.as_deref(), Some("sig123"));
-        }
+        },
         _ => panic!("Expected Thinking block"),
     }
 
     match &claude_resp.content[1] {
         ContentBlock::Text { text } => {
             assert_eq!(text, "The answer is 42");
-        }
+        },
         _ => panic!("Expected Text block"),
     }
 }

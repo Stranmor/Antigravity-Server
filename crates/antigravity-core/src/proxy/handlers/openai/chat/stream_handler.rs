@@ -51,7 +51,7 @@ where
             } else {
                 collect_to_json(combined_stream, email, mapped_model, reason).await
             }
-        }
+        },
         None => StreamResult::EmptyStream,
     }
 }
@@ -121,7 +121,7 @@ async fn collect_to_json(
         Ok(full_response) => {
             info!("[OpenAI] ✓ Stream collected and converted to JSON");
             StreamResult::JsonResponse(StatusCode::OK, email, mapped_model, reason, full_response)
-        }
+        },
         Err(e) => StreamResult::Retry(format!("Stream collection error: {}", e)),
     }
 }

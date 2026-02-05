@@ -38,11 +38,8 @@ pub async fn refresh_account_quota(
             }
             let _ = state.reload_accounts().await;
 
-            Ok(Json(QuotaResponse {
-                account_id: payload.account_id,
-                quota: Some(quota),
-            }))
-        }
+            Ok(Json(QuotaResponse { account_id: payload.account_id, quota: Some(quota) }))
+        },
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }
@@ -84,25 +81,21 @@ pub async fn refresh_all_quotas(
                     tracing::warn!("Quota protection update failed for {}: {}", account_id, e);
                 }
                 success += 1;
-            }
+            },
             Ok(Err(e)) => {
                 tracing::warn!("Quota refresh failed: {}", e);
                 failed += 1;
-            }
+            },
             Err(e) => {
                 tracing::error!("Task panicked: {}", e);
                 failed += 1;
-            }
+            },
         }
     }
 
     let _ = state.reload_accounts().await;
 
-    Ok(Json(antigravity_types::models::RefreshStats {
-        total,
-        success,
-        failed,
-    }))
+    Ok(Json(antigravity_types::models::RefreshStats { total, success, failed }))
 }
 
 #[derive(Deserialize)]
@@ -188,7 +181,7 @@ pub async fn warmup_account(
                 success: true,
                 message: format!("Account {} warmed up successfully", acc.email),
             }))
-        }
+        },
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }
 }
@@ -222,10 +215,7 @@ pub async fn warmup_all_accounts(
                 .await
                 .map_err(|e| format!("{}: {}", email, e))?;
 
-            Ok(WarmupResult {
-                account_id,
-                quota: acc.quota,
-            })
+            Ok(WarmupResult { account_id, quota: acc.quota })
         });
     }
 
@@ -243,15 +233,15 @@ pub async fn warmup_all_accounts(
                     .await;
                 }
                 success += 1;
-            }
+            },
             Ok(Err(e)) => {
                 tracing::warn!("Warmup failed: {}", e);
                 failed += 1;
-            }
+            },
             Err(e) => {
                 tracing::error!("Task panicked: {}", e);
                 failed += 1;
-            }
+            },
         }
     }
 

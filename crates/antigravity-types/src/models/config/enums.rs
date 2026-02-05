@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Proxy authentication mode.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ProxyAuthMode {
     /// No authentication required
@@ -20,11 +20,11 @@ pub enum ProxyAuthMode {
 
 impl fmt::Display for ProxyAuthMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ProxyAuthMode::Off => write!(f, "off"),
-            ProxyAuthMode::Strict => write!(f, "strict"),
-            ProxyAuthMode::AllExceptHealth => write!(f, "all_except_health"),
-            ProxyAuthMode::Auto => write!(f, "auto"),
+        match *self {
+            Self::Off => write!(f, "off"),
+            Self::Strict => write!(f, "strict"),
+            Self::AllExceptHealth => write!(f, "all_except_health"),
+            Self::Auto => write!(f, "auto"),
         }
     }
 }
@@ -33,16 +33,16 @@ impl ProxyAuthMode {
     /// Parse from string.
     pub fn from_string(s: &str) -> Self {
         match s {
-            "strict" => ProxyAuthMode::Strict,
-            "all_except_health" => ProxyAuthMode::AllExceptHealth,
-            "auto" => ProxyAuthMode::Auto,
-            _ => ProxyAuthMode::Off,
+            "strict" => Self::Strict,
+            "all_except_health" => Self::AllExceptHealth,
+            "auto" => Self::Auto,
+            _ => Self::Off,
         }
     }
 }
 
 /// Z.ai dispatch mode for routing requests.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ZaiDispatchMode {
     /// Z.ai disabled
@@ -58,26 +58,29 @@ pub enum ZaiDispatchMode {
 
 impl fmt::Display for ZaiDispatchMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ZaiDispatchMode::Off => write!(f, "off"),
-            ZaiDispatchMode::Exclusive => write!(f, "exclusive"),
-            ZaiDispatchMode::Pooled => write!(f, "pooled"),
-            ZaiDispatchMode::Fallback => write!(f, "fallback"),
+        match *self {
+            Self::Off => write!(f, "off"),
+            Self::Exclusive => write!(f, "exclusive"),
+            Self::Pooled => write!(f, "pooled"),
+            Self::Fallback => write!(f, "fallback"),
         }
     }
 }
 
 /// API protocol type.
-#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Protocol {
+    /// OpenAI ChatCompletions API format.
     #[default]
     OpenAI,
+    /// Anthropic Claude Messages API format.
     Anthropic,
+    /// Google Gemini GenerateContent API format.
     Gemini,
 }
 
 /// Account scheduling mode for sticky sessions.
-#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum SchedulingMode {
     /// Prioritize cache hits
     CacheFirst,
@@ -90,16 +93,16 @@ pub enum SchedulingMode {
 
 impl fmt::Display for SchedulingMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SchedulingMode::CacheFirst => write!(f, "CacheFirst"),
-            SchedulingMode::Balance => write!(f, "Balance"),
-            SchedulingMode::PerformanceFirst => write!(f, "PerformanceFirst"),
+        match *self {
+            Self::CacheFirst => write!(f, "CacheFirst"),
+            Self::Balance => write!(f, "Balance"),
+            Self::PerformanceFirst => write!(f, "PerformanceFirst"),
         }
     }
 }
 
 /// Upstream proxy mode for routing requests.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum UpstreamProxyMode {
     /// Direct connection (no proxy)

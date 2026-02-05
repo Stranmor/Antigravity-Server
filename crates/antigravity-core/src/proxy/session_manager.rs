@@ -44,7 +44,7 @@ impl SessionManager {
                     .filter_map(|block| match block {
                         crate::proxy::mappers::claude::models::ContentBlock::Text { text } => {
                             Some(text.as_str())
-                        }
+                        },
                         _ => None,
                     })
                     .collect::<Vec<_>>()

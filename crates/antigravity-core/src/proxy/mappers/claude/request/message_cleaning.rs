@@ -4,10 +4,7 @@ use super::super::models::{ContentBlock, Message, MessageContent};
 use serde_json::Value;
 
 pub fn clean_cache_control_from_messages(messages: &mut [Message]) {
-    tracing::info!(
-        "[DEBUG-593] Starting cache_control cleanup for {} messages",
-        messages.len()
-    );
+    tracing::info!("[DEBUG-593] Starting cache_control cleanup for {} messages", messages.len());
 
     let mut total_cleaned = 0;
 
@@ -26,7 +23,7 @@ pub fn clean_cache_control_from_messages(messages: &mut [Message]) {
                             *cache_control = None;
                             total_cleaned += 1;
                         }
-                    }
+                    },
                     ContentBlock::Image { cache_control, .. } => {
                         if cache_control.is_some() {
                             tracing::debug!(
@@ -37,7 +34,7 @@ pub fn clean_cache_control_from_messages(messages: &mut [Message]) {
                             *cache_control = None;
                             total_cleaned += 1;
                         }
-                    }
+                    },
                     ContentBlock::Document { cache_control, .. } => {
                         if cache_control.is_some() {
                             tracing::debug!(
@@ -48,7 +45,7 @@ pub fn clean_cache_control_from_messages(messages: &mut [Message]) {
                             *cache_control = None;
                             total_cleaned += 1;
                         }
-                    }
+                    },
                     ContentBlock::ToolUse { cache_control, .. } => {
                         if cache_control.is_some() {
                             tracing::debug!(
@@ -59,8 +56,8 @@ pub fn clean_cache_control_from_messages(messages: &mut [Message]) {
                             *cache_control = None;
                             total_cleaned += 1;
                         }
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
             }
         }
@@ -89,13 +86,13 @@ pub fn deep_clean_cache_control(value: &mut Value) {
             for (_, v) in map.iter_mut() {
                 deep_clean_cache_control(v);
             }
-        }
+        },
         Value::Array(arr) => {
             for item in arr.iter_mut() {
                 deep_clean_cache_control(item);
             }
-        }
-        _ => {}
+        },
+        _ => {},
     }
 }
 
@@ -127,14 +124,14 @@ pub fn sort_thinking_blocks_first(messages: &mut [Message]) {
                             if saw_non_thinking {
                                 needs_reorder = true;
                             }
-                        }
+                        },
                         ContentBlock::Text { .. } => {
                             saw_non_thinking = true;
-                        }
+                        },
                         ContentBlock::ToolUse { .. } => {
                             saw_non_thinking = true;
                             // Check if tool is after text (this is normal, but we want a strict group order)
-                        }
+                        },
                         _ => saw_non_thinking = true,
                     }
                 }
@@ -147,19 +144,19 @@ pub fn sort_thinking_blocks_first(messages: &mut [Message]) {
                             ContentBlock::Thinking { .. }
                             | ContentBlock::RedactedThinking { .. } => {
                                 thinking_blocks.push(block);
-                            }
+                            },
                             ContentBlock::Text { text } => {
                                 // Filter out purely empty or structural text like "(no content)"
                                 if !text.trim().is_empty() && text != "(no content)" {
                                     text_blocks.push(block);
                                 }
-                            }
+                            },
                             ContentBlock::ToolUse { .. } => {
                                 tool_blocks.push(block);
-                            }
+                            },
                             _ => {
                                 other_blocks.push(block);
-                            }
+                            },
                         }
                     }
 
@@ -201,20 +198,19 @@ pub fn merge_consecutive_messages(messages: &mut Vec<Message>) {
                 match (&mut current.content, next.content) {
                     (MessageContent::Array(current_blocks), MessageContent::Array(next_blocks)) => {
                         current_blocks.extend(next_blocks);
-                    }
+                    },
                     (MessageContent::Array(current_blocks), MessageContent::String(next_text)) => {
                         current_blocks.push(ContentBlock::Text { text: next_text });
-                    }
+                    },
                     (MessageContent::String(current_text), MessageContent::String(next_text)) => {
                         *current_text = format!("{}\n\n{}", current_text, next_text);
-                    }
+                    },
                     (MessageContent::String(current_text), MessageContent::Array(next_blocks)) => {
-                        let mut new_blocks = vec![ContentBlock::Text {
-                            text: current_text.clone(),
-                        }];
+                        let mut new_blocks =
+                            vec![ContentBlock::Text { text: current_text.clone() }];
                         new_blocks.extend(next_blocks);
                         current.content = MessageContent::Array(new_blocks);
-                    }
+                    },
                 }
             } else {
                 merged.push(current);

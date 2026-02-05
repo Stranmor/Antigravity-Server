@@ -5,8 +5,9 @@ use crate::app::AppState;
 use crate::formatters::{format_time_remaining, get_time_remaining_color};
 use leptos::prelude::*;
 
+/// Best accounts list showing top quota accounts.
 #[component]
-pub fn BestAccountsSection(
+pub(crate) fn BestAccountsSection(
     best_accounts: Memo<Vec<Account>>,
     on_switch_account: Callback<String>,
 ) -> impl IntoView {

@@ -25,11 +25,7 @@ pub fn build_google_content(
     existing_tool_result_ids: &std::collections::HashSet<String>,
     tool_name_to_schema: &HashMap<String, Value>,
 ) -> Result<Value, String> {
-    let role = if msg.role == "assistant" {
-        "model"
-    } else {
-        &msg.role
-    };
+    let role = if msg.role == "assistant" { "model" } else { &msg.role };
 
     // Proactive Tool Chain Repair:
     // If we are about to process an Assistant message, but we still have pending tool_use_ids,
@@ -41,7 +37,7 @@ pub fn build_google_content(
             pending_tool_use_ids
         );
 
-        let synthetic_parts: Vec<serde_json::Value> = pending_tool_use_ids
+        let synthetic_parts: Vec<Value> = pending_tool_use_ids
             .iter()
             .filter(|id| !existing_tool_result_ids.contains(*id))
             .map(|id| {
@@ -109,11 +105,9 @@ pub fn build_google_contents(
 ) -> Result<Value, String> {
     let mut contents = Vec::new();
     let mut last_thought_signature: Option<String> = None;
-    let mut _accumulated_usage: Option<Value> = None;
     let mut pending_tool_use_ids: Vec<String> = Vec::new();
     let mut last_user_task_text_normalized: Option<String> = None;
     let mut previous_was_tool_result = false;
-    let _msg_count = messages.len();
 
     // Pre-scan all messages to identify all tool_result IDs that ALREADY exist
     let mut existing_tool_result_ids = std::collections::HashSet::new();

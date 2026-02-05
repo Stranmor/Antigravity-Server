@@ -11,9 +11,7 @@ pub async fn switch_account(account_id: &str) -> Result<(), String> {
     use crate::modules::{oauth, process, vscode};
 
     let index = {
-        let _lock = ACCOUNT_INDEX_LOCK
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
+        let _lock = ACCOUNT_INDEX_LOCK.lock().map_err(|e| format!("Lock error: {}", e))?;
         load_account_index()?
     };
 
@@ -23,10 +21,7 @@ pub async fn switch_account(account_id: &str) -> Result<(), String> {
 
     let account_id_owned = account_id.to_string();
     let mut account = load_account_async(account_id_owned.clone()).await?;
-    logger::log_info(&format!(
-        "Switching to account: {} (ID: {})",
-        account.email, account.id
-    ));
+    logger::log_info(&format!("Switching to account: {} (ID: {})", account.email, account.id));
 
     let fresh_token = oauth::ensure_fresh_token(&account.token)
         .await
@@ -74,9 +69,7 @@ pub async fn switch_account(account_id: &str) -> Result<(), String> {
     {
         let account_id_str = account_id_owned.clone();
         tokio::task::spawn_blocking(move || {
-            let _lock = ACCOUNT_INDEX_LOCK
-                .lock()
-                .map_err(|e| format!("Lock error: {}", e))?;
+            let _lock = ACCOUNT_INDEX_LOCK.lock().map_err(|e| format!("Lock error: {}", e))?;
             let mut index = load_account_index()?;
             index.current_account_id = Some(account_id_str);
             save_account_index(&index)

@@ -19,9 +19,7 @@ pub async fn handle_grace_retry(
     trace_id: &str,
 ) -> Option<bool> {
     if status_code == 429 && !grace_retry_used {
-        let reason = token_manager
-            .rate_limit_tracker()
-            .parse_rate_limit_reason(error_text);
+        let reason = token_manager.rate_limit_tracker().parse_rate_limit_reason(error_text);
         if reason == RateLimitReason::RateLimitExceeded {
             info!(
                 "[{}] 🔄 Grace retry: RATE_LIMIT_EXCEEDED on {}, waiting 1s before retry on same account",
@@ -46,10 +44,7 @@ pub async fn handle_service_disabled(
             || error_text.contains("Permission denied on resource project")
             || error_text.contains("verify your account"))
     {
-        warn!(
-            "[OpenAI] 🚫 Account {} needs verification or has project issue. 1h lockout.",
-            email
-        );
+        warn!("[OpenAI] 🚫 Account {} needs verification or has project issue. 1h lockout.", email);
         token_manager.rate_limit_tracker().set_lockout_until(
             email,
             SystemTime::now() + Duration::from_secs(3600),
@@ -79,13 +74,7 @@ pub async fn handle_rate_limit_errors(
 ) -> ErrorAction {
     if status_code == 429 || status_code == 529 || status_code == 503 || status_code == 500 {
         token_manager
-            .mark_rate_limited_async(
-                email,
-                status_code,
-                retry_after,
-                error_text,
-                Some(final_model),
-            )
+            .mark_rate_limited_async(email, status_code, retry_after, error_text, Some(final_model))
             .await;
 
         if status_code == 429 {

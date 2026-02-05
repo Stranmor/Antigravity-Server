@@ -31,9 +31,7 @@ pub fn analyze_conversation_state(messages: &[Message]) -> ConversationState {
     let has_tool_use = if let Some(idx) = state.last_assistant_idx {
         if let Some(msg) = messages.get(idx) {
             if let MessageContent::Array(blocks) = &msg.content {
-                blocks
-                    .iter()
-                    .any(|b| matches!(b, ContentBlock::ToolUse { .. }))
+                blocks.iter().any(|b| matches!(b, ContentBlock::ToolUse { .. }))
             } else {
                 false
             }
@@ -53,10 +51,7 @@ pub fn analyze_conversation_state(messages: &[Message]) -> ConversationState {
         if last_msg.role == "user" {
             if let MessageContent::Array(blocks) = &last_msg.content {
                 // Case 1: Final message is ToolResult -> Active Tool Loop
-                if blocks
-                    .iter()
-                    .any(|b| matches!(b, ContentBlock::ToolResult { .. }))
-                {
+                if blocks.iter().any(|b| matches!(b, ContentBlock::ToolResult { .. })) {
                     state.in_tool_loop = true;
                     debug!(
                         "[Thinking-Recovery] Active tool loop detected (last msg is ToolResult)."
@@ -96,12 +91,7 @@ pub fn close_tool_loop_for_thinking(messages: &mut Vec<Message>) {
         if let Some(msg) = messages.get(idx) {
             if let MessageContent::Array(blocks) = &msg.content {
                 for block in blocks {
-                    if let ContentBlock::Thinking {
-                        thinking,
-                        signature,
-                        ..
-                    } = block
-                    {
+                    if let ContentBlock::Thinking { thinking, signature, .. } = block {
                         if !thinking.is_empty()
                             && signature
                                 .as_ref()
@@ -207,11 +197,9 @@ pub fn filter_invalid_thinking_blocks_with_family(
                 true
             });
 
-            // SAFETY: Claude API requires at least one block
+            // Claude API requires at least one block - add placeholder if all were stripped
             if blocks.is_empty() && original_len > 0 {
-                blocks.push(ContentBlock::Text {
-                    text: ".".to_string(),
-                });
+                blocks.push(ContentBlock::Text { text: ".".to_string() });
             }
         }
     }
@@ -227,11 +215,7 @@ pub fn filter_invalid_thinking_blocks_with_family(
 /// Check if a thinking block has a valid signature
 pub fn has_valid_signature(block: &ContentBlock) -> bool {
     match block {
-        ContentBlock::Thinking {
-            signature,
-            thinking,
-            ..
-        } => {
+        ContentBlock::Thinking { signature, thinking, .. } => {
             // Empty thinking + any signature = valid (trailing signature case)
             if thinking.is_empty() && signature.is_some() {
                 return true;
@@ -241,10 +225,7 @@ pub fn has_valid_signature(block: &ContentBlock) -> bool {
             if let Some(sig) = signature {
                 // Check length
                 if sig.len() < MIN_SIGNATURE_LENGTH {
-                    debug!(
-                        "[Signature-Validation] Signature too short: {} chars",
-                        sig.len()
-                    );
+                    debug!("[Signature-Validation] Signature too short: {} chars", sig.len());
                     return false;
                 }
 
@@ -266,7 +247,7 @@ pub fn has_valid_signature(block: &ContentBlock) -> bool {
                 // No signature
                 false
             }
-        }
+        },
         _ => true, // Non-thinking blocks are valid by default
     }
 }
@@ -287,7 +268,7 @@ pub fn remove_trailing_unsigned_thinking(blocks: &mut Vec<ContentBlock>) {
                 } else {
                     break; // Found valid signed thinking block, stop
                 }
-            }
+            },
             _ => break, // Non-thinking block, stop
         }
     }

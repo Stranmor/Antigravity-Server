@@ -3,11 +3,10 @@
 //! Ported from upstream v4.0.3 — caches cleaned JSON schemas to avoid
 //! repeated expensive transformations.
 
-use once_cell::sync::Lazy;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{LazyLock, RwLock};
 use std::time::Instant;
 
 /// Cache entry containing the cleaned schema and metadata.
@@ -48,10 +47,7 @@ impl CacheStats {
 
 impl SchemaCache {
     fn new() -> Self {
-        Self {
-            cache: HashMap::new(),
-            stats: CacheStats::default(),
-        }
+        Self { cache: HashMap::new(), stats: CacheStats::default() }
     }
 
     /// Get cached entry, updating stats and access time.
@@ -76,11 +72,7 @@ impl SchemaCache {
             self.evict_lru();
         }
 
-        let entry = CacheEntry {
-            schema,
-            last_used: Instant::now(),
-            hit_count: 0,
-        };
+        let entry = CacheEntry { schema, last_used: Instant::now(), hit_count: 0 };
         self.cache.insert(key, entry);
     }
 
@@ -90,11 +82,8 @@ impl SchemaCache {
             return;
         }
 
-        let oldest_key = self
-            .cache
-            .iter()
-            .min_by_key(|(_, entry)| entry.last_used)
-            .map(|(key, _)| key.clone());
+        let oldest_key =
+            self.cache.iter().min_by_key(|(_, entry)| entry.last_used).map(|(key, _)| key.clone());
 
         if let Some(key) = oldest_key {
             self.cache.remove(&key);
@@ -112,7 +101,8 @@ impl SchemaCache {
 }
 
 /// Global schema cache instance.
-static SCHEMA_CACHE: Lazy<RwLock<SchemaCache>> = Lazy::new(|| RwLock::new(SchemaCache::new()));
+static SCHEMA_CACHE: LazyLock<RwLock<SchemaCache>> =
+    LazyLock::new(|| RwLock::new(SchemaCache::new()));
 
 /// Compute SHA-256 hash of schema (first 16 hex chars).
 fn compute_schema_hash(schema: &Value) -> String {
@@ -152,10 +142,7 @@ pub fn clean_json_schema_cached(schema: &mut Value, tool_name: &str) {
 
 /// Get current cache statistics.
 pub fn get_cache_stats() -> CacheStats {
-    SCHEMA_CACHE
-        .read()
-        .map(|cache| cache.stats())
-        .unwrap_or_default()
+    SCHEMA_CACHE.read().map(|cache| cache.stats()).unwrap_or_default()
 }
 
 /// Clear the schema cache.
@@ -201,11 +188,7 @@ mod tests {
         clean_json_schema_cached(&mut schema2, tool_name);
 
         let stats = get_cache_stats();
-        assert!(
-            stats.cache_hits > 0,
-            "Expected cache hits, got: {:?}",
-            stats
-        );
+        assert!(stats.cache_hits > 0, "Expected cache hits, got: {:?}", stats);
         assert!(stats.hit_rate() > 0.0);
     }
 

@@ -22,10 +22,10 @@ pub async fn save_config(
     Json(payload): Json<AppConfig>,
 ) -> Result<Json<bool>, (StatusCode, String)> {
     match core_config::save_config(&payload) {
-        Ok(_) => {
+        Ok(()) => {
             state.hot_reload_proxy_config().await;
             Ok(Json(true))
-        }
+        },
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
     }
 }
@@ -54,8 +54,5 @@ pub async fn merge_remote_mapping(
     let updated = state.merge_remote_mapping(&payload.mapping).await;
     let total = state.get_syncable_mapping().await.len();
 
-    Json(MergeMappingResponse {
-        updated_count: updated,
-        total_count: total,
-    })
+    Json(MergeMappingResponse { updated_count: updated, total_count: total })
 }

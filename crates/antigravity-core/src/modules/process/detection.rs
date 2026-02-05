@@ -6,9 +6,7 @@ use sysinfo::System;
 
 /// Get the canonicalized path of the current executable.
 pub(crate) fn get_current_exe_path() -> Option<std::path::PathBuf> {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.canonicalize().ok())
+    std::env::current_exe().ok().and_then(|p| p.canonicalize().ok())
 }
 
 /// Check if a process is a helper/auxiliary process based on name and args.
@@ -46,11 +44,7 @@ pub fn is_antigravity_running() -> bool {
         }
 
         let name = process.name().to_string_lossy().to_lowercase();
-        let exe_path = process
-            .exe()
-            .and_then(|p| p.to_str())
-            .unwrap_or("")
-            .to_lowercase();
+        let exe_path = process.exe().and_then(|p| p.to_str()).unwrap_or("").to_lowercase();
 
         // Exclude self path (handles case where manager is mistaken for Antigravity on Linux)
         if let (Some(ref my_path), Some(p_exe)) = (&current_exe, process.exe()) {
@@ -73,9 +67,8 @@ pub fn is_antigravity_running() -> bool {
                     {
                         if m_path_str[..m_idx + 4] == p_path_str[..p_idx + 4] {
                             let args = process.cmd();
-                            let is_helper_by_args = args
-                                .iter()
-                                .any(|arg| arg.to_string_lossy().contains("--type="));
+                            let is_helper_by_args =
+                                args.iter().any(|arg| arg.to_string_lossy().contains("--type="));
                             let is_helper_by_name = name.contains("helper")
                                 || name.contains("plugin")
                                 || name.contains("renderer")

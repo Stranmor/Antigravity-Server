@@ -16,7 +16,6 @@ antigravity-types = { path = "../crates/antigravity-types" }
 
 # Web Framework
 axum = { version = "0.7", features = ["macros", "multipart"] }
-tower = "0.4"
 tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
 
 # Async Runtime
@@ -32,7 +31,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Error Handling
 anyhow = "1"
-thiserror = "2"
 
 # CLI
 clap = { version = "4", features = ["derive", "env", "wrap_help"] }
@@ -45,9 +43,6 @@ rand.workspace = true
 dashmap = "6"
 hostname = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-
-# Database (PostgreSQL)
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json"] }
 
 # Socket activation (systemd fd handoff)
 listenfd = "1"

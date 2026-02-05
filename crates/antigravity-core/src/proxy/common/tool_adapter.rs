@@ -14,9 +14,8 @@ pub trait ToolAdapter: Send + Sync {
 
 pub fn append_hint_to_schema(schema: &mut Value, hint: &str) {
     if let Value::Object(map) = schema {
-        let desc_val = map
-            .entry("description".to_string())
-            .or_insert_with(|| Value::String(String::new()));
+        let desc_val =
+            map.entry("description".to_string()).or_insert_with(|| Value::String(String::new()));
 
         if let Value::String(s) = desc_val {
             if s.is_empty() {

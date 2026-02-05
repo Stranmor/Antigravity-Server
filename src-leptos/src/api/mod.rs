@@ -16,38 +16,33 @@ use web_sys::{Request, RequestInit, Response};
 const API_BASE: &str = "/api";
 const API_KEY_STORAGE_KEY: &str = "antigravity_api_key";
 
-/// Get API key from localStorage
-pub fn get_stored_api_key() -> Option<String> {
+pub(crate) fn get_stored_api_key() -> Option<String> {
     let window = web_sys::window()?;
     let storage = window.local_storage().ok()??;
     storage.get_item(API_KEY_STORAGE_KEY).ok()?
 }
 
-/// Store API key in localStorage
-pub fn set_stored_api_key(key: &str) {
+pub(crate) fn set_stored_api_key(key: &str) {
     if let Some(window) = web_sys::window() {
         if let Ok(Some(storage)) = window.local_storage() {
-            let _ = storage.set_item(API_KEY_STORAGE_KEY, key);
+            drop(storage.set_item(API_KEY_STORAGE_KEY, key));
         }
     }
 }
 
-/// Remove API key from localStorage
-pub fn clear_stored_api_key() {
+pub(crate) fn clear_stored_api_key() {
     if let Some(window) = web_sys::window() {
         if let Ok(Some(storage)) = window.local_storage() {
-            let _ = storage.remove_item(API_KEY_STORAGE_KEY);
+            drop(storage.remove_item(API_KEY_STORAGE_KEY));
         }
     }
 }
 
-/// Check if user is authenticated (has API key stored)
-pub fn is_authenticated() -> bool {
+pub(crate) fn is_authenticated() -> bool {
     get_stored_api_key().is_some()
 }
 
-/// Make a GET request to the API
-pub async fn api_get<R: DeserializeOwned>(endpoint: &str) -> Result<R, String> {
+pub(crate) async fn api_get<R: DeserializeOwned>(endpoint: &str) -> Result<R, String> {
     let url = format!("{}{}", API_BASE, endpoint);
 
     let opts = RequestInit::new();
@@ -73,7 +68,8 @@ pub async fn api_get<R: DeserializeOwned>(endpoint: &str) -> Result<R, String> {
         .await
         .map_err(|e| format!("Fetch failed: {:?}", e))?;
 
-    let resp: Response = resp_value.dyn_into().map_err(|_| "Response is not a Response")?;
+    let resp: Response =
+        resp_value.dyn_into().map_err(|e| format!("Response cast failed: {e:?}"))?;
 
     if resp.status() == 401 {
         return Err("Unauthorized".to_string());
@@ -90,8 +86,7 @@ pub async fn api_get<R: DeserializeOwned>(endpoint: &str) -> Result<R, String> {
     serde_wasm_bindgen::from_value(json).map_err(|e| format!("Deserialize failed: {}", e))
 }
 
-/// Make a POST request to the API
-pub async fn api_post<A: Serialize, R: DeserializeOwned>(
+pub(crate) async fn api_post<A: Serialize, R: DeserializeOwned>(
     endpoint: &str,
     body: &A,
 ) -> Result<R, String> {
@@ -124,7 +119,8 @@ pub async fn api_post<A: Serialize, R: DeserializeOwned>(
         .await
         .map_err(|e| format!("Fetch failed: {:?}", e))?;
 
-    let resp: Response = resp_value.dyn_into().map_err(|_| "Response is not a Response")?;
+    let resp: Response =
+        resp_value.dyn_into().map_err(|e| format!("Response cast failed: {e:?}"))?;
 
     if resp.status() == 401 {
         return Err("Unauthorized".to_string());
@@ -141,16 +137,13 @@ pub async fn api_post<A: Serialize, R: DeserializeOwned>(
     serde_wasm_bindgen::from_value(json).map_err(|e| format!("Deserialize failed: {}", e))
 }
 
-// Re-export command wrappers
-pub mod commands {
-    pub use super::accounts::*;
-    pub use super::config::*;
-    pub use super::proxy::*;
-    pub use super::system::*;
+pub(crate) mod commands {
+    pub(crate) use super::accounts::*;
+    pub(crate) use super::config::*;
+    pub(crate) use super::proxy::*;
+    pub(crate) use super::system::*;
 }
 
-pub mod auth {
-    pub use super::{
-        clear_stored_api_key, get_stored_api_key, is_authenticated, set_stored_api_key,
-    };
+pub(crate) mod auth {
+    pub(crate) use super::{clear_stored_api_key, is_authenticated, set_stored_api_key};
 }

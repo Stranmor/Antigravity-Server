@@ -1,3 +1,5 @@
+//! PostgreSQL implementation of the account repository.
+
 use crate::models::{Account, QuotaData, TokenData};
 use crate::modules::account_pg_crud::{
     create_account_impl, delete_account_impl, delete_accounts_impl, update_account_impl,
@@ -17,19 +19,24 @@ use async_trait::async_trait;
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::time::Duration;
 
+/// PostgreSQL-backed account repository.
 pub struct PostgresAccountRepository {
+    /// Database connection pool.
     pool: PgPool,
 }
 
 impl PostgresAccountRepository {
+    /// Create repository with existing pool.
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 
+    /// Get reference to the connection pool.
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }
 
+    /// Connect to database and create repository.
     pub async fn connect(database_url: &str) -> Result<Self, sqlx::Error> {
         let pool = PgPoolOptions::new()
             .max_connections(20)
@@ -41,11 +48,12 @@ impl PostgresAccountRepository {
         Ok(Self::new(pool))
     }
 
+    /// Run database migrations.
     pub async fn run_migrations(&self) -> RepoResult<()> {
         sqlx::migrate!("./migrations")
             .run(&self.pool)
             .await
-            .map_err(|e| RepositoryError::Database(e.to_string()))
+            .map_err(|err| RepositoryError::Database(err.to_string()))
     }
 }
 

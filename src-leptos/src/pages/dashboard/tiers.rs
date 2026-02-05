@@ -3,8 +3,9 @@
 use crate::api_models::DashboardStats;
 use leptos::prelude::*;
 
+/// Tier breakdown section showing account distribution.
 #[component]
-pub fn TierSection(stats: Memo<DashboardStats>) -> impl IntoView {
+pub(crate) fn TierSection(stats: Memo<DashboardStats>) -> impl IntoView {
     view! {
         <section class="tier-section">
             <h2>"Account Tiers"</h2>
@@ -30,8 +31,9 @@ pub fn TierSection(stats: Memo<DashboardStats>) -> impl IntoView {
     }
 }
 
+/// Quick actions section with navigation links.
 #[component]
-pub fn QuickActionsSection() -> impl IntoView {
+pub(crate) fn QuickActionsSection() -> impl IntoView {
     view! {
         <section class="quick-actions">
             <h2>"Quick Actions"</h2>

@@ -24,24 +24,27 @@ pub async fn prepare_request(
     trace_id: &str,
     retried_without_thinking: bool,
 ) -> Result<PreparedRequest, Response> {
-    let (mut mapped_model, _reason) = crate::proxy::common::resolve_model_route(
+    let (mut mapped_model, _reason) = match crate::proxy::common::resolve_model_route(
         &request_for_body.model,
         &*state.custom_mapping.read().await,
-    );
+    ) {
+        Ok(result) => result,
+        Err(e) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": {"message": e, "type": "invalid_request_error"}})),
+            )
+                .into_response())
+        },
+    };
 
-    let tools_val: Option<Vec<Value>> = request_for_body.tools.as_ref().map(|list| {
-        list.iter()
-            .map(|t| serde_json::to_value(t).unwrap_or(json!({})))
-            .collect()
-    });
+    let tools_val: Option<Vec<Value>> = request_for_body
+        .tools
+        .as_ref()
+        .map(|list| list.iter().map(|t| serde_json::to_value(t).unwrap_or(json!({}))).collect());
 
-    let _config = resolve_request_config(
-        &request_for_body.model,
-        &mapped_model,
-        &tools_val,
-        None,
-        None,
-    );
+    let _config =
+        resolve_request_config(&request_for_body.model, &mapped_model, &tools_val, None, None);
 
     let background_task_type = detect_background_task_type(request_for_body);
     let mut request_with_mapped = request_for_body.clone();
@@ -73,7 +76,7 @@ pub async fn prepare_request(
                 serde_json::to_string_pretty(&b).unwrap_or_default()
             );
             b
-        }
+        },
         Err(e) => {
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -86,12 +89,8 @@ pub async fn prepare_request(
                 })),
             )
                 .into_response());
-        }
+        },
     };
 
-    Ok(PreparedRequest {
-        mapped_model,
-        request_with_mapped,
-        gemini_body,
-    })
+    Ok(PreparedRequest { mapped_model, request_with_mapped, gemini_body })
 }

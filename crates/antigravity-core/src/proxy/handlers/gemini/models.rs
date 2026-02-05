@@ -20,7 +20,7 @@ pub async fn handle_list_models(
                 "name": format!("models/{}", id),
                 "version": "001",
                 "displayName": id.clone(),
-                "inputTokenLimit": 1048576,
+                "inputTokenLimit": 1_048_576,
                 "outputTokenLimit": 65536,
                 "supportedGenerationMethods": ["generateContent", "countTokens"]
             })
@@ -42,11 +42,6 @@ pub async fn handle_count_tokens(
         .token_manager
         .get_token("gemini", false, None, "gemini")
         .await
-        .map_err(|e| {
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                format!("Token error: {}", e),
-            )
-        })?;
+        .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, format!("Token error: {}", e)))?;
     Ok(Json(json!({"totalTokens": 0})))
 }

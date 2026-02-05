@@ -20,7 +20,8 @@ pub use config::{
 pub use device::{DeviceProfile, DeviceProfileVersion, DeviceProfiles};
 pub use quota::{ModelQuota, QuotaData};
 pub use stats::{
-    DashboardStats, ProxyRequestLog, ProxyStats, ProxyStatus, RefreshStats, UpdateInfo,
+    DashboardStats, ProxyRequestLog, ProxyStats, ProxyStatus, RefreshStats, TokenUsageStats,
+    UpdateInfo,
 };
 pub use sync::{MappingEntry, SyncableMapping};
 pub use token::TokenData;

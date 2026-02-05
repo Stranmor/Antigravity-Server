@@ -34,9 +34,8 @@ fn get_process_info() -> (Option<std::path::PathBuf>, Option<Vec<String>>) {
                 .map_or(exe.to_string_lossy(), |arg| arg.to_string_lossy())
                 .to_lowercase();
 
-            let args = args
-                .map(|arg| arg.to_string_lossy().to_lowercase())
-                .collect::<Vec<String>>();
+            let args =
+                args.map(|arg| arg.to_string_lossy().to_lowercase()).collect::<Vec<String>>();
 
             let args_str = args.join(" ");
 

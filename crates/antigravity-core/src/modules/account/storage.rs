@@ -61,7 +61,7 @@ pub fn list_accounts() -> Result<Vec<Account>, String> {
                 {
                     invalid_ids.push(summary.id.clone());
                 }
-            }
+            },
         }
     }
 

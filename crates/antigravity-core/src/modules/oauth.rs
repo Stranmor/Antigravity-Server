@@ -49,11 +49,14 @@ impl UserInfo {
 
 /// Generate OAuth authorization URL
 pub fn get_auth_url(redirect_uri: &str) -> String {
-    get_auth_url_with_state(redirect_uri, "")
+    get_auth_url_with_state(redirect_uri, "").unwrap_or_else(|e| {
+        // This should never fail with empty state, but handle gracefully
+        format!("error: {e}")
+    })
 }
 
 /// Generate OAuth authorization URL with optional state parameter for CSRF protection
-pub fn get_auth_url_with_state(redirect_uri: &str, state: &str) -> String {
+pub fn get_auth_url_with_state(redirect_uri: &str, state: &str) -> Result<String, String> {
     let scopes = [
         "https://www.googleapis.com/auth/cloud-platform",
         "https://www.googleapis.com/auth/userinfo.email",
@@ -77,8 +80,9 @@ pub fn get_auth_url_with_state(redirect_uri: &str, state: &str) -> String {
         params.push(("state", state));
     }
 
-    let url = url::Url::parse_with_params(AUTH_URL, &params).expect("Invalid Auth URL");
-    url.to_string()
+    let url = url::Url::parse_with_params(AUTH_URL, &params)
+        .map_err(|e| format!("Invalid Auth URL: {e}"))?;
+    Ok(url.to_string())
 }
 
 /// Exchange Authorization Code for Token
@@ -110,11 +114,7 @@ pub async fn exchange_code(code: &str, redirect_uri: &str) -> Result<TokenRespon
         crate::modules::logger::log_info(&format!(
             "Token exchange successful! access_token: {}..., refresh_token: {}",
             &token_res.access_token.chars().take(20).collect::<String>(),
-            if token_res.refresh_token.is_some() {
-                "✓"
-            } else {
-                "✗ missing"
-            }
+            if token_res.refresh_token.is_some() { "✓" } else { "✗ missing" }
         ));
 
         // If refresh_token is missing, log warning
@@ -183,10 +183,7 @@ pub async fn get_user_info(access_token: &str) -> Result<UserInfo, String> {
         .map_err(|e| format!("User info request failed: {}", e))?;
 
     if response.status().is_success() {
-        response
-            .json::<UserInfo>()
-            .await
-            .map_err(|e| format!("User info parse failed: {}", e))
+        response.json::<UserInfo>().await.map_err(|e| format!("User info parse failed: {}", e))
     } else {
         let error_text = response.text().await.unwrap_or_default();
         Err(format!("Failed to get user info: {}", error_text))

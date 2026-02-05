@@ -3,13 +3,11 @@
 
 mod chat;
 mod completions;
-mod images;
 mod models;
 mod responses_format;
 
 pub use chat::handle_chat_completions;
 pub use completions::handle_completions;
-pub use images::{handle_images_edits, handle_images_generations};
 pub use models::handle_list_models;
 
 // Shared imports for submodules

@@ -3,7 +3,7 @@
 use leptos::prelude::*;
 
 #[component]
-pub fn Pagination(
+pub(crate) fn Pagination(
     #[prop(into)] current_page: Signal<usize>,
     #[prop(into)] total_pages: Signal<usize>,
     #[prop(into)] total_items: Signal<usize>,

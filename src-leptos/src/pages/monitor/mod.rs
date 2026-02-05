@@ -1,7 +1,7 @@
 //! Monitor page - Real-time request logging with detailed view
 
-mod formatters;
-mod log_detail;
+pub(crate) mod formatters;
+pub(crate) mod log_detail;
 
 use crate::api::commands;
 use crate::api_models::{ProxyRequestLog, ProxyStats};
@@ -12,8 +12,9 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use log_detail::LogDetailModal;
 
+/// Monitor page for real-time request logging.
 #[component]
-pub fn Monitor() -> impl IntoView {
+pub(crate) fn Monitor() -> impl IntoView {
     let state = expect_context::<AppState>();
 
     let logs = RwSignal::new(Vec::<ProxyRequestLog>::new());
@@ -63,9 +64,7 @@ pub fn Monitor() -> impl IntoView {
                 .filter(|l| {
                     l.url.to_lowercase().contains(&query)
                         || l.method.to_lowercase().contains(&query)
-                        || l.model
-                            .as_ref()
-                            .is_some_and(|m| m.to_lowercase().contains(&query))
+                        || l.model.as_ref().is_some_and(|m| m.to_lowercase().contains(&query))
                         || l.status.to_string().contains(&query)
                 })
                 .collect()
@@ -277,10 +276,17 @@ pub fn Monitor() -> impl IntoView {
             </div>
 
             <Show when=move || selected_log.get().is_some()>
-                <LogDetailModal
-                    log=selected_log.get().unwrap()
-                    on_close=move || selected_log.set(None)
-                />
+                {move || {
+                    let Some(log) = selected_log.get() else {
+                        return view! { <div></div> }.into_any();
+                    };
+                    view! {
+                        <LogDetailModal
+                            log=log
+                            on_close=move || selected_log.set(None)
+                        />
+                    }.into_any()
+                }}
             </Show>
         </div>
     }

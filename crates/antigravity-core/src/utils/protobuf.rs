@@ -38,20 +38,20 @@ pub fn skip_field(data: &[u8], offset: usize, wire_type: u8) -> Result<usize, St
             // Varint
             let (_, new_offset) = read_varint(data, offset)?;
             Ok(new_offset)
-        }
+        },
         1 => {
             // 64-bit
             Ok(offset + 8)
-        }
+        },
         2 => {
             // Length-delimited
             let (length, content_offset) = read_varint(data, offset)?;
             Ok(content_offset + length as usize)
-        }
+        },
         5 => {
             // 32-bit
             Ok(offset + 4)
-        }
+        },
         _ => Err(format!("Unknown wire_type: {}", wire_type)),
     }
 }
@@ -96,9 +96,7 @@ pub fn find_field(data: &[u8], target_field: u32) -> Result<Option<Vec<u8>>, Str
 
         if field_num == target_field && wire_type == 2 {
             let (length, content_offset) = read_varint(data, new_offset)?;
-            return Ok(Some(
-                data[content_offset..content_offset + length as usize].to_vec(),
-            ));
+            return Ok(Some(data[content_offset..content_offset + length as usize].to_vec()));
         }
 
         // skipfield

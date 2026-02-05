@@ -1,11 +1,11 @@
 //! Settings page
 
-mod about;
-mod general;
-mod proxy;
-mod quota_protection;
-mod quota_refresh;
-mod warmup;
+pub(crate) mod about;
+pub(crate) mod general;
+pub(crate) mod proxy;
+pub(crate) mod quota_protection;
+pub(crate) mod quota_refresh;
+pub(crate) mod warmup;
 
 use about::{AboutSection, DataStorageSettings, MaintenanceSection};
 use general::GeneralSettings;
@@ -21,8 +21,9 @@ use crate::components::{Button, ButtonVariant};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
+/// Settings page for application configuration.
 #[component]
-pub fn Settings() -> impl IntoView {
+pub(crate) fn Settings() -> impl IntoView {
     let state = expect_context::<AppState>();
 
     let saving = RwSignal::new(false);
@@ -74,7 +75,7 @@ pub fn Settings() -> impl IntoView {
                         show_message("You're up to date!".to_string(), false);
                     }
                     update_info.set(Some(info));
-                }
+                },
                 Err(e) => show_message(format!("Check failed: {}", e), true),
             }
             checking_update.set(false);
@@ -112,12 +113,14 @@ pub fn Settings() -> impl IntoView {
 
             <Show when=move || message.get().is_some()>
                 {move || {
-                    let (msg, is_error) = message.get().unwrap();
+                    let Some((msg, is_error)) = message.get() else {
+                        return view! { <div></div> }.into_any();
+                    };
                     view! {
                         <div class=format!("alert {}", if is_error { "alert--error" } else { "alert--success" })>
                             <span>{msg}</span>
                         </div>
-                    }
+                    }.into_any()
                 }}
             </Show>
 

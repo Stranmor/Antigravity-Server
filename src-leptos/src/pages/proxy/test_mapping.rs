@@ -2,8 +2,9 @@ use super::actions::on_test_mapping;
 use super::state::ProxyState;
 use leptos::prelude::*;
 
+/// Test mapping section for verifying model routing.
 #[component]
-pub fn TestMapping(ps: ProxyState) -> impl IntoView {
+pub(crate) fn TestMapping(ps: ProxyState) -> impl IntoView {
     let test_mapping_expanded = ps.test_mapping_expanded;
     let test_model_input = ps.test_model_input;
     let test_loading = ps.test_loading;
@@ -52,7 +53,9 @@ pub fn TestMapping(ps: ProxyState) -> impl IntoView {
 
                     <Show when=move || test_result.get().is_some()>
                         {move || {
-                            let res = test_result.get().unwrap();
+                            let Some(res) = test_result.get() else {
+                                return view! { <div></div> }.into_any();
+                            };
                             view! {
                                 <div class="config-section" style="margin-top: 1rem; padding: 1rem; background: var(--bg-secondary); border-radius: 8px;">
                                     <div class="result-row" style="margin-bottom: 0.5rem; display: flex; justify-content: space-between;">
@@ -64,7 +67,7 @@ pub fn TestMapping(ps: ProxyState) -> impl IntoView {
                                         <span class="value">{res.mapping_reason}</span>
                                     </div>
                                 </div>
-                            }
+                            }.into_any()
                         }}
                     </Show>
                 </div>

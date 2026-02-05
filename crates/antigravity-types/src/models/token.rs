@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// OAuth token data.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TokenData {
     /// OAuth access token
     pub access_token: String,
@@ -36,7 +36,7 @@ impl TokenData {
         project_id: Option<String>,
         session_id: Option<String>,
     ) -> Self {
-        let expiry_timestamp = chrono::Utc::now().timestamp() + expires_in;
+        let expiry_timestamp = chrono::Utc::now().timestamp().saturating_add(expires_in);
         Self {
             access_token,
             refresh_token,
@@ -56,12 +56,12 @@ impl TokenData {
 
     /// Check if the token will expire within the given seconds.
     pub fn expires_within(&self, seconds: i64) -> bool {
-        chrono::Utc::now().timestamp() + seconds >= self.expiry_timestamp
+        chrono::Utc::now().timestamp().saturating_add(seconds) >= self.expiry_timestamp
     }
 
     /// Get remaining validity in seconds (0 if already expired).
     pub fn remaining_seconds(&self) -> i64 {
-        let remaining = self.expiry_timestamp - chrono::Utc::now().timestamp();
+        let remaining = self.expiry_timestamp.saturating_sub(chrono::Utc::now().timestamp());
         remaining.max(0)
     }
 }
@@ -72,14 +72,8 @@ mod tests {
 
     #[test]
     fn test_token_expiry_check() {
-        let token = TokenData::new(
-            "access".to_string(),
-            "refresh".to_string(),
-            3600,
-            None,
-            None,
-            None,
-        );
+        let token =
+            TokenData::new("access".to_string(), "refresh".to_string(), 3600, None, None, None);
 
         assert!(!token.is_expired());
         assert!(token.expires_within(3601));

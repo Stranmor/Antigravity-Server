@@ -18,11 +18,7 @@ impl ActiveRequestGuard {
             .entry(key.clone())
             .or_insert_with(|| AtomicU32::new(0))
             .fetch_add(1, Ordering::SeqCst);
-        Self {
-            active_requests,
-            key,
-            released: false,
-        }
+        Self { active_requests, key, released: false }
     }
 
     /// Atomically try to reserve a slot if current count < max_concurrent.
@@ -32,9 +28,7 @@ impl ActiveRequestGuard {
         key: String,
         max_concurrent: u32,
     ) -> Option<Self> {
-        active_requests
-            .entry(key.clone())
-            .or_insert_with(|| AtomicU32::new(0));
+        active_requests.entry(key.clone()).or_insert_with(|| AtomicU32::new(0));
 
         let counter_ref = active_requests.get(&key)?;
         loop {
@@ -47,11 +41,7 @@ impl ActiveRequestGuard {
                 .is_ok()
             {
                 drop(counter_ref);
-                return Some(Self {
-                    active_requests,
-                    key,
-                    released: false,
-                });
+                return Some(Self { active_requests, key, released: false });
             }
         }
     }

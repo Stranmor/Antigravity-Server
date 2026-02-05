@@ -39,9 +39,10 @@ impl TokenManager {
         .await
         {
             Ok(result) => result,
-            Err(_) => Err(
-                "Token acquisition timeout (5s) - system too busy or deadlock detected".to_string(),
-            ),
+            Err(_) => {
+                Err("Token acquisition timeout (5s) - system too busy or deadlock detected"
+                    .to_string())
+            },
         }
     }
 
@@ -85,12 +86,7 @@ impl TokenManager {
             token.email
         );
 
-        Ok((
-            token.access_token,
-            token.project_id.unwrap_or_default(),
-            token.email,
-            guard,
-        ))
+        Ok((token.access_token, token.project_id.unwrap_or_default(), token.email, guard))
     }
 
     async fn get_token_internal(
@@ -113,9 +109,8 @@ impl TokenManager {
 
         let routing = self.routing_config.read().await.clone();
 
-        let quota_protection_enabled = config::load_config()
-            .map(|cfg| cfg.quota_protection.enabled)
-            .unwrap_or(false);
+        let quota_protection_enabled =
+            config::load_config().map(|cfg| cfg.quota_protection.enabled).unwrap_or(false);
 
         let normalized_target =
             crate::proxy::common::model_mapping::normalize_to_standard_id(target_model)
@@ -246,7 +241,7 @@ impl TokenManager {
                     } else {
                         return Err(last_error.unwrap_or_else(|| "All accounts failed".to_string()));
                     }
-                }
+                },
             };
 
             if let Some(sid) = session_id {
@@ -268,7 +263,7 @@ impl TokenManager {
                     last_error = Some(e);
                     attempted.insert(token.email.clone());
                     continue;
-                }
+                },
             };
 
             let guard = match active_guard {
@@ -287,9 +282,9 @@ impl TokenManager {
                             );
                             attempted.insert(token.email.clone());
                             continue;
-                        }
+                        },
                     }
-                }
+                },
             };
 
             return Ok((token.access_token, project_id, token.email, guard));

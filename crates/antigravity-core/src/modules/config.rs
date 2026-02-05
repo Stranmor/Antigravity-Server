@@ -29,16 +29,11 @@ pub fn load_config() -> Result<AppConfig, String> {
 
     // Migration logic
     if let Some(proxy) = v.get_mut("proxy") {
-        let mut custom_mapping = proxy
-            .get("custom_mapping")
-            .and_then(|m| m.as_object())
-            .cloned()
-            .unwrap_or_default();
+        let mut custom_mapping =
+            proxy.get("custom_mapping").and_then(|m| m.as_object()).cloned().unwrap_or_default();
 
         // Migrate Anthropic mapping
-        if let Some(anthropic) = proxy
-            .get_mut("anthropic_mapping")
-            .and_then(|m| m.as_object_mut())
+        if let Some(anthropic) = proxy.get_mut("anthropic_mapping").and_then(|m| m.as_object_mut())
         {
             for (k, v) in anthropic.iter() {
                 if !k.ends_with("-series") && !custom_mapping.contains_key(k) {
@@ -53,10 +48,7 @@ pub fn load_config() -> Result<AppConfig, String> {
         }
 
         // Migrate OpenAI mapping
-        if let Some(openai) = proxy
-            .get_mut("openai_mapping")
-            .and_then(|m| m.as_object_mut())
-        {
+        if let Some(openai) = proxy.get_mut("openai_mapping").and_then(|m| m.as_object_mut()) {
             for (k, v) in openai.iter() {
                 if !k.ends_with("-series") && !custom_mapping.contains_key(k) {
                     custom_mapping.insert(k.clone(), v.clone());
@@ -71,10 +63,7 @@ pub fn load_config() -> Result<AppConfig, String> {
 
         if modified {
             if let Some(obj) = proxy.as_object_mut() {
-                obj.insert(
-                    "custom_mapping".to_string(),
-                    serde_json::Value::Object(custom_mapping),
-                );
+                obj.insert("custom_mapping".to_string(), serde_json::Value::Object(custom_mapping));
             }
         }
     }

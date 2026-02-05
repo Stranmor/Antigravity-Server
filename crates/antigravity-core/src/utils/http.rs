@@ -31,10 +31,10 @@ pub fn create_client_with_proxy(
                 Ok(proxy) => {
                     builder = builder.proxy(proxy);
                     tracing::info!("HTTP clientalreadyenableupstreamproxy: {}", config.url);
-                }
+                },
                 Err(e) => {
                     tracing::error!("invalid proxyaddress: {}, error: {}", config.url, e);
-                }
+                },
             }
         }
     }

@@ -72,10 +72,7 @@ pub fn build_generation_config(
 
     // [NEW] Ensure maxOutputTokens is greater than thinkingBudget (API strict constraint)
     if let Some(thinking_config) = config.get("thinkingConfig") {
-        if let Some(budget) = thinking_config
-            .get("thinkingBudget")
-            .and_then(|t| t.as_u64())
-        {
+        if let Some(budget) = thinking_config.get("thinkingBudget").and_then(|t| t.as_u64()) {
             if final_max_tokens <= budget as i64 {
                 final_max_tokens = (budget + 8192) as i64;
                 tracing::info!(

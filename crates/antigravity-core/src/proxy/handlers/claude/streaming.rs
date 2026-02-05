@@ -52,7 +52,7 @@ pub async fn handle_streaming_response(
             PeekResult::Data(bytes, stream) => (Some(bytes), stream),
             PeekResult::Retry(err) => {
                 return StreamResult::Retry(err);
-            }
+            },
         };
 
     match first_data_chunk {
@@ -65,14 +65,14 @@ pub async fn handle_streaming_response(
             } else {
                 StreamResult::Success(collect_to_json_response(ctx, combined_stream).await)
             }
-        }
+        },
         None => {
             tracing::warn!(
                 "[{}] No data after peek loop (should not happen), retrying...",
                 ctx.trace_id
             );
             StreamResult::Retry("Empty response after peek".to_string())
-        }
+        },
     }
 }
 
@@ -137,10 +137,7 @@ where
 
     match collect_stream_to_json(Box::pin(stream)).await {
         Ok(full_response) => {
-            tracing::info!(
-                "[{}] ✓ Stream collected and converted to JSON",
-                ctx.trace_id
-            );
+            tracing::info!("[{}] ✓ Stream collected and converted to JSON", ctx.trace_id);
             Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, "application/json")
@@ -152,11 +149,8 @@ where
                         .expect("ClaudeResponse is always serializable"),
                 ))
                 .expect("valid JSON response")
-        }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Stream collection error: {}", e),
-        )
+        },
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Stream collection error: {}", e))
             .into_response(),
     }
 }

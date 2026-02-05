@@ -1,8 +1,8 @@
 //! Dashboard page with full features
 
-mod best_accounts;
-mod current_account;
-mod tiers;
+pub(crate) mod best_accounts;
+pub(crate) mod current_account;
+pub(crate) mod tiers;
 
 use best_accounts::BestAccountsSection;
 use current_account::CurrentAccountSection;
@@ -15,8 +15,9 @@ use crate::components::{Button, ButtonVariant, StatsCard};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
+/// Dashboard page with account overview and statistics.
 #[component]
-pub fn Dashboard() -> impl IntoView {
+pub(crate) fn Dashboard() -> impl IntoView {
     let state = expect_context::<AppState>();
 
     let refresh_pending = RwSignal::new(false);
@@ -60,7 +61,7 @@ pub fn Dashboard() -> impl IntoView {
         Some(account) => {
             let name = account.email.split('@').next().unwrap_or("User");
             format!("Hello, {}!", name)
-        }
+        },
         None => "Welcome to Antigravity!".to_string(),
     });
 
@@ -79,7 +80,7 @@ pub fn Dashboard() -> impl IntoView {
                             s.accounts.set(accounts);
                         }
                         show_message("Quota refreshed".to_string(), false);
-                    }
+                    },
                     Err(e) => show_message(format!("Failed: {}", e), true),
                 }
                 refresh_pending.set(false);
@@ -153,12 +154,14 @@ pub fn Dashboard() -> impl IntoView {
 
             <Show when=move || message.get().is_some()>
                 {move || {
-                    let (msg, is_error) = message.get().unwrap();
+                    let Some((msg, is_error)) = message.get() else {
+                        return view! { <div></div> }.into_any();
+                    };
                     view! {
                         <div class=format!("alert {}", if is_error { "alert--error" } else { "alert--success" })>
                             <span>{msg}</span>
                         </div>
-                    }
+                    }.into_any()
                 }}
             </Show>
 

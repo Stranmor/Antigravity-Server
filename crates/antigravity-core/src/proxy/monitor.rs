@@ -67,10 +67,10 @@ impl ProxyMonitor {
                 stats.success_count += 1;
             }
             if let Some(tokens) = log.input_tokens {
-                stats.total_input_tokens += tokens as u64;
+                stats.total_input_tokens += u64::from(tokens);
             }
             if let Some(tokens) = log.output_tokens {
-                stats.total_output_tokens += tokens as u64;
+                stats.total_output_tokens += u64::from(tokens);
             }
         }
 
@@ -90,7 +90,7 @@ impl ProxyMonitor {
     }
 
     pub async fn get_stats(&self) -> ProxyStats {
-        self.stats.read().await.clone()
+        *self.stats.read().await
     }
 
     pub async fn get_logs(&self, limit: Option<usize>) -> Vec<ProxyRequestLog> {

@@ -33,11 +33,8 @@ where
             ));
         }
 
-        match tokio::time::timeout(
-            std::time::Duration::from_secs(PEEK_TIMEOUT_SECS),
-            stream.next(),
-        )
-        .await
+        match tokio::time::timeout(std::time::Duration::from_secs(PEEK_TIMEOUT_SECS), stream.next())
+            .await
         {
             Ok(Some(Ok(bytes))) => {
                 if bytes.is_empty() {
@@ -70,19 +67,16 @@ where
 
                 // Valid data chunk
                 return Ok(bytes);
-            }
+            },
             Ok(Some(Err(e))) => {
                 return Err(format!("Stream error during peek: {}", e));
-            }
+            },
             Ok(None) => {
                 return Err("Stream ended immediately (empty response)".to_string());
-            }
+            },
             Err(_) => {
-                return Err(format!(
-                    "Timeout ({}s) waiting for first chunk",
-                    PEEK_TIMEOUT_SECS
-                ));
-            }
+                return Err(format!("Timeout ({}s) waiting for first chunk", PEEK_TIMEOUT_SECS));
+            },
         }
     }
 }
@@ -92,10 +86,8 @@ pub fn extract_signature(resp: &Value, session_id: &str) {
     let inner = resp.get("response").unwrap_or(resp);
     if let Some(candidates) = inner.get("candidates").and_then(|c| c.as_array()) {
         for cand in candidates {
-            if let Some(parts) = cand
-                .get("content")
-                .and_then(|c| c.get("parts"))
-                .and_then(|p| p.as_array())
+            if let Some(parts) =
+                cand.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array())
             {
                 for part in parts {
                     if let Some(sig) = part.get("thoughtSignature").and_then(|s| s.as_str()) {
@@ -184,12 +176,7 @@ where
         .header("X-Account-Email", email)
         .header("X-Mapped-Model", mapped_model)
         .body(body)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Response build error: {}", e),
-            )
-        })?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Response build error: {}", e)))?;
 
     Ok(resp)
 }

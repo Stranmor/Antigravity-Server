@@ -19,9 +19,7 @@ pub fn compare_tokens_by_priority(a: &ProxyToken, b: &ProxyToken) -> Ordering {
     if quota_cmp != Ordering::Equal {
         return quota_cmp;
     }
-    b.health_score
-        .partial_cmp(&a.health_score)
-        .unwrap_or(Ordering::Equal)
+    b.health_score.partial_cmp(&a.health_score).unwrap_or(Ordering::Equal)
 }
 
 impl TokenManager {
@@ -57,19 +55,13 @@ impl TokenManager {
             return None;
         }
 
-        tracing::info!(
-            "Using preferred account: {} (fixed mode)",
-            preferred_token.email
-        );
+        tracing::info!("Using preferred account: {} (fixed mode)", preferred_token.email);
 
         let mut token = preferred_token.clone();
         let now = chrono::Utc::now().timestamp();
 
         if now >= token.timestamp - 300 {
-            tracing::debug!(
-                "Preferred account {} token expiring, refreshing...",
-                token.email
-            );
+            tracing::debug!("Preferred account {} token expiring, refreshing...", token.email);
             match crate::modules::oauth::refresh_access_token(&token.refresh_token).await {
                 Ok(token_response) => {
                     token.access_token = token_response.access_token.clone();
@@ -81,13 +73,11 @@ impl TokenManager {
                         entry.expires_in = token.expires_in;
                         entry.timestamp = token.timestamp;
                     }
-                    let _ = self
-                        .save_refreshed_token(&token.account_id, &token_response)
-                        .await;
-                }
+                    let _ = self.save_refreshed_token(&token.account_id, &token_response).await;
+                },
                 Err(e) => {
                     tracing::warn!("Preferred account token refresh failed: {}", e);
-                }
+                },
             }
         }
 
@@ -101,7 +91,7 @@ impl TokenManager {
                     }
                     let _ = self.save_project_id(&token.account_id, &pid).await;
                     pid
-                }
+                },
                 Err(_) => "bamboo-precept-lgxtn".to_string(),
             }
         };
@@ -187,9 +177,8 @@ impl TokenManager {
     ) -> Option<(ProxyToken, ActiveRequestGuard)> {
         let bound_id = self.get_session_account(session_id)?;
 
-        let reset_sec = self
-            .rate_limit_tracker
-            .get_remaining_wait_for_model(&bound_id, normalized_target);
+        let reset_sec =
+            self.rate_limit_tracker.get_remaining_wait_for_model(&bound_id, normalized_target);
 
         if reset_sec > 0 {
             if reset_sec > STICKY_UNBIND_RATE_LIMIT_SECONDS {
@@ -238,11 +227,7 @@ impl TokenManager {
             routing.max_concurrent_per_account,
         )?;
 
-        tracing::debug!(
-            "Sticky Session: Reusing {} for session {}",
-            found.email,
-            session_id
-        );
+        tracing::debug!("Sticky Session: Reusing {} for session {}", found.email, session_id);
         Some((found.clone(), guard))
     }
 

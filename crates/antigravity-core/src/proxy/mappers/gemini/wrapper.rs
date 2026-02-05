@@ -9,17 +9,10 @@ pub fn wrap_request(
     session_id: Option<&str>,
 ) -> Value {
     // Priority: use passed mapped_model, otherwise attempt to get from body
-    let original_model = body
-        .get("model")
-        .and_then(|v| v.as_str())
-        .unwrap_or(mapped_model);
+    let original_model = body.get("model").and_then(|v| v.as_str()).unwrap_or(mapped_model);
 
     // If mapped_model is empty, use original_model
-    let final_model_name = if !mapped_model.is_empty() {
-        mapped_model
-    } else {
-        original_model
-    };
+    let final_model_name = if !mapped_model.is_empty() { mapped_model } else { original_model };
 
     // Copy body for modification
     let mut inner_request = body.clone();
@@ -29,10 +22,7 @@ pub fn wrap_request(
 
     // [FIX #765] Inject thought_signature into functionCall parts
     if let Some(s_id) = session_id {
-        if let Some(contents) = inner_request
-            .get_mut("contents")
-            .and_then(|c| c.as_array_mut())
-        {
+        if let Some(contents) = inner_request.get_mut("contents").and_then(|c| c.as_array_mut()) {
             for content in contents {
                 if let Some(parts) = content.get_mut("parts").and_then(|p| p.as_array_mut()) {
                     for part in parts {
@@ -43,7 +33,9 @@ pub fn wrap_request(
                                     .get_session_signature(s_id)
                                 {
                                     if let Some(obj) = part.as_object_mut() {
-                                        obj.insert("thoughtSignature".to_string(), json!(sig));
+                                        drop(
+                                            obj.insert("thoughtSignature".to_string(), json!(sig)),
+                                        );
                                         tracing::debug!(
                                             "[Gemini-Wrap] Injected signature (len: {}) for session: {}",
                                             sig.len(),
@@ -85,10 +77,8 @@ pub fn wrap_request(
     // relying on upstream defaults or user provided values is safer.
 
     // Extract tools list for network detection (Gemini style may be nested)
-    let tools_val: Option<Vec<Value>> = inner_request
-        .get("tools")
-        .and_then(|t| t.as_array())
-        .cloned();
+    let tools_val: Option<Vec<Value>> =
+        inner_request.get("tools").and_then(|t| t.as_array()).cloned();
 
     // Use shared grounding/config logic
     let config = crate::proxy::mappers::request_config::resolve_request_config(
@@ -129,7 +119,7 @@ pub fn wrap_request(
                                     crate::proxy::common::json_schema::clean_json_schema(
                                         &mut params,
                                     );
-                                    decl_obj.insert("parameters".to_string(), params);
+                                    drop(decl_obj.insert("parameters".to_string(), params));
                                 } else if let Some(params) = decl_obj.get_mut("parameters") {
                                     // standard parameters field
                                     crate::proxy::common::json_schema::clean_json_schema(params);
@@ -159,18 +149,18 @@ pub fn wrap_request(
     if let Some(image_config) = config.image_config {
         if let Some(obj) = inner_request.as_object_mut() {
             // 1. Remove tools (image generation does not support tools)
-            obj.remove("tools");
+            drop(obj.remove("tools"));
 
             // 2. Remove systemInstruction (image generation does not support system prompts)
-            obj.remove("systemInstruction");
+            drop(obj.remove("systemInstruction"));
 
             // 3. Clean generationConfig (remove thinkingConfig, responseMimeType, responseModalities etc.)
             let gen_config = obj.entry("generationConfig").or_insert_with(|| json!({}));
             if let Some(gen_obj) = gen_config.as_object_mut() {
-                gen_obj.remove("thinkingConfig");
-                gen_obj.remove("responseMimeType");
-                gen_obj.remove("responseModalities"); // Cherry Studio sends this, might conflict
-                gen_obj.insert("imageConfig".to_string(), image_config);
+                drop(gen_obj.remove("thinkingConfig"));
+                drop(gen_obj.remove("responseMimeType"));
+                drop(gen_obj.remove("responseModalities")); // Cherry Studio sends this, might conflict
+                drop(gen_obj.insert("imageConfig".to_string(), image_config));
             }
         }
     } else {
@@ -185,7 +175,7 @@ pub fn wrap_request(
             // [NEW] complete role: user
             if let Some(obj) = system_instruction.as_object_mut() {
                 if !obj.contains_key("role") {
-                    obj.insert("role".to_string(), json!("user"));
+                    drop(obj.insert("role".to_string(), json!("user")));
                 }
             }
 

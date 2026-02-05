@@ -7,7 +7,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use std::collections::HashMap;
 
-pub fn show_message(message: RwSignal<Option<(String, bool)>>, msg: String, is_error: bool) {
+pub(crate) fn show_message(message: RwSignal<Option<(String, bool)>>, msg: String, is_error: bool) {
     message.set(Some((msg, is_error)));
     spawn_local(async move {
         gloo_timers::future::TimeoutFuture::new(3000).await;
@@ -15,7 +15,7 @@ pub fn show_message(message: RwSignal<Option<(String, bool)>>, msg: String, is_e
     });
 }
 
-pub fn on_toggle(app_state: AppState, loading: RwSignal<bool>) {
+pub(crate) fn on_toggle(app_state: AppState, loading: RwSignal<bool>) {
     loading.set(true);
     let status = app_state.proxy_status;
     spawn_local(async move {
@@ -35,7 +35,7 @@ pub fn on_toggle(app_state: AppState, loading: RwSignal<bool>) {
     });
 }
 
-pub fn on_save_config(ps: ProxyState) {
+pub(crate) fn on_save_config(ps: ProxyState) {
     spawn_local(async move {
         if let Ok(mut config) = commands::load_config().await {
             config.proxy.port = ps.port.get();
@@ -58,7 +58,10 @@ pub fn on_save_config(ps: ProxyState) {
     });
 }
 
-pub fn on_generate_key(api_key: RwSignal<String>, message: RwSignal<Option<(String, bool)>>) {
+pub(crate) fn on_generate_key(
+    api_key: RwSignal<String>,
+    message: RwSignal<Option<(String, bool)>>,
+) {
     spawn_local(async move {
         if let Ok(key) = commands::generate_api_key().await {
             api_key.set(key);
@@ -67,7 +70,7 @@ pub fn on_generate_key(api_key: RwSignal<String>, message: RwSignal<Option<(Stri
     });
 }
 
-pub fn on_copy(text: String, label: String, copied: RwSignal<Option<String>>) {
+pub(crate) fn on_copy(text: String, label: String, copied: RwSignal<Option<String>>) {
     if let Some(window) = web_sys::window() {
         let clipboard = window.navigator().clipboard();
         let _ = clipboard.write_text(&text);
@@ -79,7 +82,7 @@ pub fn on_copy(text: String, label: String, copied: RwSignal<Option<String>>) {
     });
 }
 
-pub fn on_add_mapping(
+pub(crate) fn on_add_mapping(
     new_from: RwSignal<String>,
     new_to: RwSignal<String>,
     mappings: RwSignal<HashMap<String, String>>,
@@ -95,7 +98,7 @@ pub fn on_add_mapping(
     }
 }
 
-pub fn on_apply_presets(
+pub(crate) fn on_apply_presets(
     mappings: RwSignal<HashMap<String, String>>,
     message: RwSignal<Option<(String, bool)>>,
 ) {
@@ -114,7 +117,7 @@ pub fn on_apply_presets(
     show_message(message, "Presets applied".to_string(), false);
 }
 
-pub fn on_clear_bindings(message: RwSignal<Option<(String, bool)>>) {
+pub(crate) fn on_clear_bindings(message: RwSignal<Option<(String, bool)>>) {
     spawn_local(async move {
         if commands::clear_proxy_session_bindings().await.is_ok() {
             show_message(message, "Session bindings cleared".to_string(), false);
@@ -122,7 +125,7 @@ pub fn on_clear_bindings(message: RwSignal<Option<(String, bool)>>) {
     });
 }
 
-pub fn on_test_mapping(ps: ProxyState) {
+pub(crate) fn on_test_mapping(ps: ProxyState) {
     let model = ps.test_model_input.get();
     if model.is_empty() {
         return;
@@ -135,23 +138,23 @@ pub fn on_test_mapping(ps: ProxyState) {
         match commands::detect_model(&model).await {
             Ok(res) => {
                 ps.test_result.set(Some(res));
-            }
+            },
             Err(e) => {
                 show_message(ps.message, format!("Test failed: {}", e), true);
-            }
+            },
         }
         ps.test_loading.set(false);
     });
 }
 
-pub fn load_config_on_mount(ps: ProxyState) {
+pub(crate) fn load_config_on_mount(ps: ProxyState) {
     spawn_local(async move {
         if let Ok(config) = commands::load_config().await {
             ps.port.set(config.proxy.port);
             ps.timeout.set(config.proxy.request_timeout as u32);
             ps.auto_start.set(config.proxy.auto_start);
             ps.allow_lan.set(config.proxy.allow_lan_access);
-            ps.auth_mode.set(config.proxy.auth_mode.clone());
+            ps.auth_mode.set(config.proxy.auth_mode);
             ps.api_key.set(config.proxy.api_key.clone());
             ps.enable_logging.set(config.proxy.enable_logging);
             ps.custom_mappings.set(config.proxy.custom_mapping.clone());
@@ -159,8 +162,7 @@ pub fn load_config_on_mount(ps: ProxyState) {
             ps.zai_base_url.set(config.proxy.zai.base_url.clone());
             ps.zai_api_key.set(config.proxy.zai.api_key.clone());
             ps.zai_dispatch_mode.set(config.proxy.zai.dispatch_mode);
-            ps.zai_model_mapping
-                .set(config.proxy.zai.model_mapping.clone());
+            ps.zai_model_mapping.set(config.proxy.zai.model_mapping.clone());
         }
     });
 }

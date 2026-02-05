@@ -31,10 +31,7 @@ pub async fn monitor_middleware(
     }
 
     let mut model = if uri.contains("/v1beta/models/") {
-        uri.split("/v1beta/models/")
-            .nth(1)
-            .and_then(|s| s.split(':').next())
-            .map(|s| s.to_string())
+        uri.split("/v1beta/models/").nth(1).and_then(|s| s.split(':').next()).map(|s| s.to_string())
     } else {
         None
     };
@@ -46,9 +43,7 @@ pub async fn monitor_middleware(
             Ok(bytes) => {
                 if model.is_none() {
                     model = serde_json::from_slice::<Value>(&bytes).ok().and_then(|v| {
-                        v.get("model")
-                            .and_then(|m| m.as_str())
-                            .map(|s| s.to_string())
+                        v.get("model").and_then(|m| m.as_str()).map(|s| s.to_string())
                     });
                 }
                 request_body_str = if let Ok(s) = std::str::from_utf8(&bytes) {
@@ -57,11 +52,11 @@ pub async fn monitor_middleware(
                     Some("[Binary Request Data]".to_string())
                 };
                 Request::from_parts(parts, Body::from(bytes))
-            }
+            },
             Err(_) => {
                 request_body_str = None;
                 Request::from_parts(parts, Body::empty())
-            }
+            },
         }
     } else {
         request_body_str = None;
@@ -118,6 +113,7 @@ pub async fn monitor_middleware(
         response_body: None,
         input_tokens: None,
         output_tokens: None,
+        cached_tokens: None,
     };
 
     if content_type.contains("text/event-stream") {
@@ -165,6 +161,17 @@ pub async fn monitor_middleware(
                                     .or(usage.get("candidatesTokenCount"))
                                     .and_then(|v| v.as_u64())
                                     .map(|v| v as u32);
+                                log.cached_tokens = usage
+                                    .get("cachedContentTokenCount")
+                                    .or(usage.get("cache_read_input_tokens"))
+                                    .and_then(|v| v.as_u64())
+                                    .or_else(|| {
+                                        usage
+                                            .get("prompt_tokens_details")
+                                            .and_then(|d| d.get("cached_tokens"))
+                                            .and_then(|v| v.as_u64())
+                                    })
+                                    .map(|v| v as u32);
 
                                 if log.input_tokens.is_none() && log.output_tokens.is_none() {
                                     log.output_tokens = usage
@@ -210,6 +217,17 @@ pub async fn monitor_middleware(
                                 .or(usage.get("candidatesTokenCount"))
                                 .and_then(|v| v.as_u64())
                                 .map(|v| v as u32);
+                            log.cached_tokens = usage
+                                .get("cachedContentTokenCount")
+                                .or(usage.get("cache_read_input_tokens"))
+                                .and_then(|v| v.as_u64())
+                                .or_else(|| {
+                                    usage
+                                        .get("prompt_tokens_details")
+                                        .and_then(|d| d.get("cached_tokens"))
+                                        .and_then(|v| v.as_u64())
+                                })
+                                .map(|v| v as u32);
 
                             if log.input_tokens.is_none() && log.output_tokens.is_none() {
                                 log.output_tokens = usage
@@ -230,12 +248,12 @@ pub async fn monitor_middleware(
                 }
                 monitor.log_request(log).await;
                 Response::from_parts(parts, Body::from(bytes))
-            }
+            },
             Err(_) => {
                 log.response_body = Some("[Response too large (>100MB)]".to_string());
                 monitor.log_request(log).await;
                 Response::from_parts(parts, Body::empty())
-            }
+            },
         }
     } else {
         log.response_body = Some(format!("[{}]", content_type));
