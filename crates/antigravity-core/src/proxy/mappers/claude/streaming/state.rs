@@ -65,6 +65,8 @@ pub struct StreamingState {
     pub in_mcp_xml: bool,
     /// Estimated token count for the response.
     pub estimated_tokens: Option<u32>,
+    /// Accumulated thinking content for content-based signature caching.
+    accumulated_thinking: String,
 }
 
 impl Default for StreamingState {
@@ -95,6 +97,7 @@ impl StreamingState {
             mcp_xml_buffer: String::new(),
             in_mcp_xml: false,
             estimated_tokens: None,
+            accumulated_thinking: String::new(),
         }
     }
 
@@ -263,6 +266,21 @@ impl StreamingState {
     /// Takes and returns the trailing signature.
     pub fn take_trailing_signature(&mut self) -> Option<String> {
         self.trailing_signature.take()
+    }
+
+    /// Accumulates thinking content for signature caching.
+    pub fn accumulate_thinking(&mut self, text: &str) {
+        self.accumulated_thinking.push_str(text);
+    }
+
+    /// Returns the accumulated thinking content and clears the buffer.
+    pub fn get_accumulated_thinking(&mut self) -> String {
+        std::mem::take(&mut self.accumulated_thinking)
+    }
+
+    #[allow(dead_code)]
+    pub fn clear_accumulated_thinking(&mut self) {
+        self.accumulated_thinking.clear();
     }
 
     /// Handles SSE parse errors with graceful recovery.

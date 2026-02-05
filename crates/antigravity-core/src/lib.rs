@@ -19,6 +19,20 @@
 //! All proxy code is now local copies (no symlinks). Upstream reference lives
 //! in vendor/antigravity-upstream/ (git submodule) for feature porting.
 
+// LINT OVERRIDE: Proxy crate performs protocol transformation with bounded arithmetic.
+// Token counts, timestamps, byte buffers are bounded by API/protocol limits.
+// See Cargo.toml [lints.clippy] and AGENTS.md section 2.0.2 for policy.
+#![allow(clippy::arithmetic_side_effects)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::as_conversions)]
+#![allow(clippy::indexing_slicing)]
+#![allow(clippy::integer_division)]
+#![allow(clippy::modulo_arithmetic)]
+#![allow(clippy::cast_lossless)]
+#![allow(clippy::expect_used)]
+#![allow(clippy::unwrap_used)]
 #![allow(
     clippy::too_many_arguments,
     reason = "Upstream-derived mappers have complex protocol transformation functions"

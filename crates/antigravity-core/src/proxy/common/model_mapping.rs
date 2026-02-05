@@ -61,11 +61,6 @@ pub fn map_claude_model_to_gemini(input: &str) -> Option<String> {
         return Some(input.to_owned());
     }
 
-    let lower = input.to_lowercase();
-    if lower.contains("opus") {
-        return Some("claude-opus-4-5-thinking".to_owned());
-    }
-
     None
 }
 

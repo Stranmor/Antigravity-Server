@@ -1,4 +1,5 @@
 // Streaming response builder for completions handler
+#![allow(clippy::expect_used, reason = "Response::builder() with valid headers cannot fail")]
 
 use axum::body::Body;
 use axum::response::{IntoResponse, Response};

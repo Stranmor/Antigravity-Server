@@ -8,6 +8,7 @@
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
+    clippy::cast_lossless,
     clippy::as_conversions,
     clippy::arithmetic_side_effects,
     reason = "Token scaling algorithm: bounded u32 values, intentional f64 math for smooth curves"

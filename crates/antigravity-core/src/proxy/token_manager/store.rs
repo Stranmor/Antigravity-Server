@@ -136,16 +136,27 @@ impl TokenManager {
             .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect())
             .unwrap_or_default();
 
+        let mut available_models: HashSet<String> = HashSet::new();
+
+        const MAX_MODELS_PER_ACCOUNT: usize = 100;
+        const MAX_MODEL_NAME_LENGTH: usize = 256;
+
         if let Some(quota) = account.get("quota") {
             if let Some(models) = quota.get("models").and_then(|m| m.as_array()) {
-                for model in models {
+                for model in models.iter().take(MAX_MODELS_PER_ACCOUNT) {
                     if let (Some(name), Some(percentage)) = (
                         model.get("name").and_then(|n| n.as_str()),
                         model.get("percentage").and_then(|p| p.as_i64()),
                     ) {
-                        if percentage == 0 && !protected_models.contains(name) {
-                            protected_models.insert(name.to_string());
-                            tracing::debug!("Auto-protected model {} for account (quota=0%)", name);
+                        if name.len() <= MAX_MODEL_NAME_LENGTH {
+                            available_models.insert(name.to_string());
+                            if percentage == 0 && !protected_models.contains(name) {
+                                protected_models.insert(name.to_string());
+                                tracing::debug!(
+                                    "Auto-protected model {} for account (quota=0%)",
+                                    name
+                                );
+                            }
                         }
                     }
                 }
@@ -183,6 +194,7 @@ impl TokenManager {
             remaining_quota,
             protected_models,
             health_score,
+            available_models,
         }))
     }
 

@@ -9,6 +9,8 @@
     clippy::arithmetic_side_effects,
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_lossless,
     clippy::as_conversions,
     reason = "Estimation calibration: statistical ratios, bounded token counts"
 )]

@@ -1,3 +1,11 @@
+//! OpenAI generation config building.
+#![allow(
+    clippy::cast_lossless,
+    clippy::as_conversions,
+    clippy::indexing_slicing,
+    reason = "token budget calculations and JSON field access"
+)]
+
 use super::super::models::OpenAIRequest;
 use serde_json::{json, Value};
 

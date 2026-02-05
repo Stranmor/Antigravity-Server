@@ -104,11 +104,21 @@ impl<'a> PartProcessor<'a> {
 
         if !text.is_empty() {
             chunks.push(self.state.emit_delta("thinking_delta", json!({ "thinking": text })));
+            self.state.accumulate_thinking(text);
         }
 
         if let Some(ref sig) = signature {
-            if let Some(model) = &self.state.model_name {
+            if let Some(model) = self.state.model_name.clone() {
                 SignatureCache::global().cache_thinking_family(sig.clone(), model.clone());
+
+                let accumulated = self.state.get_accumulated_thinking();
+                if !accumulated.is_empty() {
+                    SignatureCache::global().cache_content_signature(
+                        &accumulated,
+                        sig.clone(),
+                        model,
+                    );
+                }
             }
             if let Some(session_id) = &self.state.session_id {
                 SignatureCache::global().cache_session_signature(session_id, sig.clone());

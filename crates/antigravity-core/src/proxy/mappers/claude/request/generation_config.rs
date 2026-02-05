@@ -5,8 +5,11 @@
 #![allow(
     clippy::arithmetic_side_effects,
     clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_lossless,
     clippy::as_conversions,
-    reason = "Generation config: bounded token budgets, model-specific limits"
+    clippy::indexing_slicing,
+    reason = "Generation config: bounded token budgets, JSON object field access"
 )]
 
 use super::super::models::ClaudeRequest;

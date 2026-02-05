@@ -48,6 +48,8 @@ pub struct ProxyToken {
     pub remaining_quota: Option<i32>,
     pub protected_models: HashSet<String>,
     pub health_score: f32,
+    /// Models available for this account (from quota API response).
+    pub available_models: HashSet<String>,
 }
 
 impl ProxyToken {

@@ -41,10 +41,18 @@ pub fn transform_openai_request(
     let is_claude_thinking = mapped_model_lower.ends_with("-thinking");
     let is_thinking_model = is_gemini_3_thinking || is_claude_thinking;
 
-    // [NEW] Check if history messages are compatible with thinking model (whether Assistant messages are missing reasoning_content)
-    let has_incompatible_assistant_history = request.messages.iter().any(|msg| {
-        msg.role == "assistant"
-            && msg.reasoning_content.as_ref().map(|s| s.is_empty()).unwrap_or(true)
+    // [NEW] Check if we can recover signatures for ALL assistant messages with reasoning_content
+    let has_unrecoverable_thinking = request.messages.iter().any(|msg| {
+        if msg.role != "assistant" {
+            return false;
+        }
+        match &msg.reasoning_content {
+            Some(reasoning) if !reasoning.is_empty() => {
+                // Has reasoning_content - check if we can recover signature
+                SignatureCache::global().get_content_signature(reasoning).is_none()
+            },
+            _ => false, // No reasoning_content = no thinking block = no signature needed
+        }
     });
 
     // [FIX #signature-recovery] Generate session_id and get signature from SignatureCache (not legacy global store)
@@ -60,12 +68,9 @@ pub fn transform_openai_request(
     }
 
     // [NEW] Decide whether to enable Thinking feature:
-    // If it's a Claude thinking model and history is incompatible and no available signature to use as placeholder, disable Thinking to prevent 400
-    let actual_include_thinking = if is_claude_thinking
-        && has_incompatible_assistant_history
-        && session_thought_sig.is_none()
-    {
-        tracing::warn!("[OpenAI-Thinking] Incompatible assistant history detected for Claude thinking model without session signature. Disabling thinking for this request to avoid 400 error.");
+    // If any assistant message has reasoning_content that we can't find signature for, disable thinking
+    let actual_include_thinking = if is_claude_thinking && has_unrecoverable_thinking {
+        tracing::warn!("[OpenAI-Thinking] Cannot recover signature for some thinking content. Disabling thinking to avoid 400 error.");
         false
     } else {
         is_thinking_model

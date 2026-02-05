@@ -1,15 +1,17 @@
+#![allow(dead_code, reason = "content_signatures reserved for future use")]
+
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
 use std::time::{Duration, SystemTime};
 
-// Node.js proxy uses 2 hours TTL
 const SIGNATURE_TTL: Duration = Duration::from_secs(2 * 60 * 60);
 const MIN_SIGNATURE_LENGTH: usize = 50;
 
-// Different cache limits for different layers
-const TOOL_CACHE_LIMIT: usize = 500; // Layer 1: Tool-specific signatures
-const FAMILY_CACHE_LIMIT: usize = 200; // Layer 2: Model family mappings
-const SESSION_CACHE_LIMIT: usize = 1000; // Layer 3: Session-based signatures (largest)
+const TOOL_CACHE_LIMIT: usize = 500;
+const FAMILY_CACHE_LIMIT: usize = 200;
+const SESSION_CACHE_LIMIT: usize = 1000;
+const CONTENT_CACHE_LIMIT: usize = 2000;
 
 /// Cache entry with timestamp for TTL
 #[derive(Clone, Debug)]
@@ -33,21 +35,16 @@ impl<T> CacheEntry<T> {
 /// 2. Cross-model compatibility checks (preventing Claude signatures on Gemini models)
 /// 3. Session-based signature tracking (preventing cross-session pollution)
 pub struct SignatureCache {
-    /// Layer 1: Tool Use ID -> Thinking Signature
-    /// Key: tool_use_id (e.g., "toolu_01...")
-    /// Value: The thought signature that generated this tool call
     tool_signatures: RwLock<HashMap<String, CacheEntry<String>>>,
-
-    /// Layer 2: Signature -> Model Family
-    /// Key: thought signature string
-    /// Value: Model family identifier (e.g., "claude-3-5-sonnet", "gemini-2.0-flash")
     thinking_families: RwLock<HashMap<String, CacheEntry<String>>>,
-
-    /// Layer 3: Session ID -> Latest Thinking Signature (NEW)
-    /// Key: session fingerprint (e.g., "sid-a1b2c3d4...")
-    /// Value: The most recent valid thought signature for this session
-    /// This prevents signature pollution between different conversations
     session_signatures: RwLock<HashMap<String, CacheEntry<String>>>,
+    content_signatures: RwLock<HashMap<String, CacheEntry<ContentSignatureEntry>>>,
+}
+
+#[derive(Clone, Debug)]
+struct ContentSignatureEntry {
+    signature: String,
+    model_family: String,
 }
 
 impl SignatureCache {
@@ -56,6 +53,7 @@ impl SignatureCache {
             tool_signatures: RwLock::new(HashMap::new()),
             thinking_families: RwLock::new(HashMap::new()),
             session_signatures: RwLock::new(HashMap::new()),
+            content_signatures: RwLock::new(HashMap::new()),
         }
     }
 
@@ -213,8 +211,62 @@ impl SignatureCache {
         None
     }
 
-    /// Clear all caches (for testing or manual reset)
-    #[allow(dead_code)] // Used in tests
+    pub fn compute_content_hash(content: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(content.as_bytes());
+        let hash = format!("{:x}", hasher.finalize());
+        format!("ch-{}", &hash[..16])
+    }
+
+    pub fn cache_content_signature(&self, content: &str, signature: String, model_family: String) {
+        if signature.len() < MIN_SIGNATURE_LENGTH || content.len() < 20 {
+            return;
+        }
+
+        let content_hash = Self::compute_content_hash(content);
+
+        if let Ok(mut cache) = self.content_signatures.write() {
+            tracing::debug!(
+                "[SignatureCache] Content {} -> storing signature (len={})",
+                content_hash,
+                signature.len()
+            );
+            cache.insert(
+                content_hash,
+                CacheEntry::new(ContentSignatureEntry { signature, model_family }),
+            );
+
+            if cache.len() > CONTENT_CACHE_LIMIT {
+                let before = cache.len();
+                cache.retain(|_, v| !v.is_expired());
+                tracing::debug!(
+                    "[SignatureCache] Content cache cleanup: {} -> {} entries",
+                    before,
+                    cache.len()
+                );
+            }
+        }
+    }
+
+    pub fn get_content_signature(&self, content: &str) -> Option<(String, String)> {
+        let content_hash = Self::compute_content_hash(content);
+
+        if let Ok(cache) = self.content_signatures.read() {
+            if let Some(entry) = cache.get(&content_hash) {
+                if !entry.is_expired() {
+                    tracing::info!(
+                        "[SignatureCache] Content {} -> HIT (sig_len={})",
+                        content_hash,
+                        entry.data.signature.len()
+                    );
+                    return Some((entry.data.signature.clone(), entry.data.model_family.clone()));
+                }
+            }
+        }
+        None
+    }
+
+    #[allow(dead_code)]
     pub fn clear(&self) {
         if let Ok(mut cache) = self.tool_signatures.write() {
             cache.clear();
@@ -223,6 +275,9 @@ impl SignatureCache {
             cache.clear();
         }
         if let Ok(mut cache) = self.session_signatures.write() {
+            cache.clear();
+        }
+        if let Ok(mut cache) = self.content_signatures.write() {
             cache.clear();
         }
     }

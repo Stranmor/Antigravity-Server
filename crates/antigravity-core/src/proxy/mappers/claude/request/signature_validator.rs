@@ -63,7 +63,28 @@ pub fn validate_thinking_signature(
             },
         }
     } else {
-        tracing::warn!("[Thinking-Signature] No signature provided. Downgrading to text.");
+        if let Some((recovered_sig, recovered_family)) =
+            crate::proxy::SignatureCache::global().get_content_signature(thinking)
+        {
+            tracing::info!(
+                "[Thinking-Signature] Recovered signature from CONTENT cache (len: {}, family: {})",
+                recovered_sig.len(),
+                recovered_family
+            );
+
+            if !is_retry && is_model_compatible(&recovered_family, mapped_model) {
+                *last_thought_signature = Some(recovered_sig.clone());
+                let mut part = json!({
+                    "text": thinking,
+                    "thought": true,
+                    "thoughtSignature": recovered_sig
+                });
+                crate::proxy::common::json_schema::clean_json_schema(&mut part);
+                return SignatureAction::UseWithSignature { part };
+            }
+        }
+
+        tracing::warn!("[Thinking-Signature] No signature provided and content cache miss. Downgrading to text.");
         SignatureAction::DowngradeToText { text: thinking.to_string() }
     }
 }

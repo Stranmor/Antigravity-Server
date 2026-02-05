@@ -5,7 +5,8 @@
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     clippy::as_conversions,
-    reason = "Token persistence: timestamp arithmetic, bounded by system time"
+    clippy::indexing_slicing,
+    reason = "Token persistence: timestamp arithmetic, JSON field access"
 )]
 
 use super::file_utils::atomic_write_json;

@@ -1,3 +1,6 @@
+//! Warmup request handling for Claude.
+#![allow(clippy::unwrap_used, reason = "Response::builder() with valid headers cannot fail")]
+
 use crate::proxy::mappers::claude::ClaudeRequest;
 use axum::{
     body::Body,

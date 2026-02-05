@@ -62,7 +62,7 @@ pub fn generate_mock_project_id() -> String {
         .map(|_| {
             let chars = "abcdefghijklmnopqrstuvwxyz0123456789";
             let idx = rng.gen_range(0..chars.len());
-            chars.chars().nth(idx).unwrap()
+            chars.chars().nth(idx).unwrap_or('a')
         })
         .collect();
 

@@ -1,3 +1,10 @@
+//! File utilities for token manager.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::as_conversions,
+    reason = "percentage conversion: i64 -> i32 for quota percentages (0-100)"
+)]
+
 use std::path::Path;
 
 pub async fn atomic_write_json(path: &Path, content: &serde_json::Value) -> Result<(), String> {

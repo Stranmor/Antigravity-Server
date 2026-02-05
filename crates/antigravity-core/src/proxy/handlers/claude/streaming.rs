@@ -1,4 +1,9 @@
 //! Streaming response handling for Claude messages
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "Response::builder() with valid headers cannot fail"
+)]
 
 use axum::{
     body::Body,

@@ -1,3 +1,6 @@
+//! Health response building utilities.
+#![allow(clippy::arithmetic_side_effects, reason = "timestamp and counter calculations")]
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::types::{AccountHealth, AccountHealthResponse, HealthStatus};

@@ -2,6 +2,7 @@
 //!
 //! This module provides abstractions for monitoring proxy requests
 //! without any GUI-specific dependencies.
+#![allow(clippy::arithmetic_side_effects, reason = "counter increments and token accumulation")]
 
 // Re-export ProxyRequestLog for upstream middleware compatibility
 pub use antigravity_types::models::{ProxyRequestLog, ProxyStats};

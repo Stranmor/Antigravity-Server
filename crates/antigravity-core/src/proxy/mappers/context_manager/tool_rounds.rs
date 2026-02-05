@@ -1,4 +1,8 @@
 //! Tool round identification for context trimming
+#![allow(
+    clippy::unwrap_used,
+    reason = "current_round.take().unwrap() is guarded by is_some() check"
+)]
 
 use crate::proxy::mappers::claude::models::{ContentBlock, Message, MessageContent};
 use tracing::debug;

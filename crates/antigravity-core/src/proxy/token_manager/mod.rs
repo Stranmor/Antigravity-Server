@@ -126,6 +126,19 @@ impl TokenManager {
         });
         tracing::info!("Account auto-sync task started (interval: 60s)");
     }
+
+    pub fn get_all_available_models(&self) -> Vec<String> {
+        use std::collections::HashSet;
+        let mut models: HashSet<String> = HashSet::new();
+        for entry in self.tokens.iter() {
+            for model in &entry.value().available_models {
+                let _: bool = models.insert(model.clone());
+            }
+        }
+        let mut sorted: Vec<String> = models.into_iter().collect();
+        sorted.sort();
+        sorted
+    }
 }
 
 #[cfg(test)]

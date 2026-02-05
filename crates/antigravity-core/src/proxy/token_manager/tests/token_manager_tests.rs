@@ -28,6 +28,7 @@ fn create_test_token(tier: Option<&str>) -> ProxyToken {
         remaining_quota: Some(100),
         protected_models: HashSet::new(),
         health_score: 1.0,
+        available_models: HashSet::new(),
     }
 }
 
@@ -36,6 +37,23 @@ fn test_new_manager_is_empty() {
     let manager = create_test_manager();
     assert!(manager.is_empty());
     assert_eq!(manager.len(), 0);
+}
+
+#[test]
+fn test_get_all_available_models() {
+    let manager = create_test_manager();
+
+    assert!(manager.get_all_available_models().is_empty());
+
+    let mut token = create_test_token(Some("pro"));
+    token.available_models =
+        HashSet::from(["gemini-3-pro".to_string(), "gemini-3-flash".to_string()]);
+    manager.tokens.insert("test".to_string(), token);
+
+    let models = manager.get_all_available_models();
+    assert_eq!(models.len(), 2);
+    assert!(models.contains(&"gemini-3-flash".to_string()));
+    assert!(models.contains(&"gemini-3-pro".to_string()));
 }
 
 #[test]

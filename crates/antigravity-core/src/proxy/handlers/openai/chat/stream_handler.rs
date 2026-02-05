@@ -1,3 +1,6 @@
+//! OpenAI chat streaming handler.
+#![allow(clippy::expect_used, reason = "Response::builder() with valid headers cannot fail")]
+
 use crate::proxy::mappers::openai::OpenAIResponse;
 use axum::body::Body;
 use axum::http::StatusCode;

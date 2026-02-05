@@ -23,7 +23,7 @@ use super::stream_formatters::{
 };
 use super::usage::extract_usage_metadata;
 use crate::proxy::mappers::openai::models::OpenAIUsage;
-use crate::proxy::mappers::signature_store::store_thought_signature;
+use crate::proxy::SignatureCache;
 
 pub fn create_openai_sse_stream(
     mut gemini_stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
@@ -37,6 +37,7 @@ pub fn create_openai_sse_stream(
     let stream = async_stream::stream! {
         let mut emitted_tool_calls = std::collections::HashSet::new();
         let mut final_usage: Option<OpenAIUsage> = None;
+        let mut accumulated_thinking = String::new();
         while let Some(item) = gemini_stream.next().await {
             match item {
                 Ok(bytes) => {
@@ -84,12 +85,34 @@ pub fn create_openai_sse_stream(
                                                     if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
                                                         if is_thought_part {
                                                             thought_out.push_str(text);
+                                                            accumulated_thinking.push_str(text);
                                                         } else {
                                                             content_out.push_str(text);
                                                         }
                                                     }
                                                     if let Some(sig) = part.get("thoughtSignature").or(part.get("thought_signature")).and_then(|s| s.as_str()) {
-                                                        store_thought_signature(sig);
+                                                        // Cache signature with accumulated thinking content
+                                                        if !accumulated_thinking.is_empty() {
+                                                            let model_family = if model.contains("claude") {
+                                                                "claude".to_string()
+                                                            } else {
+                                                                "gemini".to_string()
+                                                            };
+                                                            SignatureCache::global().cache_content_signature(
+                                                                &accumulated_thinking,
+                                                                sig.to_string(),
+                                                                model_family.clone(),
+                                                            );
+                                                            SignatureCache::global().cache_thinking_family(
+                                                                sig.to_string(),
+                                                                model_family,
+                                                            );
+                                                            tracing::debug!(
+                                                                "[OpenAI-SSE] Cached content signature (thinking_len={}, sig_len={})",
+                                                                accumulated_thinking.len(),
+                                                                sig.len()
+                                                            );
+                                                        }
                                                     }
 
                                                     if let Some(img) = part.get("inlineData") {

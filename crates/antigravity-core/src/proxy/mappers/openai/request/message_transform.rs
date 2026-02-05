@@ -1,6 +1,7 @@
 use super::super::models::*;
 use super::content_parts::transform_content_block;
 use crate::proxy::mappers::tool_result_compressor;
+use crate::proxy::SignatureCache;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
@@ -42,9 +43,21 @@ fn transform_reasoning_content(
                 "text": reasoning,
                 "thought": true,
             });
-            if let Some(ref sig) = ctx.global_thought_sig {
+
+            // First try content-based signature recovery (most reliable)
+            if let Some((sig, family)) = SignatureCache::global().get_content_signature(reasoning) {
+                tracing::info!(
+                    "[OpenAI-Thinking] Recovered signature from CONTENT cache (len={}, family={})",
+                    sig.len(),
+                    family
+                );
+                thought_part["thoughtSignature"] = json!(sig);
+            } else if let Some(ref sig) = ctx.global_thought_sig {
+                // Fallback to session-based signature
                 thought_part["thoughtSignature"] = json!(sig);
             }
+            // If no signature found, send without it - upstream may reject with 400
+
             parts.push(thought_part);
         }
     } else if ctx.actual_include_thinking && role == "model" {
