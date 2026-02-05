@@ -10,7 +10,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 fn create_test_manager() -> TokenManager {
-    TokenManager::new(PathBuf::from("/tmp/test_antigravity"))
+    let unique_id = uuid::Uuid::new_v4();
+    TokenManager::new(PathBuf::from(format!("/tmp/antigravity_test_{unique_id}")))
 }
 
 fn create_test_token(tier: Option<&str>) -> ProxyToken {

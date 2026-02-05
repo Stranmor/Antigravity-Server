@@ -222,6 +222,11 @@ pub fn get_token_usage_stats() -> Result<TokenUsageStats, String> {
         )
         .map_err(|err| err.to_string())?;
 
+    #[allow(
+        clippy::cast_sign_loss,
+        clippy::as_conversions,
+        reason = "safe cast: time difference is always positive when max > min"
+    )]
     let time_range_secs = match (min_ts, max_ts) {
         (Some(min), Some(max)) if max > min => (max.saturating_sub(min)) as u64,
         (Some(_) | None, Some(_) | None) => 1,
@@ -229,12 +234,60 @@ pub fn get_token_usage_stats() -> Result<TokenUsageStats, String> {
 
     let total_tokens = total_input.saturating_add(total_output);
     let total_context = total_input.saturating_add(total_cached);
+
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::as_conversions,
+        reason = "intentional precision loss for human-readable statistics display"
+    )]
     let minutes = (time_range_secs as f64) / 60.0;
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::as_conversions,
+        reason = "intentional precision loss for human-readable statistics display"
+    )]
     let hours = (time_range_secs as f64) / 3600.0;
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::as_conversions,
+        reason = "intentional precision loss for human-readable statistics display"
+    )]
     let days = (time_range_secs as f64) / 86400.0;
 
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::as_conversions,
+        reason = "intentional precision loss for percentage calculation"
+    )]
     let cache_hit_rate =
         if total_context > 0 { (total_cached as f64 / total_context as f64) * 100.0 } else { 0.0 };
+
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::as_conversions,
+        reason = "intentional precision loss for average calculations"
+    )]
+    let (avg_input_per_request, avg_output_per_request, avg_cached_per_request) =
+        if total_requests > 0 {
+            (
+                total_input as f64 / total_requests as f64,
+                total_output as f64 / total_requests as f64,
+                total_cached as f64 / total_requests as f64,
+            )
+        } else {
+            (0.0, 0.0, 0.0)
+        };
+
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::as_conversions,
+        reason = "intentional precision loss for rate calculations"
+    )]
+    let (avg_tokens_per_minute, avg_tokens_per_hour, avg_tokens_per_day) = (
+        if minutes > 0.0 { total_tokens as f64 / minutes } else { 0.0 },
+        if hours > 0.0 { total_tokens as f64 / hours } else { 0.0 },
+        if days > 0.0 { total_tokens as f64 / days } else { 0.0 },
+    );
 
     Ok(TokenUsageStats {
         total_input,
@@ -242,24 +295,12 @@ pub fn get_token_usage_stats() -> Result<TokenUsageStats, String> {
         total_cached,
         total_requests,
         time_range_secs,
-        avg_input_per_request: if total_requests > 0 {
-            total_input as f64 / total_requests as f64
-        } else {
-            0.0
-        },
-        avg_output_per_request: if total_requests > 0 {
-            total_output as f64 / total_requests as f64
-        } else {
-            0.0
-        },
-        avg_cached_per_request: if total_requests > 0 {
-            total_cached as f64 / total_requests as f64
-        } else {
-            0.0
-        },
-        avg_tokens_per_minute: if minutes > 0.0 { total_tokens as f64 / minutes } else { 0.0 },
-        avg_tokens_per_hour: if hours > 0.0 { total_tokens as f64 / hours } else { 0.0 },
-        avg_tokens_per_day: if days > 0.0 { total_tokens as f64 / days } else { 0.0 },
+        avg_input_per_request,
+        avg_output_per_request,
+        avg_cached_per_request,
+        avg_tokens_per_minute,
+        avg_tokens_per_hour,
+        avg_tokens_per_day,
         requests_last_hour,
         tokens_last_hour,
         cached_last_hour,

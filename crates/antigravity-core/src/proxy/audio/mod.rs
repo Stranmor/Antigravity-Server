@@ -19,7 +19,7 @@ impl AudioProcessor {
         }
 
         // WAV: RIFF....WAVE
-        if data.starts_with(b"RIFF") && data.len() >= 12 && &data[8..12] == b"WAVE" {
+        if data.starts_with(b"RIFF") && &data[8..12] == b"WAVE" {
             return Some("audio/wav".to_string());
         }
 
@@ -34,12 +34,12 @@ impl AudioProcessor {
         }
 
         // AIFF: FORM....AIFF
-        if data.starts_with(b"FORM") && data.len() >= 12 && &data[8..12] == b"AIFF" {
+        if data.starts_with(b"FORM") && &data[8..12] == b"AIFF" {
             return Some("audio/aiff".to_string());
         }
 
         // M4A/AAC: ftyp (ISO Base Media)
-        if data.len() >= 8 && &data[4..8] == b"ftyp" {
+        if &data[4..8] == b"ftyp" {
             return Some("audio/aac".to_string());
         }
 
@@ -84,8 +84,7 @@ impl AudioProcessor {
 
     /// Check if file exceeds size limit
     pub fn exceeds_size_limit(size_bytes: usize) -> bool {
-        const MAX_SIZE: usize = 15 * 1024 * 1024; // 15MB
-        size_bytes > MAX_SIZE
+        size_bytes > Self::max_size_bytes()
     }
 }
 

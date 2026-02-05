@@ -122,19 +122,19 @@ pub fn get_user_data_dir_from_process() -> Option<std::path::PathBuf> {
 }
 
 fn extract_user_data_dir(args: &[String]) -> Option<std::path::PathBuf> {
-    for i in 0..args.len() {
-        if args[i] == "--user-data-dir" && i + 1 < args.len() {
-            let path = std::path::PathBuf::from(&args[i + 1]);
-            if path.exists() {
-                return Some(path);
-            }
-        } else if args[i].starts_with("--user-data-dir=") {
-            let parts: Vec<&str> = args[i].splitn(2, '=').collect();
-            if parts.len() == 2 {
-                let path = std::path::PathBuf::from(parts[1]);
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        if arg == "--user-data-dir" {
+            if let Some(next_arg) = iter.next() {
+                let path = std::path::PathBuf::from(next_arg);
                 if path.exists() {
                     return Some(path);
                 }
+            }
+        } else if let Some(value) = arg.strip_prefix("--user-data-dir=") {
+            let path = std::path::PathBuf::from(value);
+            if path.exists() {
+                return Some(path);
             }
         }
     }

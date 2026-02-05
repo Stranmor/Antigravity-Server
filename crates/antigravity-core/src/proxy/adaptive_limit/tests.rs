@@ -150,7 +150,7 @@ fn test_aimd_custom_params() {
         min_limit: 5,
         max_limit: 500,
     };
-    assert_eq!(aimd.reward(100), 111); // 100 * 1.10 = 110.0, ceil = 111
+    assert_eq!(aimd.reward(100), 110); // 100 * 1.10 = 110.0, ceil = 110
     assert_eq!(aimd.penalize(100), 50);
     assert_eq!(aimd.penalize(8), 5);
     assert_eq!(aimd.reward(500), 500);
@@ -177,6 +177,9 @@ fn test_concurrent_expansion_no_double() {
     }
 
     let final_limit = tracker.confirmed_limit();
+
+    assert!(final_limit > initial, "Limit should have expanded: {} -> {}", initial, final_limit);
+
     let expansion_count =
         ((final_limit as f64 / initial as f64).ln() / (1.05_f64).ln()).round() as u32;
 
