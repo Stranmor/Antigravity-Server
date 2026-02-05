@@ -7,7 +7,8 @@ mod tool_declarations;
 mod tests;
 
 use super::models::*;
-use crate::proxy::mappers::signature_store::get_thought_signature;
+use crate::proxy::session_manager::SessionManager;
+use crate::proxy::SignatureCache;
 use generation_config::build_generation_config;
 use message_transform::{merge_consecutive_roles, transform_message, MessageTransformContext};
 use serde_json::{json, Value};
@@ -46,16 +47,25 @@ pub fn transform_openai_request(
             && msg.reasoning_content.as_ref().map(|s| s.is_empty()).unwrap_or(true)
     });
 
-    // Get global stored thought signature
-    let global_thought_sig = get_thought_signature();
+    // [FIX #signature-recovery] Generate session_id and get signature from SignatureCache (not legacy global store)
+    let session_id = SessionManager::extract_openai_session_id(request);
+    let session_thought_sig = SignatureCache::global().get_session_signature(&session_id);
+
+    if let Some(ref sig) = session_thought_sig {
+        tracing::debug!(
+            "[OpenAI-Thinking] Recovered signature from session cache (session: {}, len: {})",
+            session_id,
+            sig.len()
+        );
+    }
 
     // [NEW] Decide whether to enable Thinking feature:
     // If it's a Claude thinking model and history is incompatible and no available signature to use as placeholder, disable Thinking to prevent 400
     let actual_include_thinking = if is_claude_thinking
         && has_incompatible_assistant_history
-        && global_thought_sig.is_none()
+        && session_thought_sig.is_none()
     {
-        tracing::warn!("[OpenAI-Thinking] Incompatible assistant history detected for Claude thinking model without global signature. Disabling thinking for this request to avoid 400 error.");
+        tracing::warn!("[OpenAI-Thinking] Incompatible assistant history detected for Claude thinking model without session signature. Disabling thinking for this request to avoid 400 error.");
         false
     } else {
         is_thinking_model
@@ -129,14 +139,14 @@ pub fn transform_openai_request(
         }
     }
 
-    // Get thoughtSignature from global storage (PR #93 support)
-    // (Already fetched as global_thought_sig above)
-    if let Some(ref sig) = global_thought_sig {
-        tracing::debug!("Got thoughtSignature from global storage (length: {})", sig.len());
+    // Get thoughtSignature from session cache (PR #93 support)
+    // (Already fetched as session_thought_sig above)
+    if let Some(ref sig) = session_thought_sig {
+        tracing::debug!("Got thoughtSignature from session cache (length: {})", sig.len());
     }
 
     let transform_ctx = MessageTransformContext {
-        global_thought_sig: &global_thought_sig,
+        global_thought_sig: &session_thought_sig,
         actual_include_thinking,
         is_thinking_model,
         mapped_model,

@@ -1,4 +1,9 @@
 //! Shared utilities for process lifecycle management.
+#![allow(
+    clippy::integer_division,
+    clippy::arithmetic_side_effects,
+    reason = "timeout calculation: 70% of timeout_secs"
+)]
 
 use std::process::Command;
 use std::thread;

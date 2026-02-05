@@ -3,6 +3,16 @@
 //! Learns from historical request/response pairs to improve token estimation accuracy.
 //! Uses actual token counts from Google API responses to calibrate future estimates.
 
+// Calibration uses f32/f64 ratios for statistical averaging.
+// Token counts are u64 but practically bounded by API limits.
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::as_conversions,
+    reason = "Estimation calibration: statistical ratios, bounded token counts"
+)]
+
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use tracing::info;

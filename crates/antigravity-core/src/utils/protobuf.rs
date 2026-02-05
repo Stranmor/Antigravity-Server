@@ -1,3 +1,17 @@
+// Protobuf wire format uses fixed bit-width operations:
+// - Varint encoding: 7 bits per byte with continuation bit
+// - Wire types: 3 bits (0-7), field numbers: remaining bits
+// - All casts are bounded by the protocol specification.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_lossless,
+    clippy::as_conversions,
+    clippy::arithmetic_side_effects,
+    clippy::indexing_slicing,
+    reason = "Protobuf wire format: bit-level operations with protocol-defined bounds"
+)]
+
 /// Protobuf Varint encode
 pub fn encode_varint(mut value: u64) -> Vec<u8> {
     let mut buf = Vec::new();

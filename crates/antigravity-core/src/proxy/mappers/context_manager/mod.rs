@@ -3,6 +3,17 @@
 //! Responsible for estimating token usage and purifying context (stripping thinking blocks)
 //! to prevent "Prompt is too long" errors and avoid invalid signatures.
 
+// Token estimation uses arithmetic on u32 counters.
+// Values are bounded by context window limits (~2M tokens max).
+// Overflow is impossible in practice; saturating_add would hide bugs.
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::as_conversions,
+    reason = "Token estimation: bounded by context window limits, overflow impossible"
+)]
+
 mod estimation;
 mod tool_rounds;
 

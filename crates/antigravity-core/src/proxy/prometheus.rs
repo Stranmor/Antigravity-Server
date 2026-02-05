@@ -14,6 +14,16 @@
 //! - `antigravity_peek_retries_total{reason}` - Counter of peek phase retries
 //! - `antigravity_peek_heartbeats_total` - Counter of heartbeats during peek
 
+// Prometheus metrics: counter/gauge operations and file size calculations.
+// All values are bounded by system limits (file sizes, counters).
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::as_conversions,
+    reason = "Prometheus metrics: bounded counters and file size calculations"
+)]
+
 use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gauge, histogram};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use std::path::Path;

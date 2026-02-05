@@ -2,6 +2,7 @@
 //!
 //! This module provides functions to migrate account data from JSON files
 //! to PostgreSQL database, with verification and statistics tracking.
+#![allow(clippy::arithmetic_side_effects, reason = "counter increments are safe")]
 
 use crate::models::Account;
 use crate::modules::account::{get_accounts_dir, load_account_index};

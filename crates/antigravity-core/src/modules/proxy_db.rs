@@ -1,4 +1,11 @@
 //! SQLite-based proxy request logging and statistics.
+#![allow(
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "timestamp conversions and statistics calculations"
+)]
 
 use antigravity_types::models::{ProxyRequestLog, ProxyStats, TokenUsageStats};
 use rusqlite::{params, Connection};

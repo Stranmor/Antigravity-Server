@@ -1,6 +1,18 @@
 // Claude helper functions
 // JSON Schema cleanup, signature handling, etc.
 
+// Token scaling algorithm uses floating-point math for smooth compression curves.
+// All values are bounded: token counts are u32 (max 4B), context limits are ~2M.
+// Precision loss in f64 mantissa (52 bits) is acceptable for display purposes.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::as_conversions,
+    clippy::arithmetic_side_effects,
+    reason = "Token scaling algorithm: bounded u32 values, intentional f64 math for smooth curves"
+)]
+
 // Already removed unused Value import
 
 // Note: uppercase_schema_types function already removed (for converting JSON Schema type names to uppercase)

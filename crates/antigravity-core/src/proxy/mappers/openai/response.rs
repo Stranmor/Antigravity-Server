@@ -1,3 +1,13 @@
+// OpenAI protocol response conversion: JSON traversal and index operations.
+// All array accesses use iterator patterns or are bounds-checked.
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_possible_truncation,
+    clippy::as_conversions,
+    clippy::indexing_slicing,
+    reason = "Response transformation: validated JSON structure, iterator-based access"
+)]
+
 // OpenAI protocol response conversion module
 use super::models::*;
 use serde_json::Value;

@@ -1,3 +1,16 @@
+// AIMD rate limiting: arithmetic on request counts and limits.
+// Values are bounded: limits are u64 but practically < 10000 RPM.
+// f64 precision loss is acceptable for rate limiting heuristics.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::as_conversions,
+    clippy::arithmetic_side_effects,
+    clippy::integer_division,
+    reason = "AIMD algorithm: bounded rate limits, f64 math for smooth adjustments"
+)]
+
 use super::aimd::{AIMDController, ProbeStrategy};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;

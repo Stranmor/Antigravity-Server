@@ -4,6 +4,7 @@ pub mod auth;
 pub mod cors;
 pub mod logging;
 pub mod monitor;
+pub mod rate_limiter;
 pub mod service_status;
 
 pub use auth::{admin_auth_middleware, auth_middleware};

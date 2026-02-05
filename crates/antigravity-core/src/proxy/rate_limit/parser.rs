@@ -1,3 +1,13 @@
+// Rate limit parsing: regex-based duration extraction from API error messages.
+// Arithmetic on parsed duration components (hours, minutes, seconds, milliseconds).
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::as_conversions,
+    reason = "Duration parsing: bounded time values from API responses"
+)]
+
 use regex::Regex;
 use std::sync::OnceLock;
 

@@ -1,3 +1,10 @@
+//! Quota fetching and management for Antigravity accounts.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::as_conversions,
+    reason = "percentage calculation: f64 * 100.0 -> i32"
+)]
+
 use crate::models::QuotaData;
 use reqwest;
 use serde::{Deserialize, Serialize};

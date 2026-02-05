@@ -5,10 +5,12 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use std::net::IpAddr;
 use std::sync::Arc;
 use subtle::ConstantTimeEq;
 use tokio::sync::RwLock;
 
+use super::rate_limiter;
 use crate::proxy::{ProxyAuthMode, ProxySecurityConfig};
 
 pub async fn auth_middleware(
@@ -60,6 +62,17 @@ async fn auth_middleware_internal(
         return Ok(next.run(request).await);
     }
 
+    let client_ip = extract_client_ip(&request);
+
+    if force_strict {
+        if let Some(ip) = client_ip {
+            if rate_limiter::is_blocked(ip) {
+                tracing::warn!("Blocked IP {} attempted access", ip);
+                return Err(StatusCode::TOO_MANY_REQUESTS);
+            }
+        }
+    }
+
     let security = security.read().await.clone();
     let effective_mode = security.effective_auth_mode();
 
@@ -102,10 +115,34 @@ async fn auth_middleware_internal(
     let authorized = api_key.is_some_and(|k| constant_time_compare(k, &security.api_key));
 
     if authorized {
+        if let Some(ip) = client_ip {
+            rate_limiter::clear_failed_attempts(ip);
+        }
         Ok(next.run(request).await)
     } else {
+        if force_strict {
+            if let Some(ip) = client_ip {
+                rate_limiter::record_failed_attempt(ip);
+            }
+        }
         Err(StatusCode::UNAUTHORIZED)
     }
+}
+
+fn extract_client_ip(request: &Request) -> Option<IpAddr> {
+    request
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .and_then(|s| s.trim().parse().ok())
+        .or_else(|| {
+            request
+                .headers()
+                .get("x-real-ip")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|s| s.trim().parse().ok())
+        })
 }
 
 #[cfg(test)]

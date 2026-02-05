@@ -39,7 +39,7 @@ pub(crate) fn on_save_config(ps: ProxyState) {
     spawn_local(async move {
         if let Ok(mut config) = commands::load_config().await {
             config.proxy.port = ps.port.get();
-            config.proxy.request_timeout = ps.timeout.get() as u64;
+            config.proxy.request_timeout = u64::from(ps.timeout.get());
             config.proxy.auto_start = ps.auto_start.get();
             config.proxy.allow_lan_access = ps.allow_lan.get();
             config.proxy.auth_mode = ps.auth_mode.get();
@@ -151,7 +151,7 @@ pub(crate) fn load_config_on_mount(ps: ProxyState) {
     spawn_local(async move {
         if let Ok(config) = commands::load_config().await {
             ps.port.set(config.proxy.port);
-            ps.timeout.set(config.proxy.request_timeout as u32);
+            ps.timeout.set(u32::try_from(config.proxy.request_timeout).unwrap_or(u32::MAX));
             ps.auto_start.set(config.proxy.auto_start);
             ps.allow_lan.set(config.proxy.allow_lan_access);
             ps.auth_mode.set(config.proxy.auth_mode);

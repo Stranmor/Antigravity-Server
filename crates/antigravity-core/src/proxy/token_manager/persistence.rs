@@ -1,3 +1,13 @@
+// Token persistence: file I/O and timestamp operations.
+// Timestamps are i64/u64 from system time, arithmetic is for age calculations.
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::as_conversions,
+    reason = "Token persistence: timestamp arithmetic, bounded by system time"
+)]
+
 use super::file_utils::atomic_write_json;
 use super::TokenManager;
 use crate::modules::oauth;

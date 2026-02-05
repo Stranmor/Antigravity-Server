@@ -33,10 +33,12 @@ pub fn format_time_remaining(date_str: &str) -> String {
     }
 
     let total_minutes = diff.num_minutes();
+    #[allow(clippy::integer_division, reason = "intentional truncation for time formatting")]
     let hours = total_minutes / 60;
     let minutes = total_minutes.rem_euclid(60);
 
     if hours >= 24 {
+        #[allow(clippy::integer_division, reason = "intentional truncation for day calculation")]
         let days = hours / 24;
         let remaining_hours = hours.rem_euclid(24);
         format!("{}d {}h", days, remaining_hours)

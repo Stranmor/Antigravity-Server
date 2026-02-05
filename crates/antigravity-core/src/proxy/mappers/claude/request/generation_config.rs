@@ -1,5 +1,14 @@
 //! Generation config building.
 
+// Generation config uses arithmetic for token budget calculations.
+// Values are bounded by model limits (max 24576 for Flash, etc.).
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_possible_truncation,
+    clippy::as_conversions,
+    reason = "Generation config: bounded token budgets, model-specific limits"
+)]
+
 use super::super::models::ClaudeRequest;
 use serde_json::{json, Value};
 

@@ -1,4 +1,5 @@
 //! RAII guard for cancellation-safe active request counting.
+#![allow(clippy::arithmetic_side_effects, reason = "atomic counter increment/decrement")]
 
 use dashmap::DashMap;
 use std::sync::atomic::{AtomicU32, Ordering};

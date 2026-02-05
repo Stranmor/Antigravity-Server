@@ -2,6 +2,12 @@
 //!
 //! This module provides logging setup with console and file output,
 //! automatic log rotation, and cleanup of old log files.
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_precision_loss,
+    clippy::as_conversions,
+    reason = "time calculations and counter increments"
+)]
 
 use crate::modules::account::get_data_dir;
 use std::fs;

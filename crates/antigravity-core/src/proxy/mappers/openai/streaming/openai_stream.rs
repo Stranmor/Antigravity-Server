@@ -1,3 +1,14 @@
+// OpenAI SSE stream transformation: byte buffer operations and index tracking.
+// Buffer sizes are bounded by stream chunk sizes. Index operations are validated.
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::as_conversions,
+    clippy::indexing_slicing,
+    reason = "SSE streaming: bounded buffer operations, validated indices"
+)]
+
 use bytes::{Bytes, BytesMut};
 use chrono::Utc;
 use futures::{Stream, StreamExt};

@@ -1,3 +1,13 @@
+// Request/response monitoring: byte counting and size limits.
+// All arithmetic is on usize for buffer sizes, bounded by MAX_*_LOG_SIZE constants.
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_possible_truncation,
+    clippy::as_conversions,
+    clippy::indexing_slicing,
+    reason = "Monitoring middleware: bounded buffer sizes, safe byte operations"
+)]
+
 use crate::proxy::monitor::ProxyRequestLog;
 use crate::proxy::server::AppState;
 use axum::{

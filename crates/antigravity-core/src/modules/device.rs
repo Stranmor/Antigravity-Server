@@ -33,7 +33,12 @@ pub fn generate_profile() -> DeviceProfile {
 fn random_hex(length: usize) -> String {
     const HEX_CHARS: &[u8] = b"0123456789abcdef";
     let mut rng = rand::thread_rng();
-    (0..length).map(|_| HEX_CHARS[rng.gen_range(0..16)] as char).collect()
+    (0..length)
+        .map(|_| {
+            let idx = rng.gen_range(0..16);
+            char::from(HEX_CHARS.get(idx).copied().unwrap_or(b'0'))
+        })
+        .collect()
 }
 
 /// Generates a standard UUID v4 format machine ID.
@@ -199,8 +204,8 @@ pub fn write_profile(storage_path: &Path, profile: &DeviceProfile) -> Result<(),
         serde_json::from_str(&content).map_err(|e| format!("parse_failed: {}", e))?;
 
     if !json.get("telemetry").is_some_and(|v| v.is_object()) {
-        if json.as_object_mut().is_some() {
-            json["telemetry"] = serde_json::json!({});
+        if let Some(obj) = json.as_object_mut() {
+            obj.insert("telemetry".to_string(), serde_json::json!({}));
         } else {
             return Err("json_top_level_not_object".to_string());
         }

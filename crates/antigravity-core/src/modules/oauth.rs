@@ -198,7 +198,7 @@ pub async fn ensure_fresh_token(
     let now = chrono::Local::now().timestamp();
 
     // If no expiry time, or more than 5 minutes validity remaining, return directly
-    if current_token.expiry_timestamp > now + 300 {
+    if current_token.expiry_timestamp > now.saturating_add(300) {
         return Ok(current_token.clone());
     }
 

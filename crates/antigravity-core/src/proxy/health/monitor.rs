@@ -1,4 +1,5 @@
 //! Health Monitor implementation.
+#![allow(clippy::arithmetic_side_effects, reason = "atomic counter operations")]
 
 use dashmap::DashMap;
 use std::sync::atomic::Ordering;

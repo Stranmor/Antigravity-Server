@@ -1,3 +1,12 @@
+//! AIMD (Additive Increase Multiplicative Decrease) rate limiting controller.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    clippy::as_conversions,
+    reason = "AIMD algorithm requires float arithmetic for rate adjustments"
+)]
+
 #[derive(Debug, Clone)]
 pub struct AIMDController {
     pub additive_increase: f64,

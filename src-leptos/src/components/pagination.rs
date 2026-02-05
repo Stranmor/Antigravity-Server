@@ -18,13 +18,13 @@ pub(crate) fn Pagination(
 
     let on_prev = move |_| {
         if can_prev() {
-            on_page_change.run(current_page.get() - 1);
+            on_page_change.run(current_page.get().saturating_sub(1));
         }
     };
 
     let on_next = move |_| {
         if can_next() {
-            on_page_change.run(current_page.get() + 1);
+            on_page_change.run(current_page.get().saturating_add(1));
         }
     };
 
@@ -44,7 +44,7 @@ pub(crate) fn Pagination(
             }
 
             let start = current.saturating_sub(1).max(2);
-            let end = (current + 1).min(total - 1);
+            let end = current.saturating_add(1).min(total.saturating_sub(1));
 
             for p in start..=end {
                 if !pages.contains(&p) {
@@ -52,7 +52,7 @@ pub(crate) fn Pagination(
                 }
             }
 
-            if current < total - 2 {
+            if current < total.saturating_sub(2) {
                 pages.push(0); // ellipsis marker
             }
 

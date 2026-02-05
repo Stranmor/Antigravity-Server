@@ -69,7 +69,7 @@ pub(crate) fn Accounts() -> impl IntoView {
             .iter()
             .filter(|a| is_ultra_tier(a.quota.as_ref().and_then(|q| q.subscription_tier.as_ref())))
             .count();
-        let free = all - pro - ultra;
+        let free = all.saturating_sub(pro).saturating_sub(ultra);
         let needs_verification = accounts
             .iter()
             .filter(|a| needs_phone_verification(a.proxy_disabled_reason.as_ref()))
@@ -106,14 +106,21 @@ pub(crate) fn Accounts() -> impl IntoView {
         let all = filtered_accounts.get();
         let page = current_page.get();
         let per_page = items_per_page.get();
-        let start = (page - 1) * per_page;
+        let start = page.saturating_sub(1).saturating_mul(per_page);
         all.into_iter().skip(start).take(per_page).collect::<Vec<_>>()
     });
 
     let total_pages = Memo::new(move |_| {
         let total = filtered_accounts.get().len();
         let per_page = items_per_page.get();
-        (total + per_page - 1) / per_page.max(1)
+        #[allow(
+            clippy::arithmetic_side_effects,
+            clippy::integer_division,
+            reason = "pagination calculation, per_page >= 1"
+        )]
+        {
+            total.saturating_add(per_page).saturating_sub(1) / per_page.max(1)
+        }
     });
 
     let selected_count = Memo::new(move |_| selected_ids.get().len());

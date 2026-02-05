@@ -1,4 +1,12 @@
 //! Formatting utilities for monitor page
+#![allow(
+    clippy::integer_division,
+    clippy::modulo_arithmetic,
+    clippy::arithmetic_side_effects,
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "time/date calculations require integer division and modulo"
+)]
 
 pub(crate) fn format_timestamp(ts: i64) -> String {
     // Backend stores timestamp in MILLISECONDS, convert to seconds first
