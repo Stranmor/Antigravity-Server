@@ -39,26 +39,42 @@ fn transform_reasoning_content(
 ) {
     if let Some(reasoning) = &msg.reasoning_content {
         if !reasoning.is_empty() {
-            let mut thought_part = json!({
-                "text": reasoning,
-                "thought": true,
-            });
-
-            // First try content-based signature recovery (most reliable)
+            // Try to recover signature from content cache
             if let Some((sig, family)) = SignatureCache::global().get_content_signature(reasoning) {
                 tracing::info!(
                     "[OpenAI-Thinking] Recovered signature from CONTENT cache (len={}, family={})",
                     sig.len(),
                     family
                 );
-                thought_part["thoughtSignature"] = json!(sig);
+                let thought_part = json!({
+                    "text": reasoning,
+                    "thought": true,
+                    "thoughtSignature": sig
+                });
+                parts.push(thought_part);
             } else if let Some(ref sig) = ctx.global_thought_sig {
-                // Fallback to session-based signature
-                thought_part["thoughtSignature"] = json!(sig);
+                let thought_part = json!({
+                    "text": reasoning,
+                    "thought": true,
+                    "thoughtSignature": sig
+                });
+                parts.push(thought_part);
+            } else if ctx.actual_include_thinking {
+                // No signature but thinking enabled - will likely fail with 400
+                tracing::warn!(
+                    "[OpenAI-Thinking] No signature for reasoning_content, sending without (may cause 400)"
+                );
+                parts.push(json!({
+                    "text": reasoning,
+                    "thought": true,
+                }));
+            } else {
+                // Thinking disabled - downgrade to regular text
+                tracing::warn!(
+                    "[OpenAI-Thinking] Thinking disabled, downgrading reasoning_content to text"
+                );
+                parts.push(json!({"text": reasoning}));
             }
-            // If no signature found, send without it - upstream may reject with 400
-
-            parts.push(thought_part);
         }
     } else if ctx.actual_include_thinking && role == "model" {
         tracing::debug!(
@@ -133,8 +149,6 @@ fn transform_tool_calls(
                     "id": &tc.id,
                 }
             });
-
-            crate::proxy::common::json_schema::clean_json_schema(&mut func_call_part);
 
             if let Some(ref sig) = ctx.global_thought_sig {
                 func_call_part["thoughtSignature"] = json!(sig);

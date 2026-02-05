@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use bytes::{Bytes, BytesMut};
 use chrono::Utc;
 use futures::{Stream, StreamExt};
@@ -7,6 +9,7 @@ use std::pin::Pin;
 
 use super::usage::extract_usage_metadata;
 use crate::proxy::mappers::openai::models::OpenAIUsage;
+#[allow(deprecated)]
 use crate::proxy::mappers::signature_store::store_thought_signature;
 
 pub fn create_legacy_sse_stream(

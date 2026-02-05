@@ -13,8 +13,10 @@
 mod mapping;
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::get_unwrap)]
 mod tests;
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::get_unwrap)]
 mod tests_tiebreaker;
 
 pub use mapping::{MappingEntry, SyncableMapping};

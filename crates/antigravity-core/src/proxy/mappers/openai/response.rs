@@ -31,6 +31,7 @@ pub fn transform_openai_response(gemini_response: &Value) -> OpenAIResponse {
             {
                 for part in parts {
                     // Capture thoughtSignature (required for Gemini 3 tool calls)
+                    #[allow(deprecated)]
                     if let Some(sig) = part
                         .get("thoughtSignature")
                         .or(part.get("thought_signature"))

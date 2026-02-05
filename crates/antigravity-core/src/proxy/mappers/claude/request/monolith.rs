@@ -12,8 +12,8 @@ use super::thinking::{
     should_enable_thinking_by_default,
 };
 use super::tools_builder::build_tools;
-use crate::proxy::mappers::signature_store::get_thought_signature;
 use crate::proxy::session_manager::SessionManager;
+use crate::proxy::SignatureCache;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
@@ -133,7 +133,7 @@ pub fn transform_claude_request_in(
     // [FIX #295 & #298] If thinking enabled but no signature available,
     // disable thinking to prevent Gemini 3 Pro rejection
     if is_thinking_enabled {
-        let global_sig = get_thought_signature();
+        let global_sig = SignatureCache::global().get_session_signature(&session_id);
 
         // Check if there are any thinking blocks in message history
         let has_thinking_history = claude_req.messages.iter().any(|m| {

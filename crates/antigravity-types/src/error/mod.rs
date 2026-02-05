@@ -43,6 +43,7 @@ pub enum TypedError {
 pub type Result<T> = std::result::Result<T, TypedError>;
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

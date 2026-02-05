@@ -11,4 +11,5 @@ pub use legacy_stream::create_legacy_sse_stream;
 pub use openai_stream::create_openai_sse_stream;
 pub use usage::extract_usage_metadata;
 
+#[allow(deprecated)]
 pub use crate::proxy::mappers::signature_store::{get_thought_signature, store_thought_signature};
