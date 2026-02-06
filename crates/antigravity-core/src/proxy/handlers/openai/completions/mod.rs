@@ -124,6 +124,7 @@ pub async fn handle_completions(
                         Box::pin(gemini_stream),
                         openai_req.model.clone(),
                         None,
+                        Some(session_id_str.clone()),
                     ))
                 } else {
                     use crate::proxy::mappers::openai::streaming::create_legacy_sse_stream;

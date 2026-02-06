@@ -27,11 +27,13 @@ pub async fn handle_stream_response<S>(
     reason: String,
     client_wants_stream: bool,
     trace_id: &str,
+    session_id: String,
 ) -> StreamResult
 where
     S: futures::Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
 {
-    let openai_stream = create_openai_sse_stream(Box::pin(gemini_stream), model, None);
+    let openai_stream =
+        create_openai_sse_stream(Box::pin(gemini_stream), model, None, Some(session_id));
 
     let peek_config = PeekConfig::openai();
     let (first_data_chunk, openai_stream) =

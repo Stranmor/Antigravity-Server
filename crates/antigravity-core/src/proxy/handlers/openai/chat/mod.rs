@@ -157,6 +157,7 @@ pub async fn handle_chat_completions(
                 reason.clone(),
                 client_wants_stream,
                 &trace_id,
+                session_id.clone(),
             )
             .await
             {

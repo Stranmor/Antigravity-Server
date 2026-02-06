@@ -29,6 +29,7 @@ pub fn create_openai_sse_stream(
     mut gemini_stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
     model: String,
     _estimated_tokens: Option<u32>,
+    session_id: Option<String>,
 ) -> Pin<Box<dyn Stream<Item = Result<Bytes, String>> + Send>> {
     let mut buffer = BytesMut::new();
     let stream_id = format!("chatcmpl-{}", Uuid::new_v4());
@@ -107,6 +108,18 @@ pub fn create_openai_sse_stream(
                                                                 sig.to_string(),
                                                                 model_family,
                                                             );
+                                                            // Cache to session for multi-turn recovery
+                                                            if let Some(ref sid) = session_id {
+                                                                SignatureCache::global().cache_session_signature(
+                                                                    sid,
+                                                                    sig.to_string(),
+                                                                );
+                                                                tracing::debug!(
+                                                                    "[OpenAI-SSE] Cached session signature (session={}, sig_len={})",
+                                                                    sid,
+                                                                    sig.len()
+                                                                );
+                                                            }
                                                             tracing::debug!(
                                                                 "[OpenAI-SSE] Cached content signature (thinking_len={}, sig_len={})",
                                                                 accumulated_thinking.len(),
