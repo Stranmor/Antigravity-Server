@@ -4,6 +4,7 @@ mod response_mapper;
 mod streaming_handler;
 
 use super::*;
+use crate::proxy::SignatureCache;
 use request_parser::{ensure_non_empty_messages, normalize_request_body};
 
 pub async fn handle_completions(
@@ -60,6 +61,20 @@ pub async fn handle_completions(
 
         last_email = Some(email.clone());
         info!("✓ Using account: {} (type: {})", email, config.request_type);
+
+        // Preload thinking signatures from PostgreSQL for multi-turn conversations
+        let content_hashes: Vec<String> = openai_req
+            .messages
+            .iter()
+            .filter(|m| m.role == "assistant")
+            .filter_map(|m| m.reasoning_content.as_ref())
+            .filter(|rc| !rc.is_empty())
+            .map(|rc| SignatureCache::compute_content_hash(rc))
+            .collect();
+
+        if !content_hashes.is_empty() {
+            SignatureCache::global().preload_signatures_from_db(&content_hashes).await;
+        }
 
         let gemini_body = transform_openai_request(&openai_req, &project_id, &mapped_model);
         debug!(

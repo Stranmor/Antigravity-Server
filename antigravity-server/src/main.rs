@@ -48,6 +48,7 @@ mod warmup_commands;
 use antigravity_core::modules::account_pg::PostgresAccountRepository;
 use antigravity_core::modules::repository::AccountRepository;
 use antigravity_core::proxy::server::AxumServer;
+use antigravity_core::proxy::SignatureCache;
 use cli::{Cli, Commands};
 use state::AppState;
 
@@ -142,23 +143,21 @@ async fn run_server(port: u16) -> Result<()> {
                 Ok(repo) => {
                     info!("✅ PostgreSQL connected");
                     if let Err(e) = repo.run_migrations().await {
-                        tracing::error!(
-                            "❌ Database migration failed: {}. Falling back to JSON storage.",
+                        tracing::warn!(
+                            "⚠️ Database migration issue: {}. Continuing with existing schema.",
                             e
                         );
-                        None
                     } else {
                         info!("✅ Database migrations applied");
-                        if let Err(e) =
-                            antigravity_core::modules::json_migration::migrate_json_to_postgres(
-                                &repo,
-                            )
-                            .await
-                        {
-                            tracing::warn!("⚠️ JSON migration skipped or failed: {}", e);
-                        }
-                        Some(Arc::new(repo))
                     }
+                    if let Err(e) =
+                        antigravity_core::modules::json_migration::migrate_json_to_postgres(&repo)
+                            .await
+                    {
+                        tracing::warn!("⚠️ JSON migration skipped or failed: {}", e);
+                    }
+                    SignatureCache::global().set_db_pool(repo.pool().clone());
+                    Some(Arc::new(repo))
                 },
                 Err(e) => {
                     tracing::error!(

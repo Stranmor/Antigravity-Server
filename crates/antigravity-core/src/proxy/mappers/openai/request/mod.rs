@@ -38,7 +38,8 @@ pub fn transform_openai_request(
     let is_gemini_3_thinking = mapped_model_lower.contains("gemini")
         && mapped_model_lower.contains("-thinking")
         && !mapped_model_lower.contains("claude");
-    let is_claude_thinking = mapped_model_lower.ends_with("-thinking");
+    let is_claude_thinking =
+        mapped_model_lower.contains("claude") && mapped_model_lower.ends_with("-thinking");
     let is_thinking_model = is_gemini_3_thinking || is_claude_thinking;
 
     // [NEW] Check if we can recover signatures for ALL assistant messages with reasoning_content
@@ -154,6 +155,7 @@ pub fn transform_openai_request(
         global_thought_sig: &session_thought_sig,
         actual_include_thinking,
         is_thinking_model,
+        is_claude_thinking,
         mapped_model,
         tool_id_to_name: &tool_id_to_name,
         tool_name_to_schema: &tool_name_to_schema,

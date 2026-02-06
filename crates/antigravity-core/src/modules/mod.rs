@@ -16,5 +16,6 @@ pub mod process;
 pub mod proxy_db;
 pub mod quota;
 pub mod repository;
+pub mod signature_storage;
 pub(crate) mod token_extraction;
 pub(crate) mod vscode;

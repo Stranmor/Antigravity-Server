@@ -18,6 +18,7 @@ use crate::proxy::handlers::openai::completions::request_parser::ensure_non_empt
 use crate::proxy::mappers::openai::{transform_openai_request, OpenAIRequest};
 use crate::proxy::server::AppState;
 use crate::proxy::session_manager::SessionManager;
+use crate::proxy::SignatureCache;
 
 use error_handler::{
     handle_auth_errors, handle_grace_retry, handle_rate_limit_errors, handle_service_disabled,
@@ -94,6 +95,19 @@ pub async fn handle_chat_completions(
 
         last_email = Some(email.clone());
         info!("✓ Using account: {} (type: {})", email, config.request_type);
+
+        let content_hashes: Vec<String> = openai_req
+            .messages
+            .iter()
+            .filter(|m| m.role == "assistant")
+            .filter_map(|m| m.reasoning_content.as_ref())
+            .filter(|rc| !rc.is_empty())
+            .map(|rc| SignatureCache::compute_content_hash(rc))
+            .collect();
+
+        if !content_hashes.is_empty() {
+            SignatureCache::global().preload_signatures_from_db(&content_hashes).await;
+        }
 
         let gemini_body = transform_openai_request(&openai_req, &project_id, &mapped_model);
 

@@ -9,6 +9,7 @@ pub struct MessageTransformContext<'a> {
     pub global_thought_sig: &'a Option<String>,
     pub actual_include_thinking: bool,
     pub is_thinking_model: bool,
+    pub is_claude_thinking: bool,
     pub mapped_model: &'a str,
     pub tool_id_to_name: &'a HashMap<String, String>,
     pub tool_name_to_schema: &'a HashMap<String, Value>,
@@ -67,22 +68,33 @@ fn transform_reasoning_content(
             }
         }
     } else if ctx.actual_include_thinking && role == "model" {
-        tracing::debug!(
-            "[OpenAI-Thinking] Injecting placeholder thinking block for assistant message"
-        );
-        let mut thought_part = json!({
-            "text": "Applying tool decisions and generating response...",
-            "thought": true,
-        });
+        // [FIX] For Claude thinking models, we CANNOT inject placeholder thinking blocks
+        // without a valid signature - Claude API will reject with "signature: Field required"
+        // Only Gemini supports the "skip_thought_signature_validator" hack
+        if ctx.is_claude_thinking && ctx.global_thought_sig.is_none() {
+            tracing::debug!(
+                "[OpenAI-Thinking] Skipping placeholder thinking block for Claude - no signature available"
+            );
+            // Don't inject thinking block for Claude without signature
+        } else {
+            tracing::debug!(
+                "[OpenAI-Thinking] Injecting placeholder thinking block for assistant message"
+            );
+            let mut thought_part = json!({
+                "text": "Applying tool decisions and generating response...",
+                "thought": true,
+            });
 
-        if let Some(ref sig) = ctx.global_thought_sig {
-            thought_part["thoughtSignature"] = json!(sig);
-        } else if !ctx.mapped_model.starts_with("projects/") && ctx.mapped_model.contains("gemini")
-        {
-            thought_part["thoughtSignature"] = json!("skip_thought_signature_validator");
+            if let Some(ref sig) = ctx.global_thought_sig {
+                thought_part["thoughtSignature"] = json!(sig);
+            } else if !ctx.mapped_model.starts_with("projects/")
+                && ctx.mapped_model.contains("gemini")
+            {
+                thought_part["thoughtSignature"] = json!("skip_thought_signature_validator");
+            }
+
+            parts.push(thought_part);
         }
-
-        parts.push(thought_part);
     }
 }
 
@@ -142,7 +154,10 @@ fn transform_tool_calls(
 
             if let Some(ref sig) = ctx.global_thought_sig {
                 func_call_part["thoughtSignature"] = json!(sig);
-            } else if ctx.is_thinking_model && !ctx.mapped_model.starts_with("projects/") {
+            } else if ctx.is_thinking_model
+                && !ctx.is_claude_thinking
+                && !ctx.mapped_model.starts_with("projects/")
+            {
                 tracing::debug!(
                     "[OpenAI-Signature] Adding GEMINI_SKIP_SIGNATURE for tool_use: {}",
                     tc.id

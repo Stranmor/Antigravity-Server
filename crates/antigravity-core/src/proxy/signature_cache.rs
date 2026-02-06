@@ -1,11 +1,12 @@
 #![allow(dead_code, reason = "content_signatures reserved for future use")]
 
 use sha2::{Digest, Sha256};
+use sqlx::PgPool;
 use std::collections::HashMap;
-use std::sync::{OnceLock, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Duration, SystemTime};
 
-const SIGNATURE_TTL: Duration = Duration::from_secs(2 * 60 * 60);
+const SIGNATURE_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const MIN_SIGNATURE_LENGTH: usize = 50;
 
 const TOOL_CACHE_LIMIT: usize = 500;
@@ -39,6 +40,7 @@ pub struct SignatureCache {
     thinking_families: RwLock<HashMap<String, CacheEntry<String>>>,
     session_signatures: RwLock<HashMap<String, CacheEntry<String>>>,
     content_signatures: RwLock<HashMap<String, CacheEntry<ContentSignatureEntry>>>,
+    db_pool: RwLock<Option<Arc<PgPool>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -54,6 +56,7 @@ impl SignatureCache {
             thinking_families: RwLock::new(HashMap::new()),
             session_signatures: RwLock::new(HashMap::new()),
             content_signatures: RwLock::new(HashMap::new()),
+            db_pool: RwLock::new(None),
         }
     }
 
@@ -61,6 +64,17 @@ impl SignatureCache {
     pub fn global() -> &'static SignatureCache {
         static INSTANCE: OnceLock<SignatureCache> = OnceLock::new();
         INSTANCE.get_or_init(SignatureCache::new)
+    }
+
+    pub fn set_db_pool(&self, pool: PgPool) {
+        if let Ok(mut db) = self.db_pool.write() {
+            *db = Some(Arc::new(pool));
+            tracing::info!("[SignatureCache] PostgreSQL pool configured for persistent storage");
+        }
+    }
+
+    fn get_pool(&self) -> Option<Arc<PgPool>> {
+        self.db_pool.read().ok().and_then(|p| p.clone())
     }
 
     /// Store a tool call signature
@@ -232,8 +246,11 @@ impl SignatureCache {
                 signature.len()
             );
             cache.insert(
-                content_hash,
-                CacheEntry::new(ContentSignatureEntry { signature, model_family }),
+                content_hash.clone(),
+                CacheEntry::new(ContentSignatureEntry {
+                    signature: signature.clone(),
+                    model_family: model_family.clone(),
+                }),
             );
 
             if cache.len() > CONTENT_CACHE_LIMIT {
@@ -245,6 +262,22 @@ impl SignatureCache {
                     cache.len()
                 );
             }
+        }
+
+        if let Some(pool) = self.get_pool() {
+            let hash = content_hash;
+            let sig = signature;
+            let family = model_family;
+            tokio::spawn(async move {
+                if let Err(e) =
+                    crate::modules::signature_storage::store_signature(&pool, &hash, &sig, &family)
+                        .await
+                {
+                    tracing::warn!("[SignatureCache] PostgreSQL write failed: {}", e);
+                } else {
+                    tracing::debug!("[SignatureCache] Content {} -> persisted to PostgreSQL", hash);
+                }
+            });
         }
     }
 
@@ -266,6 +299,43 @@ impl SignatureCache {
         None
     }
 
+    pub async fn get_content_signature_with_db(&self, content: &str) -> Option<(String, String)> {
+        if let Some(cached) = self.get_content_signature(content) {
+            return Some(cached);
+        }
+
+        let content_hash = Self::compute_content_hash(content);
+        let pool = self.get_pool()?;
+
+        match crate::modules::signature_storage::get_signature(&pool, &content_hash).await {
+            Ok(Some((sig, family))) => {
+                tracing::info!(
+                    "[SignatureCache] Content {} -> PostgreSQL HIT (sig_len={})",
+                    content_hash,
+                    sig.len()
+                );
+                if let Ok(mut cache) = self.content_signatures.write() {
+                    cache.insert(
+                        content_hash,
+                        CacheEntry::new(ContentSignatureEntry {
+                            signature: sig.clone(),
+                            model_family: family.clone(),
+                        }),
+                    );
+                }
+                Some((sig, family))
+            },
+            Ok(None) => {
+                tracing::debug!("[SignatureCache] Content {} -> PostgreSQL MISS", content_hash);
+                None
+            },
+            Err(e) => {
+                tracing::warn!("[SignatureCache] PostgreSQL read failed: {}", e);
+                None
+            },
+        }
+    }
+
     #[allow(dead_code)]
     pub fn clear(&self) {
         if let Ok(mut cache) = self.tool_signatures.write() {
@@ -279,6 +349,44 @@ impl SignatureCache {
         }
         if let Ok(mut cache) = self.content_signatures.write() {
             cache.clear();
+        }
+    }
+
+    pub async fn preload_signatures_from_db(&self, content_hashes: &[String]) {
+        let pool = match self.get_pool() {
+            Some(p) => p,
+            None => return,
+        };
+
+        for hash in content_hashes {
+            if let Ok(cache) = self.content_signatures.read() {
+                if cache.contains_key(hash) {
+                    continue;
+                }
+            }
+
+            match crate::modules::signature_storage::get_signature(&pool, hash).await {
+                Ok(Some((sig, family))) => {
+                    tracing::info!(
+                        "[SignatureCache] Preloaded {} from PostgreSQL (sig_len={})",
+                        hash,
+                        sig.len()
+                    );
+                    if let Ok(mut cache) = self.content_signatures.write() {
+                        cache.insert(
+                            hash.clone(),
+                            CacheEntry::new(ContentSignatureEntry {
+                                signature: sig,
+                                model_family: family,
+                            }),
+                        );
+                    }
+                },
+                Ok(None) => {},
+                Err(e) => {
+                    tracing::warn!("[SignatureCache] Preload failed for {}: {}", hash, e);
+                },
+            }
         }
     }
 }
