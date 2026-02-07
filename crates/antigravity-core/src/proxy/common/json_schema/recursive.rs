@@ -37,8 +37,11 @@ pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
             } else if let Some(items) = map.get_mut("items") {
                 let _ = clean_json_schema_recursive(items);
             } else {
-                for v in map.values_mut() {
-                    let _ = clean_json_schema_recursive(v);
+                let union_keys: HashSet<&str> = HashSet::from(["anyOf", "oneOf", "allOf"]);
+                for (k, v) in map.iter_mut() {
+                    if !union_keys.contains(k.as_str()) {
+                        let _ = clean_json_schema_recursive(v);
+                    }
                 }
             }
 
@@ -54,14 +57,10 @@ pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
             }
 
             let mut union_to_merge = None;
-            if map.get("type").is_none()
-                || map.get("type").and_then(|t| t.as_str()) == Some("object")
-            {
-                if let Some(Value::Array(any_of)) = map.get("anyOf") {
-                    union_to_merge = Some(any_of.clone());
-                } else if let Some(Value::Array(one_of)) = map.get("oneOf") {
-                    union_to_merge = Some(one_of.clone());
-                }
+            if let Some(Value::Array(any_of)) = map.get("anyOf") {
+                union_to_merge = Some(any_of.clone());
+            } else if let Some(Value::Array(one_of)) = map.get("oneOf") {
+                union_to_merge = Some(one_of.clone());
             }
 
             if let Some(union_array) = union_to_merge {

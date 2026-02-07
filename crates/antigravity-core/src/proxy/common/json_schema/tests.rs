@@ -285,3 +285,23 @@ fn test_existing_type_not_overwritten() {
 
     assert_eq!(schema["items"]["type"], "string");
 }
+
+#[test]
+fn test_union_merge_works_for_non_object_types() {
+    let mut schema = json!({
+        "type": "array",
+        "anyOf": [
+            {
+                "type": "array",
+                "items": { "type": "string" }
+            },
+            { "type": "null" }
+        ]
+    });
+
+    clean_json_schema(&mut schema);
+
+    assert_eq!(schema["type"], "array");
+    assert_eq!(schema["items"]["type"], "string");
+    assert!(schema.get("anyOf").is_none());
+}
