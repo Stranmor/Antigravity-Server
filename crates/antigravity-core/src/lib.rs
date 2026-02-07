@@ -77,6 +77,9 @@
     )
 )]
 
+#[cfg(test)]
+use wiremock as _;
+
 pub mod error;
 pub mod models;
 pub mod modules;

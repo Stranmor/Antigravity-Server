@@ -7,7 +7,7 @@ use super::super::endpoint_health::{
     ENDPOINT_HEALTH, MAX_TRANSPORT_RETRIES_PER_ENDPOINT, TRANSPORT_RETRY_DELAY_MS,
 };
 use super::super::user_agent::DEFAULT_USER_AGENT;
-use super::V1_INTERNAL_BASE_URL_FALLBACKS;
+use super::get_upstream_base_urls;
 
 pub fn build_url(base_url: &str, method: &str, query_string: Option<&str>) -> String {
     if let Some(qs) = query_string {
@@ -58,14 +58,16 @@ pub async fn execute_with_fallback(
 ) -> Result<Response, String> {
     let mut last_err: Option<String> = None;
 
-    for (idx, base_url) in V1_INTERNAL_BASE_URL_FALLBACKS.iter().enumerate() {
-        if ENDPOINT_HEALTH.get(*base_url).is_some_and(|h| h.should_skip()) {
+    let base_urls = get_upstream_base_urls();
+
+    for (idx, base_url) in base_urls.iter().enumerate() {
+        if ENDPOINT_HEALTH.get(base_url.as_str()).is_some_and(|h| h.should_skip()) {
             tracing::debug!("Skipping unhealthy endpoint: {}", base_url);
             continue;
         }
 
         let url = build_url(base_url, method, query_string);
-        let has_next = idx + 1 < V1_INTERNAL_BASE_URL_FALLBACKS.len();
+        let has_next = idx + 1 < base_urls.len();
         let mut transport_retries: u32 = 0;
 
         loop {
@@ -76,10 +78,7 @@ pub async fn execute_with_fallback(
                     let status = resp.status();
 
                     if status.is_success() {
-                        ENDPOINT_HEALTH
-                            .entry((*base_url).to_string())
-                            .or_default()
-                            .record_success();
+                        ENDPOINT_HEALTH.entry(base_url.clone()).or_default().record_success();
 
                         if warp_proxy_url.is_some() {
                             tracing::debug!(
@@ -93,7 +92,7 @@ pub async fn execute_with_fallback(
                                 base_url,
                                 status,
                                 idx + 1,
-                                V1_INTERNAL_BASE_URL_FALLBACKS.len()
+                                base_urls.len()
                             );
                         } else {
                             tracing::debug!(
@@ -136,7 +135,7 @@ pub async fn execute_with_fallback(
                         continue;
                     }
 
-                    ENDPOINT_HEALTH.entry((*base_url).to_string()).or_default().record_failure();
+                    ENDPOINT_HEALTH.entry(base_url.clone()).or_default().record_failure();
 
                     if !has_next {
                         return Err(last_err.unwrap_or_else(|| "All endpoints failed".to_string()));
@@ -156,14 +155,16 @@ pub async fn execute_fetch_models(
 ) -> Result<Value, String> {
     let mut last_err: Option<String> = None;
 
-    for (idx, base_url) in V1_INTERNAL_BASE_URL_FALLBACKS.iter().enumerate() {
-        if ENDPOINT_HEALTH.get(*base_url).is_some_and(|h| h.should_skip()) {
+    let base_urls = get_upstream_base_urls();
+
+    for (idx, base_url) in base_urls.iter().enumerate() {
+        if ENDPOINT_HEALTH.get(base_url.as_str()).is_some_and(|h| h.should_skip()) {
             tracing::debug!("Skipping unhealthy endpoint: {}", base_url);
             continue;
         }
 
         let url = build_url(base_url, "fetchAvailableModels", None);
-        let has_next = idx + 1 < V1_INTERNAL_BASE_URL_FALLBACKS.len();
+        let has_next = idx + 1 < base_urls.len();
         let mut transport_retries: u32 = 0;
 
         loop {
@@ -179,10 +180,7 @@ pub async fn execute_fetch_models(
                     let status = resp.status();
 
                     if status.is_success() {
-                        ENDPOINT_HEALTH
-                            .entry((*base_url).to_string())
-                            .or_default()
-                            .record_success();
+                        ENDPOINT_HEALTH.entry(base_url.clone()).or_default().record_success();
 
                         if idx > 0 {
                             tracing::info!(
@@ -231,7 +229,7 @@ pub async fn execute_fetch_models(
                         continue;
                     }
 
-                    ENDPOINT_HEALTH.entry((*base_url).to_string()).or_default().record_failure();
+                    ENDPOINT_HEALTH.entry(base_url.clone()).or_default().record_failure();
 
                     if !has_next {
                         break;

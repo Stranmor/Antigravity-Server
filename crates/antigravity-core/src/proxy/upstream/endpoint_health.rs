@@ -4,7 +4,7 @@
 //! After 5 consecutive failures, an endpoint is skipped for 30 seconds.
 //!
 //! Note: This map uses String keys and is bounded by the number of endpoints
-//! (currently 2 static URLs). No eviction is needed as entries are reused.
+//! (1 custom or 2 default URLs). No eviction is needed as entries are reused.
 
 use dashmap::DashMap;
 use std::sync::atomic::{AtomicU32, Ordering};

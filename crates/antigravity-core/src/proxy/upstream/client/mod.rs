@@ -6,6 +6,7 @@ mod tests;
 use reqwest::Client;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use tokio::time::Duration;
 
 use super::user_agent::DEFAULT_USER_AGENT;
@@ -13,8 +14,33 @@ use super::user_agent::DEFAULT_USER_AGENT;
 const V1_INTERNAL_BASE_URL_PROD: &str = "https://cloudcode-pa.googleapis.com/v1internal";
 const V1_INTERNAL_BASE_URL_DAILY: &str =
     "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal";
-pub(crate) const V1_INTERNAL_BASE_URL_FALLBACKS: [&str; 2] =
-    [V1_INTERNAL_BASE_URL_PROD, V1_INTERNAL_BASE_URL_DAILY];
+
+static UPSTREAM_BASE_URLS: OnceLock<Vec<String>> = OnceLock::new();
+
+/// Configurable via `ANTIGRAVITY_UPSTREAM_URL` env var; defaults to prod + daily endpoints.
+pub(crate) fn get_upstream_base_urls() -> &'static [String] {
+    UPSTREAM_BASE_URLS.get_or_init(|| {
+        if let Ok(raw) = std::env::var("ANTIGRAVITY_UPSTREAM_URL") {
+            let url = raw.trim().trim_end_matches('/').to_string();
+            if url.is_empty() {
+                tracing::warn!("ANTIGRAVITY_UPSTREAM_URL is empty, using defaults");
+                return default_upstream_urls();
+            }
+            if url::Url::parse(&url).is_err() {
+                tracing::warn!("ANTIGRAVITY_UPSTREAM_URL is not a valid URL, using defaults");
+                return default_upstream_urls();
+            }
+            tracing::info!("Using custom upstream URL");
+            vec![url]
+        } else {
+            default_upstream_urls()
+        }
+    })
+}
+
+fn default_upstream_urls() -> Vec<String> {
+    vec![V1_INTERNAL_BASE_URL_PROD.to_string(), V1_INTERNAL_BASE_URL_DAILY.to_string()]
+}
 
 pub struct UpstreamClient {
     http_client: Client,

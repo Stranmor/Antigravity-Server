@@ -1,0 +1,108 @@
+#![allow(unused_crate_dependencies)]
+#![allow(unsafe_code, reason = "std::env::set_var is unsafe since Rust 1.83")]
+#![allow(clippy::tests_outside_test_module, reason = "integration tests live in tests/ dir")]
+#![allow(clippy::expect_used, reason = "integration test — panics are the assertion mechanism")]
+
+use antigravity_core::proxy::upstream::client::UpstreamClient;
+use wiremock::matchers::{method, path_regex};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
+fn gemini_success_body() -> serde_json::Value {
+    serde_json::json!({
+        "candidates": [{
+            "content": {
+                "parts": [{"text": "Hello from mock!"}],
+                "role": "model"
+            },
+            "finishReason": "STOP"
+        }]
+    })
+}
+
+fn request_body() -> serde_json::Value {
+    serde_json::json!({
+        "contents": [{"parts": [{"text": "Hi"}], "role": "user"}]
+    })
+}
+
+async fn setup_server() -> MockServer {
+    let server = MockServer::start().await;
+    let url = format!("{}/v1internal", server.uri());
+    // SAFETY: called once before any other thread reads this env var
+    unsafe { std::env::set_var("ANTIGRAVITY_UPSTREAM_URL", &url) };
+    server
+}
+
+#[tokio::test]
+async fn test_upstream_proxy_flow() {
+    let server = setup_server().await;
+    let client = UpstreamClient::new(None);
+
+    {
+        let _guard = Mock::given(method("POST"))
+            .and(path_regex(r"/v1internal:.*"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(gemini_success_body()))
+            .expect(1)
+            .mount_as_scoped(&server)
+            .await;
+
+        let result = client
+            .call_v1_internal(
+                "streamGenerateContent",
+                "fake-token",
+                request_body(),
+                Some("alt=sse"),
+            )
+            .await;
+
+        assert!(result.is_ok(), "200 scenario: expected Ok, got: {:?}", result.err());
+        let resp = result.expect("already checked");
+        assert_eq!(resp.status(), 200, "200 scenario: wrong status");
+    }
+
+    {
+        let _guard = Mock::given(method("POST"))
+            .and(path_regex(r"/v1internal:.*"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+            .mount_as_scoped(&server)
+            .await;
+
+        let result =
+            client.call_v1_internal("generateContent", "fake-token", request_body(), None).await;
+
+        match result {
+            Ok(resp) => assert_eq!(resp.status(), 500, "500 scenario: wrong status"),
+            Err(e) => assert!(
+                e.contains("500") || e.contains("failed"),
+                "500 scenario: unexpected error: {}",
+                e
+            ),
+        }
+    }
+
+    {
+        let _guard = Mock::given(method("POST"))
+            .and(path_regex(r"/v1internal:.*"))
+            .respond_with(ResponseTemplate::new(429).set_body_json(serde_json::json!({
+                "error": {
+                    "code": 429,
+                    "message": "Resource exhausted",
+                    "status": "RESOURCE_EXHAUSTED"
+                }
+            })))
+            .mount_as_scoped(&server)
+            .await;
+
+        let result =
+            client.call_v1_internal("generateContent", "fake-token", request_body(), None).await;
+
+        match result {
+            Ok(resp) => assert_eq!(resp.status(), 429, "429 scenario: wrong status"),
+            Err(e) => assert!(
+                e.contains("429") || e.contains("failed"),
+                "429 scenario: unexpected error: {}",
+                e
+            ),
+        }
+    }
+}

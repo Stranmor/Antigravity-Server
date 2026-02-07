@@ -131,7 +131,8 @@ vendor/
 | Duplicate type definitions | ~20 | **0** |
 | `#[allow(warnings)]` | 11 modules | **0** |
 | Clippy warnings suppressed | ~58 | **0** |
-| Unit tests | - | **197** |
+| Unit tests | - | **292** |
+| Integration tests | - | **1** |
 | Clippy status | ⚠️ | **✅ -D warnings** |
 | Release build | - | **11MB** |
 
@@ -396,6 +397,23 @@ For large files, use incremental approach:
 3. Each operation <100 lines
 
 **Status:** No fix implemented. Using system prompt workaround (see global AGENTS.md rule 20).
+
+---
+
+## ⚠️ INPUT TOKEN LIMIT — CLAUDE VIA VERTEX AI [2026-02-07]
+
+Vertex AI enforces a **hard 200,000 token limit** on Claude prompt input.
+
+| Test | Prompt Tokens | Result | Time |
+|------|---------------|--------|------|
+| ~200K chars | 170,841 | ✅ 200 OK | 6.4s |
+| ~1.2M chars | 278,399 | ❌ 400 `prompt is too long: 278399 tokens > 200000 maximum` | 1.6s |
+
+**Error format:** `{"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: N tokens > 200000 maximum"}}` with `request_id: req_vrtx_*`
+
+**Source of limit:** Google Vertex AI side (confirmed by `req_vrtx_*` request ID), not Antigravity proxy.
+
+**Note:** Gemini models have separate limits (1M+ context window). This 200K limit applies ONLY to Claude models routed through Vertex AI.
 
 ---
 
