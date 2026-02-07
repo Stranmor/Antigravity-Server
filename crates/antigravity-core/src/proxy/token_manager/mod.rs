@@ -1,3 +1,4 @@
+use crate::modules::repository::AccountRepository;
 use crate::proxy::rate_limit::RateLimitTracker;
 use crate::proxy::routing_config::SmartRoutingConfig;
 use crate::proxy::AdaptiveLimitManager;
@@ -14,6 +15,7 @@ mod persistence;
 mod proxy_token;
 mod rate_limiter;
 mod recovery;
+mod repo_loader;
 mod routing;
 mod selection;
 mod selection_helpers;
@@ -35,6 +37,8 @@ pub struct TokenManager {
     pub(crate) active_requests: Arc<DashMap<String, AtomicU32>>,
     pub(crate) session_failures: Arc<DashMap<String, AtomicU32>>,
     pub(crate) file_locks: Arc<DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    pub(crate) refresh_locks: Arc<DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    pub(crate) repository: Arc<tokio::sync::RwLock<Option<Arc<dyn AccountRepository>>>>,
 }
 
 impl TokenManager {
@@ -51,6 +55,8 @@ impl TokenManager {
             active_requests: Arc::new(DashMap::new()),
             session_failures: Arc::new(DashMap::new()),
             file_locks: Arc::new(DashMap::new()),
+            refresh_locks: Arc::new(DashMap::new()),
+            repository: Arc::new(tokio::sync::RwLock::new(None)),
         }
     }
 
@@ -88,10 +94,17 @@ impl TokenManager {
         *guard = Some(monitor);
     }
 
+    pub async fn set_repository(&self, repo: Arc<dyn AccountRepository>) {
+        let mut guard = self.repository.write().await;
+        *guard = Some(repo);
+    }
+
     pub fn start_auto_cleanup(&self) {
         let tracker = self.rate_limit_tracker.clone();
         let session_failures = self.session_failures.clone();
         let session_accounts = self.session_accounts.clone();
+        let refresh_locks = self.refresh_locks.clone();
+        let tokens = self.tokens.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
             loop {
@@ -128,6 +141,8 @@ impl TokenManager {
                         session_accounts.len()
                     );
                 }
+                // Clean refresh locks for accounts no longer in memory
+                refresh_locks.retain(|k, _| tokens.contains_key(k));
             }
         });
         tracing::info!("Rate limit auto-cleanup task started (interval: 60s)");
@@ -143,7 +158,7 @@ impl TokenManager {
                 interval.tick().await;
                 match manager.reload_all_accounts().await {
                     Ok(count) => {
-                        tracing::debug!("Auto-sync: Reloaded {} account(s) from disk", count);
+                        tracing::debug!("Auto-sync: Reloaded {} account(s)", count);
                     },
                     Err(e) => {
                         tracing::warn!("Auto-sync: Failed to reload accounts: {}", e);
