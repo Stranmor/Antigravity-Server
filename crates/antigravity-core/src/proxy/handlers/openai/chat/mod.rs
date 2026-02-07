@@ -54,7 +54,7 @@ pub async fn handle_chat_completions(
 
     let mut last_error = String::new();
     let mut last_email: Option<String> = None;
-    let trace_id = format!("oai_{}", chrono::Utc::now().timestamp_subsec_millis());
+    let trace_id = format!("oai_{}", chrono::Utc::now().timestamp_micros());
     let mut grace_retry_used = false;
     let mut attempt = 0usize;
     let mut attempted_accounts: std::collections::HashSet<String> =

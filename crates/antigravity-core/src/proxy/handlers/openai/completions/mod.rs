@@ -25,7 +25,7 @@ pub async fn handle_completions(
     let mut last_error = String::new();
 
     let mut last_email: Option<String> = None;
-    let trace_id = format!("req_{}", chrono::Utc::now().timestamp_subsec_millis());
+    let trace_id = format!("req_{}", chrono::Utc::now().timestamp_micros());
     let mut grace_retry_used = false;
 
     for attempt in 0..max_attempts {

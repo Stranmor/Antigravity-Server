@@ -232,10 +232,10 @@ pub async fn handle_generate(
             }
 
             if code == 429 && error_text.contains("QUOTA_EXHAUSTED") {
-                error!("[Gemini] Quota exhausted on {}", email);
-                return Ok(
-                    (status, [("X-Account-Email", email.as_str())], error_text).into_response()
-                );
+                error!("[Gemini] Quota exhausted on {}, rotating to next account", email);
+                attempted_accounts.insert(email.clone());
+                attempt += 1;
+                continue;
             }
             if code == 429 && !grace_retry_used && error_text.contains("RATE_LIMIT_EXCEEDED") {
                 grace_retry_used = true;
