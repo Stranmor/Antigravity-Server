@@ -3,9 +3,7 @@
 //! This module handles the state machine for converting Gemini streaming
 //! responses into Claude-compatible SSE events.
 
-use crate::proxy::mappers::claude::models::Usage;
 use crate::proxy::mappers::claude::streaming::signature_manager::SignatureManager;
-use crate::proxy::mappers::claude::token_scaling::to_claude_usage;
 use bytes::Bytes;
 use serde_json::json;
 
@@ -46,10 +44,10 @@ pub struct StreamingState {
     /// Grounding chunks from web search.
     pub grounding_chunks: Option<Vec<serde_json::Value>>,
     /// Count of parse errors for error recovery.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "used by error recovery API in state_events.rs, not yet wired")]
     pub(super) parse_error_count: usize,
     /// Last valid block type before error.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "used by error recovery API in state_events.rs, not yet wired")]
     pub(super) last_valid_state: Option<BlockType>,
     /// Model name from response.
     pub model_name: Option<String>,
@@ -115,57 +113,6 @@ impl StreamingState {
             serde_json::to_string(&data).unwrap_or_default()
         );
         Bytes::from(sse)
-    }
-
-    /// Emits the message_start event with usage information.
-    pub fn emit_message_start(&mut self, raw_json: &serde_json::Value) -> Bytes {
-        if self.message_start_sent {
-            return Bytes::new();
-        }
-
-        let usage = raw_json
-            .get("usageMetadata")
-            .and_then(|u| {
-                serde_json::from_value::<super::super::gemini_models::UsageMetadata>(u.clone()).ok()
-            })
-            .map(|u| to_claude_usage(&u, self.scaling_enabled, self.context_limit))
-            .unwrap_or(Usage {
-                input_tokens: 0,
-                output_tokens: 0,
-                cache_read_input_tokens: None,
-                cache_creation_input_tokens: None,
-                server_tool_use: None,
-            });
-
-        let message = json!({
-            "id": raw_json.get("responseId")
-                .and_then(|v| v.as_str())
-                .unwrap_or("msg_unknown"),
-            "type": "message",
-            "role": "assistant",
-            "content": [],
-            "model": raw_json.get("modelVersion")
-                .and_then(|v| v.as_str())
-                .unwrap_or(""),
-            "stop_reason": null,
-            "stop_sequence": null,
-            "usage": usage,
-        });
-
-        if let Some(m) = raw_json.get("modelVersion").and_then(|v| v.as_str()) {
-            self.model_name = Some(m.to_string());
-        }
-
-        let result = self.emit(
-            "message_start",
-            json!({
-                "type": "message_start",
-                "message": message
-            }),
-        );
-
-        self.message_start_sent = true;
-        result
     }
 
     /// Starts a new content block, closing any existing block first.
@@ -297,10 +244,5 @@ impl StreamingState {
     /// Returns the accumulated thinking content and clears the buffer.
     pub fn get_accumulated_thinking(&mut self) -> String {
         std::mem::take(&mut self.accumulated_thinking)
-    }
-
-    #[allow(dead_code)]
-    pub fn clear_accumulated_thinking(&mut self) {
-        self.accumulated_thinking.clear();
     }
 }
