@@ -104,6 +104,12 @@ pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
                 }
             }
 
+            // Infer type: "object" when properties exist but type is missing.
+            // Gemini API requires explicit type for schemas with properties/required.
+            if map.contains_key("properties") && !map.contains_key("type") {
+                let _ = map.insert("type".to_string(), Value::String("object".to_string()));
+            }
+
             let looks_like_schema = map.contains_key("type")
                 || map.contains_key("properties")
                 || map.contains_key("items")

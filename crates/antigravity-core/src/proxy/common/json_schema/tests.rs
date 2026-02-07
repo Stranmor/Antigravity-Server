@@ -249,3 +249,39 @@ fn test_nullable_handling_with_description() {
     assert!(schema["description"].as_str().unwrap().contains("User name"));
     assert!(schema["description"].as_str().unwrap().contains("(nullable)"));
 }
+
+#[test]
+fn test_infer_object_type_for_array_items_with_properties() {
+    let mut schema = json!({
+        "type": "array",
+        "items": {
+            "properties": {
+                "name": { "type": "string" },
+                "value": { "type": "string" }
+            },
+            "required": ["name", "value"]
+        }
+    });
+
+    clean_json_schema(&mut schema);
+
+    assert_eq!(schema["items"]["type"], "object");
+    assert!(schema["items"]["properties"].is_object());
+}
+
+#[test]
+fn test_existing_type_not_overwritten() {
+    let mut schema = json!({
+        "type": "array",
+        "items": {
+            "type": "string",
+            "properties": {
+                "x": { "type": "number" }
+            }
+        }
+    });
+
+    clean_json_schema(&mut schema);
+
+    assert_eq!(schema["items"]["type"], "string");
+}
