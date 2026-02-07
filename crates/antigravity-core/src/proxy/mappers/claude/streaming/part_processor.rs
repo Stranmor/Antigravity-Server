@@ -20,6 +20,9 @@ impl<'a> PartProcessor<'a> {
         let mut chunks = Vec::new();
         chunks.extend(self.state.end_block());
         if let Some(trailing_sig) = self.state.take_trailing_signature() {
+            if let Some(session_id) = &self.state.session_id {
+                SignatureCache::global().cache_session_signature(session_id, trailing_sig.clone());
+            }
             chunks.push(self.state.emit(
                 "content_block_start",
                 json!({
@@ -32,12 +35,17 @@ impl<'a> PartProcessor<'a> {
             chunks.push(
                 self.state.emit_delta("signature_delta", json!({ "signature": trailing_sig })),
             );
+            self.state.set_block_type_thinking();
             chunks.extend(self.state.end_block());
         }
         chunks
     }
 
     pub fn process(&mut self, part: &GeminiPart) -> Vec<Bytes> {
+        if self.state.message_stop_sent {
+            return vec![];
+        }
+
         let mut chunks = Vec::new();
         let signature = part.thought_signature.as_ref().map(|sig: &String| {
             use base64::Engine;
@@ -136,6 +144,9 @@ impl<'a> PartProcessor<'a> {
 
         if text.is_empty() {
             if signature.is_some() {
+                if self.state.has_trailing_signature() {
+                    chunks.extend(self.emit_trailing_signature());
+                }
                 self.state.set_trailing_signature(signature);
             }
             return chunks;
@@ -149,7 +160,6 @@ impl<'a> PartProcessor<'a> {
             if let Some(session_id) = &self.state.session_id {
                 SignatureCache::global().cache_session_signature(session_id, sig.clone());
             }
-            self.state.store_signature(signature);
 
             chunks.extend(
                 self.state.start_block(BlockType::Text, json!({ "type": "text", "text": "" })),

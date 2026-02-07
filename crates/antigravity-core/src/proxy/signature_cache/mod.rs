@@ -4,6 +4,7 @@ mod content;
 mod session;
 
 use crate::proxy::mappers::claude::request::MIN_SIGNATURE_LENGTH;
+use crate::proxy::signature_metrics::record_signature_cache;
 use parking_lot::RwLock;
 use sqlx::PgPool;
 use std::collections::HashMap;
@@ -79,6 +80,7 @@ impl SignatureCache {
 
         let mut cache = self.tool_signatures.write();
         tracing::debug!("[SignatureCache] Caching tool signature for id: {}", tool_use_id);
+        record_signature_cache("tool", "store");
         cache.insert(tool_use_id.to_string(), CacheEntry::new(signature));
 
         if cache.len() > TOOL_CACHE_LIMIT {
@@ -100,9 +102,11 @@ impl SignatureCache {
         if let Some(entry) = cache.get(tool_use_id) {
             if !entry.is_expired() {
                 tracing::debug!("[SignatureCache] Hit tool signature for id: {}", tool_use_id);
+                record_signature_cache("tool", "hit");
                 return Some(entry.data.clone());
             }
         }
+        record_signature_cache("tool", "miss");
         None
     }
 
@@ -117,6 +121,7 @@ impl SignatureCache {
             signature.len(),
             family
         );
+        record_signature_cache("family", "store");
         cache.insert(signature, CacheEntry::new(family));
 
         if cache.len() > FAMILY_CACHE_LIMIT {
@@ -135,7 +140,16 @@ impl SignatureCache {
 
     pub fn get_signature_family(&self, signature: &str) -> Option<String> {
         let cache = self.thinking_families.read();
-        cache.get(signature).map(|entry| entry.data.clone())
+        match cache.get(signature) {
+            Some(entry) => {
+                record_signature_cache("family", "hit");
+                Some(entry.data.clone())
+            },
+            None => {
+                record_signature_cache("family", "miss");
+                None
+            },
+        }
     }
 
     #[allow(dead_code, reason = "used in tests to verify cache clearing behavior")]

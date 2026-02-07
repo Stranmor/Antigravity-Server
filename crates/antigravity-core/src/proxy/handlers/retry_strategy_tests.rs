@@ -98,14 +98,14 @@ fn rotate_on_429_500_401_403() {
     assert!(should_rotate_account(500));
     assert!(should_rotate_account(401));
     assert!(should_rotate_account(403));
+    assert!(should_rotate_account(503));
+    assert!(should_rotate_account(529));
 }
 
 #[test]
 fn no_rotate_on_other_codes() {
     assert!(!should_rotate_account(200));
     assert!(!should_rotate_account(400));
-    assert!(!should_rotate_account(503));
-    assert!(!should_rotate_account(529));
     assert!(!should_rotate_account(418));
 }
 

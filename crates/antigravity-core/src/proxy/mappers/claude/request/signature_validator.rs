@@ -1,4 +1,5 @@
 use super::safety::is_valid_or_dummy_signature;
+use crate::proxy::signature_metrics::record_signature_validation;
 use serde_json::{json, Value};
 
 /// Dummy signature that tells Gemini to skip signature validation.
@@ -22,6 +23,7 @@ pub fn validate_thinking_signature(
         // Fast path: already a dummy signature — pass through immediately
         if sig == DUMMY_SIGNATURE {
             tracing::debug!("[Thinking-Signature] Dummy signature detected, passing through.");
+            record_signature_validation("dummy_passthrough");
             *last_thought_signature = Some(DUMMY_SIGNATURE.to_string());
             return make_thinking_part_with_dummy(thinking, last_thought_signature);
         }
@@ -32,6 +34,7 @@ pub fn validate_thinking_signature(
                 "[Thinking-Signature] Signature too short (len: {}). Using dummy to preserve thinking.",
                 sig.len()
             );
+            record_signature_validation("dummy_short");
             return make_thinking_part_with_dummy(thinking, last_thought_signature);
         }
 
@@ -44,6 +47,7 @@ pub fn validate_thinking_signature(
             "[Thinking-Signature] Valid client signature (len: {}), passing through as-is.",
             sig.len()
         );
+        record_signature_validation("valid");
         *last_thought_signature = Some(sig.clone());
         make_thinking_part_with_sig(thinking, sig)
     } else {
@@ -55,6 +59,7 @@ pub fn validate_thinking_signature(
                 "[Thinking-Signature] Recovered signature from CONTENT cache (len: {}), using as-is.",
                 recovered_sig.len()
             );
+            record_signature_validation("recovered_content");
 
             // Signatures are cross-platform compatible — no family check needed.
             if !is_retry {
@@ -72,6 +77,7 @@ pub fn validate_thinking_signature(
         tracing::warn!(
             "[Thinking-Signature] No signature provided and content cache miss. Using dummy signature to preserve thinking."
         );
+        record_signature_validation("dummy_no_sig");
         make_thinking_part_with_dummy(thinking, last_thought_signature)
     }
 }

@@ -14,8 +14,10 @@ impl SignatureManager {
     }
 
     pub fn store(&mut self, signature: Option<String>) {
-        if signature.is_some() {
-            self.pending = signature;
+        if let Some(ref s) = signature {
+            if !s.is_empty() {
+                self.pending = signature;
+            }
         }
     }
 

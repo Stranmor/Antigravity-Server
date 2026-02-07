@@ -95,7 +95,7 @@ pub async fn apply_retry_strategy(
             true
         },
         RetryStrategy::LinearBackoff { base_ms } => {
-            let calculated_ms = base_ms * (attempt as u64 + 1);
+            let calculated_ms = base_ms.saturating_mul(attempt as u64 + 1);
             info!(
                 "[{}] Retry with linear backoff: status={}, attempt={}/{}, delay={}ms",
                 trace_id,
@@ -108,7 +108,8 @@ pub async fn apply_retry_strategy(
             true
         },
         RetryStrategy::ExponentialBackoff { base_ms, max_ms } => {
-            let calculated_ms = (base_ms * 2_u64.pow(attempt as u32)).min(max_ms);
+            let calculated_ms =
+                base_ms.saturating_mul(2_u64.saturating_pow(attempt as u32)).min(max_ms);
             info!(
                 "[{}] Retry with exponential backoff: status={}, attempt={}/{}, delay={}ms",
                 trace_id,
@@ -125,7 +126,7 @@ pub async fn apply_retry_strategy(
 
 /// Checks if the status code warrants account rotation.
 pub fn should_rotate_account(status_code: u16) -> bool {
-    matches!(status_code, 429 | 401 | 403 | 404 | 500)
+    matches!(status_code, 429 | 401 | 403 | 404 | 500 | 503 | 529)
 }
 
 /// Configuration for stream peeking.

@@ -114,6 +114,8 @@ pub fn init_metrics() -> PrometheusHandle {
             "Total heartbeats skipped during peek phase"
         );
 
+        crate::proxy::signature_metrics::init_signature_metrics();
+
         handle
     });
 

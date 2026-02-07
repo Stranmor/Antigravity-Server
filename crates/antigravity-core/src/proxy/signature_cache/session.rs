@@ -1,4 +1,5 @@
 use super::{CacheEntry, SignatureCache, MIN_SIGNATURE_LENGTH, SESSION_CACHE_LIMIT};
+use crate::proxy::signature_metrics::record_signature_cache;
 
 impl SignatureCache {
     pub fn cache_session_signature(&self, session_id: &str, signature: String) {
@@ -18,6 +19,7 @@ impl SignatureCache {
                 session_id,
                 signature.len()
             );
+            record_signature_cache("session", "store");
             cache.insert(session_id.to_string(), CacheEntry::new(signature.clone()));
 
             if let Some(pool) = self.get_pool() {
@@ -59,6 +61,13 @@ impl SignatureCache {
         }
     }
 
+    /// Check if session has a cached signature WITHOUT recording metrics.
+    /// Used for diagnostic probes (e.g., degradation checks) that shouldn't inflate counters.
+    pub fn has_session_signature(&self, session_id: &str) -> bool {
+        let cache = self.session_signatures.read();
+        cache.get(session_id).is_some_and(|entry| !entry.is_expired())
+    }
+
     pub fn get_session_signature(&self, session_id: &str) -> Option<String> {
         let cache = self.session_signatures.read();
         if let Some(entry) = cache.get(session_id) {
@@ -68,17 +77,27 @@ impl SignatureCache {
                     session_id,
                     entry.data.len()
                 );
+                record_signature_cache("session", "hit");
                 return Some(entry.data.clone());
             } else {
                 tracing::debug!("[SignatureCache] Session {} -> EXPIRED", session_id);
             }
         }
+        record_signature_cache("session", "miss");
         None
     }
 
     pub async fn get_session_signature_with_db(&self, session_id: &str) -> Option<String> {
-        if let Some(sig) = self.get_session_signature(session_id) {
-            return Some(sig);
+        // Check in-memory first WITHOUT recording metrics to avoid phantom miss
+        // when DB fallback succeeds. Final outcome is recorded below.
+        {
+            let cache = self.session_signatures.read();
+            if let Some(entry) = cache.get(session_id) {
+                if !entry.is_expired() {
+                    record_signature_cache("session", "hit");
+                    return Some(entry.data.clone());
+                }
+            }
         }
 
         let pool = self.get_pool()?;
@@ -90,12 +109,14 @@ impl SignatureCache {
                     session_id,
                     sig.len()
                 );
+                record_signature_cache("session", "db_hit");
                 let mut cache = self.session_signatures.write();
                 cache.insert(session_id.to_string(), CacheEntry::new(sig.clone()));
                 Some(sig)
             },
             Ok(None) => {
                 tracing::debug!("[SignatureCache] Session {} -> PostgreSQL MISS", session_id);
+                record_signature_cache("session", "miss");
                 None
             },
             Err(e) => {
@@ -104,6 +125,7 @@ impl SignatureCache {
                     session_id,
                     e
                 );
+                record_signature_cache("session", "miss");
                 None
             },
         }

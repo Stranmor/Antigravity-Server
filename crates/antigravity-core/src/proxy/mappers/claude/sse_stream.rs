@@ -3,6 +3,7 @@
 
 use super::models::{GeminiPart, UsageMetadata};
 use super::streaming::{PartProcessor, StreamingState};
+use crate::proxy::signature_metrics::record_thinking_degradation;
 use bytes::Bytes;
 use futures::Stream;
 use std::pin::Pin;
@@ -28,6 +29,7 @@ pub fn create_claude_sse_stream(
         state.context_limit = context_limit;
         state.estimated_tokens = estimated_tokens;
         let mut buffer = BytesMut::new();
+        const MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10MB
 
         loop {
             // 15 second heartbeat keepalive: if no data for long time, send ping packet
@@ -41,6 +43,12 @@ pub fn create_claude_sse_stream(
                     match chunk_result {
                         Ok(chunk) => {
                             buffer.extend_from_slice(&chunk);
+
+                            if buffer.len() > MAX_BUFFER_SIZE {
+                                tracing::error!("[{}] SSE buffer exceeded {}MB limit, aborting stream", trace_id, MAX_BUFFER_SIZE / 1024 / 1024);
+                                yield Err("SSE buffer overflow: response too large".to_string());
+                                break;
+                            }
 
                             // Process complete lines
                             while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
@@ -212,11 +220,11 @@ fn process_sse_line(
                     );
                 }
                 if is_thinking_model && state.has_thinking_received() {
-                    // Check if we have a valid signature cached
+                    // Diagnostic probe: check if signature was cached during this response.
+                    // Uses has_session_signature() to avoid inflating cache hit/miss counters.
                     if let Some(ref sid) = state.session_id {
-                        let has_sig = crate::proxy::SignatureCache::global()
-                            .get_session_signature(sid)
-                            .is_some();
+                        let has_sig =
+                            crate::proxy::SignatureCache::global().has_session_signature(sid);
                         if has_sig {
                             tracing::debug!(
                                 "[{}] ✓ Thinking response validated: signature cached for session {}",
@@ -230,6 +238,7 @@ fn process_sse_line(
                                 trace_id,
                                 sid
                             );
+                            record_thinking_degradation();
                         }
                     }
                 }

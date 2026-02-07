@@ -12,6 +12,10 @@ impl StreamingState {
         finish_reason: Option<&str>,
         usage_metadata: Option<&UsageMetadata>,
     ) -> Vec<Bytes> {
+        if self.message_stop_sent {
+            return vec![];
+        }
+
         let mut chunks = Vec::new();
 
         let was_inside_block = self.block_type != BlockType::None;
@@ -39,7 +43,7 @@ impl StreamingState {
             ));
             chunks.push(self.emit_delta("thinking_delta", json!({ "thinking": "" })));
             chunks.push(self.emit_delta("signature_delta", json!({ "signature": signature })));
-            self.block_type = BlockType::Thinking;
+            self.set_block_type_thinking();
             chunks.extend(self.end_block());
         }
 

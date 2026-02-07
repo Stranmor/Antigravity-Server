@@ -146,25 +146,29 @@ async fn handle_sse_response(
     tokio::spawn(async move {
         let mut collected_text = String::new();
         let mut last_few_bytes = Vec::new();
+        let mut line_buffer = String::new();
         const MAX_COLLECTED_TEXT: usize = 512 * 1024;
 
         while let Some(chunk_res) = stream.next().await {
             if let Ok(chunk) = chunk_res {
                 if let Ok(chunk_str) = std::str::from_utf8(&chunk) {
-                    for line in chunk_str.lines() {
+                    line_buffer.push_str(chunk_str);
+
+                    while let Some(newline_pos) = line_buffer.find('\n') {
+                        let line = line_buffer[..newline_pos].trim();
                         if let Some(json_str) = line.strip_prefix("data: ") {
                             let json_str = json_str.trim();
-                            if json_str == "[DONE]" {
-                                continue;
-                            }
-                            if let Ok(json) = serde_json::from_str::<Value>(json_str) {
-                                extract_text_from_sse_line(
-                                    &json,
-                                    &mut collected_text,
-                                    MAX_COLLECTED_TEXT,
-                                );
+                            if json_str != "[DONE]" {
+                                if let Ok(json) = serde_json::from_str::<Value>(json_str) {
+                                    extract_text_from_sse_line(
+                                        &json,
+                                        &mut collected_text,
+                                        MAX_COLLECTED_TEXT,
+                                    );
+                                }
                             }
                         }
+                        line_buffer = line_buffer[newline_pos + 1..].to_string();
                     }
                 }
 

@@ -90,7 +90,7 @@ pub async fn apply_retry_strategy(
         },
 
         RetryStrategy::LinearBackoff { base_ms } => {
-            let calculated_ms = base_ms * (attempt as u64 + 1);
+            let calculated_ms = base_ms.saturating_mul(attempt as u64 + 1);
             info!(
                 "[{}] ⏱️  Retry with linear backoff: status={}, attempt={}/{}, base={}ms",
                 trace_id,
@@ -104,7 +104,8 @@ pub async fn apply_retry_strategy(
         },
 
         RetryStrategy::ExponentialBackoff { base_ms, max_ms } => {
-            let calculated_ms = (base_ms * 2_u64.pow(attempt as u32)).min(max_ms);
+            let calculated_ms =
+                base_ms.saturating_mul(2_u64.saturating_pow(attempt as u32)).min(max_ms);
             info!(
                 "[{}] ⏱️  Retry with exponential backoff: status={}, attempt={}/{}, base={}ms",
                 trace_id,

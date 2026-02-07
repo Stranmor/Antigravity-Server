@@ -83,7 +83,15 @@ fn process_part(
     if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
         if is_thought_part {
             thought_out.push_str(text);
-            ctx.accumulated_thinking.push_str(text);
+            const MAX_THINKING_SIZE: usize = 10 * 1024 * 1024; // 10MB
+            if ctx.accumulated_thinking.len() < MAX_THINKING_SIZE {
+                let remaining = MAX_THINKING_SIZE.saturating_sub(ctx.accumulated_thinking.len());
+                if text.len() <= remaining {
+                    ctx.accumulated_thinking.push_str(text);
+                } else {
+                    ctx.accumulated_thinking.push_str(&text[..remaining]);
+                }
+            }
         } else {
             content_out.push_str(text);
         }

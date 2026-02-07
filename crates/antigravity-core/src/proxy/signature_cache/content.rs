@@ -3,6 +3,7 @@
 use super::{
     CacheEntry, ContentSignatureEntry, SignatureCache, CONTENT_CACHE_LIMIT, MIN_SIGNATURE_LENGTH,
 };
+use crate::proxy::signature_metrics::record_signature_cache;
 use sha2::{Digest, Sha256};
 
 impl SignatureCache {
@@ -27,6 +28,7 @@ impl SignatureCache {
                 content_hash,
                 signature.len()
             );
+            record_signature_cache("content", "store");
             cache.insert(
                 content_hash.clone(),
                 CacheEntry::new(ContentSignatureEntry {
@@ -74,18 +76,29 @@ impl SignatureCache {
                     content_hash,
                     entry.data.signature.len()
                 );
+                record_signature_cache("content", "hit");
                 return Some((entry.data.signature.clone(), entry.data.model_family.clone()));
             }
         }
+        record_signature_cache("content", "miss");
         None
     }
 
     pub async fn get_content_signature_with_db(&self, content: &str) -> Option<(String, String)> {
-        if let Some(cached) = self.get_content_signature(content) {
-            return Some(cached);
+        let content_hash = Self::compute_content_hash(content);
+
+        // Check in-memory first WITHOUT recording metrics to avoid phantom miss
+        // when DB fallback succeeds. Final outcome is recorded below.
+        {
+            let cache = self.content_signatures.read();
+            if let Some(entry) = cache.get(&content_hash) {
+                if !entry.is_expired() {
+                    record_signature_cache("content", "hit");
+                    return Some((entry.data.signature.clone(), entry.data.model_family.clone()));
+                }
+            }
         }
 
-        let content_hash = Self::compute_content_hash(content);
         let pool = self.get_pool()?;
 
         match crate::modules::signature_storage::get_signature(&pool, &content_hash).await {
@@ -95,6 +108,7 @@ impl SignatureCache {
                     content_hash,
                     sig.len()
                 );
+                record_signature_cache("content", "db_hit");
                 let mut cache = self.content_signatures.write();
                 cache.insert(
                     content_hash,
@@ -107,10 +121,12 @@ impl SignatureCache {
             },
             Ok(None) => {
                 tracing::debug!("[SignatureCache] Content {} -> PostgreSQL MISS", content_hash);
+                record_signature_cache("content", "miss");
                 None
             },
             Err(e) => {
                 tracing::warn!("[SignatureCache] PostgreSQL read failed: {}", e);
+                record_signature_cache("content", "miss");
                 None
             },
         }

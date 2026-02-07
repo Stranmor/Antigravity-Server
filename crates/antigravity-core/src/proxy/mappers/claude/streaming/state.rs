@@ -236,9 +236,23 @@ impl StreamingState {
         self.trailing_signature.take()
     }
 
+    /// Sets block type to Thinking for synthetic signature blocks.
+    pub fn set_block_type_thinking(&mut self) {
+        self.block_type = BlockType::Thinking;
+    }
+
     /// Accumulates thinking content for signature caching.
     pub fn accumulate_thinking(&mut self, text: &str) {
-        self.accumulated_thinking.push_str(text);
+        const MAX_THINKING_SIZE: usize = 2 * 1024 * 1024; // 2MB
+        if self.accumulated_thinking.len() < MAX_THINKING_SIZE {
+            let remaining = MAX_THINKING_SIZE.saturating_sub(self.accumulated_thinking.len());
+            if text.len() <= remaining {
+                self.accumulated_thinking.push_str(text);
+            } else {
+                let end = text.floor_char_boundary(remaining);
+                self.accumulated_thinking.push_str(&text[..end]);
+            }
+        }
     }
 
     /// Returns the accumulated thinking content and clears the buffer.

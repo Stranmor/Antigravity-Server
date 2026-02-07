@@ -24,6 +24,7 @@ pub mod prometheus;
 pub mod routing_config;
 pub mod security;
 pub mod server;
+pub mod signature_metrics;
 pub mod sticky_config;
 pub mod token_manager;
 

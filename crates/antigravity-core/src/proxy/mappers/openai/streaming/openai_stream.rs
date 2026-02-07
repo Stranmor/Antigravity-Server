@@ -29,6 +29,7 @@ pub fn create_openai_sse_stream(
     session_id: Option<String>,
 ) -> Pin<Box<dyn Stream<Item = Result<Bytes, String>> + Send>> {
     let mut buffer = BytesMut::new();
+    const MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10MB
     let stream_id = format!("chatcmpl-{}", Uuid::new_v4());
     let created_ts = Utc::now().timestamp();
 
@@ -41,6 +42,14 @@ pub fn create_openai_sse_stream(
                 Ok(bytes) => {
                     debug!("[OpenAI-SSE] Received chunk: {} bytes", bytes.len());
                     buffer.extend_from_slice(&bytes);
+
+                    if buffer.len() > MAX_BUFFER_SIZE {
+                        tracing::error!("[OpenAI-SSE] Buffer exceeded {}MB limit, aborting stream", MAX_BUFFER_SIZE / 1024 / 1024);
+                        let err = error_chunk(&stream_id, created_ts, &model, "buffer_overflow", "Response too large", "error.buffer_overflow");
+                        yield Ok(Bytes::from(sse_line(&err)));
+                        yield Ok(Bytes::from("data: [DONE]\n\n"));
+                        break;
+                    }
 
                     while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
                         let line_raw = buffer.split_to(pos + 1);

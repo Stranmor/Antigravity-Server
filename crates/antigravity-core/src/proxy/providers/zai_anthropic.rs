@@ -175,7 +175,17 @@ pub async fn forward_anthropic_json(
 
     // [FIX #307] Explicitly serialize body to Vec<u8> to ensure Content-Length is set correctly.
     // This avoids "Transfer-Encoding: chunked" for small bodies which caused connection errors.
-    let body_bytes = serde_json::to_vec(&body).unwrap_or_default();
+    let body_bytes = match serde_json::to_vec(&body) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            tracing::error!("Failed to serialize request body for z.ai: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Request serialization failed: {}", e),
+            )
+                .into_response();
+        },
+    };
     let body_len = body_bytes.len();
 
     tracing::debug!("Forwarding request to z.ai (len: {} bytes): {}", body_len, url);

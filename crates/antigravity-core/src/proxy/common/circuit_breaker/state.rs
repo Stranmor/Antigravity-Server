@@ -38,6 +38,8 @@ pub(crate) struct AccountCircuit {
     pub consecutive_successes: u32,
     pub opened_at: Option<Instant>,
     pub last_failure_reason: Option<String>,
+    /// Whether a probe request is already in-flight during HalfOpen state
+    pub half_open_probe_active: bool,
 }
 
 impl Default for AccountCircuit {
@@ -48,6 +50,7 @@ impl Default for AccountCircuit {
             consecutive_successes: 0,
             opened_at: None,
             last_failure_reason: None,
+            half_open_probe_active: false,
         }
     }
 }

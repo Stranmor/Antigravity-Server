@@ -1,4 +1,6 @@
 mod part_processor;
+#[cfg(test)]
+mod signature_e2e_tests;
 mod signature_manager;
 mod state;
 mod state_events;

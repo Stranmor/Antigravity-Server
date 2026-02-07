@@ -79,7 +79,15 @@ impl CircuitBreakerManager {
                 }
                 circuit.last_failure_reason.clone()
             },
-            CircuitState::Closed | CircuitState::HalfOpen => None,
+            CircuitState::Closed => None,
+            CircuitState::HalfOpen => {
+                if circuit.half_open_probe_active {
+                    Some("Circuit half-open: probe already in flight".to_string())
+                } else {
+                    circuit.half_open_probe_active = true;
+                    None
+                }
+            },
         }
     }
 
@@ -118,7 +126,15 @@ impl CircuitBreakerManager {
                 }
                 Err(self.config.open_duration)
             },
-            CircuitState::Closed | CircuitState::HalfOpen => Ok(()),
+            CircuitState::Closed => Ok(()),
+            CircuitState::HalfOpen => {
+                if circuit.half_open_probe_active {
+                    Err(Duration::from_secs(1))
+                } else {
+                    circuit.half_open_probe_active = true;
+                    Ok(())
+                }
+            },
         }
     }
 
@@ -132,6 +148,7 @@ impl CircuitBreakerManager {
             },
             CircuitState::HalfOpen => {
                 circuit.consecutive_successes += 1;
+                circuit.half_open_probe_active = false;
                 if circuit.consecutive_successes >= self.config.success_threshold {
                     info!(
                         account_id = %account_id,
@@ -199,6 +216,7 @@ impl CircuitBreakerManager {
                     reason = %reason,
                     "Circuit breaker re-opening - failure during half-open"
                 );
+                circuit.half_open_probe_active = false;
                 circuit.state = CircuitState::Open;
                 circuit.opened_at = Some(std::time::Instant::now());
                 self.total_trips.fetch_add(1, Ordering::Relaxed);

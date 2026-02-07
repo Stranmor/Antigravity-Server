@@ -38,13 +38,19 @@ where
     let mut current_data = String::new();
 
     // 1. Collect all SSE events
+    let mut line_buffer = String::new();
+
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.map_err(|e| format!("Stream error: {}", e))?;
         let text = String::from_utf8_lossy(&chunk);
 
-        for line in text.lines() {
+        line_buffer.push_str(&text);
+
+        while let Some(newline_pos) = line_buffer.find('\n') {
+            let line = line_buffer[..newline_pos].trim_end_matches('\r').to_string();
+            line_buffer = line_buffer[newline_pos + 1..].to_string();
+
             if line.is_empty() {
-                // Empty line indicates event end
                 if !current_data.is_empty() {
                     if let Ok(data) = serde_json::from_str::<Value>(&current_data) {
                         events.push(SseEvent { event_type: current_event_type.clone(), data });
@@ -52,7 +58,7 @@ where
                     current_event_type.clear();
                     current_data.clear();
                 }
-            } else if let Some((key, value)) = parse_sse_line(line) {
+            } else if let Some((key, value)) = parse_sse_line(&line) {
                 match key.as_str() {
                     "event" => current_event_type = value,
                     "data" => current_data = value,

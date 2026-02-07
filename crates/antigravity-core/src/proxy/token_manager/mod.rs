@@ -84,6 +84,7 @@ impl TokenManager {
     pub fn start_auto_cleanup(&self) {
         let tracker = self.rate_limit_tracker.clone();
         let session_failures = self.session_failures.clone();
+        let session_accounts = self.session_accounts.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
             loop {
@@ -100,6 +101,25 @@ impl TokenManager {
                 let cleaned_sessions = before - session_failures.len();
                 if cleaned_sessions > 0 {
                     tracing::debug!("Cleaned {} stale session failure record(s)", cleaned_sessions);
+                }
+                // Clean stale session bindings (keep max 10000)
+                let session_count = session_accounts.len();
+                if session_count > 10_000 {
+                    let to_remove = session_count - 5_000;
+                    let keys_to_remove: Vec<String> = session_accounts
+                        .iter()
+                        .take(to_remove)
+                        .map(|entry| entry.key().clone())
+                        .collect();
+                    for key in &keys_to_remove {
+                        session_accounts.remove(key);
+                    }
+                    tracing::info!(
+                        "Session cleanup: removed {} stale session bindings ({} -> {})",
+                        keys_to_remove.len(),
+                        session_count,
+                        session_accounts.len()
+                    );
                 }
             }
         });
