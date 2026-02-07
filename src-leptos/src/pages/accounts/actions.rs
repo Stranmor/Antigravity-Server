@@ -22,16 +22,6 @@ pub(crate) struct AccountActions {
 }
 
 impl AccountActions {
-    #[allow(dead_code)]
-    fn show_message(&self, msg: String, is_error: bool) {
-        let message = self.message;
-        message.set(Some((msg, is_error)));
-        spawn_local(async move {
-            gloo_timers::future::TimeoutFuture::new(3000).await;
-            message.set(None);
-        });
-    }
-
     pub(crate) fn on_refresh_all_quotas(&self) {
         self.refresh_pending.set(true);
         let s = self.state;

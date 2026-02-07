@@ -7,7 +7,7 @@
 //! Kept for backward compatibility with legacy streams (codex_stream, legacy_stream).
 //! New code should use `crate::proxy::SignatureCache::global()` methods.
 
-#![allow(deprecated)]
+#![allow(deprecated, reason = "module itself is deprecated, self-references use deprecated items")]
 
 use std::sync::{Mutex, OnceLock};
 

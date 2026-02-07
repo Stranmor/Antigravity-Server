@@ -45,12 +45,12 @@ struct LoadProjectResponse {
 #[derive(Debug, Deserialize)]
 struct Tier {
     id: Option<String>,
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "deserialized from API response")]
     #[serde(rename = "quotaTier")]
     quota_tier: Option<String>,
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "deserialized from API response")]
     name: Option<String>,
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "deserialized from API response")]
     slug: Option<String>,
 }
 
@@ -226,20 +226,4 @@ pub async fn fetch_quota_inner(
     }
 
     Err(last_error.unwrap_or_else(|| AppError::Unknown("Quota query failed".to_string())))
-}
-
-/// Batch query all account quotas (backup feature)
-#[allow(dead_code)]
-pub async fn fetch_all_quotas(
-    accounts: Vec<(String, String)>,
-) -> Vec<(String, crate::error::AppResult<QuotaData>)> {
-    let mut results = Vec::new();
-
-    for (account_id, access_token) in accounts {
-        // In batch query, we pass account_id for log identification
-        let result = fetch_quota(&access_token, &account_id).await.map(|(q, _)| q);
-        results.push((account_id, result));
-    }
-
-    results
 }

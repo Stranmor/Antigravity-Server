@@ -9,13 +9,16 @@
 
 // LINT OVERRIDE: Server binary uses arithmetic for timestamps, metrics, and config.
 // Values are bounded by system limits. See AGENTS.md section 2.0.2.
-#![allow(clippy::arithmetic_side_effects)]
-#![allow(clippy::cast_precision_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::as_conversions)]
-#![allow(clippy::expect_used)]
-#![allow(clippy::unwrap_used)]
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::as_conversions,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "server binary: bounded arithmetic on system-limited values"
+)]
 #![allow(
     clippy::print_stdout,
     clippy::print_stderr,

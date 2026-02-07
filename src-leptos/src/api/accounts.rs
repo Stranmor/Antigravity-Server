@@ -13,15 +13,15 @@ pub(crate) struct ApiAccount {
     pub(crate) disabled: bool,
     #[serde(default)]
     pub(crate) proxy_disabled: bool,
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "deserialized from API response")]
     is_current: bool,
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "deserialized from API response")]
     gemini_quota: Option<i32>,
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "deserialized from API response")]
     claude_quota: Option<i32>,
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "deserialized from API response")]
     image_quota: Option<i32>,
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "deserialized from API response")]
     subscription_tier: Option<String>,
     pub(crate) quota: Option<QuotaData>,
 }
@@ -99,11 +99,11 @@ pub(crate) async fn toggle_proxy_status(
 ) -> Result<(), String> {
     #[derive(serde::Deserialize)]
     struct ToggleProxyResponse {
-        #[allow(dead_code)]
+        #[allow(dead_code, reason = "deserialized from API response")]
         success: bool,
-        #[allow(dead_code)]
+        #[allow(dead_code, reason = "deserialized from API response")]
         account_id: String,
-        #[allow(dead_code)]
+        #[allow(dead_code, reason = "deserialized from API response")]
         proxy_disabled: bool,
     }
 
@@ -148,7 +148,7 @@ pub(crate) async fn warmup_all_accounts() -> Result<String, String> {
 #[derive(serde::Deserialize)]
 struct OAuthUrlResponse {
     url: String,
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "deserialized from API response")]
     redirect_uri: String,
 }
 
@@ -159,7 +159,7 @@ pub(crate) async fn prepare_oauth_url() -> Result<String, String> {
 
 #[derive(serde::Deserialize)]
 struct QuotaResponse {
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "deserialized from API response")]
     account_id: String,
     quota: Option<QuotaData>,
 }
@@ -180,7 +180,7 @@ pub(crate) async fn refresh_all_quotas() -> Result<RefreshStats, String> {
 }
 
 #[derive(serde::Deserialize)]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "deserialized from API response")]
 struct AddByTokenResponse {
     success_count: usize,
     fail_count: usize,

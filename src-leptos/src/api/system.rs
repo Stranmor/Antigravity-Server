@@ -5,13 +5,13 @@ use crate::api_models::*;
 
 #[derive(serde::Deserialize, Debug)]
 pub(crate) struct StatusResponse {
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "deserialized from API response")]
     version: String,
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "deserialized from API response")]
     proxy_running: bool,
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "deserialized from API response")]
     accounts_count: usize,
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "deserialized from API response")]
     current_account: Option<String>,
 }
 
@@ -26,7 +26,7 @@ pub(crate) struct ModelDetectRequest {
 
 #[derive(serde::Deserialize, Clone, Debug)]
 pub(crate) struct ModelDetectResponse {
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "deserialized from API response")]
     original_model: String,
     pub(crate) mapped_model: String,
     pub(crate) mapping_reason: String,
