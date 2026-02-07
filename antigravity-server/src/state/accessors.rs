@@ -37,7 +37,10 @@ impl AppState {
     pub fn get_account_count(&self) -> usize {
         match account::list_accounts() {
             Ok(accounts) => accounts.iter().filter(|a| !a.disabled).count(),
-            Err(_) => 0,
+            Err(e) => {
+                tracing::warn!("Failed to get account count: {}", e);
+                0
+            },
         }
     }
 

@@ -18,7 +18,7 @@ impl ActiveRequestGuard {
         active_requests
             .entry(key.clone())
             .or_insert_with(|| AtomicU32::new(0))
-            .fetch_add(1, Ordering::SeqCst);
+            .fetch_add(1, Ordering::AcqRel);
         Self { active_requests, key, released: false }
     }
 
@@ -33,12 +33,12 @@ impl ActiveRequestGuard {
 
         let counter_ref = active_requests.get(&key)?;
         loop {
-            let current = counter_ref.load(Ordering::SeqCst);
+            let current = counter_ref.load(Ordering::Acquire);
             if current >= max_concurrent {
                 return None;
             }
             if counter_ref
-                .compare_exchange(current, current + 1, Ordering::SeqCst, Ordering::SeqCst)
+                .compare_exchange_weak(current, current + 1, Ordering::AcqRel, Ordering::Acquire)
                 .is_ok()
             {
                 drop(counter_ref);
@@ -56,7 +56,7 @@ impl Drop for ActiveRequestGuard {
     fn drop(&mut self) {
         if !self.released {
             if let Some(counter) = self.active_requests.get(&self.key) {
-                let _ = counter.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+                let _ = counter.fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| {
                     if v > 0 {
                         Some(v - 1)
                     } else {

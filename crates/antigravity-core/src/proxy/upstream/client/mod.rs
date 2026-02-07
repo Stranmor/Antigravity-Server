@@ -21,6 +21,7 @@ pub struct UpstreamClient {
 }
 
 impl UpstreamClient {
+    #[allow(clippy::expect_used, reason = "HTTP client is required for server to function")]
     pub fn new(proxy_config: Option<crate::proxy::config::UpstreamProxyConfig>) -> Self {
         let mut builder = Client::builder()
             .connect_timeout(Duration::from_secs(20))

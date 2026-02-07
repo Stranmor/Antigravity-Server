@@ -234,9 +234,10 @@ fn test_cache_control_cleanup() {
 }
 
 #[test]
-fn test_thinking_mode_auto_disable_on_tool_use_history() {
-    // [scenario] historymessageinhave atoolcall chain，and Assistant messagedoes not have Thinking block
-    // expected: systemautofallback，disable Thinking mode，toavoid 400 error
+fn test_thinking_stays_enabled_with_tool_use_history() {
+    // [scenario] History contains a tool call chain, assistant message has no thinking block.
+    // Expected: thinkingConfig stays enabled. Auto-disable was removed (2026-02-07)
+    // to prevent infinite degradation loop. Upstream API handles mixed tool-use/thinking natively.
     let req = ClaudeRequest {
         model: "claude-sonnet-4-5".to_string(),
         messages: vec![
@@ -244,7 +245,7 @@ fn test_thinking_mode_auto_disable_on_tool_use_history() {
                 role: "user".to_string(),
                 content: MessageContent::String("Check files".to_string()),
             },
-            // Assistant usetool，butatnon- Thinking mode下
+            // Assistant uses tool without a thinking block
             Message {
                 role: "assistant".to_string(),
                 content: MessageContent::Array(vec![
@@ -258,14 +259,13 @@ fn test_thinking_mode_auto_disable_on_tool_use_history() {
                     },
                 ]),
             },
-            // userreturntoolresult
+            // User returns tool result
             Message {
                 role: "user".to_string(),
                 content: MessageContent::Array(vec![ContentBlock::ToolResult {
                     tool_use_id: "tool_1".to_string(),
                     content: serde_json::Value::String("file1.txt\nfile2.txt".to_string()),
                     is_error: Some(false),
-                    // cache_control: None, // removed
                 }]),
             },
         ],
@@ -275,7 +275,6 @@ fn test_thinking_mode_auto_disable_on_tool_use_history() {
             description: Some("List files".to_string()),
             input_schema: Some(json!({"type": "object"})),
             type_: None,
-            // cache_control: None, // removed
         }]),
         stream: false,
         max_tokens: None,
@@ -293,16 +292,16 @@ fn test_thinking_mode_auto_disable_on_tool_use_history() {
     let body = result.unwrap();
     let request = &body["request"];
 
-    // verify: generationConfig innot应containing thinkingConfig (becausebefallback)
-    // even ifrequestinexplicitlyenable thinking
+    // Verify: thinkingConfig is present even with tool_use in history
+    // (auto-disable was removed to prevent degradation loop)
     if let Some(gen_config) = request.get("generationConfig") {
         assert!(
-            gen_config.get("thinkingConfig").is_none(),
-            "thinkingConfig should be removed due to downgrade"
+            gen_config.get("thinkingConfig").is_some(),
+            "thinkingConfig should remain enabled — auto-disable was removed"
         );
     }
 
-    // verify: stillcangeneratevalid requestbody
+    // Verify: request body is still valid
     assert!(request.get("contents").is_some());
 }
 

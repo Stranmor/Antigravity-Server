@@ -88,7 +88,6 @@ mod integration_tests {
             health_monitor,
             circuit_breaker,
             request_timeout: 300,
-            thought_signature_map: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             upstream,
             provider_rr: Arc::new(AtomicUsize::new(0)),
             zai_vision_mcp: Arc::new(crate::proxy::zai_vision_mcp::ZaiVisionMcpState::new()),

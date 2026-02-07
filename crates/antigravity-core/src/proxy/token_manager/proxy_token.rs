@@ -50,12 +50,14 @@ pub struct ProxyToken {
     pub health_score: f32,
     /// Models available for this account (from quota API response).
     pub available_models: HashSet<String>,
+    /// Pre-computed account tier (cached from subscription_tier string).
+    cached_tier: AccountTier,
 }
 
 impl ProxyToken {
     /// Parse subscription tier string into typed enum.
-    pub fn account_tier(&self) -> AccountTier {
-        match self.subscription_tier.as_deref() {
+    fn parse_tier(subscription_tier: Option<&str>) -> AccountTier {
+        match subscription_tier {
             Some(t) if t.contains("ultra-business") => AccountTier::UltraBusiness,
             Some(t) if t.contains("ultra") => AccountTier::Ultra,
             Some(t) if t.contains("pro") => AccountTier::Pro,
@@ -64,26 +66,70 @@ impl ProxyToken {
         }
     }
 
+    /// Create a new ProxyToken with pre-computed cached tier.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        account_id: String,
+        access_token: String,
+        refresh_token: String,
+        expires_in: i64,
+        timestamp: i64,
+        email: String,
+        account_path: PathBuf,
+        project_id: Option<String>,
+        subscription_tier: Option<String>,
+        remaining_quota: Option<i32>,
+        protected_models: HashSet<String>,
+        health_score: f32,
+        available_models: HashSet<String>,
+    ) -> Self {
+        let cached_tier = Self::parse_tier(subscription_tier.as_deref());
+        Self {
+            account_id,
+            access_token,
+            refresh_token,
+            expires_in,
+            timestamp,
+            email,
+            account_path,
+            project_id,
+            subscription_tier,
+            remaining_quota,
+            protected_models,
+            health_score,
+            available_models,
+            cached_tier,
+        }
+    }
+
+    /// Returns the pre-computed account tier (no string parsing).
+    #[inline]
+    pub fn account_tier(&self) -> AccountTier {
+        self.cached_tier
+    }
+
     /// Returns true for premium ultra-class accounts (UltraBusiness, Ultra).
     /// These accounts get priority over sticky session bindings.
     #[inline]
     pub fn is_ultra_tier(&self) -> bool {
-        self.account_tier().is_ultra()
+        self.cached_tier.is_ultra()
     }
 
     /// Business Ultra tier: high daily quota, strict RPM limits.
+    #[inline]
     pub fn is_business_ultra(&self) -> bool {
-        self.subscription_tier.as_ref().is_some_and(|t| t.contains("ultra-business"))
+        self.cached_tier == AccountTier::UltraBusiness
     }
 
     /// Numeric tier priority for sorting (lower = better).
-    /// Backwards-compatible with existing sort logic.
+    #[inline]
     pub fn tier_priority(&self) -> u8 {
-        self.account_tier().priority()
+        self.cached_tier.priority()
     }
 
+    #[inline]
     pub fn tier_weight(&self) -> f32 {
-        match self.account_tier() {
+        match self.cached_tier {
             AccountTier::UltraBusiness => 0.1,
             AccountTier::Ultra => 0.25,
             AccountTier::Pro => 0.8,

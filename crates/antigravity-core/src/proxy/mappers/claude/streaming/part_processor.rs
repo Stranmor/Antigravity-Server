@@ -94,6 +94,7 @@ impl<'a> PartProcessor<'a> {
         }
 
         if self.state.current_block_type() != BlockType::Thinking {
+            self.state.mark_thinking_received();
             chunks.extend(
                 self.state.start_block(
                     BlockType::Thinking,

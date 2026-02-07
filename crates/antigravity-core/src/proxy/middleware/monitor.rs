@@ -127,15 +127,86 @@ pub async fn monitor_middleware(
     };
 
     if content_type.contains("text/event-stream") {
-        log.response_body = Some("[Stream Data]".to_string());
         let (parts, body) = response.into_parts();
         let mut stream = body.into_data_stream();
         let (tx, rx) = tokio::sync::mpsc::channel(64);
 
         tokio::spawn(async move {
+            let mut collected_text = String::new();
             let mut last_few_bytes = Vec::new();
+            const MAX_COLLECTED_TEXT: usize = 512 * 1024; // 512KB limit for collected text
+
             while let Some(chunk_res) = stream.next().await {
                 if let Ok(chunk) = chunk_res {
+                    // Parse SSE events to extract text content
+                    if let Ok(chunk_str) = std::str::from_utf8(&chunk) {
+                        for line in chunk_str.lines() {
+                            if let Some(json_str) = line.strip_prefix("data: ") {
+                                let json_str = json_str.trim();
+                                if json_str == "[DONE]" {
+                                    continue;
+                                }
+                                if let Ok(json) = serde_json::from_str::<Value>(json_str) {
+                                    // Claude/Anthropic: content_block_delta with delta.text
+                                    if let Some(delta) = json.get("delta") {
+                                        if let Some(text) =
+                                            delta.get("text").and_then(|v| v.as_str())
+                                        {
+                                            if collected_text.len() + text.len()
+                                                <= MAX_COLLECTED_TEXT
+                                            {
+                                                collected_text.push_str(text);
+                                            }
+                                        }
+                                    }
+                                    // OpenAI: choices[0].delta.content
+                                    if let Some(choices) =
+                                        json.get("choices").and_then(|v| v.as_array())
+                                    {
+                                        if let Some(choice) = choices.first() {
+                                            if let Some(content) = choice
+                                                .get("delta")
+                                                .and_then(|d| d.get("content"))
+                                                .and_then(|v| v.as_str())
+                                            {
+                                                if collected_text.len() + content.len()
+                                                    <= MAX_COLLECTED_TEXT
+                                                {
+                                                    collected_text.push_str(content);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    // Gemini: candidates[0].content.parts[0].text
+                                    if let Some(candidates) =
+                                        json.get("candidates").and_then(|v| v.as_array())
+                                    {
+                                        if let Some(candidate) = candidates.first() {
+                                            if let Some(parts) = candidate
+                                                .get("content")
+                                                .and_then(|c| c.get("parts"))
+                                                .and_then(|p| p.as_array())
+                                            {
+                                                for part in parts {
+                                                    if let Some(text) =
+                                                        part.get("text").and_then(|v| v.as_str())
+                                                    {
+                                                        if collected_text.len() + text.len()
+                                                            <= MAX_COLLECTED_TEXT
+                                                        {
+                                                            collected_text.push_str(text);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Keep last bytes for usage extraction
                     if chunk.len() > 8192 {
                         last_few_bytes = chunk.slice(chunk.len() - 8192..).to_vec();
                     } else {
@@ -150,6 +221,14 @@ pub async fn monitor_middleware(
                 }
             }
 
+            // Set collected text as response body
+            if collected_text.is_empty() {
+                log.response_body = Some("[Stream Data - No text extracted]".to_string());
+            } else {
+                log.response_body = Some(collected_text);
+            }
+
+            // Extract usage info from last bytes
             if let Ok(full_tail) = std::str::from_utf8(&last_few_bytes) {
                 for line in full_tail.lines().rev() {
                     if line.starts_with("data: ")

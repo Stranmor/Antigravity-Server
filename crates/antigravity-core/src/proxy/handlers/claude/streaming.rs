@@ -1,8 +1,7 @@
 //! Streaming response handling for Claude messages
 #![allow(
     clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "Response::builder() with valid headers cannot fail"
+    reason = "Response::builder() with valid constant headers cannot fail"
 )]
 
 use axum::{
@@ -149,11 +148,18 @@ where
                 .header("X-Account-Email", &ctx.email)
                 .header("X-Mapped-Model", &ctx.mapped_model)
                 .header("X-Mapping-Reason", &ctx.reason)
-                .body(Body::from(
-                    serde_json::to_string(&full_response)
-                        .expect("ClaudeResponse is always serializable"),
-                ))
-                .expect("valid JSON response")
+                .body(Body::from(match serde_json::to_string(&full_response) {
+                    Ok(json) => json,
+                    Err(e) => {
+                        tracing::error!("Failed to serialize ClaudeResponse: {}", e);
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("Serialization error: {}", e),
+                        )
+                            .into_response();
+                    },
+                }))
+                .unwrap()
         },
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Stream collection error: {}", e))
             .into_response(),

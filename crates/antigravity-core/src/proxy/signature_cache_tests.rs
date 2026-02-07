@@ -29,7 +29,7 @@ fn test_thinking_family() {
 }
 
 #[test]
-fn test_session_signature() {
+fn test_session_signature_basic() {
     let cache = SignatureCache::new();
     let sig1 = "a".repeat(60);
     let sig2 = "b".repeat(80); // Longer, should replace
@@ -56,6 +56,20 @@ fn test_session_signature() {
 
     // Different session should be isolated
     assert!(cache.get_session_signature("sid-other").is_none());
+}
+
+#[test]
+fn test_session_signature_replacement() {
+    let cache = SignatureCache::new();
+    let sig1 = "a".repeat(80);
+    let sig2 = "b".repeat(60); // Shorter — should NOT replace
+
+    cache.cache_session_signature("sid-prog", sig1.clone());
+    assert_eq!(cache.get_session_signature("sid-prog"), Some(sig1.clone()));
+
+    // Shorter signature should NOT replace longer one
+    cache.cache_session_signature("sid-prog", sig2.clone());
+    assert_eq!(cache.get_session_signature("sid-prog"), Some(sig1));
 }
 
 #[test]

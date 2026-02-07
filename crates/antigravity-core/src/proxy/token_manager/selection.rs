@@ -110,7 +110,7 @@ impl TokenManager {
         let routing = self.routing_config.read().await.clone();
 
         let quota_protection_enabled =
-            config::load_config().map(|cfg| cfg.quota_protection.enabled).unwrap_or(false);
+            config::load_config_cached().map(|cfg| cfg.quota_protection.enabled).unwrap_or(false);
 
         let normalized_target =
             crate::proxy::common::model_mapping::normalize_to_standard_id(target_model)

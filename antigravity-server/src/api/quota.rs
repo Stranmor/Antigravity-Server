@@ -34,9 +34,13 @@ pub async fn refresh_account_quota(
                 account::update_account_quota_async(payload.account_id.clone(), quota.clone()).await
             {
                 tracing::warn!("Failed to update quota protection: {}", e);
-                let _ = account::save_account(&acc);
+                if let Err(e) = account::save_account(&acc) {
+                    tracing::warn!("Failed to save account fallback: {}", e);
+                }
             }
-            let _ = state.reload_accounts().await;
+            if let Err(e) = state.reload_accounts().await {
+                tracing::warn!("Failed to reload accounts: {}", e);
+            }
 
             Ok(Json(QuotaResponse { account_id: payload.account_id, quota: Some(quota) }))
         },
@@ -93,7 +97,9 @@ pub async fn refresh_all_quotas(
         }
     }
 
-    let _ = state.reload_accounts().await;
+    if let Err(e) = state.reload_accounts().await {
+        tracing::warn!("Failed to reload accounts after quota refresh: {}", e);
+    }
 
     Ok(Json(antigravity_types::models::RefreshStats { total, success, failed }))
 }
@@ -141,7 +147,9 @@ pub async fn toggle_proxy_status(
         account::save_account(&acc).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     }
 
-    let _ = state.reload_accounts().await;
+    if let Err(e) = state.reload_accounts().await {
+        tracing::warn!("Failed to reload accounts after proxy toggle: {}", e);
+    }
 
     Ok(Json(ToggleProxyResponse {
         success: true,
@@ -173,9 +181,13 @@ pub async fn warmup_account(
     match account::fetch_quota_with_retry(&mut acc).await {
         Ok(_) => {
             if let Some(quota) = acc.quota.clone() {
-                let _ = account::update_account_quota_async(acc.id.clone(), quota).await;
+                if let Err(e) = account::update_account_quota_async(acc.id.clone(), quota).await {
+                    tracing::warn!("Failed to update quota for {}: {}", acc.email, e);
+                }
             }
-            let _ = state.reload_accounts().await;
+            if let Err(e) = state.reload_accounts().await {
+                tracing::warn!("Failed to reload accounts after warmup: {}", e);
+            }
 
             Ok(Json(WarmupResponse {
                 success: true,
@@ -226,11 +238,16 @@ pub async fn warmup_all_accounts(
         match result {
             Ok(Ok(warmup_result)) => {
                 if let Some(quota) = warmup_result.quota {
-                    let _ = account::update_account_quota_async(
-                        warmup_result.account_id.clone(),
-                        quota,
-                    )
-                    .await;
+                    if let Err(e) =
+                        account::update_account_quota_async(warmup_result.account_id.clone(), quota)
+                            .await
+                    {
+                        tracing::warn!(
+                            "Failed to update quota for {}: {}",
+                            warmup_result.account_id,
+                            e
+                        );
+                    }
                 }
                 success += 1;
             },
@@ -245,7 +262,9 @@ pub async fn warmup_all_accounts(
         }
     }
 
-    let _ = state.reload_accounts().await;
+    if let Err(e) = state.reload_accounts().await {
+        tracing::warn!("Failed to reload accounts after warmup all: {}", e);
+    }
 
     Ok(Json(WarmupResponse {
         success: true,

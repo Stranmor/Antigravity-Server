@@ -20,48 +20,67 @@ pub fn clean_thinking_fields_recursive(val: &mut Value) {
     }
 }
 
-/// Check if two model strings are compatible (same family)
+/// Extract a model's base family by stripping variant suffixes, dates, and versions.
+///
+/// Examples:
+/// - `gemini-2.5-flash-thinking` → `gemini-2.5-flash`
+/// - `gemini-3-pro-preview` → `gemini-3-pro`
+/// - `claude-sonnet-4-5-20250929` → `claude-sonnet-4-5`
+/// - `gemini-1.5-pro-002` → `gemini-1.5-pro`
+fn extract_model_family(model: &str) -> String {
+    let mut family = model.to_lowercase();
+
+    // Known variant suffixes to strip (iteratively, since models can stack them)
+    let strip_suffixes: &[&str] = &[
+        "-thinking",
+        "-preview",
+        "-high",
+        "-low",
+        "-lite",
+        "-exp",
+        "-latest",
+        "-online",
+        "-image",
+    ];
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for suffix in strip_suffixes {
+            if family.ends_with(suffix) {
+                family.truncate(family.len() - suffix.len());
+                changed = true;
+            }
+        }
+    }
+
+    // Strip date suffixes (8+ digits at the end, e.g. -20241022)
+    if let Some(pos) = family.rfind('-') {
+        let date_part = &family[pos + 1..];
+        if date_part.len() >= 8 && date_part.chars().all(|c| c.is_ascii_digit()) {
+            family.truncate(pos);
+        }
+    }
+
+    // Strip short numeric version suffixes (e.g. -002, -01)
+    if let Some(pos) = family.rfind('-') {
+        let ver_part = &family[pos + 1..];
+        if !ver_part.is_empty()
+            && ver_part.len() <= 3
+            && ver_part.chars().all(|c| c.is_ascii_digit())
+        {
+            family.truncate(pos);
+        }
+    }
+
+    family
+}
+
+/// Check if two model strings are compatible (same family).
+///
+/// Dynamically extracts the base model family from both strings
+/// and compares them. No hardcoded model lists — works for any
+/// current and future models.
 pub fn is_model_compatible(cached: &str, target: &str) -> bool {
-    // Simple heuristic: check if they share the same base prefix
-    // e.g. "gemini-1.5-pro" vs "gemini-1.5-pro-002" -> Compatible
-    // "gemini-1.5-pro" vs "gemini-2.0-flash" -> Incompatible
-
-    // Normalize
-    let c = cached.to_lowercase();
-    let t = target.to_lowercase();
-
-    if c == t {
-        return true;
-    }
-
-    // Check specific families
-    // Vertex AI signatures are very strict. 1.5-pro vs 1.5-flash are NOT cross-compatible.
-    // 2.0-flash vs 2.0-pro are also NOT cross-compatible.
-
-    // Exact model string match (already handled by c == t)
-
-    // Grouped family match (Claude models are more permissive)
-    if c.contains("claude-3-5") && t.contains("claude-3-5") {
-        return true;
-    }
-    if c.contains("claude-3-7") && t.contains("claude-3-7") {
-        return true;
-    }
-
-    // Gemini models: strict family match required for signatures
-    if c.contains("gemini-1.5-pro") && t.contains("gemini-1.5-pro") {
-        return true;
-    }
-    if c.contains("gemini-1.5-flash") && t.contains("gemini-1.5-flash") {
-        return true;
-    }
-    if c.contains("gemini-2.0-flash") && t.contains("gemini-2.0-flash") {
-        return true;
-    }
-    if c.contains("gemini-2.0-pro") && t.contains("gemini-2.0-pro") {
-        return true;
-    }
-
-    // Fallback: strict match required
-    false
+    extract_model_family(cached) == extract_model_family(target)
 }

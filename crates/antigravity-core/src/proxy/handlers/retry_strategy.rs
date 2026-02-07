@@ -60,6 +60,8 @@ pub fn determine_retry_strategy(
         503 | 529 => RetryStrategy::ExponentialBackoff { base_ms: 10000, max_ms: 60000 },
         500 => RetryStrategy::LinearBackoff { base_ms: 3000 },
         401 | 403 => RetryStrategy::FixedDelay(Duration::from_millis(200)),
+        // 404 from upstream = model not available on this account tier → rotate
+        404 => RetryStrategy::FixedDelay(Duration::from_millis(100)),
         _ => RetryStrategy::NoRetry,
     }
 }
@@ -123,7 +125,7 @@ pub async fn apply_retry_strategy(
 
 /// Checks if the status code warrants account rotation.
 pub fn should_rotate_account(status_code: u16) -> bool {
-    matches!(status_code, 429 | 401 | 403 | 500)
+    matches!(status_code, 429 | 401 | 403 | 404 | 500)
 }
 
 /// Configuration for stream peeking.

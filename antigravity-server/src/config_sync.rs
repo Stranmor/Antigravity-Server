@@ -41,17 +41,20 @@ async fn sync_once(
     client: &reqwest::Client,
     remote_url: &str,
 ) -> Result<(), String> {
-    let fetch_url = format!("{}/api/config/mapping", remote_url.trim_end_matches('/'));
-    let push_url = format!("{}/api/config/mapping", remote_url.trim_end_matches('/'));
+    let base_url = remote_url.trim_end_matches('/');
+    let url = format!("{base_url}/api/config/mapping");
+
+    let api_key = state.inner.security_config.read().await.api_key.clone();
 
     let remote_mapping: antigravity_types::SyncableMapping = client
-        .get(&fetch_url)
+        .get(&url)
+        .bearer_auth(&api_key)
         .send()
         .await
-        .map_err(|e| format!("fetch failed: {}", e))?
+        .map_err(|e| format!("fetch failed: {e}"))?
         .json()
         .await
-        .map_err(|e| format!("parse failed: {}", e))?;
+        .map_err(|e| format!("parse failed: {e}"))?;
 
     let (inbound_updated, diff) = state.sync_with_remote(&remote_mapping).await;
     let outbound_count = diff.len();
@@ -62,11 +65,12 @@ async fn sync_once(
         });
 
         let resp = client
-            .post(&push_url)
+            .post(&url)
+            .bearer_auth(&api_key)
             .json(&push_body)
             .send()
             .await
-            .map_err(|e| format!("push failed: {}", e))?;
+            .map_err(|e| format!("push failed: {e}"))?;
 
         if !resp.status().is_success() {
             return Err(format!("push returned {}", resp.status()));

@@ -54,3 +54,57 @@ pub async fn cleanup_old_signatures(pool: &PgPool, days: i32) -> Result<u64, sql
     .await?;
     Ok(result.rows_affected())
 }
+
+// ===== Session Signatures (persistent session → signature mapping) =====
+
+pub async fn store_session_signature(
+    pool: &PgPool,
+    session_id: &str,
+    signature: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO session_signatures (session_id, signature, updated_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (session_id) DO UPDATE SET
+            signature = EXCLUDED.signature,
+            updated_at = NOW()
+        "#,
+    )
+    .bind(session_id)
+    .bind(signature)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_session_signature(
+    pool: &PgPool,
+    session_id: &str,
+) -> Result<Option<String>, sqlx::Error> {
+    let result: Option<(String,)> = sqlx::query_as(
+        r#"
+        UPDATE session_signatures
+        SET updated_at = NOW()
+        WHERE session_id = $1
+        RETURNING signature
+        "#,
+    )
+    .bind(session_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(result.map(|(sig,)| sig))
+}
+
+pub async fn cleanup_old_session_signatures(pool: &PgPool, days: i32) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        DELETE FROM session_signatures
+        WHERE updated_at < NOW() - make_interval(days => $1)
+        "#,
+    )
+    .bind(days)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}

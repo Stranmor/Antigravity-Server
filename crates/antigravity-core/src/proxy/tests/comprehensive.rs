@@ -17,7 +17,7 @@ mod tests {
     fn test_first_thinking_request_permissive_mode() {
         // 1. 构造a全新 request (无historymessage)
         let req = ClaudeRequest {
-            model: "claude-3-7-sonnet-20250219".to_string(),
+            model: "claude-sonnet-4-5".to_string(),
             messages: vec![Message {
                 role: "user".to_string(),
                 content: MessageContent::String("Hello, please think.".to_string()),

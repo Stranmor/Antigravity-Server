@@ -5,6 +5,10 @@ use crate::proxy::SignatureCache;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
+#[allow(
+    dead_code,
+    reason = "Fields used for struct construction, may be needed for future validation"
+)]
 pub struct MessageTransformContext<'a> {
     pub global_thought_sig: &'a Option<String>,
     pub actual_include_thinking: bool,
@@ -68,32 +72,27 @@ fn transform_reasoning_content(
             }
         }
     } else if ctx.actual_include_thinking && role == "model" {
-        // [FIX] For Claude thinking models, we CANNOT inject placeholder thinking blocks
-        // without a valid signature - Claude API will reject with "signature: Field required"
-        // Only Gemini supports the "skip_thought_signature_validator" hack
+        // [FIX] We cannot inject placeholder thinking blocks without a valid signature.
+        // The API will reject with "signature: Field required".
         if ctx.is_claude_thinking && ctx.global_thought_sig.is_none() {
             tracing::debug!(
                 "[OpenAI-Thinking] Skipping placeholder thinking block for Claude - no signature available"
             );
             // Don't inject thinking block for Claude without signature
-        } else {
+        } else if let Some(ref sig) = ctx.global_thought_sig {
             tracing::debug!(
-                "[OpenAI-Thinking] Injecting placeholder thinking block for assistant message"
+                "[OpenAI-Thinking] Injecting placeholder thinking block with signature for assistant message"
             );
-            let mut thought_part = json!({
+            let thought_part = json!({
                 "text": "Applying tool decisions and generating response...",
                 "thought": true,
+                "thoughtSignature": sig,
             });
-
-            if let Some(ref sig) = ctx.global_thought_sig {
-                thought_part["thoughtSignature"] = json!(sig);
-            } else if !ctx.mapped_model.starts_with("projects/")
-                && ctx.mapped_model.contains("gemini")
-            {
-                thought_part["thoughtSignature"] = json!("skip_thought_signature_validator");
-            }
-
             parts.push(thought_part);
+        } else {
+            tracing::debug!(
+                "[OpenAI-Thinking] No signature available, skipping placeholder thinking block"
+            );
         }
     }
 }
@@ -154,15 +153,11 @@ fn transform_tool_calls(
 
             if let Some(ref sig) = ctx.global_thought_sig {
                 func_call_part["thoughtSignature"] = json!(sig);
-            } else if ctx.is_thinking_model
-                && !ctx.is_claude_thinking
-                && !ctx.mapped_model.starts_with("projects/")
-            {
+            } else {
                 tracing::debug!(
-                    "[OpenAI-Signature] Adding GEMINI_SKIP_SIGNATURE for tool_use: {}",
+                    "[OpenAI-Signature] No signature available for tool_use: {}. Omitting thoughtSignature.",
                     tc.id
                 );
-                func_call_part["thoughtSignature"] = json!("skip_thought_signature_validator");
             }
 
             parts.push(func_call_part);

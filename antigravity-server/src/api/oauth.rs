@@ -193,7 +193,9 @@ pub async fn handle_oauth_callback(
     match account::upsert_account(user_info.email.clone(), user_info.get_display_name(), token_data)
     {
         Ok(acc) => {
-            let _ = app_state.reload_accounts().await;
+            if let Err(e) = app_state.reload_accounts().await {
+                tracing::warn!("Failed to reload accounts after OAuth callback: {}", e);
+            }
 
             Html(format!(
                 r#"<!DOCTYPE html>
@@ -256,7 +258,9 @@ pub async fn submit_oauth_code(
         |e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to add account: {}", e)),
     )?;
 
-    let _ = app_state.reload_accounts().await;
+    if let Err(e) = app_state.reload_accounts().await {
+        tracing::warn!("Failed to reload accounts after OAuth code submit: {}", e);
+    }
 
     Ok(Json(SubmitCodeResponse {
         success: true,

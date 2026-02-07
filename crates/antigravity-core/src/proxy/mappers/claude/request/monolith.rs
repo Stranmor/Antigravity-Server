@@ -7,10 +7,7 @@ use super::message_cleaning::{
 };
 use super::safety::build_safety_settings;
 use super::system_instruction::build_system_instruction;
-use super::thinking::{
-    has_valid_signature_for_function_calls, should_disable_thinking_due_to_history,
-    should_enable_thinking_by_default,
-};
+use super::thinking::{has_valid_signature_for_function_calls, should_enable_thinking_by_default};
 use super::tools_builder::build_tools;
 use crate::proxy::session_manager::SessionManager;
 use crate::proxy::SignatureCache;
@@ -91,7 +88,6 @@ pub fn transform_claude_request_in(
     );
 
     // [CRITICAL FIX] Disable dummy thought injection for Vertex AI
-    // [CRITICAL FIX] Disable dummy thought injection for Vertex AI
     // Vertex AI rejects thinking blocks without valid signatures
     // Even if thinking is enabled, we should NOT inject dummy blocks for historical messages
     let allow_dummy_thought = false;
@@ -104,11 +100,21 @@ pub fn transform_claude_request_in(
             should_enable_thinking_by_default(&claude_req.model)
         });
 
-    // [NEW FIX] Check if target model supports thinking
-    // Only models with "-thinking" suffix or Claude models support thinking
-    // Regular Gemini models (gemini-2.5-flash, gemini-2.5-pro) do NOT support thinking
-    let target_model_supports_thinking =
-        mapped_model.contains("-thinking") || mapped_model.starts_with("claude-");
+    // [FIX] Check if target model supports thinking.
+    // Gemini 2.5+, Gemini 3.x, and Claude models all support thinking natively via thinkingConfig.
+    // Only legacy Gemini models (1.5-*, 2.0-*) and non-gemini/non-claude models lack support.
+    let model_lower = mapped_model.to_lowercase();
+    let target_model_supports_thinking = if model_lower.starts_with("claude-") {
+        true
+    } else if model_lower.starts_with("gemini-") {
+        // Legacy models that don't support thinking
+        let is_legacy =
+            model_lower.starts_with("gemini-1.") || model_lower.starts_with("gemini-2.0");
+        !is_legacy
+    } else {
+        // Unknown provider — assume no thinking support
+        false
+    };
 
     if is_thinking_enabled && !target_model_supports_thinking {
         tracing::warn!(
@@ -118,20 +124,12 @@ pub fn transform_claude_request_in(
         is_thinking_enabled = false;
     }
 
-    // [New Strategy] Smart fallback: check if history messages are compatible with Thinking mode
-    // If in a tool call chain that doesn't have Thinking, must temporarily disable Thinking
-    if is_thinking_enabled {
-        let should_disable = should_disable_thinking_due_to_history(&claude_req.messages);
-        if should_disable {
-            tracing::warn!(
-                "[Thinking-Mode] Automatically disabling thinking checks due to incompatible tool-use history (mixed application)"
-            );
-            is_thinking_enabled = false;
-        }
-    }
-
-    // [FIX #295 & #298] If thinking enabled but no signature available,
-    // disable thinking to prevent Gemini 3 Pro rejection
+    // [2026-02-07] Removed should_disable_thinking_due_to_history — it caused infinite
+    // degradation loops. Upstream API handles mixed ToolUse/Thinking history natively.
+    // For thinking models, thinking MUST remain enabled to preserve hidden state quality.
+    // [FIX #295 & #298] Strict signature enforcement for thinking models.
+    // Instead of silently degrading (which causes quality loss and infinite loops),
+    // we return an error when signatures are missing so the client knows.
     if is_thinking_enabled {
         let global_sig = SignatureCache::global().get_session_signature(&session_id);
 
@@ -154,17 +152,16 @@ pub fn transform_claude_request_in(
             }
         });
 
-        // [FIX #298] For first-time thinking requests (no thinking history),
-        // we use permissive mode and let upstream handle validation.
-        // We only enforce strict signature checks when function calls are involved.
-        let needs_signature_check = has_function_calls;
-
-        if !has_thinking_history && is_thinking_enabled {
+        if !has_thinking_history {
             tracing::info!(
                 "[Thinking-Mode] First thinking request detected. Using permissive mode - \
                  signature validation will be handled by upstream API."
             );
         }
+
+        // Only enforce signature checks when we have both function calls AND thinking history
+        // (first-time requests don't need signatures yet)
+        let needs_signature_check = has_function_calls && has_thinking_history;
 
         if needs_signature_check
             && !has_valid_signature_for_function_calls(
@@ -173,11 +170,19 @@ pub fn transform_claude_request_in(
                 &session_id,
             )
         {
-            tracing::warn!(
-                "[Thinking-Mode] [FIX #295] No valid signature found for function calls. \
-                 Disabling thinking to prevent Gemini 3 Pro rejection."
+            tracing::error!(
+                "[Thinking-Mode] CRITICAL: No valid signature found for function calls \
+                 in thinking mode. Hidden state integrity cannot be guaranteed. \
+                 Session: {}, Model: {}",
+                session_id,
+                claude_req.model
             );
-            is_thinking_enabled = false;
+            return Err(format!(
+                "Thinking mode requires valid signatures for function calls but none were found. \
+                 Session: {}. This indicates lost hidden state — response quality cannot be guaranteed. \
+                 Please start a new conversation.",
+                session_id
+            ));
         }
     }
 

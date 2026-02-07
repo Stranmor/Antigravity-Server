@@ -61,7 +61,13 @@ impl AdaptiveLimitTracker {
             0..=1 => 1.0,
             2..=6 => 0.9,
             7..=24 => 0.7,
-            _ => 0.5,
+            _ => {
+                tracing::debug!(
+                    "Persisted AIMD data is {}h old, applying minimum confidence 50%",
+                    age_hours
+                );
+                0.5
+            },
         };
 
         let effective_limit = (confirmed_limit as f64 * confidence) as u64;

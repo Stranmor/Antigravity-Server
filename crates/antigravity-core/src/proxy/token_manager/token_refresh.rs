@@ -37,9 +37,12 @@ impl TokenManager {
                         "Disabling account due to invalid_grant ({}): refresh_token likely revoked/expired",
                         token.email
                     );
-                    let _ = self
+                    if let Err(e) = self
                         .disable_account(&token.account_id, &format!("invalid_grant: {}", e))
-                        .await;
+                        .await
+                    {
+                        tracing::warn!("Failed to disable account {}: {}", token.email, e);
+                    }
                     self.tokens.remove(&token.account_id);
                 }
                 Err(format!("Token refresh failed: {}", e))
@@ -58,7 +61,9 @@ impl TokenManager {
                 if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
                     entry.project_id = Some(pid.clone());
                 }
-                let _ = self.save_project_id(&token.account_id, &pid).await;
+                if let Err(e) = self.save_project_id(&token.account_id, &pid).await {
+                    tracing::warn!("Failed to save project_id for {}: {}", token.email, e);
+                }
                 token.project_id = Some(pid.clone());
                 Ok(pid)
             },

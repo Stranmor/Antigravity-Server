@@ -226,15 +226,10 @@ pub fn build_contents(
                                 part["thoughtSignature"] = json!(sig);
                             }
                         } else {
-                            let is_google_cloud = mapped_model.starts_with("projects/");
-                            if is_thinking_enabled && !is_google_cloud {
-                                tracing::debug!(
-                                    "[Tool-Signature] Adding GEMINI_SKIP_SIGNATURE for tool_use: {}",
-                                    id
-                                );
-                                part["thoughtSignature"] =
-                                    json!("skip_thought_signature_validator");
-                            }
+                            tracing::debug!(
+                                "[Tool-Signature] No signature available for tool_use: {}. Omitting thoughtSignature.",
+                                id
+                            );
                         }
                         parts.push(part);
                     },

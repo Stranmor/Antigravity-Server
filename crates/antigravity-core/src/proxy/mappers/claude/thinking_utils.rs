@@ -3,7 +3,6 @@ use crate::proxy::SignatureCache;
 use tracing::{debug, info, warn};
 
 pub const MIN_SIGNATURE_LENGTH: usize = 50;
-pub const GEMINI_SKIP_SIGNATURE: &str = "skip_thought_signature_validator";
 
 #[derive(Debug, Default)]
 pub struct ConversationState {

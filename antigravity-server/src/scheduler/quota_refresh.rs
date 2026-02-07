@@ -63,11 +63,16 @@ pub fn start_quota_refresh(state: AppState) {
                     match account::fetch_quota_with_retry(&mut acc_clone).await {
                         Ok(_) => {
                             if let Some(quota) = acc_clone.quota.clone() {
-                                let _ = account::update_account_quota_async(
-                                    acc_clone.id.clone(),
-                                    quota,
-                                )
-                                .await;
+                                if let Err(e) =
+                                    account::update_account_quota_async(acc_clone.id.clone(), quota)
+                                        .await
+                                {
+                                    tracing::warn!(
+                                        "[QuotaRefresh] Failed to update quota for {}: {}",
+                                        acc_clone.id,
+                                        e
+                                    );
+                                }
                             }
                             already_refreshed.insert(acc_clone.id.clone());
                             tracing::debug!(
@@ -85,7 +90,12 @@ pub fn start_quota_refresh(state: AppState) {
                     }
                     tokio::time::sleep(Duration::from_millis(300)).await;
                 }
-                let _ = state.reload_accounts().await;
+                if let Err(e) = state.reload_accounts().await {
+                    tracing::warn!(
+                        "[QuotaRefresh] Failed to reload accounts after immediate refresh: {}",
+                        e
+                    );
+                }
             }
 
             let do_full_refresh = match last_full_refresh {
@@ -119,9 +129,16 @@ pub fn start_quota_refresh(state: AppState) {
                         match account::fetch_quota_with_retry(&mut acc).await {
                             Ok(_) => {
                                 if let Some(quota) = acc.quota.clone() {
-                                    let _ =
+                                    if let Err(e) =
                                         account::update_account_quota_async(acc.id.clone(), quota)
-                                            .await;
+                                            .await
+                                    {
+                                        tracing::warn!(
+                                            "[QuotaRefresh] Failed to update quota for {}: {}",
+                                            acc.id,
+                                            e
+                                        );
+                                    }
                                 }
                                 success += 1;
                             },
@@ -133,7 +150,12 @@ pub fn start_quota_refresh(state: AppState) {
                     }
 
                     tracing::info!("[QuotaRefresh] Full refresh: {}/{} accounts", success, total);
-                    let _ = state.reload_accounts().await;
+                    if let Err(e) = state.reload_accounts().await {
+                        tracing::warn!(
+                            "[QuotaRefresh] Failed to reload accounts after full refresh: {}",
+                            e
+                        );
+                    }
                 }
             }
         }

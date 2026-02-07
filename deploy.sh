@@ -1,146 +1,176 @@
 #!/usr/bin/env bash
-# Antigravity Manager - Unified Deployment Script
-# Usage: ./deploy.sh <command> [options]
-#
-# Commands:
-#   container   Build and deploy container to VPS
-#   binary      Build and deploy binary to VPS  
-#   local       Zero-downtime deploy on local machine
-#   rollback    Rollback to previous version on VPS
-#   status      Show deployment status on VPS
-#
-# Options:
-#   --remote-build    Build on VPS instead of locally (container only)
-#   --dry-run         Show what would be done without executing
-#   --rootless        Use rootless Podman (user systemd)
-#   -h, --help        Show this help
-
 set -euo pipefail
 
-# =============================================================================
-# Configuration
-# =============================================================================
-VPS_HOST="${VPS_HOST:-vps-production}"
-IMAGE_NAME="antigravity-manager"
-BINARY_NAME="antigravity-server"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VPS_HOST="vps-production"
+SERVICE_NAME="antigravity"
+REMOTE_DIR="/opt/antigravity"
+PORT=8045
+URL="https://antigravity.quantumind.ru"
 
-# Paths
-QUADLET_FILE="deploy/antigravity.container"
-REMOTE_QUADLET_DIR="/etc/containers/systemd"
-REMOTE_QUADLET_DIR_ROOTLESS="~/.config/containers/systemd"
-REMOTE_BUILD_DIR="~/antigravity-build"
+RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; NC='\033[0m'
+log()     { echo -e "${BLUE}[deploy]${NC} $*"; }
+success() { echo -e "${GREEN}[ok]${NC} $*"; }
+error()   { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+get_version() { git describe --tags --always --dirty 2>/dev/null || echo "unknown"; }
 
-# State
-DRY_RUN=false
-REMOTE_BUILD=false
-ROOTLESS=false
-COMMAND=""
+cmd_deploy() {
+    log "Building Nix closure..."
+    [[ -f flake.nix ]] || error "flake.nix not found"
+    [[ -d src-leptos/dist ]] || error "src-leptos/dist/ not found — build frontend first"
 
-# =============================================================================
-# Helpers
-# =============================================================================
-log()     { echo -e "${BLUE}[$(date '+%H:%M:%S')]${NC} $1"; }
-success() { echo -e "${GREEN}✓${NC} $1"; }
-warn()    { echo -e "${YELLOW}⚠${NC} $1"; }
-error()   { echo -e "${RED}✗${NC} $1" >&2; exit 1; }
-info()    { echo -e "${CYAN}ℹ${NC} $1"; }
+    NIX_PATH=$(nix build .#antigravity-server --no-link --print-out-paths)
+    [[ -x "${NIX_PATH}/bin/antigravity-server" ]] || error "Binary not found at ${NIX_PATH}/bin/antigravity-server"
+    success "Built: ${NIX_PATH}"
 
-dry_run() {
-    if [[ "$DRY_RUN" == "true" ]]; then
-        info "[DRY-RUN] $*"
-        return 0
-    fi
-    "$@"
+    log "Copying Nix closure to ${VPS_HOST}..."
+    nix copy --to "ssh://${VPS_HOST}" "${NIX_PATH}"
+    success "Closure copied"
+
+    log "Syncing frontend assets..."
+    rsync -az --delete src-leptos/dist/ "${VPS_HOST}:${REMOTE_DIR}/dist/"
+    success "Frontend synced"
+
+    log "Deploying on VPS..."
+    ssh "${VPS_HOST}" bash -s -- "${NIX_PATH}" "${REMOTE_DIR}" "${PORT}" <<'REMOTE_SCRIPT'
+        set -euo pipefail
+        NIX_PATH="$1"; REMOTE_DIR="$2"; PORT="$3"
+        mkdir -p "${REMOTE_DIR}"
+
+        # Backup current version
+        CURRENT=$(readlink -f "${REMOTE_DIR}/antigravity-server" 2>/dev/null || true)
+        [[ -n "${CURRENT}" ]] && echo "${CURRENT}" > "${REMOTE_DIR}/.previous"
+
+        ln -sf "${NIX_PATH}/bin/antigravity-server" "${REMOTE_DIR}/antigravity-server"
+
+        # Create default .env if missing (DATABASE_URL etc. live here, not in unit)
+        if [[ ! -f "${REMOTE_DIR}/.env" ]]; then
+            cat > "${REMOTE_DIR}/.env" <<ENVEOF
+RUST_LOG=info
+ANTIGRAVITY_PORT=${PORT}
+ANTIGRAVITY_STATIC_DIR=${REMOTE_DIR}/dist
+ANTIGRAVITY_DATA_DIR=/root/.antigravity_tools
+# DATABASE_URL=postgres://antigravity:password@127.0.0.1/antigravity
+ENVEOF
+        fi
+
+        cat > /etc/systemd/system/antigravity.service <<EOF
+[Unit]
+Description=Antigravity AI Gateway
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=${REMOTE_DIR}
+ExecStart=${NIX_PATH}/bin/antigravity-server
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+EnvironmentFile=${REMOTE_DIR}/.env
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        systemctl daemon-reload
+        systemctl enable antigravity.service
+        systemctl restart antigravity.service
+REMOTE_SCRIPT
+    success "Service restarted"
+
+    log "Waiting for health check..."
+    for i in $(seq 1 10); do
+        if ssh "${VPS_HOST}" "curl -sf http://localhost:${PORT}/api/health" >/dev/null 2>&1; then
+            success "Deploy complete: ${URL}"
+            return 0
+        fi
+        sleep 2
+    done
+    error "Health check failed after 20s — check logs: ./deploy.sh logs"
 }
 
-get_version() {
-    git describe --tags --always --dirty 2>/dev/null || echo "dev"
+cmd_rollback() {
+    log "Rolling back on ${VPS_HOST}..."
+    ssh "${VPS_HOST}" bash -s -- "${REMOTE_DIR}" "${PORT}" <<'REMOTE_SCRIPT'
+        set -euo pipefail
+        REMOTE_DIR="$1"; PORT="$2"
+        PREV_FILE="${REMOTE_DIR}/.previous"
+        [[ -f "${PREV_FILE}" ]] || { echo "No previous version found" >&2; exit 1; }
+
+        PREV_BIN=$(cat "${PREV_FILE}")
+        [[ -x "${PREV_BIN}" ]] || { echo "Previous binary missing: ${PREV_BIN}" >&2; exit 1; }
+
+        PREV_NIX=$(dirname "$(dirname "${PREV_BIN}")")
+        ln -sf "${PREV_BIN}" "${REMOTE_DIR}/antigravity-server"
+
+        sed -i "s|^ExecStart=.*|ExecStart=${PREV_BIN}|" /etc/systemd/system/antigravity.service
+        systemctl daemon-reload
+        systemctl restart antigravity.service
+REMOTE_SCRIPT
+
+    for i in $(seq 1 10); do
+        if ssh "${VPS_HOST}" "curl -sf http://localhost:${PORT}/api/health" >/dev/null 2>&1; then
+            success "Rollback complete: ${URL}"
+            return 0
+        fi
+        sleep 2
+    done
+    error "Rollback health check failed after 20s"
 }
 
-# =============================================================================
-# Command implementations (stubs - will be filled)
-# =============================================================================
-cmd_container() { error "Not implemented yet"; }
-cmd_binary()    { error "Not implemented yet"; }
-cmd_local()     { error "Not implemented yet"; }
-cmd_rollback()  { error "Not implemented yet"; }
-cmd_status()    { error "Not implemented yet"; }
-
-show_help() {
-    sed -n '2,16p' "$0" | sed 's/^# \?//'
+cmd_status() {
+    log "Service status:"
+    ssh "${VPS_HOST}" "systemctl status ${SERVICE_NAME} --no-pager" || true
     echo ""
-    echo "Examples:"
-    echo "  ./deploy.sh container              # Build locally, ship to VPS"
-    echo "  ./deploy.sh container --remote-build  # Build on VPS (faster)"
-    echo "  ./deploy.sh binary                 # Deploy binary only"
-    echo "  ./deploy.sh rollback               # Rollback to previous version"
-    echo "  ./deploy.sh status                 # Check VPS deployment status"
+    log "Health check:"
+    ssh "${VPS_HOST}" "curl -sf http://localhost:${PORT}/api/health" && echo "" || echo "UNHEALTHY"
+    echo ""
+    log "Current binary:"
+    ssh "${VPS_HOST}" "readlink ${REMOTE_DIR}/antigravity-server 2>/dev/null || echo 'not found'"
+    PREV=$(ssh "${VPS_HOST}" "cat ${REMOTE_DIR}/.previous 2>/dev/null || true")
+    [[ -n "${PREV}" ]] && log "Previous: ${PREV}"
 }
 
-# =============================================================================
-# Argument parsing
-# =============================================================================
-parse_args() {
+cmd_logs() {
+    local lines=""
+    shift || true
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            container|binary|local|rollback|status)
-                COMMAND="$1"
-                ;;
-            --remote-build)
-                REMOTE_BUILD=true
-                ;;
-            --dry-run)
-                DRY_RUN=true
-                ;;
-            --rootless)
-                ROOTLESS=true
-                ;;
-            -h|--help)
-                show_help
-                exit 0
-                ;;
-            *)
-                error "Unknown option: $1. Use --help for usage."
-                ;;
+            -n) lines="$2"; shift 2 ;;
+            *)  shift ;;
         esac
-        shift
     done
-
-    [[ -n "$COMMAND" ]] || { show_help; exit 1; }
-}
-
-# =============================================================================
-# Main
-# =============================================================================
-main() {
-    cd "$SCRIPT_DIR"
-    [[ -f "Containerfile" ]] || error "Run from project root"
-
-    parse_args "$@"
-
-    VERSION=$(get_version)
-    log "Antigravity Deploy v${VERSION}"
-    
-    if [[ "$DRY_RUN" == "true" ]]; then
-        warn "DRY-RUN mode enabled"
+    if [[ -n "${lines}" ]]; then
+        ssh "${VPS_HOST}" "journalctl -u ${SERVICE_NAME} --no-pager -n ${lines} -f"
+    else
+        ssh "${VPS_HOST}" "journalctl -u ${SERVICE_NAME} --no-pager -f"
     fi
-
-    case "$COMMAND" in
-        container) cmd_container ;;
-        binary)    cmd_binary ;;
-        local)     cmd_local ;;
-        rollback)  cmd_rollback ;;
-        status)    cmd_status ;;
-    esac
 }
 
-main "$@"
+usage() {
+    cat <<EOF
+Antigravity Deploy v$(get_version)
+
+Usage: ./deploy.sh <command> [options]
+
+Commands:
+  deploy     Build and deploy to VPS via Nix closure
+  rollback   Rollback to previous version
+  status     Show service status and health
+  logs       Stream service logs (use -n N for line count)
+  help       Show this help
+
+Target: ${URL}
+EOF
+}
+
+echo -e "${BLUE}Antigravity Deploy v$(get_version)${NC}"
+
+case "${1:-help}" in
+    deploy)   cmd_deploy ;;
+    rollback) cmd_rollback ;;
+    status)   cmd_status ;;
+    logs)     cmd_logs "$@" ;;
+    help|*)   usage ;;
+esac

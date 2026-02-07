@@ -6,11 +6,13 @@
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{LazyLock, RwLock};
 use std::time::Instant;
 
 /// Cache entry containing the cleaned schema and metadata.
 #[derive(Clone)]
+#[allow(dead_code)]
 struct CacheEntry {
     /// Cleaned schema
     schema: Value,
@@ -20,13 +22,19 @@ struct CacheEntry {
     hit_count: usize,
 }
 
-/// LRU schema cache with statistics.
+/// LRU schema cache.
 struct SchemaCache {
     cache: HashMap<String, CacheEntry>,
-    stats: CacheStats,
 }
 
-/// Cache statistics for monitoring.
+/// Cache statistics for monitoring (atomic for lock-free reads on hit path).
+struct AtomicCacheStats {
+    total_requests: AtomicUsize,
+    cache_hits: AtomicUsize,
+    cache_misses: AtomicUsize,
+}
+
+/// Snapshot of cache stats for external consumption.
 #[derive(Default, Clone, Debug)]
 pub struct CacheStats {
     pub total_requests: usize,
@@ -45,24 +53,43 @@ impl CacheStats {
     }
 }
 
-impl SchemaCache {
+impl AtomicCacheStats {
     fn new() -> Self {
-        Self { cache: HashMap::new(), stats: CacheStats::default() }
+        Self {
+            total_requests: AtomicUsize::new(0),
+            cache_hits: AtomicUsize::new(0),
+            cache_misses: AtomicUsize::new(0),
+        }
     }
 
-    /// Get cached entry, updating stats and access time.
-    fn get(&mut self, key: &str) -> Option<Value> {
-        self.stats.total_requests += 1;
-
-        if let Some(entry) = self.cache.get_mut(key) {
-            entry.last_used = Instant::now();
-            entry.hit_count += 1;
-            self.stats.cache_hits += 1;
-            Some(entry.schema.clone())
-        } else {
-            self.stats.cache_misses += 1;
-            None
+    fn snapshot(&self) -> CacheStats {
+        CacheStats {
+            total_requests: self.total_requests.load(Ordering::Relaxed),
+            cache_hits: self.cache_hits.load(Ordering::Relaxed),
+            cache_misses: self.cache_misses.load(Ordering::Relaxed),
         }
+    }
+
+    fn record_hit(&self) {
+        self.total_requests.fetch_add(1, Ordering::Relaxed);
+        self.cache_hits.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_miss(&self) {
+        self.total_requests.fetch_add(1, Ordering::Relaxed);
+        self.cache_misses.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn reset(&self) {
+        self.total_requests.store(0, Ordering::Relaxed);
+        self.cache_hits.store(0, Ordering::Relaxed);
+        self.cache_misses.store(0, Ordering::Relaxed);
+    }
+}
+
+impl SchemaCache {
+    fn new() -> Self {
+        Self { cache: HashMap::new() }
     }
 
     /// Insert entry, evicting LRU if at capacity.
@@ -90,19 +117,17 @@ impl SchemaCache {
         }
     }
 
-    fn stats(&self) -> CacheStats {
-        self.stats.clone()
-    }
-
     fn clear(&mut self) {
         self.cache.clear();
-        self.stats = CacheStats::default();
     }
 }
 
 /// Global schema cache instance.
 static SCHEMA_CACHE: LazyLock<RwLock<SchemaCache>> =
     LazyLock::new(|| RwLock::new(SchemaCache::new()));
+
+/// Global atomic stats (can be updated from read-lock path without contention).
+static CACHE_STATS: LazyLock<AtomicCacheStats> = LazyLock::new(AtomicCacheStats::new);
 
 /// Compute SHA-256 hash of schema (first 16 hex chars).
 fn compute_schema_hash(schema: &Value) -> String {
@@ -121,11 +146,12 @@ pub fn clean_json_schema_cached(schema: &mut Value, tool_name: &str) {
     let hash = compute_schema_hash(schema);
     let cache_key = format!("{}:{}", tool_name, hash);
 
-    // 2. Try cache lookup
+    // 2. Try cache lookup with READ lock (low contention)
     {
-        if let Ok(mut cache) = SCHEMA_CACHE.write() {
-            if let Some(cached) = cache.get(&cache_key) {
-                *schema = cached;
+        if let Ok(cache) = SCHEMA_CACHE.read() {
+            if let Some(entry) = cache.cache.get(&cache_key) {
+                *schema = entry.schema.clone();
+                CACHE_STATS.record_hit();
                 return;
             }
         }
@@ -134,7 +160,8 @@ pub fn clean_json_schema_cached(schema: &mut Value, tool_name: &str) {
     // 3. Cache miss — perform cleaning
     super::json_schema::clean_json_schema_for_tool(schema, tool_name);
 
-    // 4. Store in cache
+    // 4. Store in cache (write lock) + record miss
+    CACHE_STATS.record_miss();
     if let Ok(mut cache) = SCHEMA_CACHE.write() {
         cache.insert(cache_key, schema.clone());
     }
@@ -142,7 +169,7 @@ pub fn clean_json_schema_cached(schema: &mut Value, tool_name: &str) {
 
 /// Get current cache statistics.
 pub fn get_cache_stats() -> CacheStats {
-    SCHEMA_CACHE.read().map(|cache| cache.stats()).unwrap_or_default()
+    CACHE_STATS.snapshot()
 }
 
 /// Clear the schema cache.
@@ -150,6 +177,7 @@ pub fn clear_cache() {
     if let Ok(mut cache) = SCHEMA_CACHE.write() {
         cache.clear();
     }
+    CACHE_STATS.reset();
 }
 
 #[cfg(test)]
@@ -178,7 +206,7 @@ mod tests {
         clear_cache();
 
         let mut schema = json!({"type": "string", "minLength": 5});
-        let tool_name = "test_tool";
+        let tool_name = "test_tool_unique_hit_test";
 
         // First call — cache miss
         clean_json_schema_cached(&mut schema, tool_name);

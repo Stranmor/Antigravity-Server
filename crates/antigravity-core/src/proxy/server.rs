@@ -25,7 +25,6 @@ pub struct AppState {
     pub health_monitor: Arc<crate::proxy::HealthMonitor>,
     pub circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
     pub request_timeout: u64,
-    pub thought_signature_map: Arc<tokio::sync::Mutex<std::collections::HashMap<String, String>>>,
     pub upstream: Arc<crate::proxy::upstream::client::UpstreamClient>,
     pub provider_rr: Arc<AtomicUsize>,
     pub zai_vision_mcp: Arc<crate::proxy::zai_vision_mcp::ZaiVisionMcpState>,
@@ -61,7 +60,6 @@ pub fn build_proxy_router_with_shared_state(
         token_manager,
         custom_mapping: Arc::clone(&custom_mapping),
         request_timeout: 300,
-        thought_signature_map: Arc::new(tokio::sync::Mutex::new(Default::default())),
         upstream_proxy: Arc::clone(&proxy_state),
         upstream: Arc::new(crate::proxy::upstream::client::UpstreamClient::new(Some(
             upstream_proxy,

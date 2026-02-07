@@ -64,7 +64,6 @@ dirs = "5.0"
 base64 = "0.22"
 url = "2.5"
 regex = "1.12"
-once_cell = "1.19"
 dashmap = "6.1"
 rand = "0.8"
 sha2 = "0.10"
@@ -91,9 +90,10 @@ opt-level = 2  # Dependencies optimized even in dev
 [profile.release]
 opt-level = 3
 lto = "thin"       # thin LTO: 80% benefit, 20% time (was: full LTO)
-codegen-units = 16 # Parallel codegen (was: 1 = sequential)
+codegen-units = 8  # Balance parallel codegen vs optimization quality
 strip = true
 incremental = false
+panic = "abort"    # No unwinding: smaller binary, faster code
 
 # Production profile: maximum optimization (use for final deploy)
 [profile.production]

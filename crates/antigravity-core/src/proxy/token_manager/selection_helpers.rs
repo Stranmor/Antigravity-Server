@@ -73,7 +73,11 @@ impl TokenManager {
                         entry.expires_in = token.expires_in;
                         entry.timestamp = token.timestamp;
                     }
-                    let _ = self.save_refreshed_token(&token.account_id, &token_response).await;
+                    if let Err(e) =
+                        self.save_refreshed_token(&token.account_id, &token_response).await
+                    {
+                        tracing::warn!("Failed to save refreshed token for {}: {}", token.email, e);
+                    }
                 },
                 Err(e) => {
                     tracing::warn!("Preferred account token refresh failed: {}", e);
@@ -89,10 +93,20 @@ impl TokenManager {
                     if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
                         entry.project_id = Some(pid.clone());
                     }
-                    let _ = self.save_project_id(&token.account_id, &pid).await;
+                    if let Err(e) = self.save_project_id(&token.account_id, &pid).await {
+                        tracing::warn!("Failed to save project_id for {}: {}", token.email, e);
+                    }
                     pid
                 },
-                Err(_) => "bamboo-precept-lgxtn".to_string(),
+                Err(e) => {
+                    // FIXME: fallback project ID, should propagate error
+                    tracing::warn!(
+                        "Failed to fetch project_id for {}, using fallback: {}",
+                        token.account_id,
+                        e
+                    );
+                    "bamboo-precept-lgxtn".to_string()
+                },
             }
         };
 

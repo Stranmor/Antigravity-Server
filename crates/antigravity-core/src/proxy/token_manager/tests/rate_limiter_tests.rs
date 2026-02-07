@@ -1,11 +1,10 @@
 use super::super::TokenManager;
 use crate::proxy::rate_limit::RateLimitReason;
-use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 fn create_test_manager() -> TokenManager {
     let unique_id = uuid::Uuid::new_v4();
-    TokenManager::new(PathBuf::from(format!("/tmp/antigravity_test_{unique_id}")))
+    TokenManager::new(std::env::temp_dir().join(format!("antigravity_test_{unique_id}")))
 }
 
 #[test]

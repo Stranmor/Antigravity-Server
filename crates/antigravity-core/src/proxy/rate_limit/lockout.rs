@@ -29,7 +29,14 @@ impl RateLimitTracker {
             1 => 5,
             2 => 15,
             3 => 30,
-            _ => 60,
+            _ => {
+                tracing::warn!(
+                    "Account {} hit max lockout (attempt #{}), persistent failures detected",
+                    account_id,
+                    failure_count
+                );
+                60
+            },
         };
 
         let info = RateLimitInfo {
@@ -173,7 +180,15 @@ impl RateLimitTracker {
             1 => 5,
             2 => 15,
             3 => 30,
-            _ => 60,
+            _ => {
+                tracing::warn!(
+                    "{}:{} hit max lockout (attempt #{}), persistent failures detected",
+                    account_id,
+                    model,
+                    failure_count
+                );
+                60
+            },
         };
 
         let info = RateLimitInfo {

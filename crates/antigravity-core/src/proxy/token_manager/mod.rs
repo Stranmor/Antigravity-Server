@@ -56,13 +56,13 @@ impl TokenManager {
         self.active_requests
             .entry(email.to_string())
             .or_insert_with(|| AtomicU32::new(0))
-            .fetch_add(1, Ordering::SeqCst)
+            .fetch_add(1, Ordering::AcqRel)
             + 1
     }
 
     pub fn decrement_active_requests(&self, email: &str) {
         if let Some(counter) = self.active_requests.get(email) {
-            let _ = counter.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+            let _ = counter.fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| {
                 if v > 0 {
                     Some(v - 1)
                 } else {
@@ -73,7 +73,7 @@ impl TokenManager {
     }
 
     pub fn get_active_requests(&self, email: &str) -> u32 {
-        self.active_requests.get(email).map(|c| c.load(Ordering::SeqCst)).unwrap_or(0)
+        self.active_requests.get(email).map(|c| c.load(Ordering::Acquire)).unwrap_or(0)
     }
 
     pub async fn set_adaptive_limits(&self, tracker: Arc<AdaptiveLimitManager>) {

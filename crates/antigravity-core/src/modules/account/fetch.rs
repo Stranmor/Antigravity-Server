@@ -33,7 +33,9 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> AppResult<QuotaDat
                 account.disabled = true;
                 account.disabled_at = Some(chrono::Utc::now().timestamp());
                 account.disabled_reason = Some(format!("invalid_grant: {}", e));
-                let _ = save_account_async(account.clone()).await;
+                if let Err(e) = save_account_async(account.clone()).await {
+                    tracing::warn!("Failed to save disabled account {}: {}", account.email, e);
+                }
             }
             return Err(AppError::OAuth(e));
         },
@@ -130,7 +132,9 @@ async fn handle_unauthorized_retry(account: &mut Account) -> AppResult<QuotaData
                 account.disabled = true;
                 account.disabled_at = Some(chrono::Utc::now().timestamp());
                 account.disabled_reason = Some(format!("invalid_grant: {}", e));
-                let _ = save_account_async(account.clone()).await;
+                if let Err(e) = save_account_async(account.clone()).await {
+                    tracing::warn!("Failed to save disabled account {}: {}", account.email, e);
+                }
             }
             return Err(AppError::OAuth(e));
         },
@@ -170,10 +174,14 @@ async fn handle_unauthorized_retry(account: &mut Account) -> AppResult<QuotaData
                 account.email
             ));
             account.token.project_id = project_id.clone();
-            let _ = save_account_async(account.clone()).await;
+            if let Err(e) = save_account_async(account.clone()).await {
+                tracing::warn!("Failed to save project_id for {}: {}", account.email, e);
+            }
         }
 
-        let _ = update_account_quota_async(account.id.clone(), quota_data.clone()).await;
+        if let Err(e) = update_account_quota_async(account.id.clone(), quota_data.clone()).await {
+            tracing::warn!("Failed to update quota for {} after retry: {}", account.email, e);
+        }
         if let Ok(updated) = load_account_async(account.id.clone()).await {
             *account = updated;
         }

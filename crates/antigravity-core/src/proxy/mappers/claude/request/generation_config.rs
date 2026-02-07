@@ -23,23 +23,32 @@ pub fn build_generation_config(
     let mut config = json!({});
 
     // Thinking config
-    if let Some(thinking) = &claude_req.thinking {
-        // [New Check] must is_thinking_enabled astrueonly thengenerate thinkingConfig
-        if thinking.type_ == "enabled" && is_thinking_enabled {
-            let mut thinking_config = json!({"includeThoughts": true});
+    if is_thinking_enabled {
+        if let Some(thinking) = &claude_req.thinking {
+            if thinking.type_ == "enabled" {
+                let mut thinking_config = json!({"includeThoughts": true});
 
-            if let Some(budget_tokens) = thinking.budget_tokens {
-                let mut budget = budget_tokens;
-                // [FIX] Broaden check to support all Flash thinking models (e.g. gemini-2.0-flash-thinking)
-                let is_flash_model =
-                    has_web_search || claude_req.model.to_lowercase().contains("flash");
-                if is_flash_model {
-                    budget = budget.min(24576);
+                if let Some(budget_tokens) = thinking.budget_tokens {
+                    let mut budget = budget_tokens;
+                    let is_flash_model =
+                        has_web_search || claude_req.model.to_lowercase().contains("flash");
+                    if is_flash_model {
+                        budget = budget.min(24576);
+                    }
+                    thinking_config["thinkingBudget"] = json!(budget);
                 }
-                thinking_config["thinkingBudget"] = json!(budget);
-            }
 
-            config["thinkingConfig"] = thinking_config;
+                config["thinkingConfig"] = thinking_config;
+            }
+        } else {
+            // [FIX 2026-02-07] Auto-thinking models (e.g. opus-4-5) may not have
+            // explicit thinking config from client. We MUST inject thinkingConfig
+            // to ensure upstream actually enables thinking mode.
+            tracing::info!(
+                "[Generation-Config] Auto-injecting thinkingConfig for model: {}",
+                claude_req.model
+            );
+            config["thinkingConfig"] = json!({"includeThoughts": true});
         }
     }
 

@@ -399,55 +399,49 @@ For large files, use incremental approach:
 
 ---
 
-## 🚀 ZERO-DOWNTIME DEPLOYMENT [2026-01-19]
+## 🚀 DEPLOYMENT [2026-02-07]
 
-### Architecture
+### Canonical Path: Nix Closure
 
-Server uses **SO_REUSEPORT** + **Graceful Shutdown** for zero-downtime binary replacement:
+**Single entry point:** `./deploy.sh <command>`
+
+| Command | Description |
+|---------|-------------|
+| `./deploy.sh deploy` | Build Nix closure → copy to VPS → restart service |
+| `./deploy.sh rollback` | Restore previous version from `.previous` backup |
+| `./deploy.sh status` | Show service status, health, current/previous binary |
+| `./deploy.sh logs [-n N]` | Stream VPS service logs |
+
+**Flow:**
+```
+Local: nix build .#antigravity-server
+  → nix copy --to ssh://vps-production (closure with all deps)
+  → rsync frontend dist/
+  → SSH: symlink binary, write systemd unit, restart
+  → Health check: /api/health
+```
+
+**Rollback:** Each deploy saves previous binary path to `/opt/antigravity/.previous`. Rollback restores symlink + restarts.
+
+### Zero-Downtime (Local Only)
+
+Server supports **SO_REUSEPORT** + **Graceful Shutdown** for overlap deploys:
 
 ```
 [OLD process] ← handles requests
       ↓ (deploy trigger)
-[OLD] + [NEW] ← BOTH listen on port 8046 via SO_REUSEPORT
+[OLD] + [NEW] ← BOTH listen on port 8045 via SO_REUSEPORT
       ↓ (SIGTERM → OLD)
 [OLD draining] + [NEW accepts new connections]
       ↓ (OLD finishes active requests, exits)
 [NEW] ← sole owner of port
 ```
 
-### Key Components
-
-1. **SO_REUSEPORT** (`socket2` crate) — allows two processes to bind same port
-2. **Graceful shutdown** — SIGTERM triggers 30s drain timeout for active connections
-3. **systemd service** — `TimeoutStopSec=35` gives time for drain
-
-### Deployment Workflow
-
-Use: `./scripts/zero-downtime-deploy.sh`
-
-### Container Deployment (Recommended) [2026-01-28]
-
-For production VPS, use containerized deployment via Podman:
-
-```bash
-# From project root:
-./deploy/deploy-vps.sh
-```
-
-**Files:**
-- `Containerfile` — Multi-stage build (Rust + Trunk frontend)
-- `deploy/antigravity.container` — Quadlet systemd unit
-- `deploy/deploy-vps.sh` — Automated deployment script
-
-**Note:** First build takes ~15min (Rust compilation). Subsequent builds are faster due to layer caching.
+**Script:** `scripts/zero-downtime-deploy.sh` (local machine only, not VPS)
 
 ### Important: Unified Build
 
-**Backend and frontend are built together** via `build.rs`:
-
-This means `cargo build -p antigravity-server` builds BOTH:
-- Rust backend binary
-- Leptos WASM frontend (via trunk)
+**Backend and frontend are built together** via `build.rs`. `cargo build -p antigravity-server` builds BOTH Rust backend and Leptos WASM frontend (via trunk).
 
 **DO NOT deploy backend without rebuilding frontend** — they share the same release cycle.
 

@@ -35,22 +35,29 @@ pub fn get_config_value(key: &str) -> Result<()> {
 pub fn set_config_value(key: &str, value: &str) -> Result<()> {
     match key {
         "proxy.port" => {
-            value.parse::<u16>().map_err(|_| anyhow::anyhow!("Invalid port number: {}", value))?;
+            let port: u16 =
+                value.parse().map_err(|_| anyhow::anyhow!("Invalid port number: {}", value))?;
+            core_config::update_config(|config| {
+                config.proxy.port = port;
+            })
+            .map_err(|e| anyhow::anyhow!(e))?;
         },
         "proxy.enable_logging" => {
-            value.parse::<bool>().map_err(|_| anyhow::anyhow!("Invalid boolean: {}", value))?;
+            let enabled: bool =
+                value.parse().map_err(|_| anyhow::anyhow!("Invalid boolean: {}", value))?;
+            core_config::update_config(|config| {
+                config.proxy.enable_logging = enabled;
+            })
+            .map_err(|e| anyhow::anyhow!(e))?;
         },
-        "proxy.api_key" => {},
+        "proxy.api_key" => {
+            core_config::update_config(|config| {
+                config.proxy.api_key = value.to_string();
+            })
+            .map_err(|e| anyhow::anyhow!(e))?;
+        },
         _ => return Err(anyhow::anyhow!("Unknown config key: {}", key)),
     }
-
-    core_config::update_config(|config| match key {
-        "proxy.port" => config.proxy.port = value.parse().unwrap(),
-        "proxy.api_key" => config.proxy.api_key = value.to_string(),
-        "proxy.enable_logging" => config.proxy.enable_logging = value.parse().unwrap(),
-        _ => {},
-    })
-    .map_err(|e| anyhow::anyhow!(e))?;
 
     println!("{} Config updated: {} = {}", "✓".green(), key, value);
     Ok(())

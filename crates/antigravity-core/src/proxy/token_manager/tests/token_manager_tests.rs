@@ -15,21 +15,21 @@ fn create_test_manager() -> TokenManager {
 }
 
 fn create_test_token(tier: Option<&str>) -> ProxyToken {
-    ProxyToken {
-        account_id: "test".to_string(),
-        access_token: "token".to_string(),
-        refresh_token: "refresh".to_string(),
-        expires_in: 3600,
-        timestamp: 0,
-        email: "test@example.com".to_string(),
-        account_path: PathBuf::from("/tmp"),
-        project_id: None,
-        subscription_tier: tier.map(String::from),
-        remaining_quota: Some(100),
-        protected_models: HashSet::new(),
-        health_score: 1.0,
-        available_models: HashSet::new(),
-    }
+    ProxyToken::new(
+        "test".to_string(),
+        "token".to_string(),
+        "refresh".to_string(),
+        3600,
+        0,
+        "test@example.com".to_string(),
+        PathBuf::from("/tmp"),
+        None,
+        tier.map(String::from),
+        Some(100),
+        HashSet::new(),
+        1.0,
+        HashSet::new(),
+    )
 }
 
 #[test]

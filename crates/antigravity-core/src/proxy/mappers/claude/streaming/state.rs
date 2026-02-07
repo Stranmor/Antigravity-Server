@@ -67,6 +67,10 @@ pub struct StreamingState {
     pub estimated_tokens: Option<u32>,
     /// Accumulated thinking content for content-based signature caching.
     accumulated_thinking: String,
+    /// Whether thinking was received in the response stream.
+    pub(super) thinking_received: bool,
+    /// Whether thinking was requested for this request.
+    pub thinking_requested: bool,
 }
 
 impl Default for StreamingState {
@@ -98,6 +102,8 @@ impl StreamingState {
             in_mcp_xml: false,
             estimated_tokens: None,
             accumulated_thinking: String::new(),
+            thinking_received: false,
+            thinking_requested: false,
         }
     }
 
@@ -236,6 +242,21 @@ impl StreamingState {
     /// Marks that a tool was used in this response.
     pub fn mark_tool_used(&mut self) {
         self.used_tool = true;
+    }
+
+    /// Marks that thinking content was received in the response.
+    pub fn mark_thinking_received(&mut self) {
+        self.thinking_received = true;
+    }
+
+    /// Sets whether thinking was requested for this request.
+    pub fn set_thinking_requested(&mut self, requested: bool) {
+        self.thinking_requested = requested;
+    }
+
+    /// Returns whether thinking was received.
+    pub fn has_thinking_received(&self) -> bool {
+        self.thinking_received
     }
 
     /// Returns the current block type.

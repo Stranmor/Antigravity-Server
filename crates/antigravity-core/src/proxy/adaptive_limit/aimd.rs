@@ -28,7 +28,7 @@ impl Default for AIMDController {
 
 impl AIMDController {
     pub fn reward(&self, current: u64) -> u64 {
-        let new = (current as f64 * (1.0 + self.additive_increase)).ceil() as u64;
+        let new = (current as f64 * (1.0 + self.additive_increase)).round() as u64;
         new.min(self.max_limit)
     }
 

@@ -179,8 +179,10 @@ fn process_sse_line(
                 String::new()
             };
 
+            let thinking_info = if state.has_thinking_received() { " | Thinking: ✓" } else { "" };
+
             tracing::info!(
-                "[{}] ✓ Stream completed | Account: {} | In: {} tokens | Out: {} tokens{} | Reason: {}",
+                "[{}] ✓ Stream completed | Account: {} | In: {} tokens | Out: {} tokens{}{} | Reason: {}",
                 trace_id,
                 email,
                 u.prompt_token_count
@@ -188,8 +190,52 @@ fn process_sse_line(
                     .saturating_sub(cached_tokens),
                 u.candidates_token_count.unwrap_or(0),
                 cache_info,
+                thinking_info,
                 finish_reason
             );
+
+            // [2026-02-07] Response-side thinking validation
+            // If the model is a thinking model but no thinking was received,
+            // this indicates upstream silently ignored our thinkingConfig.
+            if let Some(ref model) = state.model_name {
+                let is_thinking_model = model.contains("thinking")
+                    || model.contains("pro-2.5")
+                    || model.contains("flash-2.5");
+                if is_thinking_model && !state.has_thinking_received() {
+                    let out_tokens = u.candidates_token_count.unwrap_or(0);
+                    tracing::error!(
+                        "[{}] ⚠ THINKING DEGRADATION DETECTED | Model: {} | \
+                         Thinking was expected but NOT received. \
+                         Output tokens: {} (likely micro-response). \
+                         Hidden state quality may be compromised.",
+                        trace_id,
+                        model,
+                        out_tokens
+                    );
+                }
+                if is_thinking_model && state.has_thinking_received() {
+                    // Check if we have a valid signature cached
+                    if let Some(ref sid) = state.session_id {
+                        let has_sig = crate::proxy::SignatureCache::global()
+                            .get_session_signature(sid)
+                            .is_some();
+                        if has_sig {
+                            tracing::debug!(
+                                "[{}] ✓ Thinking response validated: signature cached for session {}",
+                                trace_id,
+                                sid
+                            );
+                        } else {
+                            tracing::warn!(
+                                "[{}] ⚠ Thinking response received but no signature cached for session {}. \
+                                 Next request may fail signature validation.",
+                                trace_id,
+                                sid
+                            );
+                        }
+                    }
+                }
+            }
         }
 
         chunks.extend(state.emit_finish(Some(finish_reason), usage.as_ref()));

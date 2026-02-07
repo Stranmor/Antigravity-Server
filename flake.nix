@@ -64,7 +64,7 @@
             systemctl --user enable --now antigravity-manager.service
             systemctl --user restart antigravity-manager.service
             echo "✅ Antigravity Manager Container Service Started"
-            echo "🌐 WebUI available at: http://localhost:8046/"
+            echo "🌐 WebUI available at: http://localhost:8045/"
           '';
 
           run-server = mkScript "run-server" ''
@@ -109,7 +109,7 @@
           '';
 
           deploy-vps = mkScript "deploy-vps" ''
-            exec ./deploy/deploy-vps.sh "$@"
+            exec ./deploy.sh deploy "$@"
           '';
 
           deploy-local = mkScript "deploy-local" ''
@@ -140,9 +140,9 @@
             # Verify
             sleep 2
             if systemctl --user is-active antigravity-manager > /dev/null 2>&1; then
-              VERSION=$(curl -s http://localhost:8046/api/resilience/health 2>/dev/null && echo "")
+              VERSION=$(curl -s http://localhost:8045/api/resilience/health 2>/dev/null && echo "")
               echo "✅ Deployed successfully!"
-              echo "🌐 WebUI: http://localhost:8046"
+              echo "🌐 WebUI: http://localhost:8045"
               echo "📊 Health: $VERSION"
             else
               echo "❌ Service failed to start!"
@@ -224,12 +224,12 @@
             Cmd = [ "${antigravity-server-bin}/bin/antigravity-server" ];
             Env = [
               "RUST_LOG=info"
-              "ANTIGRAVITY_PORT=8046" # Updated to 8046
+              "ANTIGRAVITY_PORT=8045"
               "ANTIGRAVITY_STATIC_DIR=/app/src-leptos/dist"
             ];
             WorkingDir = "/app";
             ExposedPorts = {
-              "8046/tcp" = {};
+              "8045/tcp" = {};
             };
           };
 
@@ -241,12 +241,11 @@
         antigravity-manager-quadlet = pkgs.writeText "antigravity-manager.container" ''
           [Container]
           Image=antigravity-manager:latest
-          # Run antigravity-server from /usr/local/bin within the container
-          # The CMD in Containerfile already handles this, but explicit Exec ensures it.
+          # Run antigravity-server from the Nix store path
           # Exec=/usr/local/bin/antigravity-server
 
           # Map container port 8045 to host port 8045
-          Port=8046:8046
+          Port=8045:8045
 
           # Mount host's ~/.antigravity directory into the container
           # This is where the server stores its data (db, logs etc.)
@@ -257,7 +256,7 @@
           # ANTIGRAVITY_PORT should match the Port mapping
           # ANTIGRAVITY_STATIC_DIR points to the static files within the container
           Environment=RUST_LOG=info
-          Environment=ANTIGRAVITY_PORT=8046
+          Environment=ANTIGRAVITY_PORT=8045
           Environment=ANTIGRAVITY_STATIC_DIR=/app/src-leptos/dist
 
           # Restart the container always if it exits

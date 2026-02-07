@@ -181,33 +181,30 @@ impl TokenManager {
             );
         }
 
-        Ok(Some(ProxyToken {
+        Ok(Some(ProxyToken::new(
             account_id,
             access_token,
             refresh_token,
             expires_in,
             timestamp,
             email,
-            account_path: path.clone(),
+            path.clone(),
             project_id,
             subscription_tier,
             remaining_quota,
             protected_models,
             health_score,
             available_models,
-        }))
+        )))
     }
 
     pub async fn has_available_account(&self, quota_group: &str, _target_model: &str) -> bool {
-        let tokens_snapshot: Vec<ProxyToken> =
-            self.tokens.iter().map(|e| e.value().clone()).collect();
-
-        if tokens_snapshot.is_empty() {
+        if self.tokens.is_empty() {
             return false;
         }
 
-        for token in &tokens_snapshot {
-            if !self.is_rate_limited(&token.email) {
+        for entry in self.tokens.iter() {
+            if !self.is_rate_limited(&entry.value().email) {
                 return true;
             }
         }
@@ -245,7 +242,11 @@ impl TokenManager {
                         entry.timestamp = token.timestamp;
                     }
 
-                    let _ = self.save_refreshed_token(&token.account_id, &token_response).await;
+                    if let Err(e) =
+                        self.save_refreshed_token(&token.account_id, &token_response).await
+                    {
+                        tracing::warn!("Failed to save refreshed token for {}: {}", email, e);
+                    }
                 },
                 Err(e) => {
                     return Err(format!("Token refresh failed for {}: {}", email, e));

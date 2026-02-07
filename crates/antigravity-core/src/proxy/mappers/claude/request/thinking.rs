@@ -3,30 +3,14 @@
 use super::super::models::{ContentBlock, Message, MessageContent};
 use super::safety::MIN_SIGNATURE_LENGTH;
 
-pub fn should_disable_thinking_due_to_history(messages: &[Message]) -> bool {
-    // Reverse iterate to find the last Assistant message
-    for msg in messages.iter().rev() {
-        if msg.role == "assistant" {
-            if let MessageContent::Array(blocks) = &msg.content {
-                let has_tool_use = blocks.iter().any(|b| matches!(b, ContentBlock::ToolUse { .. }));
-                let has_thinking =
-                    blocks.iter().any(|b| matches!(b, ContentBlock::Thinking { .. }));
-
-                // If has tool call but no Thinking block -> not compatible
-                if has_tool_use && !has_thinking {
-                    tracing::info!(
-                        "[Thinking-Mode] Detected ToolUse without Thinking in history. Requesting disable."
-                    );
-                    return true;
-                }
-            }
-            // Once we find the most recent Assistant message, end the check
-            // because the validation rule mainly targets the current closed-loop state
-            return false;
-        }
-    }
-    false
-}
+// [REMOVED-2026-02-07] should_disable_thinking_due_to_history was removed because it caused
+// an infinite degradation loop:
+//   1. Thinking disabled → response has ToolUse but no Thinking block
+//   2. Next request: detects "ToolUse without Thinking" → disables thinking again
+//   3. Repeat forever, producing 87-token micro-responses
+//
+// For thinking models, thinking must ALWAYS remain enabled. The upstream API handles
+// mixed tool-use/thinking history natively.
 
 /// Check if thinking mode should be enabled by default for a given model
 ///

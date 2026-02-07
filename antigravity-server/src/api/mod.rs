@@ -11,6 +11,13 @@ mod proxy;
 mod quota;
 mod resilience;
 
+#[cfg(test)]
+mod monitor_tests;
+#[cfg(test)]
+mod proxy_tests;
+#[cfg(test)]
+mod resilience_tests;
+
 use axum::{
     extract::State,
     http::StatusCode,

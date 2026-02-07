@@ -120,6 +120,10 @@ impl AppState {
     }
 }
 
+#[allow(
+    clippy::expect_used,
+    reason = "System clock before UNIX epoch = fundamentally broken system"
+)]
 pub(crate) fn current_timestamp_ms() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()

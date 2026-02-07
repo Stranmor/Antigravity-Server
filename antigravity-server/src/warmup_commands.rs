@@ -36,7 +36,10 @@ pub async fn warmup_all() -> Result<()> {
         match account::fetch_quota_with_retry(&mut acc).await {
             Ok(_) => {
                 if let Some(quota) = acc.quota.clone() {
-                    let _ = account::update_account_quota_async(acc.id.clone(), quota).await;
+                    if let Err(e) = account::update_account_quota_async(acc.id.clone(), quota).await
+                    {
+                        eprintln!("Failed to persist quota for {}: {}", acc.email, e);
+                    }
                 }
                 println!("{}", "✓".green());
                 success += 1;

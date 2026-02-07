@@ -5,6 +5,8 @@
 use super::TokenManager;
 use std::sync::atomic::Ordering;
 
+// Session failure counters are heuristic — Relaxed ordering is sufficient.
+
 const SESSION_FAILURE_THRESHOLD: u32 = 3;
 pub const STICKY_UNBIND_RATE_LIMIT_SECONDS: u64 = 15;
 
@@ -14,7 +16,7 @@ impl TokenManager {
         self.session_failures
             .entry(session_id.to_string())
             .or_insert_with(|| std::sync::atomic::AtomicU32::new(0))
-            .fetch_add(1, Ordering::SeqCst)
+            .fetch_add(1, Ordering::Relaxed)
             + 1
     }
 
@@ -25,7 +27,7 @@ impl TokenManager {
 
     /// Get current failure count for a session.
     pub fn get_session_failures(&self, session_id: &str) -> u32 {
-        self.session_failures.get(session_id).map(|c| c.load(Ordering::SeqCst)).unwrap_or(0)
+        self.session_failures.get(session_id).map(|c| c.load(Ordering::Relaxed)).unwrap_or(0)
     }
 
     /// Clear binding for a specific session.

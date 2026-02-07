@@ -6,6 +6,7 @@
 
 // Re-export ProxyRequestLog for upstream middleware compatibility
 pub use antigravity_types::models::{ProxyRequestLog, ProxyStats};
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -30,7 +31,7 @@ pub struct ProxyMonitor {
     enabled: AtomicBool,
     stats: RwLock<ProxyStats>,
     event_bus: Arc<dyn ProxyEventBus>,
-    logs: RwLock<Vec<ProxyRequestLog>>,
+    logs: RwLock<VecDeque<ProxyRequestLog>>,
     max_logs: usize,
 }
 
@@ -44,7 +45,7 @@ impl ProxyMonitor {
             enabled: AtomicBool::new(true),
             stats: RwLock::new(ProxyStats::default()),
             event_bus,
-            logs: RwLock::new(Vec::new()),
+            logs: RwLock::new(VecDeque::with_capacity(1024)),
             max_logs: 1000,
         }
     }
@@ -78,15 +79,14 @@ impl ProxyMonitor {
         // Emit to event bus
         self.event_bus.emit_request_log(&log);
 
-        // Store in logs buffer
+        // Store in logs buffer (VecDeque: O(1) pop_front)
         {
             let mut logs = self.logs.write().await;
-            logs.push(log);
-            // Trim if exceeds max
-            let len = logs.len();
-            if len > self.max_logs {
-                logs.drain(0..len - self.max_logs);
+            if logs.len() >= self.max_logs {
+                let excess = logs.len() - self.max_logs + 1;
+                logs.drain(..excess);
             }
+            logs.push_back(log);
         }
     }
 

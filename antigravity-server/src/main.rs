@@ -41,6 +41,9 @@ mod scheduler;
 mod server_utils;
 mod state;
 
+#[cfg(test)]
+mod test_helpers;
+
 mod account_commands;
 mod config_commands;
 mod warmup_commands;

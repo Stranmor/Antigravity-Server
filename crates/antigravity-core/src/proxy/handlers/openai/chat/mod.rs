@@ -268,6 +268,17 @@ pub async fn handle_chat_completions(
             continue;
         }
 
+        if status_code == 404 {
+            warn!(
+                "OpenAI Upstream 404 on account {} (model not available on this tier), rotating",
+                email
+            );
+            attempted_accounts.insert(email.clone());
+            attempt += 1;
+            grace_retry_used = false;
+            continue;
+        }
+
         error!(
             "OpenAI Upstream non-retryable error {} on account {}: {}",
             status_code, email, error_text

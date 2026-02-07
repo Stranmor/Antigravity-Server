@@ -1,16 +1,66 @@
 use serde_json;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{OnceLock, RwLock};
+use std::time::{Duration, Instant};
 
 use crate::models::AppConfig;
 use crate::modules::account::get_data_dir;
 
 const CONFIG_FILE: &str = "gui_config.json";
 
-/// Load application configuration.
+/// In-memory config cache with TTL to avoid disk I/O on hot paths.
+/// The cache is invalidated on save/update operations.
+const CONFIG_CACHE_TTL: Duration = Duration::from_secs(30);
+
+struct CachedConfig {
+    config: AppConfig,
+    loaded_at: Instant,
+}
+
+static CONFIG_CACHE: OnceLock<RwLock<Option<CachedConfig>>> = OnceLock::new();
+
+fn cache_lock() -> &'static RwLock<Option<CachedConfig>> {
+    CONFIG_CACHE.get_or_init(|| RwLock::new(None))
+}
+
+/// Load config from in-memory cache (TTL = 30s).
+///
+/// This is the preferred method for hot paths (e.g., token selection).
+/// Falls back to disk read on cache miss or expiry.
+pub fn load_config_cached() -> Result<AppConfig, String> {
+    // Fast path: check read lock
+    if let Ok(guard) = cache_lock().read() {
+        if let Some(ref cached) = *guard {
+            if cached.loaded_at.elapsed() < CONFIG_CACHE_TTL {
+                return Ok(cached.config.clone());
+            }
+        }
+    }
+
+    // Slow path: reload from disk and update cache
+    let config = load_config()?;
+
+    if let Ok(mut guard) = cache_lock().write() {
+        *guard = Some(CachedConfig { config: config.clone(), loaded_at: Instant::now() });
+    }
+
+    Ok(config)
+}
+
+/// Invalidate the in-memory config cache.
+/// Called automatically by `save_config()` and `update_config()`.
+pub fn invalidate_config_cache() {
+    if let Ok(mut guard) = cache_lock().write() {
+        *guard = None;
+    }
+}
+
+/// Load application configuration from disk.
 ///
 /// Note: This function includes migration logic that automatically migrates
 /// legacy mapping fields to custom_mapping.
+/// For hot paths, prefer `load_config_cached()` which avoids repeated disk reads.
 pub fn load_config() -> Result<AppConfig, String> {
     let data_dir = get_data_dir()?;
     let config_path = data_dir.join(CONFIG_FILE);
@@ -73,13 +123,16 @@ pub fn load_config() -> Result<AppConfig, String> {
 
     // If migration occurred, save once to clean up the file
     if modified {
-        let _ = save_config(&config);
+        if let Err(e) = save_config(&config) {
+            tracing::warn!("Failed to save migrated config: {}", e);
+        }
     }
 
     Ok(config)
 }
 
 /// Save application configuration.
+/// Automatically invalidates the in-memory config cache.
 pub fn save_config(config: &AppConfig) -> Result<(), String> {
     let data_dir = get_data_dir()?;
     let config_path = data_dir.join(CONFIG_FILE);
@@ -90,10 +143,16 @@ pub fn save_config(config: &AppConfig) -> Result<(), String> {
 
     // Atomic write
     fs::write(&temp_path, content).map_err(|e| format!("Failed to write temp config: {}", e))?;
-    fs::rename(&temp_path, &config_path).map_err(|e| format!("Failed to save config: {}", e))
+    fs::rename(&temp_path, &config_path).map_err(|e| format!("Failed to save config: {}", e))?;
+
+    // Invalidate cache so next read picks up the new config
+    invalidate_config_cache();
+
+    Ok(())
 }
 
 /// Update specific fields in the config.
+/// Automatically invalidates the in-memory config cache.
 pub fn update_config<F>(updater: F) -> Result<AppConfig, String>
 where
     F: FnOnce(&mut AppConfig),
