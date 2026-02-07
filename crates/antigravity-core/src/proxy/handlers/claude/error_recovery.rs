@@ -1,6 +1,7 @@
 //! Error recovery and retry handling for Claude messages
 
 use crate::proxy::mappers::claude::models::{ContentBlock, MessageContent};
+use crate::proxy::mappers::claude::request::DUMMY_SIGNATURE;
 use crate::proxy::mappers::claude::{close_tool_loop_for_thinking, ClaudeRequest};
 
 pub fn handle_thinking_signature_error(
@@ -9,11 +10,15 @@ pub fn handle_thinking_signature_error(
     trace_id: &str,
 ) {
     let mut preserved_sig: Option<String> = None;
+    let mut fixed_thinking = 0usize;
+    let mut fixed_tool_use = 0usize;
+
+    // First pass: find any existing valid signature to preserve in session cache
     for msg in request.messages.iter().rev() {
         if let MessageContent::Array(blocks) = &msg.content {
             for block in blocks.iter().rev() {
                 if let ContentBlock::Thinking { signature: Some(sig), .. } = block {
-                    if sig.len() >= 50 {
+                    if sig.len() >= 50 && sig != DUMMY_SIGNATURE {
                         preserved_sig = Some(sig.clone());
                         break;
                     }
@@ -29,53 +34,51 @@ pub fn handle_thinking_signature_error(
         if let Some(sid) = session_id {
             crate::proxy::SignatureCache::global().cache_session_signature(sid, sig.clone());
             tracing::info!(
-                "[{}] Preserved signature (len={}) to session cache before stripping thinking blocks",
+                "[{}] Preserved signature (len={}) to session cache before fixing signatures",
                 trace_id,
                 sig.len()
             );
         }
     }
 
-    tracing::warn!(
-        "[{}] Unexpected thinking signature error (should have been filtered). \
-         Retrying with all thinking blocks removed.",
-        trace_id
-    );
-
+    // Second pass: inject dummy signatures into thinking and tool_use blocks that lack valid ones
     for msg in request.messages.iter_mut() {
         if let MessageContent::Array(blocks) = &mut msg.content {
-            let mut new_blocks = Vec::with_capacity(blocks.len());
-            for block in blocks.drain(..) {
+            for block in blocks.iter_mut() {
                 match block {
-                    ContentBlock::Thinking { thinking, .. } => {
-                        if !thinking.is_empty() {
-                            tracing::debug!(
-                                "[Fallback] Converting thinking block to text (len={})",
-                                thinking.len()
-                            );
-                            new_blocks.push(ContentBlock::Text { text: thinking });
+                    ContentBlock::Thinking { signature, .. } => {
+                        let needs_fix = match signature.as_ref() {
+                            None => true,
+                            Some(s) => s.len() < 50,
+                        };
+                        if needs_fix {
+                            *signature = Some(DUMMY_SIGNATURE.to_string());
+                            fixed_thinking += 1;
                         }
                     },
-                    ContentBlock::RedactedThinking { .. } => {},
-                    _ => new_blocks.push(block),
+                    ContentBlock::ToolUse { signature, .. } => {
+                        if signature.is_none() {
+                            *signature = Some(DUMMY_SIGNATURE.to_string());
+                            fixed_tool_use += 1;
+                        }
+                    },
+                    _ => {},
                 }
             }
-            *blocks = new_blocks;
         }
     }
+
+    tracing::info!(
+        "[{}] Injected dummy signatures: {} thinking blocks, {} tool_use blocks. \
+         Retrying with thinking PRESERVED (no model downgrade).",
+        trace_id,
+        fixed_thinking,
+        fixed_tool_use
+    );
 
     close_tool_loop_for_thinking(&mut request.messages);
 
-    if request.model.contains("claude-") {
-        let mut m = request.model.clone();
-        m = m.replace("-thinking", "");
-        if m.contains("claude-sonnet-4-5-") {
-            m = "claude-sonnet-4-5".to_string();
-        } else if m.contains("claude-opus-4-5-") || m.contains("claude-opus-4-") {
-            m = "claude-opus-4-5".to_string();
-        }
-        request.model = m;
-    }
+    // IMPORTANT: Do NOT downgrade the model. Thinking must stay enabled.
 }
 
 pub fn apply_background_task_cleanup(
@@ -106,18 +109,27 @@ pub fn apply_background_task_cleanup(
 }
 
 pub fn apply_user_request_cleanup(request: &mut ClaudeRequest, trace_id: &str, mapped_model: &str) {
-    use crate::proxy::mappers::claude::remove_trailing_unsigned_thinking;
-
     tracing::debug!(
         "[{}][USER] userinteractiverequest,maintainmapping: {}",
         trace_id,
         mapped_model
     );
 
+    // Instead of removing unsigned thinking, inject dummy signatures to preserve them
     for msg in request.messages.iter_mut() {
         if msg.role == "assistant" || msg.role == "model" {
             if let MessageContent::Array(blocks) = &mut msg.content {
-                remove_trailing_unsigned_thinking(blocks);
+                for block in blocks.iter_mut() {
+                    if let ContentBlock::Thinking { signature, .. } = block {
+                        let needs_fix = match signature.as_ref() {
+                            None => true,
+                            Some(s) => s.len() < 50,
+                        };
+                        if needs_fix {
+                            *signature = Some(DUMMY_SIGNATURE.to_string());
+                        }
+                    }
+                }
             }
         }
     }

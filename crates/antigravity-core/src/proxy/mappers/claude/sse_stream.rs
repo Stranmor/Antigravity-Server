@@ -203,11 +203,9 @@ fn process_sse_line(
                     || model.contains("flash-2.5");
                 if is_thinking_model && !state.has_thinking_received() {
                     let out_tokens = u.candidates_token_count.unwrap_or(0);
-                    tracing::error!(
-                        "[{}] ⚠ THINKING DEGRADATION DETECTED | Model: {} | \
-                         Thinking was expected but NOT received. \
-                         Output tokens: {} (likely micro-response). \
-                         Hidden state quality may be compromised.",
+                    tracing::debug!(
+                        "[{}] Thinking model responded without thinking | Model: {} | \
+                         Output tokens: {} (model decided thinking was not needed).",
                         trace_id,
                         model,
                         out_tokens

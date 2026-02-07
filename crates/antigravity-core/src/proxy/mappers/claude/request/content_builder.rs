@@ -1,7 +1,7 @@
 use super::super::models::*;
 use super::signature_validator::{
     ensure_thinking_block_first, resolve_tool_signature, should_use_tool_signature,
-    validate_thinking_signature, SignatureAction,
+    validate_thinking_signature, SignatureAction, DUMMY_SIGNATURE,
 };
 use super::tool_result_handler::{build_tool_result_part, inject_missing_tool_results};
 use serde_json::{json, Value};
@@ -74,63 +74,71 @@ pub fn build_contents(
                         );
 
                         // [HOTFIX] Gemini Protocol Enforcement: Thinking block MUST be the first block.
-                        // If we already have content (like Text), we must downgrade this thinking block to Text.
+                        // If we already have content, keep thinking as thought block but at current position.
+                        // The ensure_thinking_block_first() call later will handle ordering.
                         if saw_non_thinking || !parts.is_empty() {
                             tracing::warn!(
-                                "[Claude-Request] Thinking block found at non-zero index (prev parts: {}). Downgrading to Text.",
+                                "[Claude-Request] Thinking block at non-zero index (prev parts: {}). Keeping as thought with dummy signature.",
                                 parts.len()
                             );
                             if !thinking.is_empty() {
-                                parts.push(json!({
-                                    "text": thinking
-                                }));
-                                saw_non_thinking = true;
+                                let sig_str = signature
+                                    .as_ref()
+                                    .filter(|s| s.len() >= super::safety::MIN_SIGNATURE_LENGTH)
+                                    .cloned()
+                                    .unwrap_or_else(|| DUMMY_SIGNATURE.to_string());
+                                let mut part = json!({
+                                    "text": thinking,
+                                    "thought": true,
+                                    "thoughtSignature": sig_str
+                                });
+                                crate::proxy::common::json_schema::clean_json_schema(&mut part);
+                                parts.push(part);
                             }
                             continue;
                         }
 
-                        // [FIX] If thinking is disabled (smart downgrade), convert ALL thinking blocks to text
-                        // to avoid "thinking is disabled but message contains thinking" error
+                        // [FIX] If thinking is disabled but blocks exist, keep as thought with dummy signature.
+                        // Never strip thinking content — use dummy sig to preserve context.
                         if !is_thinking_enabled {
                             tracing::warn!(
-                                "[Claude-Request] Thinking disabled. Downgrading thinking block to text."
+                                "[Claude-Request] Thinking disabled but thinking block present. Keeping as thought with dummy signature."
                             );
                             if !thinking.is_empty() {
-                                parts.push(json!({
-                                    "text": thinking
-                                }));
+                                let mut part = json!({
+                                    "text": thinking,
+                                    "thought": true,
+                                    "thoughtSignature": DUMMY_SIGNATURE
+                                });
+                                crate::proxy::common::json_schema::clean_json_schema(&mut part);
+                                parts.push(part);
                             }
                             continue;
                         }
 
-                        // [FIX] Empty thinking blocks cause "Field required" errors.
-                        // We downgrade them to Text to avoid structural errors and signature mismatch.
+                        // [FIX] Empty thinking blocks — keep as thought with placeholder text and dummy sig.
                         if thinking.is_empty() {
                             tracing::warn!(
-                                "[Claude-Request] Empty thinking block detected. Downgrading to Text."
+                                "[Claude-Request] Empty thinking block detected. Using placeholder with dummy signature."
                             );
                             parts.push(json!({
-                                "text": "..."
+                                "text": "...",
+                                "thought": true,
+                                "thoughtSignature": DUMMY_SIGNATURE
                             }));
                             continue;
                         }
 
-                        // [FIX #752] Strict signature validation
-                        match validate_thinking_signature(
-                            thinking,
-                            signature.as_ref(),
-                            is_retry,
-                            mapped_model,
-                            last_thought_signature,
-                        ) {
-                            SignatureAction::UseWithSignature { part } => {
-                                parts.push(part);
-                            },
-                            SignatureAction::DowngradeToText { text } => {
-                                parts.push(json!({"text": text}));
-                                saw_non_thinking = true;
-                            },
-                        }
+                        // [FIX #752] Signature validation — never downgrades, always preserves thinking
+                        let SignatureAction::UseWithSignature { part } =
+                            validate_thinking_signature(
+                                thinking,
+                                signature.as_ref(),
+                                is_retry,
+                                mapped_model,
+                                last_thought_signature,
+                            );
+                        parts.push(part);
                     },
                     ContentBlock::RedactedThinking { data } => {
                         // [FIX] will RedactedThinking asnormaltexthandle，preservecontext
@@ -212,24 +220,28 @@ pub fn build_contents(
                         );
 
                         if let Some(sig) = final_sig {
-                            if is_retry && signature.is_none() {
-                                tracing::warn!(
-                                    "[Tool-Signature] Skipping signature backfill for tool_use: {} during retry.",
-                                    id
-                                );
-                            } else if should_use_tool_signature(
+                            if should_use_tool_signature(
                                 &sig,
                                 id,
                                 mapped_model,
                                 is_thinking_enabled,
                             ) {
                                 part["thoughtSignature"] = json!(sig);
+                            } else if is_thinking_enabled {
+                                // Incompatible/invalid sig — use dummy to prevent validation errors
+                                tracing::debug!(
+                                    "[Tool-Signature] Using dummy signature for tool_use: {} (original sig incompatible)",
+                                    id
+                                );
+                                part["thoughtSignature"] = json!(DUMMY_SIGNATURE);
                             }
-                        } else {
+                        } else if is_thinking_enabled {
+                            // No signature available at all — use dummy for thinking mode
                             tracing::debug!(
-                                "[Tool-Signature] No signature available for tool_use: {}. Omitting thoughtSignature.",
+                                "[Tool-Signature] No signature available for tool_use: {}. Using dummy signature.",
                                 id
                             );
+                            part["thoughtSignature"] = json!(DUMMY_SIGNATURE);
                         }
                         parts.push(part);
                     },

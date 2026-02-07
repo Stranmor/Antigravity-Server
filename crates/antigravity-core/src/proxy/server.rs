@@ -61,9 +61,10 @@ pub fn build_proxy_router_with_shared_state(
         custom_mapping: Arc::clone(&custom_mapping),
         request_timeout: 300,
         upstream_proxy: Arc::clone(&proxy_state),
-        upstream: Arc::new(crate::proxy::upstream::client::UpstreamClient::new(Some(
-            upstream_proxy,
-        ))),
+        upstream: Arc::new(crate::proxy::upstream::client::UpstreamClient::new(
+            Some(upstream_proxy),
+            None,
+        )),
         zai,
         provider_rr,
         zai_vision_mcp: zai_vision_mcp_state,

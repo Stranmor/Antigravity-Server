@@ -1,4 +1,5 @@
 use super::models::{ContentBlock, Message, MessageContent};
+use crate::proxy::mappers::claude::request::signature_validator::DUMMY_SIGNATURE;
 use crate::proxy::SignatureCache;
 use tracing::{debug, info, warn};
 
@@ -157,12 +158,13 @@ pub fn get_signature_family(signature: &str) -> Option<String> {
     SignatureCache::global().get_signature_family(signature)
 }
 
-/// [CRITICAL] Sanitize thinking blocks and check cross-model compatibility
+/// [CRITICAL] Fix thinking block signatures for cross-model compatibility.
+/// Instead of removing invalid blocks, inject dummy signatures to preserve thinking.
 pub fn filter_invalid_thinking_blocks_with_family(
     messages: &mut [Message],
     target_family: Option<&str>,
 ) {
-    let mut stripped_count = 0;
+    let mut fixed_count = 0;
 
     for msg in messages.iter_mut() {
         if msg.role != "assistant" {
@@ -170,43 +172,46 @@ pub fn filter_invalid_thinking_blocks_with_family(
         }
 
         if let MessageContent::Array(blocks) = &mut msg.content {
-            let original_len = blocks.len();
-            blocks.retain(|block| {
+            for block in blocks.iter_mut() {
                 if let ContentBlock::Thinking { signature, .. } = block {
-                    // 1. Basic length check
-                    let sig = match signature {
-                        Some(s) if s.len() >= MIN_SIGNATURE_LENGTH => s,
-                        _ => {
-                            stripped_count += 1;
-                            return false;
-                        }
+                    let needs_fix = match signature.as_ref() {
+                        Some(s) if s.len() >= MIN_SIGNATURE_LENGTH && s != DUMMY_SIGNATURE => {
+                            // Check family compatibility
+                            if let Some(target) = target_family {
+                                if let Some(origin_family) = get_signature_family(s) {
+                                    if origin_family != target {
+                                        warn!(
+                                            "[Thinking-Sanitizer] Incompatible family '{}' for target '{}'. Replacing with dummy signature.",
+                                            origin_family, target
+                                        );
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        },
+                        Some(s) if s == DUMMY_SIGNATURE => false, // Already has dummy
+                        _ => true,                                // Missing or too short
                     };
 
-                    // 2. Family compatibility check (Prevents SONNET-Thinking sig being sent to OPUS-Thinking)
-                    if let Some(target) = target_family {
-                        if let Some(origin_family) = get_signature_family(sig) {
-                            if origin_family != target {
-                                warn!("[Thinking-Sanitizer] Dropping signature from family '{}' for target '{}'", origin_family, target);
-                                stripped_count += 1;
-                                return false;
-                            }
-                        }
+                    if needs_fix {
+                        *signature = Some(DUMMY_SIGNATURE.to_string());
+                        fixed_count += 1;
                     }
                 }
-                true
-            });
-
-            // Claude API requires at least one block - add placeholder if all were stripped
-            if blocks.is_empty() && original_len > 0 {
-                blocks.push(ContentBlock::Text { text: ".".to_string() });
             }
         }
     }
 
-    if stripped_count > 0 {
+    if fixed_count > 0 {
         info!(
-            "[Thinking-Sanitizer] Stripped {} invalid or incompatible thinking blocks",
-            stripped_count
+            "[Thinking-Sanitizer] Fixed {} thinking blocks with dummy signatures (preserved thinking)",
+            fixed_count
         );
     }
 }
@@ -251,19 +256,26 @@ pub fn has_valid_signature(block: &ContentBlock) -> bool {
     }
 }
 
-/// Remove trailing unsigned thinking blocks from a message
-pub fn remove_trailing_unsigned_thinking(blocks: &mut Vec<ContentBlock>) {
+/// Fix trailing unsigned thinking blocks by injecting dummy signatures.
+/// Never removes thinking blocks — always preserves them.
+pub fn remove_trailing_unsigned_thinking(blocks: &mut [ContentBlock]) {
     if blocks.is_empty() {
         return;
     }
 
-    // Scan backwards
-    let mut end_index = blocks.len();
+    let mut fixed_count = 0;
+
+    // Scan backwards and fix unsigned thinking blocks
     for i in (0..blocks.len()).rev() {
-        match &blocks[i] {
-            ContentBlock::Thinking { .. } => {
-                if !has_valid_signature(&blocks[i]) {
-                    end_index = i;
+        match &mut blocks[i] {
+            ContentBlock::Thinking { signature, .. } => {
+                let needs_fix = match signature.as_ref() {
+                    None => true,
+                    Some(s) => s.len() < MIN_SIGNATURE_LENGTH,
+                };
+                if needs_fix {
+                    *signature = Some(DUMMY_SIGNATURE.to_string());
+                    fixed_count += 1;
                 } else {
                     break; // Found valid signed thinking block, stop
                 }
@@ -272,9 +284,7 @@ pub fn remove_trailing_unsigned_thinking(blocks: &mut Vec<ContentBlock>) {
         }
     }
 
-    if end_index < blocks.len() {
-        let removed = blocks.len() - end_index;
-        blocks.truncate(end_index);
-        debug!("Removed {} trailing unsigned thinking block(s)", removed);
+    if fixed_count > 0 {
+        debug!("Fixed {} trailing unsigned thinking block(s) with dummy signatures", fixed_count);
     }
 }

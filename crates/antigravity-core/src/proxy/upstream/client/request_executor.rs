@@ -7,7 +7,6 @@ use super::super::endpoint_health::{
     ENDPOINT_HEALTH, MAX_TRANSPORT_RETRIES_PER_ENDPOINT, TRANSPORT_RETRY_DELAY_MS,
 };
 use super::super::user_agent::DEFAULT_USER_AGENT;
-use super::get_upstream_base_urls;
 
 pub fn build_url(base_url: &str, method: &str, query_string: Option<&str>) -> String {
     if let Some(qs) = query_string {
@@ -55,10 +54,9 @@ pub async fn execute_with_fallback(
     body: &Value,
     query_string: Option<&str>,
     warp_proxy_url: Option<&str>,
+    base_urls: &[String],
 ) -> Result<Response, String> {
     let mut last_err: Option<String> = None;
-
-    let base_urls = get_upstream_base_urls();
 
     for (idx, base_url) in base_urls.iter().enumerate() {
         if ENDPOINT_HEALTH.get(base_url.as_str()).is_some_and(|h| h.should_skip()) {
@@ -152,10 +150,9 @@ pub async fn execute_with_fallback(
 pub async fn execute_fetch_models(
     client: &Client,
     headers: header::HeaderMap,
+    base_urls: &[String],
 ) -> Result<Value, String> {
     let mut last_err: Option<String> = None;
-
-    let base_urls = get_upstream_base_urls();
 
     for (idx, base_url) in base_urls.iter().enumerate() {
         if ENDPOINT_HEALTH.get(base_url.as_str()).is_some_and(|h| h.should_skip()) {

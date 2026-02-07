@@ -1,5 +1,4 @@
 #![allow(unused_crate_dependencies)]
-#![allow(unsafe_code, reason = "std::env::set_var is unsafe since Rust 1.83")]
 #![allow(clippy::tests_outside_test_module, reason = "integration tests live in tests/ dir")]
 #![allow(clippy::expect_used, reason = "integration test — panics are the assertion mechanism")]
 
@@ -26,17 +25,14 @@ fn request_body() -> serde_json::Value {
 }
 
 async fn setup_server() -> MockServer {
-    let server = MockServer::start().await;
-    let url = format!("{}/v1internal", server.uri());
-    // SAFETY: called once before any other thread reads this env var
-    unsafe { std::env::set_var("ANTIGRAVITY_UPSTREAM_URL", &url) };
-    server
+    MockServer::start().await
 }
 
 #[tokio::test]
 async fn test_upstream_proxy_flow() {
     let server = setup_server().await;
-    let client = UpstreamClient::new(None);
+    let mock_url = format!("{}/v1internal", server.uri());
+    let client = UpstreamClient::new(None, Some(vec![mock_url]));
 
     {
         let _guard = Mock::given(method("POST"))

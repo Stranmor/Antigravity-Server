@@ -73,7 +73,7 @@ mod integration_tests {
         let adaptive_limits = Arc::new(AdaptiveLimitManager::default());
         let health_monitor = HealthMonitor::new();
         let circuit_breaker = Arc::new(CircuitBreakerManager::new());
-        let upstream = Arc::new(crate::proxy::upstream::client::UpstreamClient::new(None));
+        let upstream = Arc::new(crate::proxy::upstream::client::UpstreamClient::new(None, None));
         let warp_isolation = Arc::new(WarpIsolationManager::new());
 
         AppState {

@@ -384,9 +384,13 @@ fn test_thinking_block_empty_content_fix() {
     let contents = body["request"]["contents"].as_array().unwrap();
     let parts = contents[0]["parts"].as_array().unwrap();
 
-    // verify thinking block
+    // verify thinking block is preserved as thought with dummy signature
     assert_eq!(parts[0]["text"], "...", "Empty thinking should be filled with ...");
-    assert!(parts[0].get("thought").is_none(), "Empty thinking should be downgraded to text");
+    assert_eq!(
+        parts[0].get("thought").and_then(|v| v.as_bool()),
+        Some(true),
+        "Empty thinking should be preserved as thought block with dummy signature"
+    );
 }
 
 #[test]

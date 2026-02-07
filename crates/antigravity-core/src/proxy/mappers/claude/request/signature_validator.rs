@@ -2,9 +2,14 @@ use super::model_compat::is_model_compatible;
 use super::safety::MIN_SIGNATURE_LENGTH;
 use serde_json::{json, Value};
 
+/// Dummy signature that tells Gemini to skip signature validation.
+///
+/// Per Google docs: https://ai.google.dev/gemini-api/docs/thought-signatures#faqs
+/// Used when real signature is unavailable, incompatible, or missing.
+pub const DUMMY_SIGNATURE: &str = "skip_thought_signature_validator";
+
 pub enum SignatureAction {
     UseWithSignature { part: Value },
-    DowngradeToText { text: String },
 }
 
 pub fn validate_thinking_signature(
@@ -23,12 +28,12 @@ pub fn validate_thinking_signature(
 
                 if !compatible {
                     tracing::warn!(
-                        "[Thinking-Signature] {} signature (Family: {}, Target: {}). Downgrading to text.",
-                        if is_retry { "Stripping historical" } else { "Incompatible" },
+                        "[Thinking-Signature] {} signature (Family: {}, Target: {}). Using dummy signature to preserve thinking.",
+                        if is_retry { "Retry mode - historical" } else { "Incompatible" },
                         family,
                         mapped_model
                     );
-                    return SignatureAction::DowngradeToText { text: thinking.to_string() };
+                    return make_thinking_part_with_dummy(thinking, last_thought_signature);
                 }
                 *last_thought_signature = Some(sig.clone());
                 let mut part = json!({
@@ -55,14 +60,15 @@ pub fn validate_thinking_signature(
                     SignatureAction::UseWithSignature { part }
                 } else {
                     tracing::warn!(
-                        "[Thinking-Signature] Unknown signature origin and too short (len: {}). Downgrading to text.",
+                        "[Thinking-Signature] Signature too short (len: {}). Using dummy signature to preserve thinking.",
                         sig.len()
                     );
-                    SignatureAction::DowngradeToText { text: thinking.to_string() }
+                    make_thinking_part_with_dummy(thinking, last_thought_signature)
                 }
             },
         }
     } else {
+        // Try content cache first
         if let Some((recovered_sig, recovered_family)) =
             crate::proxy::SignatureCache::global().get_content_signature(thinking)
         {
@@ -84,9 +90,26 @@ pub fn validate_thinking_signature(
             }
         }
 
-        tracing::warn!("[Thinking-Signature] No signature provided and content cache miss. Downgrading to text.");
-        SignatureAction::DowngradeToText { text: thinking.to_string() }
+        tracing::warn!(
+            "[Thinking-Signature] No signature provided and content cache miss. Using dummy signature to preserve thinking."
+        );
+        make_thinking_part_with_dummy(thinking, last_thought_signature)
     }
+}
+
+/// Creates a thinking part with the dummy signature that skips upstream validation.
+fn make_thinking_part_with_dummy(
+    thinking: &str,
+    last_thought_signature: &mut Option<String>,
+) -> SignatureAction {
+    *last_thought_signature = Some(DUMMY_SIGNATURE.to_string());
+    let mut part = json!({
+        "text": thinking,
+        "thought": true,
+        "thoughtSignature": DUMMY_SIGNATURE
+    });
+    crate::proxy::common::json_schema::clean_json_schema(&mut part);
+    SignatureAction::UseWithSignature { part }
 }
 
 pub fn resolve_tool_signature(
@@ -127,6 +150,11 @@ pub fn should_use_tool_signature(
     mapped_model: &str,
     is_thinking_enabled: bool,
 ) -> bool {
+    // Always accept dummy signatures
+    if sig == DUMMY_SIGNATURE {
+        return true;
+    }
+
     if sig.len() < MIN_SIGNATURE_LENGTH {
         tracing::warn!(
             "[Tool-Signature] Signature too short for tool_use: {} (len: {})",
