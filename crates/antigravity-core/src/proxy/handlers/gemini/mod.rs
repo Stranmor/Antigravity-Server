@@ -251,6 +251,12 @@ pub async fn handle_generate(
         }
 
         error!("[Gemini] Non-retryable {}: {}", code, error_text);
+        if code == 404 {
+            warn!("[Gemini] 404 on {} (model not available on this tier), rotating", email);
+            attempted_accounts.insert(email.clone());
+            attempt += 1;
+            continue;
+        }
         return Ok((status, [("X-Account-Email", email.as_str())], error_text).into_response());
     }
 

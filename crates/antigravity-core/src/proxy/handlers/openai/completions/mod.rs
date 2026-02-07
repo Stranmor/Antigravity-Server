@@ -221,6 +221,14 @@ pub async fn handle_completions(
             }
         }
 
+        if status_code == 404 {
+            tracing::warn!(
+                "[Completions] 404 on {} (model not available on this tier), rotating",
+                email
+            );
+            continue;
+        }
+
         let strategy = determine_retry_strategy(status_code, &error_text, false);
         if apply_retry_strategy(strategy, attempt, MAX_RETRY_ATTEMPTS, status_code, &trace_id).await
         {
