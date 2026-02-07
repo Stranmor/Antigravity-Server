@@ -145,7 +145,10 @@ impl<'a> PartProcessor<'a> {
             chunks.extend(self.emit_trailing_signature());
         }
 
-        if signature.is_some() {
+        if let Some(ref sig) = signature {
+            if let Some(session_id) = &self.state.session_id {
+                SignatureCache::global().cache_session_signature(session_id, sig.clone());
+            }
             self.state.store_signature(signature);
 
             chunks.extend(

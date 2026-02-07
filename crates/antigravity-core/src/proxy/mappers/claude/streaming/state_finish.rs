@@ -4,6 +4,7 @@ use serde_json::json;
 use super::state::{BlockType, StreamingState};
 use crate::proxy::mappers::claude::models::*;
 use crate::proxy::mappers::claude::token_scaling::to_claude_usage;
+use crate::proxy::SignatureCache;
 
 impl StreamingState {
     pub fn emit_finish(
@@ -23,7 +24,23 @@ impl StreamingState {
                 "[Streaming] Captured trailing signature (len: {}), caching for session.",
                 signature.len()
             );
-            self.signatures.store(Some(signature));
+
+            if let Some(session_id) = &self.session_id {
+                SignatureCache::global().cache_session_signature(session_id, signature.clone());
+            }
+
+            chunks.push(self.emit(
+                "content_block_start",
+                json!({
+                    "type": "content_block_start",
+                    "index": self.block_index,
+                    "content_block": { "type": "thinking", "thinking": "" }
+                }),
+            ));
+            chunks.push(self.emit_delta("thinking_delta", json!({ "thinking": "" })));
+            chunks.push(self.emit_delta("signature_delta", json!({ "signature": signature })));
+            self.block_type = BlockType::Thinking;
+            chunks.extend(self.end_block());
         }
 
         chunks.extend(self.emit_grounding_block());
