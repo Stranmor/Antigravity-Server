@@ -37,6 +37,7 @@ pub mod middleware;
 pub mod project_resolver;
 pub mod providers;
 pub mod rate_limit;
+pub mod retry;
 pub mod session_manager;
 pub mod signature_cache;
 #[cfg(test)]

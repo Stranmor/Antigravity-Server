@@ -49,6 +49,8 @@ pub async fn build_health_response(
     let success_rate =
         if total > 0 { (f64::from(total_successes) / f64::from(total)) * 100.0 } else { 100.0 };
 
+    let health_score = health.score();
+
     AccountHealthResponse {
         account_id: health.account_id.clone(),
         email: health.email.clone(),
@@ -62,5 +64,6 @@ pub async fn build_health_response(
         total_successes,
         total_errors,
         success_rate,
+        health_score,
     }
 }

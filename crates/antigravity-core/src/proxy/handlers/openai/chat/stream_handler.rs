@@ -8,8 +8,8 @@ use bytes::Bytes;
 use futures::StreamExt;
 use tracing::info;
 
-use crate::proxy::handlers::retry_strategy::{peek_first_data_chunk, PeekConfig, PeekResult};
 use crate::proxy::mappers::openai::streaming::create_openai_sse_stream;
+use crate::proxy::retry::{peek_first_data_chunk, PeekConfig, PeekResult};
 
 pub enum OpenAIStreamResult {
     StreamingResponse(Response),

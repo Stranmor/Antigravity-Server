@@ -232,9 +232,9 @@ pub async fn handle_completions(
             continue;
         }
 
-        let strategy = determine_retry_strategy(status_code, &error_text, false);
-        if apply_retry_strategy(strategy, attempt, MAX_RETRY_ATTEMPTS, status_code, &trace_id).await
-        {
+        let profile = RetryProfile::openai();
+        let strategy = determine_retry_strategy(status_code, &error_text, false, &profile);
+        if apply_retry_strategy(strategy, attempt, status_code, &trace_id).await {
             continue;
         } else {
             return Ok((status, [("X-Account-Email", email.as_str())], error_text).into_response());

@@ -3,7 +3,7 @@
 
 use super::models::{GeminiPart, UsageMetadata};
 use super::streaming::{PartProcessor, StreamingState};
-use crate::proxy::signature_metrics::record_thinking_degradation;
+use super::thinking_validation::validate_thinking_response;
 use bytes::Bytes;
 use futures::Stream;
 use std::pin::Pin;
@@ -181,68 +181,24 @@ fn process_sse_line(
 
         if let Some(ref u) = usage {
             let cached_tokens = u.cached_content_token_count.unwrap_or(0);
-            let cache_info = if cached_tokens > 0 {
-                format!(", Cached: {}", cached_tokens)
-            } else {
-                String::new()
-            };
-
-            let thinking_info = if state.has_thinking_received() { " | Thinking: ✓" } else { "" };
+            let input_tokens = u.prompt_token_count.unwrap_or(0);
+            let output_tokens = u.candidates_token_count.unwrap_or(0);
 
             tracing::info!(
-                "[{}] ✓ Stream completed | Account: {} | In: {} tokens | Out: {} tokens{}{} | Reason: {}",
+                "[{}] ✓ Stream completed | Account: {} | Reason: {}",
                 trace_id,
                 email,
-                u.prompt_token_count
-                    .unwrap_or(0)
-                    .saturating_sub(cached_tokens),
-                u.candidates_token_count.unwrap_or(0),
-                cache_info,
-                thinking_info,
                 finish_reason
             );
 
-            // [2026-02-07] Response-side thinking validation
-            // If the model is a thinking model but no thinking was received,
-            // this indicates upstream silently ignored our thinkingConfig.
-            if let Some(ref model) = state.model_name {
-                let is_thinking_model = model.contains("thinking")
-                    || model.contains("pro-2.5")
-                    || model.contains("flash-2.5");
-                if is_thinking_model && !state.has_thinking_received() {
-                    let out_tokens = u.candidates_token_count.unwrap_or(0);
-                    tracing::debug!(
-                        "[{}] Thinking model responded without thinking | Model: {} | \
-                         Output tokens: {} (model decided thinking was not needed).",
-                        trace_id,
-                        model,
-                        out_tokens
-                    );
-                }
-                if is_thinking_model && state.has_thinking_received() {
-                    // Diagnostic probe: check if signature was cached during this response.
-                    // Uses has_session_signature() to avoid inflating cache hit/miss counters.
-                    if let Some(ref sid) = state.session_id {
-                        let has_sig =
-                            crate::proxy::SignatureCache::global().has_session_signature(sid);
-                        if has_sig {
-                            tracing::debug!(
-                                "[{}] ✓ Thinking response validated: signature cached for session {}",
-                                trace_id,
-                                sid
-                            );
-                        } else {
-                            tracing::warn!(
-                                "[{}] ⚠ Thinking response received but no signature cached for session {}. \
-                                 Next request may fail signature validation.",
-                                trace_id,
-                                sid
-                            );
-                            record_thinking_degradation();
-                        }
-                    }
-                }
-            }
+            validate_thinking_response(
+                state,
+                trace_id,
+                finish_reason,
+                input_tokens,
+                output_tokens,
+                cached_tokens,
+            );
         }
 
         chunks.extend(state.emit_finish(Some(finish_reason), usage.as_ref()));

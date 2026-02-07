@@ -80,6 +80,14 @@ impl Default for HealthConfig {
     }
 }
 
+/// Failure weight for health score formula.
+///
+/// `score = successes / (successes + failures * FAILURE_WEIGHT)`
+///
+/// Weight of 4.0 means each failure has 4x the impact of a success,
+/// matching the old 0.05 increment / 0.2 decrement ratio.
+const FAILURE_WEIGHT: f32 = 4.0;
+
 /// Health state for a single account
 #[derive(Debug)]
 pub struct AccountHealth {
@@ -137,6 +145,18 @@ impl AccountHealth {
     pub fn total_errors(&self) -> u32 {
         self.total_errors.load(Ordering::SeqCst)
     }
+
+    #[allow(clippy::arithmetic_side_effects, reason = "f32 division with denominator >= 1.0")]
+    pub fn score(&self) -> f32 {
+        #[allow(clippy::cast_precision_loss, reason = "health counters never exceed 2^24")]
+        let s = self.total_successes.load(Ordering::SeqCst) as f32;
+        #[allow(clippy::cast_precision_loss, reason = "health counters never exceed 2^24")]
+        let e = self.total_errors.load(Ordering::SeqCst) as f32;
+        if s + e == 0.0 {
+            return 1.0;
+        }
+        s / (s + e * FAILURE_WEIGHT)
+    }
 }
 
 /// Response structure for account health endpoint
@@ -154,4 +174,5 @@ pub struct AccountHealthResponse {
     pub total_successes: u32,
     pub total_errors: u32,
     pub success_rate: f64,
+    pub health_score: f32,
 }

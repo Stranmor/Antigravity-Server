@@ -11,8 +11,9 @@ pub use completions::handle_completions;
 pub use models::handle_list_models;
 
 // Shared imports for submodules
-use super::retry_strategy::{
+use crate::proxy::retry::{
     apply_retry_strategy, determine_retry_strategy, peek_first_data_chunk, PeekConfig, PeekResult,
+    RetryProfile,
 };
 use axum::{extract::Json, extract::State, http::StatusCode, response::IntoResponse};
 use bytes::Bytes;

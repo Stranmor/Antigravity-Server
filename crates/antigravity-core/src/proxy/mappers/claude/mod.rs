@@ -14,6 +14,7 @@ pub mod response;
 pub mod sse_stream;
 pub mod streaming;
 pub mod thinking_utils;
+mod thinking_validation;
 pub mod token_scaling;
 
 #[cfg(test)]

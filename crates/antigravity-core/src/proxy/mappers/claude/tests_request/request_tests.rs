@@ -351,10 +351,11 @@ fn test_thinking_block_not_prepend_when_disabled() {
 
 #[test]
 fn test_thinking_block_empty_content_fix() {
-    // [scenario] clientsendacontentis empty  thinking block
-    // expected: autopad "..."
+    // [scenario] client sends a thinking block with empty content
+    // expected: autopad "..." and preserve thought: true
+    // Uses Gemini model to avoid Claude-specific signature stripping
     let req = ClaudeRequest {
-        model: "claude-sonnet-4-5".to_string(),
+        model: "gemini-3-pro".to_string(),
         messages: vec![Message {
             role: "assistant".to_string(),
             content: MessageContent::Array(vec![

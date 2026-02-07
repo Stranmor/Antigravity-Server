@@ -130,7 +130,7 @@ pub fn build_proxy_router_with_shared_state(
         // Utility
         .route(
             "/v1/models/detect",
-            post(handlers::retry_strategy::handle_detect_model),
+            post(handlers::model_detect::handle_detect_model),
         )
         .route(
             "/v1/api/event_logging/batch",

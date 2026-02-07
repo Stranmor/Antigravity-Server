@@ -55,6 +55,7 @@ fn sanitize_signatures_for_anthropic(request: &ClaudeRequest) -> ClaudeRequest {
                             }
                         }
                     },
+                    // Intentionally ignored: only Thinking and ToolUse blocks carry signatures
                     _ => {},
                 }
             }

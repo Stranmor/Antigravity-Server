@@ -1,6 +1,7 @@
 use crate::proxy::rate_limit::RateLimitTracker;
 use crate::proxy::routing_config::SmartRoutingConfig;
 use crate::proxy::AdaptiveLimitManager;
+use crate::proxy::HealthMonitor;
 use dashmap::DashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -30,7 +31,7 @@ pub struct TokenManager {
     pub(crate) session_accounts: Arc<DashMap<String, String>>,
     pub(crate) adaptive_limits: Arc<tokio::sync::RwLock<Option<Arc<AdaptiveLimitManager>>>>,
     pub(crate) preferred_account_id: Arc<tokio::sync::RwLock<Option<String>>>,
-    pub(crate) health_scores: Arc<DashMap<String, f32>>,
+    pub(crate) health_monitor: Arc<tokio::sync::RwLock<Option<Arc<HealthMonitor>>>>,
     pub(crate) active_requests: Arc<DashMap<String, AtomicU32>>,
     pub(crate) session_failures: Arc<DashMap<String, AtomicU32>>,
     pub(crate) file_locks: Arc<DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
@@ -46,7 +47,7 @@ impl TokenManager {
             session_accounts: Arc::new(DashMap::new()),
             adaptive_limits: Arc::new(tokio::sync::RwLock::new(None)),
             preferred_account_id: Arc::new(tokio::sync::RwLock::new(None)),
-            health_scores: Arc::new(DashMap::new()),
+            health_monitor: Arc::new(tokio::sync::RwLock::new(None)),
             active_requests: Arc::new(DashMap::new()),
             session_failures: Arc::new(DashMap::new()),
             file_locks: Arc::new(DashMap::new()),
@@ -80,6 +81,11 @@ impl TokenManager {
     pub async fn set_adaptive_limits(&self, tracker: Arc<AdaptiveLimitManager>) {
         let mut guard = self.adaptive_limits.write().await;
         *guard = Some(tracker);
+    }
+
+    pub async fn set_health_monitor(&self, monitor: Arc<HealthMonitor>) {
+        let mut guard = self.health_monitor.write().await;
+        *guard = Some(monitor);
     }
 
     pub fn start_auto_cleanup(&self) {

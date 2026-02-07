@@ -1,7 +1,7 @@
 // Streaming response builder for completions handler
-#![allow(clippy::expect_used, reason = "Response::builder() with valid headers cannot fail")]
 
 use axum::body::Body;
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
 use futures::StreamExt;
@@ -47,6 +47,8 @@ pub fn build_streaming_response(
         .header("X-Account-Email", email)
         .header("X-Mapped-Model", mapped_model)
         .body(body)
-        .expect("valid streaming response")
-        .into_response()
+        .unwrap_or_else(|e| {
+            tracing::error!("Failed to build SSE response: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal streaming setup error").into_response()
+        })
 }

@@ -9,8 +9,8 @@ use bytes::Bytes;
 use futures::StreamExt;
 use std::pin::Pin;
 
-use crate::proxy::handlers::retry_strategy::{peek_first_data_chunk, PeekConfig, PeekResult};
 use crate::proxy::mappers::claude::create_claude_sse_stream;
+use crate::proxy::retry::{peek_first_data_chunk, PeekConfig, PeekResult};
 
 pub struct StreamingContext {
     pub trace_id: String,
@@ -136,7 +136,6 @@ where
     S: futures::Stream<Item = Result<Bytes, std::io::Error>> + Send + 'static,
 {
     use crate::proxy::mappers::claude::collect_stream_to_json;
-    use axum::response::IntoResponse;
 
     match collect_stream_to_json(Box::pin(stream)).await {
         Ok(full_response) => {

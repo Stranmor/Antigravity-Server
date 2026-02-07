@@ -257,6 +257,10 @@ impl HealthMonitor {
         self.accounts.iter().filter(|e| !e.value().is_disabled()).count()
     }
 
+    pub fn get_score(&self, account_id: &str) -> f32 {
+        self.accounts.get(account_id).map(|h| h.score()).unwrap_or(1.0)
+    }
+
     /// Shutdown the monitor
     pub fn shutdown(&self) {
         let _ = self.shutdown_tx.send(true);

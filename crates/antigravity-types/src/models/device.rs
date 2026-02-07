@@ -61,7 +61,7 @@ pub struct DeviceProfiles {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, reason = "test assertions")]
 mod tests {
     use super::*;
 

@@ -1,3 +1,4 @@
+mod function_call_processor;
 mod part_processor;
 #[cfg(test)]
 mod signature_e2e_tests;

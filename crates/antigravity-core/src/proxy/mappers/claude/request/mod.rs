@@ -5,6 +5,7 @@ mod message_cleaning;
 mod model_compat;
 mod monolith;
 mod safety;
+mod signature_stripping;
 pub mod signature_validator;
 mod system_instruction;
 mod thinking;

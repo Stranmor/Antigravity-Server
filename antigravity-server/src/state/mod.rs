@@ -77,6 +77,7 @@ impl AppState {
         health_monitor.start_recovery_task();
 
         token_manager.set_adaptive_limits(adaptive_limits.clone()).await;
+        token_manager.set_health_monitor(health_monitor.clone()).await;
 
         tracing::info!("AIMD rate limiting system initialized");
 

@@ -134,6 +134,7 @@ pub async fn handle_chat_completions(
 
         let status = response.status();
         if status.is_success() {
+            token_manager.mark_account_success(&email);
             state.adaptive_limits.record_success(&email);
             token_manager.clear_session_failures(&session_id);
 
