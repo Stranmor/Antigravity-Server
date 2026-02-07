@@ -10,3 +10,6 @@ pub mod mcp_vision;
 pub mod openai;
 pub mod retry_strategy;
 pub mod warmup;
+
+#[cfg(test)]
+mod retry_strategy_tests;
