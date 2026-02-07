@@ -182,6 +182,8 @@
 
           nativeBuildInputs = with pkgs; [
             pkg-config
+            mold
+            clang
           ];
 
           buildInputs = with pkgs; [
