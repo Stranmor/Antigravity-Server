@@ -2,30 +2,6 @@
 
 use serde_json::json;
 
-/// Coerces string values to boolean for Gemini compatibility.
-///
-/// Gemini sometimes sends boolean parameters as strings (e.g., "true", "-n", "false").
-#[allow(dead_code)]
-pub(crate) fn coerce_to_bool(value: &serde_json::Value) -> Option<serde_json::Value> {
-    match value {
-        serde_json::Value::Bool(_) => Some(value.clone()),
-        serde_json::Value::String(s) => {
-            let lower = s.to_lowercase();
-            if lower == "true" || lower == "yes" || lower == "1" || lower == "-n" {
-                Some(serde_json::json!(true))
-            } else if lower == "false" || lower == "no" || lower == "0" {
-                Some(serde_json::json!(false))
-            } else {
-                None
-            }
-        },
-        serde_json::Value::Number(n) => {
-            Some(serde_json::json!(n.as_i64().map(|i| i != 0).unwrap_or(false)))
-        },
-        _ => None,
-    }
-}
-
 /// Remaps function call arguments for Gemini → Claude compatibility.
 ///
 /// Gemini sometimes uses different parameter names than specified in tool schema.

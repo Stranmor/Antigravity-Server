@@ -1,3 +1,4 @@
+mod candidate_processor;
 mod codex_stream;
 mod function_call_handler;
 mod legacy_stream;
@@ -11,5 +12,8 @@ pub use legacy_stream::create_legacy_sse_stream;
 pub use openai_stream::create_openai_sse_stream;
 pub use usage::extract_usage_metadata;
 
-#[allow(deprecated)]
+#[allow(
+    deprecated,
+    reason = "signature_store API uses deprecated snake_case naming for upstream compatibility"
+)]
 pub use crate::proxy::mappers::signature_store::{get_thought_signature, store_thought_signature};

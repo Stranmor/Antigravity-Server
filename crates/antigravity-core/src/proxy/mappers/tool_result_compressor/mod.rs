@@ -27,10 +27,6 @@ pub const SNAPSHOT_MAX_CHARS: usize = 16_000;
 /// Browser snapshot head preservation ratio
 pub const SNAPSHOT_HEAD_RATIO: f64 = 0.7;
 
-/// Browser snapshot tail preservation ratio
-#[allow(dead_code)]
-pub const SNAPSHOT_TAIL_RATIO: f64 = 0.3;
-
 /// Compress tool result text
 ///
 /// Automatically selects best compression strategy based on content type:

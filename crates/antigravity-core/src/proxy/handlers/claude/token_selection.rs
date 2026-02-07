@@ -56,7 +56,3 @@ pub async fn acquire_token(
         Err(e) => Err(no_accounts_error(e)),
     }
 }
-
-pub fn extract_session_id(request: &crate::proxy::mappers::claude::ClaudeRequest) -> String {
-    crate::proxy::session_manager::SessionManager::extract_session_id(request)
-}

@@ -80,21 +80,17 @@ impl std::fmt::Display for RateLimitKey {
 }
 
 /// Information about an active rate limit.
-#[allow(dead_code)]
+#[allow(dead_code, reason = "fields read via Debug trait and in rate limit decision logic")]
 #[derive(Debug, Clone)]
 pub struct RateLimitInfo {
     /// When the rate limit resets.
     pub reset_time: SystemTime,
     /// Seconds until reset (from Retry-After header).
-    #[allow(dead_code)]
     pub retry_after_sec: u64,
     /// When the rate limit was detected.
-    #[allow(dead_code)]
     pub detected_at: SystemTime,
     /// Reason for the rate limit.
-    #[allow(dead_code)]
     pub reason: RateLimitReason,
     /// Model that triggered the limit, if any.
-    #[allow(dead_code)]
     pub model: Option<String>,
 }

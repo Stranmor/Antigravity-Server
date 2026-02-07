@@ -22,7 +22,10 @@ pub fn parse_duration_ms(duration_str: &str) -> Option<u64> {
             "s" => total_ms += value * 1000.0,
             "m" => total_ms += value * 60.0 * 1000.0,
             "h" => total_ms += value * 60.0 * 60.0 * 1000.0,
-            _ => {},
+            // Intentionally ignored: unrecognized time units are skipped
+            _ => {
+                tracing::trace!("Unhandled time unit in retry delay: {}", unit);
+            },
         }
     }
 

@@ -45,6 +45,7 @@ pub fn identify_tool_rounds(messages: &[Message]) -> Vec<ToolRound> {
                     }
                 }
             },
+            // Intentionally ignored: only "assistant" and "user" roles participate in tool rounds
             _ => {},
         }
     }

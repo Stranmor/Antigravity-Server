@@ -57,6 +57,7 @@ pub fn clean_cache_control_from_messages(messages: &mut [Message]) {
                             total_cleaned += 1;
                         }
                     },
+                    // Intentionally ignored: only Thinking/Image/Document/ToolUse have cache_control
                     _ => {},
                 }
             }
@@ -92,6 +93,7 @@ pub fn deep_clean_cache_control(value: &mut Value) {
                 deep_clean_cache_control(item);
             }
         },
+        // Intentionally ignored: only Object/Array can contain nested cache_control fields
         _ => {},
     }
 }

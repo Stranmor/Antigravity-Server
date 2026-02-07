@@ -67,7 +67,10 @@ impl ProxyToken {
     }
 
     /// Create a new ProxyToken with pre-computed cached tier.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "token construction requires all account metadata fields"
+    )]
     pub fn new(
         account_id: String,
         access_token: String,

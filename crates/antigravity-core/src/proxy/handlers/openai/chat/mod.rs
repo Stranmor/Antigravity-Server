@@ -1,4 +1,5 @@
 mod error_handler;
+mod signature_preload;
 mod stream_handler;
 mod token_acquisition;
 mod upstream_request;
@@ -18,13 +19,12 @@ use crate::proxy::handlers::openai::completions::request_parser::ensure_non_empt
 use crate::proxy::mappers::openai::{transform_openai_request, OpenAIRequest};
 use crate::proxy::server::AppState;
 use crate::proxy::session_manager::SessionManager;
-use crate::proxy::SignatureCache;
 
 use error_handler::{
     handle_auth_errors, handle_grace_retry, handle_rate_limit_errors, handle_service_disabled,
-    ErrorAction,
+    OpenAIErrorAction,
 };
-use stream_handler::{handle_stream_response, StreamResult};
+use stream_handler::{handle_stream_response, OpenAIStreamResult};
 use token_acquisition::acquire_token;
 use upstream_request::{call_upstream_with_retry, UpstreamResult};
 
@@ -96,18 +96,7 @@ pub async fn handle_chat_completions(
         last_email = Some(email.clone());
         info!("✓ Using account: {} (type: {})", email, config.request_type);
 
-        let content_hashes: Vec<String> = openai_req
-            .messages
-            .iter()
-            .filter(|m| m.role == "assistant")
-            .filter_map(|m| m.reasoning_content.as_ref())
-            .filter(|rc| !rc.is_empty())
-            .map(|rc| SignatureCache::compute_content_hash(rc))
-            .collect();
-
-        if !content_hashes.is_empty() {
-            SignatureCache::global().preload_signatures_from_db(&content_hashes).await;
-        }
+        signature_preload::preload_signatures(&openai_req).await;
 
         let gemini_body = transform_openai_request(&openai_req, &project_id, &mapped_model);
 
@@ -161,8 +150,8 @@ pub async fn handle_chat_completions(
             )
             .await
             {
-                StreamResult::StreamingResponse(resp) => return Ok(resp.into_response()),
-                StreamResult::JsonResponse(st, em, model, rsn, json) => {
+                OpenAIStreamResult::StreamingResponse(resp) => return Ok(resp.into_response()),
+                OpenAIStreamResult::JsonResponse(st, em, model, rsn, json) => {
                     return Ok((
                         st,
                         [
@@ -174,14 +163,14 @@ pub async fn handle_chat_completions(
                     )
                         .into_response());
                 },
-                StreamResult::Retry(err) => {
+                OpenAIStreamResult::Retry(err) => {
                     last_error = err;
                     attempted_accounts.insert(email.clone());
                     attempt += 1;
                     grace_retry_used = false;
                     continue;
                 },
-                StreamResult::EmptyStream => {
+                OpenAIStreamResult::EmptyStream => {
                     warn!("[{}] Stream ended immediately, rotating...", trace_id);
                     last_error = "Empty response stream".to_string();
                     attempted_accounts.insert(email.clone());
@@ -237,7 +226,7 @@ pub async fn handle_chat_completions(
         )
         .await
         {
-            ErrorAction::Continue => {
+            OpenAIErrorAction::Continue => {
                 if status_code == 429
                     || status_code == 529
                     || status_code == 503
@@ -249,7 +238,7 @@ pub async fn handle_chat_completions(
                     continue;
                 }
             },
-            ErrorAction::ReturnError(code, email, text) => {
+            OpenAIErrorAction::ReturnError(code, email, text) => {
                 return Ok((code, [("X-Account-Email", email)], text).into_response());
             },
         }

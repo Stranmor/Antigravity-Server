@@ -62,6 +62,7 @@ pub fn handle_thinking_signature_error(
                             fixed_tool_use += 1;
                         }
                     },
+                    // Intentionally ignored: only Thinking and ToolUse blocks need signature injection
                     _ => {},
                 }
             }

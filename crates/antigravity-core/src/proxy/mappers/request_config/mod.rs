@@ -12,9 +12,7 @@ pub use grounding::{
     contains_non_networking_tool, deep_clean_undefined, detects_networking_tool,
     inject_google_search_tool,
 };
-pub use image_config::{
-    calculate_aspect_ratio_from_size, parse_image_config, parse_image_config_with_params,
-};
+pub use image_config::{calculate_aspect_ratio_from_size, parse_image_config_with_params};
 
 #[derive(Debug, Clone)]
 pub struct RequestConfig {

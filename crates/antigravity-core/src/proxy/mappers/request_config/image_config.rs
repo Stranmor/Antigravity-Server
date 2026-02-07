@@ -3,12 +3,6 @@
 
 use serde_json::{json, Value};
 
-/// Legacy wrapper for backward compatibility
-#[allow(dead_code)]
-pub fn parse_image_config(model_name: &str) -> (Value, String) {
-    parse_image_config_with_params(model_name, None, None)
-}
-
 /// Extended version that accepts OpenAI size and quality parameters
 pub fn parse_image_config_with_params(
     model_name: &str,
@@ -55,6 +49,7 @@ pub fn parse_image_config_with_params(
             "standard" | "1k" => {
                 config.insert("imageSize".to_string(), json!("1K"));
             },
+            // Intentionally ignored: unrecognized quality values use default image size
             _ => {},
         }
     } else {
@@ -83,6 +78,7 @@ pub fn calculate_aspect_ratio_from_size(size: &str) -> &'static str {
         "5:4" => return "5:4",
         "4:5" => return "4:5",
         "1:1" => return "1:1",
+        // Not a direct ratio format — fall through to WxH pixel parsing below
         _ => {},
     }
 

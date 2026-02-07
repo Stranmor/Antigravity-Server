@@ -9,7 +9,10 @@ use axum::{
 use serde_json::{json, Value};
 
 /// Parse and validate incoming Claude request body
-#[allow(clippy::result_large_err)]
+#[allow(
+    clippy::result_large_err,
+    reason = "error contains full HTTP Response for client diagnostics"
+)]
 pub fn parse_request(body: Value) -> Result<ClaudeRequest, Response> {
     serde_json::from_value(body).map_err(|e| {
         (

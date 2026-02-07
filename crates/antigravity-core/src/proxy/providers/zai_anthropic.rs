@@ -76,6 +76,7 @@ fn copy_passthrough_headers(incoming: &HeaderMap) -> HeaderMap {
             "accept-encoding" | "cache-control" => {
                 out.insert(k.clone(), v.clone());
             },
+            // Intentionally ignored: all other headers stripped to avoid leaking proxy keys/cookies
             _ => {},
         }
     }
@@ -121,6 +122,7 @@ pub fn deep_remove_cache_control(value: &mut Value) {
                 deep_remove_cache_control(v);
             }
         },
+        // Intentionally ignored: only Object/Array can contain nested cache_control
         _ => {},
     }
 }

@@ -1,4 +1,7 @@
-#![allow(deprecated)]
+#![allow(
+    deprecated,
+    reason = "signature_store API uses deprecated snake_case naming for upstream compatibility"
+)]
 
 use bytes::{Bytes, BytesMut};
 use futures::{Stream, StreamExt};
@@ -9,7 +12,6 @@ use std::pin::Pin;
 use super::function_call_handler::process_function_call;
 use super::ssop_detector::detect_and_emit_ssop_events;
 use super::usage::extract_usage_metadata;
-#[allow(deprecated)]
 use crate::proxy::mappers::signature_store::store_thought_signature;
 
 pub fn create_codex_sse_stream(

@@ -31,7 +31,7 @@ impl TokenManager {
     }
 
     /// Clear binding for a specific session.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "public API used in tests")]
     pub fn clear_session_binding(&self, session_id: &str) {
         self.session_accounts.remove(session_id);
     }

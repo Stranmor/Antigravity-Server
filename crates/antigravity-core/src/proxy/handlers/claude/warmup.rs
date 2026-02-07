@@ -42,6 +42,7 @@ pub fn is_warmup_request(request: &ClaudeRequest) -> bool {
                                 return true;
                             }
                         },
+                        // Intentionally ignored: only Text and ToolResult can contain warmup markers
                         _ => {},
                     }
                 }

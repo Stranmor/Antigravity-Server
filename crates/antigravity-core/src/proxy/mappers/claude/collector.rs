@@ -56,6 +56,7 @@ where
                 match key.as_str() {
                     "event" => current_event_type = value,
                     "data" => current_data = value,
+                    // Intentionally ignored: only "event" and "data" SSE fields are used
                     _ => {},
                 }
             }
@@ -123,6 +124,7 @@ where
                                 current_tool_use = Some(content_block.clone());
                                 current_tool_input.clear();
                             },
+                            // Intentionally ignored: only text/thinking/tool_use block types need accumulation
                             _ => {},
                         }
                     }
@@ -156,6 +158,7 @@ where
                                     current_tool_input.push_str(partial_json);
                                 }
                             },
+                            // Intentionally ignored: only text_delta/thinking_delta/input_json_delta carry content
                             _ => {},
                         }
                     }

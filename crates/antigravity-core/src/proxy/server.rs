@@ -36,7 +36,7 @@ pub struct AppState {
 ///
 /// Unlike `build_proxy_router`, this version accepts pre-created Arc references
 /// so that external code can update the mapping at runtime.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "server bootstrap requires all subsystem references")]
 pub fn build_proxy_router_with_shared_state(
     token_manager: Arc<TokenManager>,
     custom_mapping: Arc<RwLock<std::collections::HashMap<String, String>>>,
@@ -209,7 +209,10 @@ impl AxumServer {
 }
 
 /// Helper for backward compatibility or simpler usage
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "convenience wrapper, delegates to build_proxy_router_with_shared_state"
+)]
 pub fn build_proxy_router(
     token_manager: Arc<TokenManager>,
     custom_mapping: std::collections::HashMap<String, String>,

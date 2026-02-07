@@ -12,13 +12,13 @@ use std::time::Instant;
 
 /// Cache entry containing the cleaned schema and metadata.
 #[derive(Clone)]
-#[allow(dead_code)]
 struct CacheEntry {
     /// Cleaned schema
     schema: Value,
     /// Last access time
     last_used: Instant,
     /// Hit count
+    #[allow(dead_code, reason = "reserved for future LFU eviction policy")]
     hit_count: usize,
 }
 

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tracing::{error, info, warn};
 
-pub enum ErrorAction {
+pub enum OpenAIErrorAction {
     Continue,
     ReturnError(axum::http::StatusCode, String, String),
 }
@@ -71,7 +71,7 @@ pub async fn handle_rate_limit_errors(
     final_model: &str,
     attempt: usize,
     max_attempts: usize,
-) -> ErrorAction {
+) -> OpenAIErrorAction {
     if status_code == 429 || status_code == 529 || status_code == 503 || status_code == 500 {
         token_manager
             .mark_rate_limited_async(email, status_code, retry_after, error_text, Some(final_model))
@@ -95,7 +95,7 @@ pub async fn handle_rate_limit_errors(
                 actual_delay
             );
             tokio::time::sleep(Duration::from_millis(actual_delay)).await;
-            return ErrorAction::Continue;
+            return OpenAIErrorAction::Continue;
         }
 
         if error_text.contains("QUOTA_EXHAUSTED") {
@@ -105,7 +105,7 @@ pub async fn handle_rate_limit_errors(
                 attempt + 1,
                 max_attempts
             );
-            return ErrorAction::ReturnError(
+            return OpenAIErrorAction::ReturnError(
                 axum::http::StatusCode::TOO_MANY_REQUESTS,
                 email.to_string(),
                 error_text.to_string(),
@@ -119,9 +119,9 @@ pub async fn handle_rate_limit_errors(
             attempt + 1,
             max_attempts
         );
-        return ErrorAction::Continue;
+        return OpenAIErrorAction::Continue;
     }
-    ErrorAction::Continue
+    OpenAIErrorAction::Continue
 }
 
 pub fn handle_auth_errors(

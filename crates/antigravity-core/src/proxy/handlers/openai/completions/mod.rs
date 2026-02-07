@@ -135,7 +135,10 @@ pub async fn handle_completions(
                 };
 
                 let peek_config = PeekConfig::openai();
-                #[allow(clippy::type_complexity)]
+                #[allow(
+                    clippy::type_complexity,
+                    reason = "decomposing Pin<Box<dyn Stream>> tuple would reduce readability"
+                )]
                 let (first_data_chunk, sse_stream): (
                     Option<Bytes>,
                     std::pin::Pin<Box<dyn futures::Stream<Item = Result<Bytes, String>> + Send>>,

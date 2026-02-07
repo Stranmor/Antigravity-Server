@@ -122,7 +122,6 @@ impl RateLimitTracker {
     }
 
     /// Cleanup expired rate limit records
-    #[allow(dead_code)]
     pub fn cleanup_expired(&self) -> usize {
         let now = SystemTime::now();
         let mut count = 0;

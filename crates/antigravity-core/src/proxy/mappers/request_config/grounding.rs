@@ -54,6 +54,7 @@ pub fn deep_clean_undefined(value: &mut Value) {
                 deep_clean_undefined(v);
             }
         },
+        // Intentionally ignored: only Object/Array can contain nested "[undefined]" values
         _ => {},
     }
 }

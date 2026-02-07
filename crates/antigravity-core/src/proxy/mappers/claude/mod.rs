@@ -19,6 +19,8 @@ pub mod token_scaling;
 #[cfg(test)]
 mod collector_tests;
 #[cfg(test)]
+mod signature_tests;
+#[cfg(test)]
 mod tests_request;
 
 pub use collector::collect_stream_to_json;

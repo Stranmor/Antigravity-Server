@@ -31,6 +31,7 @@ pub fn build_call_id_map(input_items: Option<&Vec<Value>>) -> HashMap<String, St
                     call_id_to_name.insert(call_id.to_string(), name.to_string());
                     tracing::debug!("Mapped call_id {} to name {}", call_id, name);
                 },
+                // Intentionally ignored: only function_call/local_shell_call/web_search_call have call IDs
                 _ => {},
             }
         }
@@ -211,7 +212,10 @@ pub fn parse_codex_input_to_messages(
                 "function_call_output" | "custom_tool_call_output" => {
                     messages.push(parse_function_output_item(item, &call_id_to_name));
                 },
-                _ => {},
+                // Intentionally ignored: unrecognized Codex item types are skipped
+                _ => {
+                    tracing::trace!("Skipping unrecognized Codex input item type: {}", item_type);
+                },
             }
         }
     }

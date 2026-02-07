@@ -1,6 +1,7 @@
 mod part_processor;
 mod signature_manager;
 mod state;
+mod state_events;
 mod state_finish;
 #[cfg(test)]
 mod streaming_tests;

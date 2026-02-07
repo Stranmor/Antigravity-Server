@@ -1,5 +1,4 @@
-use super::model_compat::is_model_compatible;
-use super::safety::MIN_SIGNATURE_LENGTH;
+use super::safety::is_valid_or_dummy_signature;
 use serde_json::{json, Value};
 
 /// Dummy signature that tells Gemini to skip signature validation.
@@ -16,69 +15,49 @@ pub fn validate_thinking_signature(
     thinking: &str,
     signature: Option<&String>,
     is_retry: bool,
-    mapped_model: &str,
+    _mapped_model: &str,
     last_thought_signature: &mut Option<String>,
 ) -> SignatureAction {
     if let Some(sig) = signature {
-        let cached_family = crate::proxy::SignatureCache::global().get_signature_family(sig);
-
-        match cached_family {
-            Some(family) => {
-                let compatible = !is_retry && is_model_compatible(&family, mapped_model);
-
-                if !compatible {
-                    tracing::warn!(
-                        "[Thinking-Signature] {} signature (Family: {}, Target: {}). Using dummy signature to preserve thinking.",
-                        if is_retry { "Retry mode - historical" } else { "Incompatible" },
-                        family,
-                        mapped_model
-                    );
-                    return make_thinking_part_with_dummy(thinking, last_thought_signature);
-                }
-                *last_thought_signature = Some(sig.clone());
-                let mut part = json!({
-                    "text": thinking,
-                    "thought": true,
-                    "thoughtSignature": sig
-                });
-                crate::proxy::common::json_schema::clean_json_schema(&mut part);
-                SignatureAction::UseWithSignature { part }
-            },
-            None => {
-                if sig.len() >= MIN_SIGNATURE_LENGTH {
-                    tracing::debug!(
-                        "[Thinking-Signature] Unknown signature origin but valid length (len: {}), using as-is.",
-                        sig.len()
-                    );
-                    *last_thought_signature = Some(sig.clone());
-                    let mut part = json!({
-                        "text": thinking,
-                        "thought": true,
-                        "thoughtSignature": sig
-                    });
-                    crate::proxy::common::json_schema::clean_json_schema(&mut part);
-                    SignatureAction::UseWithSignature { part }
-                } else {
-                    tracing::warn!(
-                        "[Thinking-Signature] Signature too short (len: {}). Using dummy signature to preserve thinking.",
-                        sig.len()
-                    );
-                    make_thinking_part_with_dummy(thinking, last_thought_signature)
-                }
-            },
+        // Fast path: already a dummy signature — pass through immediately
+        if sig == DUMMY_SIGNATURE {
+            tracing::debug!("[Thinking-Signature] Dummy signature detected, passing through.");
+            *last_thought_signature = Some(DUMMY_SIGNATURE.to_string());
+            return make_thinking_part_with_dummy(thinking, last_thought_signature);
         }
+
+        // Validate signature has acceptable length
+        if !is_valid_or_dummy_signature(sig) {
+            tracing::warn!(
+                "[Thinking-Signature] Signature too short (len: {}). Using dummy to preserve thinking.",
+                sig.len()
+            );
+            return make_thinking_part_with_dummy(thinking, last_thought_signature);
+        }
+
+        // Client-supplied signature with valid length — pass through as-is.
+        // Per Anthropic docs: "signature values are compatible across platforms
+        // (Claude APIs, Amazon Bedrock, and Vertex AI). Values generated on one
+        // platform will be compatible with another."
+        // Do NOT check model family — signatures are opaque and cross-compatible.
+        tracing::debug!(
+            "[Thinking-Signature] Valid client signature (len: {}), passing through as-is.",
+            sig.len()
+        );
+        *last_thought_signature = Some(sig.clone());
+        make_thinking_part_with_sig(thinking, sig)
     } else {
         // Try content cache first
-        if let Some((recovered_sig, recovered_family)) =
+        if let Some((recovered_sig, _recovered_family)) =
             crate::proxy::SignatureCache::global().get_content_signature(thinking)
         {
             tracing::info!(
-                "[Thinking-Signature] Recovered signature from CONTENT cache (len: {}, family: {})",
-                recovered_sig.len(),
-                recovered_family
+                "[Thinking-Signature] Recovered signature from CONTENT cache (len: {}), using as-is.",
+                recovered_sig.len()
             );
 
-            if !is_retry && is_model_compatible(&recovered_family, mapped_model) {
+            // Signatures are cross-platform compatible — no family check needed.
+            if !is_retry {
                 *last_thought_signature = Some(recovered_sig.clone());
                 let mut part = json!({
                     "text": thinking,
@@ -97,19 +76,24 @@ pub fn validate_thinking_signature(
     }
 }
 
+/// Creates a thinking part with a specific signature.
+fn make_thinking_part_with_sig(thinking: &str, sig: &str) -> SignatureAction {
+    let mut part = json!({
+        "text": thinking,
+        "thought": true,
+        "thoughtSignature": sig
+    });
+    crate::proxy::common::json_schema::clean_json_schema(&mut part);
+    SignatureAction::UseWithSignature { part }
+}
+
 /// Creates a thinking part with the dummy signature that skips upstream validation.
 fn make_thinking_part_with_dummy(
     thinking: &str,
     last_thought_signature: &mut Option<String>,
 ) -> SignatureAction {
     *last_thought_signature = Some(DUMMY_SIGNATURE.to_string());
-    let mut part = json!({
-        "text": thinking,
-        "thought": true,
-        "thoughtSignature": DUMMY_SIGNATURE
-    });
-    crate::proxy::common::json_schema::clean_json_schema(&mut part);
-    SignatureAction::UseWithSignature { part }
+    make_thinking_part_with_sig(thinking, DUMMY_SIGNATURE)
 }
 
 pub fn resolve_tool_signature(
@@ -147,15 +131,15 @@ pub fn resolve_tool_signature(
 pub fn should_use_tool_signature(
     sig: &str,
     id: &str,
-    mapped_model: &str,
-    is_thinking_enabled: bool,
+    _mapped_model: &str,
+    _is_thinking_enabled: bool,
 ) -> bool {
     // Always accept dummy signatures
     if sig == DUMMY_SIGNATURE {
         return true;
     }
 
-    if sig.len() < MIN_SIGNATURE_LENGTH {
+    if !is_valid_or_dummy_signature(sig) {
         tracing::warn!(
             "[Tool-Signature] Signature too short for tool_use: {} (len: {})",
             id,
@@ -164,42 +148,9 @@ pub fn should_use_tool_signature(
         return false;
     }
 
-    let cached_family = crate::proxy::SignatureCache::global().get_signature_family(sig);
-
-    match cached_family {
-        Some(family) => {
-            if is_model_compatible(&family, mapped_model) {
-                true
-            } else {
-                tracing::warn!(
-                    "[Tool-Signature] Incompatible signature for tool_use: {} (Family: {}, Target: {})",
-                    id,
-                    family,
-                    mapped_model
-                );
-                false
-            }
-        },
-        None => {
-            if sig.len() >= MIN_SIGNATURE_LENGTH {
-                tracing::debug!(
-                    "[Tool-Signature] Unknown signature origin but valid length (len: {}) for tool_use: {}, using as-is.",
-                    sig.len(),
-                    id
-                );
-                true
-            } else if is_thinking_enabled {
-                tracing::warn!(
-                    "[Tool-Signature] Unknown signature origin and too short for tool_use: {} (len: {}). Dropping in thinking mode.",
-                    id,
-                    sig.len()
-                );
-                false
-            } else {
-                true
-            }
-        },
-    }
+    // Signatures are cross-platform compatible — no family check needed.
+    // Per Anthropic docs, signatures work across Claude APIs, Bedrock, and Vertex AI.
+    true
 }
 
 pub fn ensure_thinking_block_first(parts: &mut Vec<Value>) {

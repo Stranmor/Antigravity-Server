@@ -12,18 +12,15 @@
 use bytes::{Bytes, BytesMut};
 use chrono::Utc;
 use futures::{Stream, StreamExt};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::pin::Pin;
 use tracing::debug;
 use uuid::Uuid;
 
-use super::stream_formatters::{
-    content_chunk, error_chunk, format_grounding_metadata, generate_call_id, map_finish_reason,
-    reasoning_chunk, sse_line, tool_call_chunk, usage_chunk,
-};
+use super::candidate_processor::{process_candidate, CandidateContext};
+use super::stream_formatters::{error_chunk, sse_line};
 use super::usage::extract_usage_metadata;
 use crate::proxy::mappers::openai::models::OpenAIUsage;
-use crate::proxy::SignatureCache;
 
 pub fn create_openai_sse_stream(
     mut gemini_stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
@@ -53,9 +50,7 @@ pub fn create_openai_sse_stream(
 
                             if line.starts_with("data: ") {
                                 let json_part = line.trim_start_matches("data: ").trim();
-                                if json_part == "[DONE]" {
-                                    continue;
-                                }
+                                if json_part == "[DONE]" { continue; }
 
                                 if let Ok(mut json) = serde_json::from_str::<Value>(json_part) {
                                     tracing::debug!("Gemini SSE Chunk: {}", json_part);
@@ -72,214 +67,17 @@ pub fn create_openai_sse_stream(
 
                                     if let Some(candidates) = actual_data.get("candidates").and_then(|c| c.as_array()) {
                                         for (idx, candidate) in candidates.iter().enumerate() {
-                                            let parts = candidate.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array());
-
-                                            let mut content_out = String::new();
-                                            let mut thought_out = String::new();
-
-                                            if let Some(parts_list) = parts {
-                                                for part in parts_list {
-                                                    let is_thought_part = part.get("thought")
-                                                        .and_then(|v| v.as_bool())
-                                                        .unwrap_or(false);
-
-                                                    if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
-                                                        if is_thought_part {
-                                                            thought_out.push_str(text);
-                                                            accumulated_thinking.push_str(text);
-                                                        } else {
-                                                            content_out.push_str(text);
-                                                        }
-                                                    }
-                                                    if let Some(sig) = part.get("thoughtSignature").or(part.get("thought_signature")).and_then(|s| s.as_str()) {
-                                                        // Cache signature with accumulated thinking content
-                                                        if !accumulated_thinking.is_empty() {
-                                                            let model_family = if model.contains("claude") {
-                                                                "claude".to_string()
-                                                            } else {
-                                                                "gemini".to_string()
-                                                            };
-                                                            SignatureCache::global().cache_content_signature(
-                                                                &accumulated_thinking,
-                                                                sig.to_string(),
-                                                                model_family.clone(),
-                                                            );
-                                                            SignatureCache::global().cache_thinking_family(
-                                                                sig.to_string(),
-                                                                model_family,
-                                                            );
-                                                            // Cache to session for multi-turn recovery
-                                                            if let Some(ref sid) = session_id {
-                                                                SignatureCache::global().cache_session_signature(
-                                                                    sid,
-                                                                    sig.to_string(),
-                                                                );
-                                                                tracing::debug!(
-                                                                    "[OpenAI-SSE] Cached session signature (session={}, sig_len={})",
-                                                                    sid,
-                                                                    sig.len()
-                                                                );
-                                                            }
-                                                            tracing::debug!(
-                                                                "[OpenAI-SSE] Cached content signature (thinking_len={}, sig_len={})",
-                                                                accumulated_thinking.len(),
-                                                                sig.len()
-                                                            );
-                                                        }
-                                                    }
-
-                                                    if let Some(img) = part.get("inlineData") {
-                                                        let mime_type = img.get("mimeType").and_then(|v| v.as_str()).unwrap_or("image/png");
-                                                        let data = img.get("data").and_then(|v| v.as_str()).unwrap_or("");
-                                                        if !data.is_empty() {
-                                                            const CHUNK_SIZE: usize = 32 * 1024;
-                                                            let prefix = format!("![image](data:{};base64,", mime_type);
-                                                            let suffix = ")";
-
-                                                            let prefix_chunk = json!({
-                                                                "id": &stream_id,
-                                                                "object": "chat.completion.chunk",
-                                                                "created": created_ts,
-                                                                "model": &model,
-                                                                "choices": [{
-                                                                    "index": idx as u32,
-                                                                    "delta": { "content": prefix },
-                                                                    "finish_reason": Value::Null
-                                                                }]
-                                                            });
-                                                            let sse_out = format!("data: {}\n\n", serde_json::to_string(&prefix_chunk).unwrap_or_default());
-                                                            yield Ok::<Bytes, String>(Bytes::from(sse_out));
-
-                                                            for chunk in data.as_bytes().chunks(CHUNK_SIZE) {
-                                                                if let Ok(chunk_str) = std::str::from_utf8(chunk) {
-                                                                    let data_chunk = json!({
-                                                                        "id": &stream_id,
-                                                                        "object": "chat.completion.chunk",
-                                                                        "created": created_ts,
-                                                                        "model": &model,
-                                                                        "choices": [{
-                                                                            "index": idx as u32,
-                                                                            "delta": { "content": chunk_str },
-                                                                            "finish_reason": Value::Null
-                                                                        }]
-                                                                    });
-                                                                    let sse_out = format!("data: {}\n\n", serde_json::to_string(&data_chunk).unwrap_or_default());
-                                                                    yield Ok::<Bytes, String>(Bytes::from(sse_out));
-                                                                }
-                                                            }
-
-                                                            let suffix_chunk = json!({
-                                                                "id": &stream_id,
-                                                                "object": "chat.completion.chunk",
-                                                                "created": created_ts,
-                                                                "model": &model,
-                                                                "choices": [{
-                                                                    "index": idx as u32,
-                                                                    "delta": { "content": suffix },
-                                                                    "finish_reason": Value::Null
-                                                                }]
-                                                            });
-                                                            let sse_out = format!("data: {}\n\n", serde_json::to_string(&suffix_chunk).unwrap_or_default());
-                                                            yield Ok::<Bytes, String>(Bytes::from(sse_out));
-
-                                                            tracing::info!("[OpenAI-SSE] Sent image in {} chunks ({} bytes total)",
-                                                                (data.len() / CHUNK_SIZE) + 2, data.len());
-                                                        }
-                                                    }
-
-                                                    if let Some(func_call) = part.get("functionCall") {
-                                                        let call_key = serde_json::to_string(func_call).unwrap_or_default();
-                                                        if emitted_tool_calls.insert(call_key) {
-
-                                                            let name = func_call.get("name").and_then(|v| v.as_str()).unwrap_or("unknown");
-                                                            let args = func_call.get("args").unwrap_or(&json!({})).to_string();
-                                                            let call_id = generate_call_id(func_call);
-
-                                                            let chunk = tool_call_chunk(
-                                                                &stream_id,
-                                                                created_ts,
-                                                                &model,
-                                                                idx as u32,
-                                                                &call_id,
-                                                                name,
-                                                                &args,
-                                                            );
-                                                            yield Ok::<Bytes, String>(Bytes::from(sse_line(&chunk)));
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            if let Some(grounding) = candidate.get("groundingMetadata") {
-                                                let grounding_text = format_grounding_metadata(grounding);
-                                                if !grounding_text.is_empty() {
-                                                    content_out.push_str(&grounding_text);
-                                                }
-                                            }
-
-                                            if content_out.is_empty() && thought_out.is_empty()
-                                                && candidate.get("finishReason").is_none()
-                                            {
-                                                continue;
-                                            }
-
-                                            let finish_reason = candidate.get("finishReason")
-                                                .and_then(|f| f.as_str())
-                                                .map(map_finish_reason);
-
-                                            if !thought_out.is_empty() {
-                                                let chunk = reasoning_chunk(
-                                                    &stream_id,
-                                                    created_ts,
-                                                    &model,
-                                                    idx as u32,
-                                                    &thought_out,
-                                                );
-                                                yield Ok::<Bytes, String>(Bytes::from(sse_line(&chunk)));
-                                            }
-
-                                            if !content_out.is_empty() || finish_reason.is_some() {
-                                                const MAX_CHUNK_SIZE: usize = 32 * 1024;
-
-                                                if content_out.len() > MAX_CHUNK_SIZE {
-                                                    let content_bytes = content_out.as_bytes();
-                                                    let total_chunks = content_bytes.len().div_ceil(MAX_CHUNK_SIZE);
-
-                                                    for (chunk_idx, chunk) in content_bytes.chunks(MAX_CHUNK_SIZE).enumerate() {
-                                                        let is_last_chunk = chunk_idx == total_chunks - 1;
-
-                                                        let chunk_str = if is_last_chunk {
-                                                            String::from_utf8_lossy(chunk).to_string()
-                                                        } else {
-                                                            let safe_len = (0..=chunk.len())
-                                                                .rev()
-                                                                .find(|&i| std::str::from_utf8(&chunk[..i]).is_ok())
-                                                                .unwrap_or(0);
-                                                            String::from_utf8_lossy(&chunk[..safe_len]).to_string()
-                                                        };
-
-                                                        let chunk_finish_reason = if is_last_chunk { finish_reason } else { None };
-                                                        let c = content_chunk(
-                                                            &stream_id,
-                                                            created_ts,
-                                                            &model,
-                                                            idx as u32,
-                                                            &chunk_str,
-                                                            chunk_finish_reason,
-                                                        );
-                                                        yield Ok::<Bytes, String>(Bytes::from(sse_line(&c)));
-                                                    }
-                                                } else {
-                                                    let c = content_chunk(
-                                                        &stream_id,
-                                                        created_ts,
-                                                        &model,
-                                                        idx as u32,
-                                                        &content_out,
-                                                        finish_reason,
-                                                    );
-                                                    yield Ok::<Bytes, String>(Bytes::from(sse_line(&c)));
-                                                }
+                                            let mut ctx = CandidateContext {
+                                                stream_id: &stream_id,
+                                                created_ts,
+                                                model: &model,
+                                                session_id: &session_id,
+                                                accumulated_thinking: &mut accumulated_thinking,
+                                                emitted_tool_calls: &mut emitted_tool_calls,
+                                            };
+                                            let chunks = process_candidate(candidate, idx, &mut ctx);
+                                            for chunk in chunks {
+                                                yield Ok::<Bytes, String>(chunk);
                                             }
                                         }
                                     }
@@ -300,14 +98,7 @@ pub fn create_openai_sse_stream(
                         "OpenAI stream error occurred"
                     );
 
-                    let err = error_chunk(
-                        &stream_id,
-                        created_ts,
-                        &model,
-                        error_type,
-                        user_message,
-                        i18n_key,
-                    );
+                    let err = error_chunk(&stream_id, created_ts, &model, error_type, user_message, i18n_key);
                     yield Ok(Bytes::from(sse_line(&err)));
                     yield Ok(Bytes::from("data: [DONE]\n\n"));
                     break;
@@ -316,7 +107,7 @@ pub fn create_openai_sse_stream(
         }
 
         if let Some(usage) = final_usage {
-            let u = usage_chunk(&stream_id, created_ts, &model, &usage);
+            let u = super::stream_formatters::usage_chunk(&stream_id, created_ts, &model, &usage);
             yield Ok::<Bytes, String>(Bytes::from(sse_line(&u)));
         }
 

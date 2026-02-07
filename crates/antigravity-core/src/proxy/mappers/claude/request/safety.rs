@@ -4,6 +4,12 @@ use serde_json::{json, Value};
 
 pub const MIN_SIGNATURE_LENGTH: usize = 50;
 
+/// Returns `true` if the signature is either a recognized dummy value
+/// or has at least [`MIN_SIGNATURE_LENGTH`] characters.
+pub fn is_valid_or_dummy_signature(sig: &str) -> bool {
+    sig == super::signature_validator::DUMMY_SIGNATURE || sig.len() >= MIN_SIGNATURE_LENGTH
+}
+
 // ===== Safety Settings Configuration =====
 
 /// Safety threshold levels for Gemini API

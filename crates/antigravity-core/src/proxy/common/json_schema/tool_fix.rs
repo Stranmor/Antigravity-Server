@@ -60,6 +60,7 @@ fn fix_single_arg_recursive(value: &mut Value, schema: &Value) {
                 match s.to_lowercase().as_str() {
                     "true" | "1" | "yes" | "on" => *value = Value::Bool(true),
                     "false" | "0" | "no" | "off" => *value = Value::Bool(false),
+                    // Intentionally ignored: unrecognized string is not a valid boolean
                     _ => {},
                 }
             } else if let Some(n) = value.as_i64() {
@@ -75,6 +76,7 @@ fn fix_single_arg_recursive(value: &mut Value, schema: &Value) {
                 *value = Value::String(value.to_string());
             }
         },
+        // Intentionally ignored: only number/integer/boolean/string types need coercion
         _ => {},
     }
 }

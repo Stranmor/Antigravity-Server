@@ -144,10 +144,4 @@ impl UpstreamClient {
         )
         .await
     }
-
-    #[allow(dead_code)]
-    pub async fn fetch_available_models(&self, access_token: &str) -> Result<Value, String> {
-        let headers = request_executor::build_headers(access_token, HashMap::new())?;
-        request_executor::execute_fetch_models(&self.http_client, headers, &self.base_urls).await
-    }
 }

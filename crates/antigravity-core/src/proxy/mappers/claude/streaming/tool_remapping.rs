@@ -2,26 +2,6 @@
 
 use serde_json::{json, Value};
 
-/// Coerces a JSON value to a boolean if possible.
-#[allow(dead_code)]
-fn coerce_to_bool(value: &Value) -> Option<Value> {
-    match value {
-        Value::Bool(_) => Some(value.clone()),
-        Value::String(s) => {
-            let lower = s.to_lowercase();
-            if lower == "true" || lower == "yes" || lower == "1" || lower == "-n" {
-                Some(json!(true))
-            } else if lower == "false" || lower == "no" || lower == "0" {
-                Some(json!(false))
-            } else {
-                None
-            }
-        },
-        Value::Number(n) => Some(json!(n.as_i64().map(|i| i != 0).unwrap_or(false))),
-        _ => None,
-    }
-}
-
 /// Remaps function call arguments to match expected tool schemas.
 ///
 /// Different AI models may produce slightly different argument names for the same

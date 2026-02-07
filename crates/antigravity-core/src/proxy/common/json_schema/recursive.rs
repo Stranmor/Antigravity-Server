@@ -9,7 +9,6 @@ use super::union::extract_best_schema_from_union;
 /// Recursively cleans a JSON schema, normalizing types and removing unsupported fields.
 ///
 /// Returns `true` if the schema is effectively nullable (contains null type).
-#[allow(clippy::single_match)]
 pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
     let mut is_effectively_nullable = false;
 
@@ -213,6 +212,7 @@ pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
                                 }
                             }
                         },
+                        // Intentionally ignored: only String values in type array are meaningful
                         _ => {},
                     }
                     *type_val =
@@ -251,6 +251,7 @@ pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
                 let _ = clean_json_schema_recursive(item);
             }
         },
+        // Intentionally ignored: only Object/Array need recursive schema cleaning
         _ => {},
     }
 

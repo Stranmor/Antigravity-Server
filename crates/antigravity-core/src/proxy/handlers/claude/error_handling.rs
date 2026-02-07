@@ -17,7 +17,7 @@ use super::retry_logic::{
     RetryStrategy,
 };
 
-pub enum ErrorAction {
+pub enum ClaudeErrorAction {
     Retry,
     Return(Response),
 }
@@ -42,7 +42,7 @@ pub async fn handle_upstream_error(
     attempted_accounts: &mut HashSet<String>,
     retried_without_thinking: &mut bool,
     grace_retry_used: &mut bool,
-) -> ErrorAction {
+) -> ClaudeErrorAction {
     if ctx.status_code == 429 && !*grace_retry_used {
         let reason = token_manager.rate_limit_tracker().parse_rate_limit_reason(&ctx.error_text);
         if reason == RateLimitReason::RateLimitExceeded {
@@ -52,7 +52,7 @@ pub async fn handle_upstream_error(
                 ctx.trace_id, ctx.email
             );
             tokio::time::sleep(Duration::from_secs(1)).await;
-            return ErrorAction::Retry;
+            return ClaudeErrorAction::Retry;
         }
     }
 
@@ -91,7 +91,7 @@ pub async fn handle_upstream_error(
         )
         .await
         {
-            return ErrorAction::Retry;
+            return ClaudeErrorAction::Retry;
         }
     }
 
@@ -103,7 +103,7 @@ pub async fn handle_upstream_error(
             attempted_accounts.insert(ctx.email.to_string());
         }
         *grace_retry_used = false;
-        return ErrorAction::Retry;
+        return ClaudeErrorAction::Retry;
     }
 
     if ctx.status_code == 400
@@ -111,7 +111,7 @@ pub async fn handle_upstream_error(
             || ctx.error_text.contains("exceeds")
             || ctx.error_text.contains("limit"))
     {
-        return ErrorAction::Return(prompt_too_long_error(ctx.email));
+        return ClaudeErrorAction::Return(prompt_too_long_error(ctx.email));
     }
 
     tracing::error!(
@@ -120,7 +120,7 @@ pub async fn handle_upstream_error(
         ctx.status_code,
         ctx.error_text
     );
-    ErrorAction::Return(
+    ClaudeErrorAction::Return(
         (ctx.status, [("X-Account-Email", ctx.email)], ctx.error_text.clone()).into_response(),
     )
 }

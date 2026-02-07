@@ -53,14 +53,6 @@ pub fn get_user_agent_for_account(email: &str) -> &'static str {
     USER_AGENT_POOL[index]
 }
 
-/// Get all available User-Agent variants.
-///
-/// Useful for testing or manual selection.
-#[allow(dead_code)]
-pub fn get_all_user_agents() -> &'static [&'static str] {
-    USER_AGENT_POOL
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

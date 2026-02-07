@@ -18,4 +18,5 @@ pub mod quota;
 pub mod repository;
 pub mod signature_storage;
 pub(crate) mod token_extraction;
+mod token_usage_stats;
 pub(crate) mod vscode;

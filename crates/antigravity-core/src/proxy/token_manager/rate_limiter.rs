@@ -42,12 +42,12 @@ impl TokenManager {
         &self.rate_limit_tracker
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "public API used in tests")]
     pub fn get_rate_limit_reset_seconds(&self, account_id: &str) -> Option<u64> {
         self.rate_limit_tracker.get_reset_seconds(account_id)
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "public API used in tests")]
     pub fn cleanup_expired_rate_limits(&self) -> usize {
         self.rate_limit_tracker.cleanup_expired()
     }

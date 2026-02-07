@@ -144,6 +144,8 @@ impl ContextManager {
                                     total += estimate_tokens_from_str(&s);
                                 }
                             },
+                            // Intentionally ignored: Image/Document/ServerToolUse/WebSearchToolResult
+                            // contribute negligible token overhead vs. serialization cost
                             _ => {},
                         }
                     }

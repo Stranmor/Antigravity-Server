@@ -9,7 +9,7 @@ pub struct ZaiVisionMcpState {
 
 #[derive(Debug, Clone)]
 struct ZaiVisionSession {
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "stored for future session expiry logic")]
     created_at: std::time::Instant,
 }
 

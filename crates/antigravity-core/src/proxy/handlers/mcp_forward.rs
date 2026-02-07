@@ -30,6 +30,7 @@ fn copy_passthrough_headers(incoming: &HeaderMap) -> HeaderMap {
             "content-type" | "accept" | "user-agent" => {
                 out.insert(k.clone(), v.clone());
             },
+            // Intentionally ignored: all other headers stripped for MCP forwarding security
             _ => {},
         }
     }

@@ -12,16 +12,17 @@ use serde_json::{json, Value};
 use tracing::{debug, info};
 
 use super::dispatch::{decide_dispatch_mode, forward_to_zai};
-use super::error_handling::{handle_upstream_error, ErrorAction, ErrorContext};
+use super::error_handling::{handle_upstream_error, ClaudeErrorAction, ErrorContext};
 use super::preprocessing::{extract_meaningful_message, log_request_debug, log_request_info};
 use super::request_preparation::prepare_request;
 use super::request_validation::{all_retries_exhausted_error, generate_trace_id, parse_request};
 use super::response_handler::{handle_nonstreaming_success, ResponseContext};
 use super::retry_logic::MAX_RETRY_ATTEMPTS;
-use super::streaming::{handle_streaming_response, StreamResult, StreamingContext};
-use super::token_selection::{acquire_token, extract_session_id};
+use super::streaming::{handle_streaming_response, ClaudeStreamResult, StreamingContext};
+use super::token_selection::acquire_token;
 use super::upstream_call::prepare_upstream_call;
 use super::warmup::{create_warmup_response, is_warmup_request};
+use crate::proxy::session_manager::SessionManager;
 
 pub async fn handle_messages(
     State(state): State<AppState>,
@@ -87,7 +88,7 @@ pub async fn handle_messages(
         std::collections::HashSet::new();
 
     while attempt < max_attempts {
-        let session_id_str = extract_session_id(&request_for_body);
+        let session_id_str = SessionManager::extract_session_id(&request_for_body);
         let session_id = Some(session_id_str.as_str());
 
         let (mapped_model_temp, reason) = match crate::proxy::common::resolve_model_route(
@@ -216,8 +217,8 @@ pub async fn handle_messages(
                     client_wants_stream: call_config.client_wants_stream,
                 };
                 match handle_streaming_response(response, &ctx).await {
-                    StreamResult::Success(resp) => return resp,
-                    StreamResult::Retry(err) => {
+                    ClaudeStreamResult::Success(resp) => return resp,
+                    ClaudeStreamResult::Retry(err) => {
                         last_error = err;
                         attempt += 1;
                         grace_retry_used = false;
@@ -272,11 +273,11 @@ pub async fn handle_messages(
         )
         .await
         {
-            ErrorAction::Retry => {
+            ClaudeErrorAction::Retry => {
                 attempt += 1;
                 continue;
             },
-            ErrorAction::Return(resp) => return resp,
+            ClaudeErrorAction::Return(resp) => return resp,
         }
     }
 

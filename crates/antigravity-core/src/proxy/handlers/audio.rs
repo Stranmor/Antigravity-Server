@@ -46,7 +46,10 @@ pub async fn handle_audio_transcription(
             "prompt" => {
                 prompt = field.text().await.unwrap_or(prompt);
             },
-            _ => {},
+            // Intentionally ignored: unknown multipart fields (language, response_format, etc.)
+            _ => {
+                tracing::trace!("Ignoring unknown multipart field: {}", name);
+            },
         }
     }
 

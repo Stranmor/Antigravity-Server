@@ -6,7 +6,7 @@ use bytes::Bytes;
 use serde_json::json;
 
 /// Process grounding metadata from Gemini's googleSearch and emit as Claude web_search blocks
-#[allow(dead_code)] // Temporarily disabled for Cherry Studio compatibility, kept for future use
+#[allow(dead_code, reason = "disabled for Cherry Studio compatibility, will re-enable")]
 pub fn process_grounding_metadata(
     metadata: &serde_json::Value,
     state: &mut StreamingState,

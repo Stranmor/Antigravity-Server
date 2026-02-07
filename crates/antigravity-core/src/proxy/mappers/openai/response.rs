@@ -31,7 +31,10 @@ pub fn transform_openai_response(gemini_response: &Value) -> OpenAIResponse {
             {
                 for part in parts {
                     // Capture thoughtSignature (required for Gemini 3 tool calls)
-                    #[allow(deprecated)]
+                    #[allow(
+                        deprecated,
+                        reason = "thought_signature uses deprecated snake_case fallback for upstream compatibility"
+                    )]
                     if let Some(sig) = part
                         .get("thoughtSignature")
                         .or(part.get("thought_signature"))

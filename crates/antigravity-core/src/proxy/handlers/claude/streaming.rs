@@ -28,7 +28,7 @@ pub struct StreamingContext {
     pub client_wants_stream: bool,
 }
 
-pub enum StreamResult {
+pub enum ClaudeStreamResult {
     Success(Response),
     Retry(String),
 }
@@ -36,7 +36,7 @@ pub enum StreamResult {
 pub async fn handle_streaming_response(
     response: reqwest::Response,
     ctx: &StreamingContext,
-) -> StreamResult {
+) -> ClaudeStreamResult {
     let stream = response.bytes_stream();
     let gemini_stream = Box::pin(stream);
 
@@ -55,7 +55,7 @@ pub async fn handle_streaming_response(
         match peek_first_data_chunk(claude_stream, &peek_config, &ctx.trace_id).await {
             PeekResult::Data(bytes, stream) => (Some(bytes), stream),
             PeekResult::Retry(err) => {
-                return StreamResult::Retry(err);
+                return ClaudeStreamResult::Retry(err);
             },
         };
 
@@ -65,9 +65,9 @@ pub async fn handle_streaming_response(
             let combined_stream = build_combined_stream(bytes, stream_rest);
 
             if ctx.client_wants_stream {
-                StreamResult::Success(build_sse_response(ctx, combined_stream))
+                ClaudeStreamResult::Success(build_sse_response(ctx, combined_stream))
             } else {
-                StreamResult::Success(collect_to_json_response(ctx, combined_stream).await)
+                ClaudeStreamResult::Success(collect_to_json_response(ctx, combined_stream).await)
             }
         },
         None => {
@@ -75,7 +75,7 @@ pub async fn handle_streaming_response(
                 "[{}] No data after peek loop (should not happen), retrying...",
                 ctx.trace_id
             );
-            StreamResult::Retry("Empty response after peek".to_string())
+            ClaudeStreamResult::Retry("Empty response after peek".to_string())
         },
     }
 }
