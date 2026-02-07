@@ -70,14 +70,8 @@ async fn test_upstream_proxy_flow() {
         let result =
             client.call_v1_internal("generateContent", "fake-token", request_body(), None).await;
 
-        match result {
-            Ok(resp) => assert_eq!(resp.status(), 500, "500 scenario: wrong status"),
-            Err(e) => assert!(
-                e.contains("500") || e.contains("failed"),
-                "500 scenario: unexpected error: {}",
-                e
-            ),
-        }
+        let resp = result.expect("500 scenario: client should return Ok(Response), not Err");
+        assert_eq!(resp.status(), 500, "500 scenario: wrong status");
     }
 
     {
@@ -96,13 +90,7 @@ async fn test_upstream_proxy_flow() {
         let result =
             client.call_v1_internal("generateContent", "fake-token", request_body(), None).await;
 
-        match result {
-            Ok(resp) => assert_eq!(resp.status(), 429, "429 scenario: wrong status"),
-            Err(e) => assert!(
-                e.contains("429") || e.contains("failed"),
-                "429 scenario: unexpected error: {}",
-                e
-            ),
-        }
+        let resp = result.expect("429 scenario: client should return Ok(Response), not Err");
+        assert_eq!(resp.status(), 429, "429 scenario: wrong status");
     }
 }
