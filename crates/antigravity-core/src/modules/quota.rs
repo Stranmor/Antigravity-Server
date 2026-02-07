@@ -70,7 +70,7 @@ async fn fetch_project_id(access_token: &str, email: &str) -> (Option<String>, O
         .post(format!("{}/v1internal:loadCodeAssist", CLOUD_CODE_BASE_URL))
         .header(reqwest::header::AUTHORIZATION, format!("Bearer {}", access_token))
         .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .header(reqwest::header::USER_AGENT, "antigravity/4.0.8 windows/amd64")
+        .header(reqwest::header::USER_AGENT, USER_AGENT)
         .json(&meta)
         .send()
         .await;
@@ -150,7 +150,7 @@ pub async fn fetch_quota_inner(
             .post(url)
             .bearer_auth(access_token)
             .header("User-Agent", USER_AGENT)
-            .json(&json!(payload))
+            .json(&payload)
             .send()
             .await
         {
