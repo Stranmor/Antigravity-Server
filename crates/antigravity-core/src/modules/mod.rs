@@ -6,6 +6,7 @@ pub(crate) mod account_pg_crud;
 pub(crate) mod account_pg_events;
 pub(crate) mod account_pg_helpers;
 pub(crate) mod account_pg_query;
+pub(crate) mod account_pg_targeted;
 pub mod config;
 pub mod device;
 pub mod json_migration;

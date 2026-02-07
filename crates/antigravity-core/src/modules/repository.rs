@@ -169,4 +169,24 @@ pub trait AccountRepository: Send + Sync {
     async fn get_account_health(&self, account_id: &str) -> RepoResult<AccountHealth>;
     /// Get recent events for account.
     async fn get_events(&self, account_id: &str, limit: i64) -> RepoResult<Vec<AccountEvent>>;
+
+    /// Update only token credentials (atomic, no read-modify-write).
+    async fn update_token_credentials(
+        &self,
+        account_id: &str,
+        access_token: &str,
+        expires_in: i64,
+        expiry_timestamp: i64,
+    ) -> RepoResult<()>;
+
+    /// Update only the project_id on a token (atomic, no read-modify-write).
+    async fn update_project_id(&self, account_id: &str, project_id: &str) -> RepoResult<()>;
+
+    /// Disable an account (atomic, no read-modify-write).
+    async fn set_account_disabled(
+        &self,
+        account_id: &str,
+        reason: &str,
+        disabled_at: i64,
+    ) -> RepoResult<()>;
 }

@@ -37,13 +37,21 @@ impl TokenManager {
                         "Disabling account due to invalid_grant ({}): refresh_token likely revoked/expired",
                         token.email
                     );
-                    if let Err(e) = self
+                    match self
                         .disable_account(&token.account_id, &format!("invalid_grant: {}", e))
                         .await
                     {
-                        tracing::warn!("Failed to disable account {}: {}", token.email, e);
+                        Ok(()) => {
+                            self.tokens.remove(&token.account_id);
+                        },
+                        Err(disable_err) => {
+                            tracing::warn!(
+                                "Failed to disable account {}: {} — keeping in memory to prevent reload loop",
+                                token.email,
+                                disable_err
+                            );
+                        },
                     }
-                    self.tokens.remove(&token.account_id);
                 }
                 Err(format!("Token refresh failed: {}", e))
             },

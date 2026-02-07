@@ -46,10 +46,9 @@ impl TokenManager {
         account_id: &str,
         project_id: &str,
     ) -> Result<(), String> {
-        let mut account =
-            repo.get_account(account_id).await.map_err(|e| format!("DB read: {}", e))?;
-        account.token.project_id = Some(project_id.to_string());
-        repo.update_account(&account).await.map_err(|e| format!("DB write: {}", e))?;
+        repo.update_project_id(account_id, project_id)
+            .await
+            .map_err(|e| format!("DB write: {}", e))?;
         tracing::debug!("Saved project_id to DB for account {}", account_id);
         Ok(())
     }
@@ -95,13 +94,16 @@ impl TokenManager {
         account_id: &str,
         token_response: &oauth::TokenResponse,
     ) -> Result<(), String> {
-        let mut account =
-            repo.get_account(account_id).await.map_err(|e| format!("DB read: {}", e))?;
         let now = chrono::Utc::now().timestamp();
-        account.token.access_token = token_response.access_token.clone();
-        account.token.expires_in = token_response.expires_in;
-        account.token.expiry_timestamp = now + token_response.expires_in;
-        repo.update_account(&account).await.map_err(|e| format!("DB write: {}", e))?;
+        let expiry = now + token_response.expires_in;
+        repo.update_token_credentials(
+            account_id,
+            &token_response.access_token,
+            token_response.expires_in,
+            expiry,
+        )
+        .await
+        .map_err(|e| format!("DB write: {}", e))?;
         tracing::debug!("Saved refreshed token to DB for account {}", account_id);
         Ok(())
     }
@@ -156,12 +158,11 @@ impl TokenManager {
     ) -> Result<(), String> {
         use super::file_utils::truncate_reason;
 
-        let mut account =
-            repo.get_account(account_id).await.map_err(|e| format!("DB read: {}", e))?;
-        account.disabled = true;
-        account.disabled_at = Some(chrono::Utc::now().timestamp());
-        account.disabled_reason = Some(truncate_reason(reason, 800));
-        repo.update_account(&account).await.map_err(|e| format!("DB write: {}", e))?;
+        let now = chrono::Utc::now().timestamp();
+        let truncated = truncate_reason(reason, 800);
+        repo.set_account_disabled(account_id, &truncated, now)
+            .await
+            .map_err(|e| format!("DB write: {}", e))?;
         tracing::warn!("Account disabled in DB: {}", account_id);
         Ok(())
     }

@@ -12,6 +12,9 @@ use crate::modules::account_pg_events::{
 use crate::modules::account_pg_query::{
     get_account_by_email_impl, get_account_impl, list_accounts_impl,
 };
+use crate::modules::account_pg_targeted::{
+    set_account_disabled_impl, update_project_id_impl, update_token_credentials_impl,
+};
 use crate::modules::repository::{
     AccountEvent, AccountHealth, AccountRepository, RepoResult, RepositoryError, RequestLog,
 };
@@ -127,5 +130,35 @@ impl AccountRepository for PostgresAccountRepository {
 
     async fn get_events(&self, account_id: &str, limit: i64) -> RepoResult<Vec<AccountEvent>> {
         get_events_impl(&self.pool, account_id, limit).await
+    }
+
+    async fn update_token_credentials(
+        &self,
+        account_id: &str,
+        access_token: &str,
+        expires_in: i64,
+        expiry_timestamp: i64,
+    ) -> RepoResult<()> {
+        update_token_credentials_impl(
+            &self.pool,
+            account_id,
+            access_token,
+            expires_in,
+            expiry_timestamp,
+        )
+        .await
+    }
+
+    async fn update_project_id(&self, account_id: &str, project_id: &str) -> RepoResult<()> {
+        update_project_id_impl(&self.pool, account_id, project_id).await
+    }
+
+    async fn set_account_disabled(
+        &self,
+        account_id: &str,
+        reason: &str,
+        disabled_at: i64,
+    ) -> RepoResult<()> {
+        set_account_disabled_impl(&self.pool, account_id, reason, disabled_at).await
     }
 }

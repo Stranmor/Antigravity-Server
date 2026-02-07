@@ -151,6 +151,11 @@ vendor/
 |------|-------|----------|
 | `proxy/common/json_schema/recursive.rs` | `if/else if/else` for `properties`/`items` is mutually exclusive — if schema has BOTH, `items` won't be recursively cleaned | Medium |
 | `proxy/common/json_schema/recursive.rs` | `else` fallback block treats ALL remaining fields as schemas — data fields like `enum` values or `const` containing object-like structures could be corrupted by normalization | Low |
+| `proxy/token_manager/token_refresh.rs` | Concurrent token refresh race: multiple requests can trigger simultaneous `refresh_access_token` calls for the same account, potentially causing `invalid_grant` if provider rotates refresh tokens | Medium |
+| `proxy/token_manager/token_refresh.rs` | Missing refresh_token update: if OAuth provider returns a new refresh_token (rotation), only access_token is updated in memory — old refresh_token persisted | Medium |
+| `proxy/token_manager/persistence.rs` | `file_locks` DashMap grows unbounded — one Mutex per account_id, never cleaned up | Low |
+| `proxy/token_manager/store.rs` | JSON indexing (`content["token"]["field"]`) can panic if file has unexpected structure (not object, missing "token" key) | Low |
+| `proxy/token_manager/selection_helpers.rs` | Hardcoded fallback project_id `"bamboo-precept-lgxtn"` when fetch_project_id fails — should propagate error | Medium |
 
 ---
 
