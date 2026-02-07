@@ -134,21 +134,16 @@ impl TokenManager {
             if !candidate.is_ultra_tier() {
                 continue;
             }
-            if attempted.contains(&candidate.email) {
+            if !self.is_candidate_eligible(
+                candidate,
+                normalized_target,
+                attempted,
+                quota_protection_enabled,
+                aimd,
+                true,
+                true,
+            ) {
                 continue;
-            }
-            if self.is_rate_limited_for_model(&candidate.email, normalized_target) {
-                continue;
-            }
-            if quota_protection_enabled
-                && self.is_model_protected(&candidate.account_id, normalized_target)
-            {
-                continue;
-            }
-            if let Some(aimd) = aimd {
-                if aimd.usage_ratio(&candidate.email) > 1.2 {
-                    continue;
-                }
             }
 
             let active = self.get_active_requests(&candidate.email);
@@ -257,21 +252,16 @@ impl TokenManager {
         let mut scored_candidates: Vec<(&ProxyToken, u8, u32)> = Vec::new();
 
         for candidate in tokens_snapshot {
-            if attempted.contains(&candidate.email) {
+            if !self.is_candidate_eligible(
+                candidate,
+                normalized_target,
+                attempted,
+                quota_protection_enabled,
+                aimd,
+                true,
+                true,
+            ) {
                 continue;
-            }
-            if self.is_rate_limited_for_model(&candidate.email, normalized_target) {
-                continue;
-            }
-            if quota_protection_enabled
-                && self.is_model_protected(&candidate.account_id, normalized_target)
-            {
-                continue;
-            }
-            if let Some(aimd) = aimd {
-                if aimd.usage_ratio(&candidate.email) > 1.2 {
-                    continue;
-                }
             }
 
             let active = self.get_active_requests(&candidate.email);

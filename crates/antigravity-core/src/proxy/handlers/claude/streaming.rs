@@ -1,13 +1,9 @@
 //! Streaming response handling for Claude messages
-#![allow(
-    clippy::unwrap_used,
-    reason = "Response::builder() with valid constant headers cannot fail"
-)]
 
 use axum::{
     body::Body,
     http::{header, StatusCode},
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use bytes::Bytes;
 use futures::StreamExt;
@@ -129,7 +125,10 @@ where
         .header("X-Mapped-Model", &ctx.mapped_model)
         .header("X-Mapping-Reason", &ctx.reason)
         .body(Body::from_stream(stream))
-        .unwrap()
+        .unwrap_or_else(|e| {
+            tracing::error!("Failed to build SSE response: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal streaming setup error").into_response()
+        })
 }
 
 async fn collect_to_json_response<S>(ctx: &StreamingContext, stream: S) -> Response
@@ -159,7 +158,11 @@ where
                             .into_response();
                     },
                 }))
-                .unwrap()
+                .unwrap_or_else(|e| {
+                    tracing::error!("Failed to build JSON response: {}", e);
+                    (StatusCode::INTERNAL_SERVER_ERROR, "Internal response setup error")
+                        .into_response()
+                })
         },
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Stream collection error: {}", e))
             .into_response(),

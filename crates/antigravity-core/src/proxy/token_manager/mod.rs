@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
+mod candidate_filter;
 mod file_utils;
 mod health;
 mod persistence;

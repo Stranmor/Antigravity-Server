@@ -1,5 +1,4 @@
 //! OpenAI chat streaming handler.
-#![allow(clippy::expect_used, reason = "Response::builder() with valid headers cannot fail")]
 
 use crate::proxy::mappers::openai::OpenAIResponse;
 use axum::body::Body;
@@ -106,8 +105,10 @@ fn build_sse_response(
         .header("X-Mapped-Model", &mapped_model)
         .header("X-Mapping-Reason", &reason)
         .body(body)
-        .expect("valid streaming response")
-        .into_response()
+        .unwrap_or_else(|e| {
+            tracing::error!("Failed to build SSE response: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal streaming setup error").into_response()
+        })
 }
 
 async fn collect_to_json(

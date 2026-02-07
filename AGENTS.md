@@ -145,6 +145,13 @@ vendor/
 - [x] **Account auto-sync** (60s interval) ✅ [2026-01-19]
 - [ ] **Extract `antigravity-proxy` crate** (optional cleanup)
 
+### ⚠️ Known Issues (Tech Debt)
+
+| File | Issue | Severity |
+|------|-------|----------|
+| `proxy/common/json_schema/recursive.rs` | `if/else if/else` for `properties`/`items` is mutually exclusive — if schema has BOTH, `items` won't be recursively cleaned | Medium |
+| `proxy/common/json_schema/recursive.rs` | `else` fallback block treats ALL remaining fields as schemas — data fields like `enum` values or `const` containing object-like structures could be corrupted by normalization | Low |
+
 ---
 
 ## 🧠 SMART ROUTING ARCHITECTURE [2026-01-30]

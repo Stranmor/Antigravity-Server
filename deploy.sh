@@ -54,7 +54,12 @@ ANTIGRAVITY_DATA_DIR=/root/.antigravity_tools
 ENVEOF
         fi
 
-        cat > /etc/systemd/system/antigravity.service <<EOF
+        if [[ -f /etc/NIXOS ]]; then
+            # NixOS: systemd units are declarative (read-only /etc/systemd/system).
+            # Unit is managed via configuration.nix — just restart the service.
+            systemctl restart antigravity.service
+        else
+            cat > /etc/systemd/system/antigravity.service <<EOF
 [Unit]
 Description=Antigravity AI Gateway
 After=network-online.target postgresql.service
@@ -73,9 +78,10 @@ EnvironmentFile=${REMOTE_DIR}/.env
 [Install]
 WantedBy=multi-user.target
 EOF
-        systemctl daemon-reload
-        systemctl enable antigravity.service
-        systemctl restart antigravity.service
+            systemctl daemon-reload
+            systemctl enable antigravity.service
+            systemctl restart antigravity.service
+        fi
 REMOTE_SCRIPT
     success "Service restarted"
 
@@ -104,8 +110,10 @@ cmd_rollback() {
         PREV_NIX=$(dirname "$(dirname "${PREV_BIN}")")
         ln -sf "${PREV_BIN}" "${REMOTE_DIR}/antigravity-server"
 
-        sed -i "s|^ExecStart=.*|ExecStart=${PREV_BIN}|" /etc/systemd/system/antigravity.service
-        systemctl daemon-reload
+        if [[ ! -f /etc/NIXOS ]]; then
+            sed -i "s|^ExecStart=.*|ExecStart=${PREV_BIN}|" /etc/systemd/system/antigravity.service
+            systemctl daemon-reload
+        fi
         systemctl restart antigravity.service
 REMOTE_SCRIPT
 

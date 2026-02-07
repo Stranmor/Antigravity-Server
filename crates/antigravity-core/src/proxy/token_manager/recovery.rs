@@ -28,10 +28,15 @@ impl TokenManager {
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
                 for t in tokens_snapshot {
-                    if attempted.contains(&t.email) {
-                        continue;
-                    }
-                    if self.is_rate_limited_for_model(&t.email, normalized_target) {
+                    if !self.is_candidate_eligible(
+                        t,
+                        normalized_target,
+                        attempted,
+                        false,
+                        &None,
+                        false,
+                        false,
+                    ) {
                         continue;
                     }
                     if ActiveRequestGuard::try_new(
