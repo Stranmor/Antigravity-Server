@@ -6,7 +6,6 @@ pub mod claude_response;
 pub mod collector;
 pub mod content_block;
 pub mod gemini_models;
-pub mod grounding;
 pub mod grounding_models;
 pub mod models;
 pub mod request;
@@ -25,7 +24,6 @@ mod signature_tests;
 mod tests_request;
 
 pub use collector::collect_stream_to_json;
-pub use grounding::process_grounding_metadata;
 pub use models::*;
 pub use request::{
     clean_cache_control_from_messages, merge_consecutive_messages, transform_claude_request_in,

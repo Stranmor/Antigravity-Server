@@ -1,4 +1,4 @@
-use super::state::{BlockType, StreamingState};
+use super::state::StreamingState;
 use bytes::Bytes;
 use serde_json::json;
 
@@ -54,72 +54,5 @@ impl StreamingState {
 
         self.message_start_sent = true;
         result
-    }
-
-    #[allow(
-        dead_code,
-        reason = "error recovery API, will be wired when stream corruption handling is enabled"
-    )]
-    pub fn handle_parse_error(&mut self, raw_data: &str) -> Vec<Bytes> {
-        let mut chunks = Vec::new();
-
-        self.parse_error_count += 1;
-
-        tracing::warn!(
-            "[SSE-Parser] Parse error #{} occurred. Raw data length: {} bytes",
-            self.parse_error_count,
-            raw_data.len()
-        );
-
-        if self.block_type != BlockType::None {
-            self.last_valid_state = Some(self.block_type);
-            chunks.extend(self.end_block());
-        }
-
-        #[cfg(debug_assertions)]
-        {
-            let preview = if raw_data.len() > 100 {
-                format!("{}...", &raw_data[..100])
-            } else {
-                raw_data.to_string()
-            };
-            tracing::debug!("[SSE-Parser] Failed chunk preview: {}", preview);
-        }
-
-        if self.parse_error_count > 3 {
-            tracing::error!(
-                "[SSE-Parser] High error rate detected ({} errors). Stream may be corrupted.",
-                self.parse_error_count
-            );
-
-            chunks.push(self.emit(
-                "error",
-                json!({
-                    "type": "error",
-                    "error": {
-                        "type": "network_error",
-                        "message": "Network connection unstable.",
-                        "code": "stream_decode_error",
-                        "details": {
-                            "error_count": self.parse_error_count,
-                            "suggestion": "Check network connection or retry."
-                        }
-                    }
-                }),
-            ));
-        }
-
-        chunks
-    }
-
-    #[allow(dead_code, reason = "error recovery API, paired with handle_parse_error")]
-    pub fn reset_error_state(&mut self) {
-        self.parse_error_count = 0;
-        self.last_valid_state = None;
-    }
-
-    #[allow(dead_code, reason = "error recovery API, paired with handle_parse_error")]
-    pub fn get_error_count(&self) -> usize {
-        self.parse_error_count
     }
 }

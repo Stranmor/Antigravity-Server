@@ -43,12 +43,6 @@ pub struct StreamingState {
     pub web_search_query: Option<String>,
     /// Grounding chunks from web search.
     pub grounding_chunks: Option<Vec<serde_json::Value>>,
-    /// Count of parse errors for error recovery.
-    #[allow(dead_code, reason = "used by error recovery API in state_events.rs, not yet wired")]
-    pub(super) parse_error_count: usize,
-    /// Last valid block type before error.
-    #[allow(dead_code, reason = "used by error recovery API in state_events.rs, not yet wired")]
-    pub(super) last_valid_state: Option<BlockType>,
     /// Model name from response.
     pub model_name: Option<String>,
     /// Session ID for request tracking.
@@ -90,8 +84,6 @@ impl StreamingState {
             trailing_signature: None,
             web_search_query: None,
             grounding_chunks: None,
-            parse_error_count: 0,
-            last_valid_state: None,
             model_name: None,
             session_id: None,
             scaling_enabled: false,

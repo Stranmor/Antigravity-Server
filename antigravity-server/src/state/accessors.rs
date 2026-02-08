@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use antigravity_core::models::Account;
 use antigravity_core::modules::account;
-use antigravity_core::modules::repository::{AccountRepository, RepoResult, RepositoryError};
+use antigravity_core::modules::repository::AccountRepository;
 use antigravity_core::proxy::{
     AdaptiveLimitManager, CircuitBreakerManager, HealthMonitor, ProxySecurityConfig,
 };
@@ -185,19 +185,6 @@ impl AppState {
 
     pub fn repository(&self) -> Option<&Arc<dyn AccountRepository>> {
         self.inner.repository.as_ref()
-    }
-
-    #[allow(dead_code, reason = "API for PostgreSQL integration — used by future API endpoints")]
-    pub fn has_database(&self) -> bool {
-        self.inner.repository.is_some()
-    }
-
-    #[allow(dead_code, reason = "API for PostgreSQL integration — used by future API endpoints")]
-    pub async fn list_accounts_db(&self) -> RepoResult<Vec<Account>> {
-        match &self.inner.repository {
-            Some(repo) => repo.list_accounts().await,
-            None => Err(RepositoryError::Database("No database configured".to_string())),
-        }
     }
 }
 
