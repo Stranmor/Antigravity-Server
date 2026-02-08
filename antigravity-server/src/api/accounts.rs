@@ -26,9 +26,10 @@ pub struct AccountInfo {
 pub async fn list_accounts(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<AccountInfo>>, (StatusCode, String)> {
-    let current_id = state.get_current_account().ok().flatten().map(|a| a.id);
+    let current_id = state.get_current_account().await.ok().flatten().map(|a| a.id);
 
-    let accounts = state.list_accounts().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let accounts =
+        state.list_accounts().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     let infos: Vec<AccountInfo> = accounts
         .into_iter()
@@ -51,7 +52,7 @@ pub async fn list_accounts(
 pub async fn get_current_account(
     State(state): State<AppState>,
 ) -> Result<Json<Option<AccountInfo>>, (StatusCode, String)> {
-    match state.get_current_account() {
+    match state.get_current_account().await {
         Ok(Some(a)) => Ok(Json(Some(AccountInfo {
             id: a.id.clone(),
             email: a.email.clone(),

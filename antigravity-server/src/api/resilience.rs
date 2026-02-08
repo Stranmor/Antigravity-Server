@@ -63,7 +63,7 @@ pub async fn get_metrics(
     use axum::http::header;
     use axum::response::IntoResponse;
 
-    let accounts = state.list_accounts().unwrap_or_default();
+    let accounts = state.list_accounts().await.unwrap_or_default();
     let available = accounts.iter().filter(|a| !a.disabled && !a.proxy_disabled).count();
     antigravity_core::proxy::prometheus::update_account_gauges(accounts.len(), available);
     antigravity_core::proxy::prometheus::update_uptime_gauge();

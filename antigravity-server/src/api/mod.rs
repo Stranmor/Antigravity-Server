@@ -111,12 +111,12 @@ struct StatusResponse {
 }
 
 async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
-    let current = state.get_current_account().ok().flatten();
+    let current = state.get_current_account().await.ok().flatten();
 
     Json(StatusResponse {
         version: env!("CARGO_PKG_VERSION").to_string(),
         proxy_running: true,
-        accounts_count: state.get_account_count(),
+        accounts_count: state.get_account_count().await,
         current_account: current.map(|a| a.email),
     })
 }

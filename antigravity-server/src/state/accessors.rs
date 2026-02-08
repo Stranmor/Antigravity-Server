@@ -22,25 +22,41 @@ impl AppState {
         self.inner.bound_port.load(Ordering::Relaxed)
     }
 
-    pub fn list_accounts(&self) -> Result<Vec<Account>, String> {
-        account::list_accounts()
+    pub async fn list_accounts(&self) -> Result<Vec<Account>, String> {
+        if let Some(repo) = self.repository() {
+            repo.list_accounts().await.map_err(|e| e.to_string())
+        } else {
+            account::list_accounts()
+        }
     }
 
-    pub fn get_current_account(&self) -> Result<Option<Account>, String> {
-        account::get_current_account()
+    pub async fn get_current_account(&self) -> Result<Option<Account>, String> {
+        if let Some(repo) = self.repository() {
+            let id = repo.get_current_account_id().await.map_err(|e| e.to_string())?;
+            match id {
+                Some(account_id) => {
+                    repo.get_account(&account_id).await.map(Some).map_err(|e| e.to_string())
+                },
+                None => Ok(None),
+            }
+        } else {
+            account::get_current_account()
+        }
     }
 
     pub async fn switch_account(&self, account_id: &str) -> Result<(), String> {
         account::switch_account(account_id).await
     }
 
-    pub fn get_account_count(&self) -> usize {
-        match account::list_accounts() {
-            Ok(accounts) => accounts.iter().filter(|a| !a.disabled).count(),
-            Err(e) => {
-                tracing::warn!("Failed to get account count: {}", e);
-                0
-            },
+    pub async fn get_account_count(&self) -> usize {
+        let accounts = if let Some(repo) = self.repository() {
+            repo.list_accounts().await.ok()
+        } else {
+            account::list_accounts().ok()
+        };
+        match accounts {
+            Some(accs) => accs.iter().filter(|a| !a.disabled).count(),
+            None => 0,
         }
     }
 

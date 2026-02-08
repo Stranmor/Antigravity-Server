@@ -174,7 +174,7 @@ async fn run_server(port: u16) -> Result<()> {
     .await?;
 
     info!("✅ Application state initialized");
-    info!("📊 {} accounts loaded", state.get_account_count());
+    info!("📊 {} accounts loaded", state.get_account_count().await);
 
     scheduler::start(state.clone());
     scheduler::start_quota_refresh(state.clone());
