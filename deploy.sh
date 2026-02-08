@@ -121,15 +121,15 @@ EOF
 REMOTE_SCRIPT
     success "Service restarted"
 
-    log "Waiting for health check..."
-    for i in $(seq 1 10); do
+    log "Waiting for health check (up to 60s — initial quota refresh may take time)..."
+    for i in $(seq 1 15); do
         if ssh "${VPS_HOST}" "curl -sf http://localhost:${PORT}/api/health" >/dev/null 2>&1; then
             success "Deploy complete: ${URL}"
             return 0
         fi
-        sleep 2
+        sleep 4
     done
-    error "Health check failed after 20s — check logs: ./deploy.sh logs"
+    error "Health check failed after 60s — check logs: ./deploy.sh logs"
 }
 
 cmd_rollback() {
@@ -153,14 +153,14 @@ cmd_rollback() {
         systemctl restart antigravity.service
 REMOTE_SCRIPT
 
-    for i in $(seq 1 10); do
+    for i in $(seq 1 15); do
         if ssh "${VPS_HOST}" "curl -sf http://localhost:${PORT}/api/health" >/dev/null 2>&1; then
             success "Rollback complete: ${URL}"
             return 0
         fi
-        sleep 2
+        sleep 4
     done
-    error "Rollback health check failed after 20s"
+    error "Rollback health check failed after 60s"
 }
 
 cmd_status() {

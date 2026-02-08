@@ -32,9 +32,9 @@ impl TokenManager {
                         t,
                         normalized_target,
                         attempted,
-                        false,
+                        quota_protection_enabled,
                         &None,
-                        false,
+                        true,
                         false,
                     ) {
                         continue;
@@ -61,7 +61,15 @@ impl TokenManager {
                 self.rate_limit_tracker.clear_all();
 
                 for t in tokens_snapshot {
-                    if attempted.contains(&t.email) {
+                    if !self.is_candidate_eligible(
+                        t,
+                        normalized_target,
+                        attempted,
+                        quota_protection_enabled,
+                        &None,
+                        true,
+                        false,
+                    ) {
                         continue;
                     }
                     if ActiveRequestGuard::try_new(

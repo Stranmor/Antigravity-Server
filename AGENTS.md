@@ -144,7 +144,7 @@ vendor/
 | Duplicate type definitions | ~20 | **0** |
 | `#[allow(warnings)]` | 11 modules | **0** |
 | Clippy warnings suppressed | ~58 | **0** |
-| Unit tests | - | **292** |
+| Unit tests | - | **346** |
 | Integration tests | - | **1** |
 | Clippy status | ⚠️ | **✅ -D warnings** |
 | Release build | - | **11MB** |
@@ -175,7 +175,6 @@ vendor/
 | `proxy/token_manager/mod.rs` | `active_requests` DashMap entries never cleaned up when count drops to zero — grows unbounded with unique emails | Low |
 | `server_utils.rs` | Hardcoded `Domain::IPV4` prevents IPv6 binding; `format!("{}:{}")` generates invalid syntax for IPv6 addresses — should parse `IpAddr` first and derive domain | Low |
 | `proxy/handlers/gemini/models.rs` | `handle_get_model` accepts any model_name without validation against available models, returns incomplete JSON (missing `inputTokenLimit` etc.) | Low |
-| `proxy/token_manager/recovery.rs` | Optimistic reset retry loop (line 63) doesn't check `protected_models` — can route request to account with exhausted quota for that specific model (upstream fixed in 6159a57) | Low |
 
 ---
 
