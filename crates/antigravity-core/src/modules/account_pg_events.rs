@@ -32,6 +32,16 @@ pub(crate) async fn update_quota_impl(
     .await
     .map_err(map_sqlx_err)?;
 
+    // Persist subscription tier to tokens table (source of truth for account tier display)
+    if let Some(ref tier) = quota.subscription_tier {
+        sqlx::query("UPDATE tokens SET tier = $1 WHERE account_id = $2")
+            .bind(tier)
+            .bind(uuid)
+            .execute(pool)
+            .await
+            .map_err(map_sqlx_err)?;
+    }
+
     log_event_impl(
         pool,
         AccountEvent {
