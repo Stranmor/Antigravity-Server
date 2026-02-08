@@ -55,9 +55,15 @@ pub async fn handle_count_tokens(
         .await;
     }
 
-    Json(json!({
-        "input_tokens": 0,
-        "output_tokens": 0
-    }))
-    .into_response()
+    // Non-ZAI fallback: Anthropic format cannot be forwarded to Gemini countTokens
+    (
+        axum::http::StatusCode::NOT_IMPLEMENTED,
+        Json(json!({
+            "error": {
+                "type": "not_implemented",
+                "message": "Token counting requires ZAI mode to be enabled"
+            }
+        })),
+    )
+        .into_response()
 }

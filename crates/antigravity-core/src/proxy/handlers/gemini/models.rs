@@ -41,13 +41,40 @@ pub async fn handle_get_model(Path(model_name): Path<String>) -> impl IntoRespon
 
 pub async fn handle_count_tokens(
     State(state): State<AppState>,
-    Path(_model_name): Path<String>,
-    Json(_body): Json<Value>,
+    Path(model_name): Path<String>,
+    Json(body): Json<Value>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let (_access_token, _project_id, _email, _guard) = state
+    let (mapped_model, _reason) =
+        crate::proxy::common::resolve_model_route(&model_name, &*state.custom_mapping.read().await)
+            .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+
+    let (access_token, project_id, _email, _guard) = state
         .token_manager
-        .get_token("gemini", false, None, "gemini")
+        .get_token("gemini", false, None, &mapped_model)
         .await
         .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, format!("Token error: {}", e)))?;
-    Ok(Json(json!({"totalTokens": 0})))
+
+    let wrapped_body =
+        crate::proxy::mappers::gemini::wrap_request(&body, &project_id, &mapped_model, None);
+
+    let response = state
+        .upstream
+        .call_v1_internal("countTokens", &access_token, wrapped_body, None)
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Upstream error: {}", e)))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let error_text =
+            response.text().await.unwrap_or_else(|_| format!("HTTP {}", status.as_u16()));
+        return Err((status, error_text));
+    }
+
+    let resp: Value = response
+        .json()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Parse error: {}", e)))?;
+
+    let unwrapped = crate::proxy::mappers::gemini::unwrap_response(&resp);
+    Ok(Json(unwrapped))
 }
