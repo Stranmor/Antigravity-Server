@@ -57,20 +57,36 @@ cmd_deploy_local() {
     fi
     success "New instance ready (PID: ${NEW_PID})"
 
-    mv "${BINARY_PATH}.new" "${BINARY_PATH}"
+    trap 'kill $NEW_PID 2>/dev/null; rm -f "${BINARY_PATH}.new"' EXIT INT TERM
+
+    mv "${BINARY_PATH}.new" "${BINARY_PATH}" || {
+        trap - EXIT INT TERM
+        kill "$NEW_PID" 2>/dev/null || true
+        error "Failed to replace binary — old version preserved, overlap killed"
+    }
 
     log "Restarting systemd service (SO_REUSEPORT keeps new instance alive)..."
     systemctl --user restart "${SERVICE_LOCAL}"
-    sleep 2
 
-    log "Stopping overlap instance..."
-    kill "$NEW_PID" 2>/dev/null || true
+    local systemd_ready=false
+    for _ in $(seq 1 15); do
+        sleep 1
+        if systemctl --user is-active --quiet "${SERVICE_LOCAL}"; then
+            systemd_ready=true
+            break
+        fi
+    done
 
-    if systemctl --user is-active --quiet "${SERVICE_LOCAL}"; then
-        success "Zero-downtime local deploy complete!"
-    else
-        error "Service failed after deploy — check: systemctl --user status ${SERVICE_LOCAL}"
+    if ! $systemd_ready; then
+        log "WARNING: systemd instance failed — overlap still serving traffic"
+        log "Overlap PID: ${NEW_PID} — investigate manually"
+        trap - EXIT INT TERM
+        exit 1
     fi
+
+    trap - EXIT INT TERM
+    kill "$NEW_PID" 2>/dev/null || true
+    success "Zero-downtime local deploy complete!"
 }
 
 cmd_deploy() {

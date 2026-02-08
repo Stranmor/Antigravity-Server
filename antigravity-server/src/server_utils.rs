@@ -60,6 +60,6 @@ pub async fn shutdown_signal() {
         () = terminate => info!("🛑 Received SIGTERM, initiating graceful shutdown..."),
     }
 
-    info!("⏳ Graceful shutdown initiated...");
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    info!("⏳ Graceful shutdown initiated, draining active connections...");
+    tokio::time::sleep(Duration::from_secs(1)).await;
 }
