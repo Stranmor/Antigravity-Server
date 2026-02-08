@@ -123,7 +123,7 @@ REMOTE_SCRIPT
 
     log "Waiting for health check (up to 60s — initial quota refresh may take time)..."
     for i in $(seq 1 15); do
-        if ssh "${VPS_HOST}" "curl -sf http://localhost:${PORT}/api/health" >/dev/null 2>&1; then
+        if ssh "${VPS_HOST}" "curl -sf http://localhost:${PORT}/v1/models" >/dev/null 2>&1; then
             success "Deploy complete: ${URL}"
             return 0
         fi
@@ -154,7 +154,7 @@ cmd_rollback() {
 REMOTE_SCRIPT
 
     for i in $(seq 1 15); do
-        if ssh "${VPS_HOST}" "curl -sf http://localhost:${PORT}/api/health" >/dev/null 2>&1; then
+        if ssh "${VPS_HOST}" "curl -sf http://localhost:${PORT}/v1/models" >/dev/null 2>&1; then
             success "Rollback complete: ${URL}"
             return 0
         fi
@@ -168,7 +168,7 @@ cmd_status() {
     ssh "${VPS_HOST}" "systemctl status ${SERVICE_NAME} --no-pager" || true
     echo ""
     log "Health check:"
-    ssh "${VPS_HOST}" "curl -sf http://localhost:${PORT}/api/health" && echo "" || echo "UNHEALTHY"
+    ssh "${VPS_HOST}" "curl -sf http://localhost:${PORT}/v1/models" && echo "" || echo "UNHEALTHY"
     echo ""
     log "Current binary:"
     ssh "${VPS_HOST}" "readlink ${REMOTE_DIR}/antigravity-server 2>/dev/null || echo 'not found'"
