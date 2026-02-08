@@ -15,6 +15,9 @@ static CLAUDE_TO_GEMINI: LazyLock<HashMap<&'static str, &'static str>> = LazyLoc
         ("claude-opus-4", "claude-opus-4-5-thinking"),
         ("claude-opus-4-5", "claude-opus-4-5-thinking"),
         ("claude-opus-4-5-20251101", "claude-opus-4-5-thinking"),
+        ("claude-opus-4-6", "claude-opus-4-6-thinking"),
+        ("claude-opus-4-6-thinking", "claude-opus-4-6-thinking"),
+        ("claude-opus-4-6-20260201", "claude-opus-4-6-thinking"),
         ("claude-haiku-4", "claude-sonnet-4-5"),
         ("claude-haiku-4-5", "gemini-3-flash"),
         ("claude-3-haiku-20240307", "claude-sonnet-4-5"),
@@ -151,7 +154,7 @@ pub async fn get_all_dynamic_models(
 /// Standard IDs for quota protection:
 /// - `gemini-3-flash`: Gemini 3 Flash variants
 /// - `gemini-3-pro-high`: Gemini 3 Pro variants
-/// - `claude-opus-4-5-thinking`: All Claude Opus variants
+/// - `claude-opus-4-5-thinking`: All Claude Opus variants (4-5, 4-6)
 /// - `claude-sonnet-4-5-thinking`: Claude Sonnet with thinking
 /// - `claude-sonnet-4-5`: All Claude Sonnet/Haiku variants
 #[must_use]
@@ -212,6 +215,18 @@ mod tests {
             Some("claude-opus-4-5-thinking".to_owned())
         );
         assert_eq!(
+            map_claude_model_to_gemini("claude-opus-4-6"),
+            Some("claude-opus-4-6-thinking".to_owned())
+        );
+        assert_eq!(
+            map_claude_model_to_gemini("claude-opus-4-6-thinking"),
+            Some("claude-opus-4-6-thinking".to_owned())
+        );
+        assert_eq!(
+            map_claude_model_to_gemini("claude-opus-4-6-20260201"),
+            Some("claude-opus-4-6-thinking".to_owned())
+        );
+        assert_eq!(
             map_claude_model_to_gemini("gemini-2.5-flash-mini-test"),
             Some("gemini-2.5-flash-mini-test".to_owned())
         );
@@ -248,6 +263,14 @@ mod tests {
         assert_eq!(normalize_to_standard_id("gemini-2.5-pro"), None);
         assert_eq!(
             normalize_to_standard_id("claude-opus-4-5"),
+            Some("claude-opus-4-5-thinking".to_owned())
+        );
+        assert_eq!(
+            normalize_to_standard_id("claude-opus-4-6-thinking"),
+            Some("claude-opus-4-5-thinking".to_owned())
+        );
+        assert_eq!(
+            normalize_to_standard_id("claude-opus-4-6"),
             Some("claude-opus-4-5-thinking".to_owned())
         );
         assert_eq!(
