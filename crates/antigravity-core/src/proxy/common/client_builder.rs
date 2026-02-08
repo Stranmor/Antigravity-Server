@@ -20,3 +20,58 @@ pub fn build_http_client(
 
     builder.build().map_err(|e| format!("Failed to build HTTP client: {}", e))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::proxy::config::UpstreamProxyConfig;
+
+    #[test]
+    fn test_no_proxy() {
+        let result = build_http_client(None, 30);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_proxy_disabled() {
+        let cfg =
+            UpstreamProxyConfig { enabled: false, url: "http://x".into(), ..Default::default() };
+        let result = build_http_client(Some(&cfg), 30);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_proxy_empty_url() {
+        let cfg = UpstreamProxyConfig { enabled: true, url: String::new(), ..Default::default() };
+        let result = build_http_client(Some(&cfg), 30);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_timeout_clamped() {
+        let result = build_http_client(None, 0);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_socks5_proxy() {
+        let cfg = UpstreamProxyConfig {
+            enabled: true,
+            url: "socks5://127.0.0.1:1080".into(),
+            ..Default::default()
+        };
+        let result = build_http_client(Some(&cfg), 30);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_http_proxy() {
+        let cfg = UpstreamProxyConfig {
+            enabled: true,
+            url: "http://proxy:8080".into(),
+            ..Default::default()
+        };
+        let result = build_http_client(Some(&cfg), 30);
+        assert!(result.is_ok());
+    }
+}
