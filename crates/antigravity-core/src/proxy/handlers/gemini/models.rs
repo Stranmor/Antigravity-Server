@@ -13,7 +13,11 @@ pub async fn handle_list_models(
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     use crate::proxy::common::model_mapping::collect_all_model_ids;
 
-    let sorted_ids = collect_all_model_ids(&state.token_manager, &state.custom_mapping).await;
+    let sorted_ids = collect_all_model_ids(
+        &state.token_manager.get_all_available_models(),
+        &state.custom_mapping,
+    )
+    .await;
 
     let models: Vec<_> = sorted_ids
         .into_iter()

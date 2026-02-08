@@ -11,7 +11,11 @@ use serde_json::{json, Value};
 pub async fn handle_list_models(State(state): State<AppState>) -> impl IntoResponse {
     use crate::proxy::common::model_mapping::collect_all_model_ids;
 
-    let sorted_ids = collect_all_model_ids(&state.token_manager, &state.custom_mapping).await;
+    let sorted_ids = collect_all_model_ids(
+        &state.token_manager.get_all_available_models(),
+        &state.custom_mapping,
+    )
+    .await;
 
     let data: Vec<_> = sorted_ids
         .into_iter()

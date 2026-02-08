@@ -88,21 +88,19 @@ pub fn generate_image_model_variants() -> Vec<String> {
     variants
 }
 
-/// Collect all available model IDs from loaded accounts, custom mappings, and image variants.
-/// This is the Single Point of Truth for model listing across all protocol handlers.
+/// Collect all available model IDs from multiple sources and return sorted, deduplicated list.
+/// Used by all protocol handlers (OpenAI, Claude, Gemini) for model listing.
 pub async fn collect_all_model_ids(
-    token_manager: &crate::proxy::TokenManager,
+    account_models: &[String],
     custom_mapping: &tokio::sync::RwLock<HashMap<String, String>>,
 ) -> Vec<String> {
     use std::collections::HashSet;
     let mut model_ids: HashSet<String> = HashSet::new();
 
-    // 1. Real models from loaded accounts
-    for model in token_manager.get_all_available_models() {
-        let _: bool = model_ids.insert(model);
+    for model in account_models {
+        let _: bool = model_ids.insert(model.clone());
     }
 
-    // 2. Custom mapping keys
     {
         let mapping = custom_mapping.read().await;
         for key in mapping.keys() {
@@ -110,7 +108,6 @@ pub async fn collect_all_model_ids(
         }
     }
 
-    // 3. Image model variants
     for variant in generate_image_model_variants() {
         let _: bool = model_ids.insert(variant);
     }
