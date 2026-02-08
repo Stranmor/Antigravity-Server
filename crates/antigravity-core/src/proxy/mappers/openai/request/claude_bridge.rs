@@ -6,7 +6,7 @@
 //! can produce the correct Gemini body with toolConfig, thinkingConfig, etc.
 
 use crate::proxy::mappers::claude::claude_models::{
-    ClaudeRequest, Message, MessageContent, SystemBlock, SystemPrompt, ThinkingConfig,
+    ClaudeRequest, Message, MessageContent, SystemBlock, SystemPrompt,
 };
 use crate::proxy::mappers::claude::claude_response::Tool;
 use crate::proxy::mappers::claude::content_block::ContentBlock;
@@ -68,12 +68,10 @@ pub fn openai_to_claude_request(req: &OpenAIRequest) -> ClaudeRequest {
 
     let tools = req.tools.as_ref().map(|tool_list| convert_tools(tool_list));
 
-    let is_thinking = req.model.ends_with("-thinking");
-    let thinking = if is_thinking {
-        Some(ThinkingConfig { type_: "enabled".to_string(), budget_tokens: Some(10000) })
-    } else {
-        None
-    };
+    // Thinking config is NOT set here — the downstream Claude pipeline
+    // auto-detects thinking models via should_enable_thinking_by_default()
+    // and injects thinkingConfig without a hardcoded budget cap.
+    let thinking = None;
 
     ClaudeRequest {
         model: req.model.clone(),
@@ -254,10 +252,10 @@ fn convert_tools(tools: &[serde_json::Value]) -> Vec<Tool> {
     tools
         .iter()
         .filter_map(|tool_val| {
-            let func = tool_val.get("function").or(Some(tool_val));
-            let name = func?.get("name")?.as_str()?.to_string();
-            let description = func?.get("description").and_then(|d| d.as_str()).map(String::from);
-            let input_schema = func?.get("parameters").cloned();
+            let func = tool_val.get("function")?;
+            let name = func.get("name")?.as_str()?.to_string();
+            let description = func.get("description").and_then(|d| d.as_str()).map(String::from);
+            let input_schema = func.get("parameters").cloned();
 
             Some(Tool { type_: None, name: Some(name), description, input_schema })
         })

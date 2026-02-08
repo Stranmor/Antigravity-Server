@@ -106,12 +106,22 @@ pub async fn handle_chat_completions(
                 crate::proxy::mappers::openai::request::claude_bridge::openai_to_claude_request(
                     &openai_req,
                 );
-            crate::proxy::mappers::claude::transform_claude_request_in(
+            let mut body = crate::proxy::mappers::claude::transform_claude_request_in(
                 &claude_req,
                 &project_id,
                 false,
             )
-            .map_err(|e| (StatusCode::BAD_REQUEST, e))?
+            .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+
+            if let Some(fmt) = &openai_req.response_format {
+                if fmt.r#type == "json_object" {
+                    if let Some(gen_config) = body.get_mut("generationConfig") {
+                        gen_config["responseMimeType"] = serde_json::json!("application/json");
+                    }
+                }
+            }
+
+            body
         } else {
             transform_openai_request(&openai_req, &project_id, &mapped_model)
         };
