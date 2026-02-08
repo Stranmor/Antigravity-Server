@@ -89,13 +89,14 @@ pub(crate) async fn log_request_impl(pool: &PgPool, request: RequestLog) -> Repo
     let uuid = Uuid::parse_str(&request.account_id)
         .map_err(|err| RepositoryError::NotFound(err.to_string()))?;
     sqlx::query(
-        r#"INSERT INTO requests (account_id, model, tokens_in, tokens_out, latency_ms, status_code, error_type)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
+        r#"INSERT INTO requests (account_id, model, tokens_in, tokens_out, cached_tokens, latency_ms, status_code, error_type)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
     )
     .bind(uuid)
     .bind(&request.model)
     .bind(request.tokens_in)
     .bind(request.tokens_out)
+    .bind(request.cached_tokens)
     .bind(request.latency_ms)
     .bind(request.status_code)
     .bind(&request.error_type)
