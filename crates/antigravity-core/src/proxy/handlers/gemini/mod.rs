@@ -5,6 +5,7 @@ mod streaming;
 
 pub use models::{handle_count_tokens, handle_get_model, handle_list_models};
 
+use crate::proxy::common::{sanitize_exhaustion_error, sanitize_upstream_error};
 use crate::proxy::{
     mappers::gemini::{unwrap_response, wrap_request},
     server::AppState,
@@ -257,10 +258,15 @@ pub async fn handle_generate(
             attempt += 1;
             continue;
         }
-        return Ok((status, [("X-Account-Email", email.as_str())], error_text).into_response());
+        return Ok((
+            status,
+            [("X-Account-Email", email.as_str())],
+            sanitize_upstream_error(code, &error_text),
+        )
+            .into_response());
     }
 
-    let msg = format!("All accounts exhausted. Last: {}", last_error);
+    let msg = format!("All accounts exhausted. Last: {}", sanitize_exhaustion_error(&last_error));
     match last_email {
         Some(email) => {
             Ok((StatusCode::TOO_MANY_REQUESTS, [("X-Account-Email", email)], msg).into_response())

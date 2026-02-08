@@ -4,6 +4,7 @@ mod response_mapper;
 mod streaming_handler;
 
 use super::*;
+use crate::proxy::common::{sanitize_exhaustion_error, sanitize_upstream_error};
 use crate::proxy::SignatureCache;
 use request_parser::{ensure_non_empty_messages, normalize_request_body};
 
@@ -237,7 +238,12 @@ pub async fn handle_completions(
         if apply_retry_strategy(strategy, attempt, status_code, &trace_id).await {
             continue;
         } else {
-            return Ok((status, [("X-Account-Email", email.as_str())], error_text).into_response());
+            return Ok((
+                status,
+                [("X-Account-Email", email.as_str())],
+                sanitize_upstream_error(status_code, &error_text),
+            )
+                .into_response());
         }
     }
 
@@ -245,13 +251,19 @@ pub async fn handle_completions(
         Ok((
             StatusCode::TOO_MANY_REQUESTS,
             [("X-Account-Email", email)],
-            format!("All accounts exhausted. Last error: {}", last_error),
+            format!(
+                "All accounts exhausted. Last error: {}",
+                sanitize_exhaustion_error(&last_error)
+            ),
         )
             .into_response())
     } else {
         Ok((
             StatusCode::TOO_MANY_REQUESTS,
-            format!("All accounts exhausted. Last error: {}", last_error),
+            format!(
+                "All accounts exhausted. Last error: {}",
+                sanitize_exhaustion_error(&last_error)
+            ),
         )
             .into_response())
     }

@@ -142,8 +142,10 @@ pub async fn handle_audio_transcription(
         .map_err(|e| (StatusCode::BAD_GATEWAY, format!("upstreamRequest failed: {}", e)))?;
 
     if !response.status().is_success() {
+        let status_code = response.status().as_u16();
         let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-        return Err((StatusCode::BAD_GATEWAY, format!("Gemini API error: {}", error_text)));
+        tracing::warn!("Audio upstream error {}: {}", status_code, error_text);
+        return Err((StatusCode::BAD_GATEWAY, format!("Upstream error (HTTP {})", status_code)));
     }
 
     let result: Value = response

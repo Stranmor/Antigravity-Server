@@ -1,3 +1,4 @@
+use crate::proxy::common::sanitize_upstream_error;
 use crate::proxy::rate_limit::RateLimitReason;
 use crate::proxy::server::AppState;
 use crate::proxy::token_manager::TokenManager;
@@ -108,7 +109,7 @@ pub async fn handle_rate_limit_errors(
             return OpenAIErrorAction::ReturnError(
                 axum::http::StatusCode::TOO_MANY_REQUESTS,
                 email.to_string(),
-                error_text.to_string(),
+                sanitize_upstream_error(status_code, error_text),
             );
         }
 

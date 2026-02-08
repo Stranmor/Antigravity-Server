@@ -15,6 +15,7 @@ use axum::{
 use serde_json::Value;
 use tracing::{debug, error, info, warn};
 
+use crate::proxy::common::{sanitize_exhaustion_error, sanitize_upstream_error};
 use crate::proxy::handlers::openai::completions::request_parser::ensure_non_empty_messages;
 use crate::proxy::mappers::openai::{transform_openai_request, OpenAIRequest};
 use crate::proxy::server::AppState;
@@ -273,20 +274,31 @@ pub async fn handle_chat_completions(
             "OpenAI Upstream non-retryable error {} on account {}: {}",
             status_code, email, error_text
         );
-        return Ok((status, [("X-Account-Email", email.as_str())], error_text).into_response());
+        return Ok((
+            status,
+            [("X-Account-Email", email.as_str())],
+            sanitize_upstream_error(status_code, &error_text),
+        )
+            .into_response());
     }
 
     if let Some(email) = last_email {
         Ok((
             StatusCode::TOO_MANY_REQUESTS,
             [("X-Account-Email", email)],
-            format!("All accounts exhausted. Last error: {}", last_error),
+            format!(
+                "All accounts exhausted. Last error: {}",
+                sanitize_exhaustion_error(&last_error)
+            ),
         )
             .into_response())
     } else {
         Ok((
             StatusCode::TOO_MANY_REQUESTS,
-            format!("All accounts exhausted. Last error: {}", last_error),
+            format!(
+                "All accounts exhausted. Last error: {}",
+                sanitize_exhaustion_error(&last_error)
+            ),
         )
             .into_response())
     }

@@ -1,5 +1,6 @@
 //! Error handling and retry decision logic for Claude messages
 
+use crate::proxy::common::sanitize_upstream_error;
 use crate::proxy::mappers::claude::ClaudeRequest;
 use crate::proxy::rate_limit::RateLimitReason;
 use crate::proxy::server::AppState;
@@ -121,6 +122,11 @@ pub async fn handle_upstream_error(
         ctx.error_text
     );
     ClaudeErrorAction::Return(
-        (ctx.status, [("X-Account-Email", ctx.email)], ctx.error_text.clone()).into_response(),
+        (
+            ctx.status,
+            [("X-Account-Email", ctx.email)],
+            sanitize_upstream_error(ctx.status_code, &ctx.error_text),
+        )
+            .into_response(),
     )
 }

@@ -1,5 +1,6 @@
 //! Request parsing and validation for Claude messages handler
 
+use crate::proxy::common::sanitize_exhaustion_error;
 use crate::proxy::mappers::claude::ClaudeRequest;
 use axum::{
     http::StatusCode,
@@ -86,7 +87,7 @@ pub fn all_retries_exhausted_error(
         "type": "error",
         "error": {
             "type": "overloaded_error",
-            "message": format!("All {} attempts failed. Last error: {}", max_attempts, last_error)
+            "message": format!("All {} attempts failed. Last error: {}", max_attempts, sanitize_exhaustion_error(last_error))
         }
     });
 

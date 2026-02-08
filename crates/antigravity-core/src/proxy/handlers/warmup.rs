@@ -230,12 +230,19 @@ pub async fn handle_warmup(
             } else {
                 let status_code = status.as_u16();
                 let error_text = response.text().await.unwrap_or_default();
+                tracing::warn!(
+                    "[Warmup-API] Upstream error {} for {}/{}: {}",
+                    status_code,
+                    req.email,
+                    req.model,
+                    error_text
+                );
                 (
                     StatusCode::from_u16(status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
                     Json(WarmupResponse {
                         success: false,
                         message: format!("Warmup failed: HTTP {}", status_code),
-                        error: Some(error_text),
+                        error: Some(format!("Upstream returned {}", status_code)),
                     }),
                 )
                     .into_response()
