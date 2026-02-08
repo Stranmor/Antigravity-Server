@@ -181,6 +181,10 @@ impl TokenManager {
         sorted.sort();
         sorted
     }
+
+    pub fn tokens_ref(&self) -> &Arc<DashMap<String, ProxyToken>> {
+        &self.tokens
+    }
 }
 
 #[cfg(test)]

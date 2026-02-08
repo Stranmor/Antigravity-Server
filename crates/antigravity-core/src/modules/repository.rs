@@ -77,6 +77,8 @@ pub struct RequestLog {
     pub tokens_in: Option<i32>,
     /// Output tokens generated.
     pub tokens_out: Option<i32>,
+    /// Cached input tokens (from prompt cache).
+    pub cached_tokens: Option<i32>,
     /// Request latency in milliseconds.
     pub latency_ms: Option<i32>,
     /// HTTP status code returned.

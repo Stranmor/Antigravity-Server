@@ -37,7 +37,20 @@
 | Host | 127.0.0.1 |
 | Database | antigravity |
 | User | antigravity |
-| Tables | accounts, tokens, quotas, account_events, requests, app_settings |
+| Tables | accounts, tokens, quotas, account_events, requests, app_settings, thinking_signatures, session_signatures |
+
+### Database Replication [2026-02-08]
+
+VPS PostgreSQL реплицируется на home-server через streaming replication. См. глобальный AGENTS.md секцию 3.5 для полной схемы.
+
+| Роль | Где | Connection string |
+|------|-----|-------------------|
+| **Primary (read-write)** | VPS | `postgres://antigravity@localhost/antigravity?host=/run/postgresql` |
+| **Replica (read-only)** | home-server:5436 | `postgres://antigravity@192.168.0.124:5436/antigravity` |
+
+- VPS: `wal_level=replica`, `max_wal_senders=10`, `wal_keep_size=1GB`
+- Replication user: `replicator` (password в глобальном AGENTS.md)
+- SSH tunnel: `pg-replication-tunnel.service` на home-server
 
 ### Files Modified
 
@@ -156,6 +169,10 @@ vendor/
 | `proxy/token_manager/store.rs` | JSON indexing (`content["token"]["field"]`) can panic if file has unexpected structure (not object, missing "token" key) | Low |
 | `proxy/token_manager/persistence.rs` | JSON indexing in `save_project_id_to_file`/`save_refreshed_token_to_file` can panic if "token" key missing from file | Low |
 | `proxy/token_manager/selection_helpers.rs` | Hardcoded fallback project_id `"bamboo-precept-lgxtn"` when fetch_project_id fails — should propagate error | Medium |
+| `modules/account_pg_events.rs` | `update_quota_impl` atomicity: quota update and audit log are separate operations on `pool`, not wrapped in transaction — audit trail can be lost if log INSERT fails | Low |
+| `modules/account_pg_events.rs` | UUID parse errors mapped to `RepositoryError::NotFound` instead of validation error — conflates bad input with missing resource | Low |
+| `modules/repository.rs` | `update_token_credentials` accepts both `expires_in` and `expiry_timestamp` — redundant, allows conflicting data | Low |
+| `proxy/token_manager/mod.rs` | `active_requests` DashMap entries never cleaned up when count drops to zero — grows unbounded with unique emails | Low |
 
 ---
 

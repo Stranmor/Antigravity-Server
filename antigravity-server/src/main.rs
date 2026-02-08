@@ -101,6 +101,49 @@ async fn run_server(port: u16) -> Result<()> {
     let initial_proxy_config = initial_app_config.proxy;
 
     let token_manager = Arc::new(antigravity_core::proxy::TokenManager::new(data_dir.clone()));
+
+    let repository: Option<Arc<dyn AccountRepository>> = match std::env::var("DATABASE_URL") {
+        Ok(database_url) => {
+            info!("🗄️ Connecting to PostgreSQL...");
+            match PostgresAccountRepository::connect(&database_url).await {
+                Ok(repo) => {
+                    info!("✅ PostgreSQL connected");
+                    if let Err(e) = repo.run_migrations().await {
+                        tracing::warn!(
+                            "⚠️ Database migration issue: {}. Continuing with existing schema.",
+                            e
+                        );
+                    } else {
+                        info!("✅ Database migrations applied");
+                    }
+                    if let Err(e) =
+                        antigravity_core::modules::json_migration::migrate_json_to_postgres(&repo)
+                            .await
+                    {
+                        tracing::warn!("⚠️ JSON migration skipped or failed: {}", e);
+                    }
+                    SignatureCache::global().set_db_pool(repo.pool().clone());
+                    Some(Arc::new(repo) as Arc<dyn AccountRepository>)
+                },
+                Err(e) => {
+                    tracing::error!(
+                        "❌ PostgreSQL connection failed: {}. Falling back to JSON storage.",
+                        e
+                    );
+                    None
+                },
+            }
+        },
+        Err(_) => {
+            info!("ℹ️ DATABASE_URL not set, using JSON file storage");
+            None
+        },
+    };
+
+    if let Some(ref repo) = repository {
+        token_manager.set_repository(Arc::clone(repo)).await;
+    }
+
     match token_manager.load_accounts().await {
         Ok(count) => {
             tracing::info!("📊 Loaded {} accounts into token manager", count);
@@ -113,7 +156,6 @@ async fn run_server(port: u16) -> Result<()> {
     token_manager.start_auto_cleanup();
     token_manager.start_auto_account_sync();
 
-    // Initialize WARP IP isolation (per-account SOCKS5 proxies)
     let warp_mapping_path = std::env::var("WARP_MAPPING_FILE").unwrap_or_else(|_| {
         antigravity_core::proxy::warp_isolation::DEFAULT_WARP_MAPPING_PATH.to_string()
     });
@@ -140,44 +182,14 @@ async fn run_server(port: u16) -> Result<()> {
         },
     }
 
-    let monitor = Arc::new(antigravity_core::proxy::ProxyMonitor::new());
-
-    let repository: Option<Arc<dyn AccountRepository>> = match std::env::var("DATABASE_URL") {
-        Ok(database_url) => {
-            info!("🗄️ Connecting to PostgreSQL...");
-            match PostgresAccountRepository::connect(&database_url).await {
-                Ok(repo) => {
-                    info!("✅ PostgreSQL connected");
-                    if let Err(e) = repo.run_migrations().await {
-                        tracing::warn!(
-                            "⚠️ Database migration issue: {}. Continuing with existing schema.",
-                            e
-                        );
-                    } else {
-                        info!("✅ Database migrations applied");
-                    }
-                    if let Err(e) =
-                        antigravity_core::modules::json_migration::migrate_json_to_postgres(&repo)
-                            .await
-                    {
-                        tracing::warn!("⚠️ JSON migration skipped or failed: {}", e);
-                    }
-                    SignatureCache::global().set_db_pool(repo.pool().clone());
-                    Some(Arc::new(repo))
-                },
-                Err(e) => {
-                    tracing::error!(
-                        "❌ PostgreSQL connection failed: {}. Falling back to JSON storage.",
-                        e
-                    );
-                    None
-                },
-            }
-        },
-        Err(_) => {
-            info!("ℹ️ DATABASE_URL not set, using JSON file storage");
-            None
-        },
+    let monitor = if let Some(ref repo) = repository {
+        Arc::new(antigravity_core::proxy::ProxyMonitor::with_db(
+            Arc::new(antigravity_core::proxy::monitor::NoopEventBus),
+            Arc::clone(repo),
+            token_manager.tokens_ref().clone(),
+        ))
+    } else {
+        Arc::new(antigravity_core::proxy::ProxyMonitor::new())
     };
 
     let server_config = antigravity_core::proxy::server::ServerStartConfig {

@@ -5,7 +5,9 @@
 #![allow(clippy::arithmetic_side_effects, reason = "counter increments and token accumulation")]
 
 // Re-export ProxyRequestLog for upstream middleware compatibility
+use crate::modules::repository::{AccountRepository, RequestLog};
 pub use antigravity_types::models::{ProxyRequestLog, ProxyStats};
+use dashmap::DashMap;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -33,6 +35,8 @@ pub struct ProxyMonitor {
     event_bus: Arc<dyn ProxyEventBus>,
     logs: RwLock<VecDeque<ProxyRequestLog>>,
     max_logs: usize,
+    repository: Option<Arc<dyn AccountRepository>>,
+    tokens: Option<Arc<DashMap<String, crate::proxy::token_manager::ProxyToken>>>,
 }
 
 impl ProxyMonitor {
@@ -47,6 +51,24 @@ impl ProxyMonitor {
             event_bus,
             logs: RwLock::new(VecDeque::with_capacity(1024)),
             max_logs: 1000,
+            repository: None,
+            tokens: None,
+        }
+    }
+
+    pub fn with_db(
+        event_bus: Arc<dyn ProxyEventBus>,
+        repository: Arc<dyn AccountRepository>,
+        tokens: Arc<DashMap<String, crate::proxy::token_manager::ProxyToken>>,
+    ) -> Self {
+        Self {
+            enabled: AtomicBool::new(true),
+            stats: RwLock::new(ProxyStats::default()),
+            event_bus,
+            logs: RwLock::new(VecDeque::with_capacity(1024)),
+            max_logs: 1000,
+            repository: Some(repository),
+            tokens: Some(tokens),
         }
     }
 
@@ -59,6 +81,9 @@ impl ProxyMonitor {
     }
 
     pub async fn log_request(&self, log: ProxyRequestLog) {
+        // Extract DB fields before log is moved into the in-memory buffer
+        let db_context = self.extract_db_context(&log);
+
         // Update stats
         {
             let mut stats = self.stats.write().await;
@@ -79,6 +104,15 @@ impl ProxyMonitor {
         // Emit to event bus
         self.event_bus.emit_request_log(&log);
 
+        // Record to PostgreSQL (background, non-blocking)
+        if let Some((repo, request_log)) = db_context {
+            tokio::spawn(async move {
+                if let Err(e) = repo.log_request(request_log).await {
+                    tracing::warn!("Failed to record request to DB: {}", e);
+                }
+            });
+        }
+
         // Store in logs buffer (VecDeque: O(1) pop_front)
         {
             let mut logs = self.logs.write().await;
@@ -88,6 +122,34 @@ impl ProxyMonitor {
             }
             logs.push_back(log);
         }
+    }
+
+    fn extract_db_context(
+        &self,
+        log: &ProxyRequestLog,
+    ) -> Option<(Arc<dyn AccountRepository>, RequestLog)> {
+        let (repo, tokens) = match (&self.repository, &self.tokens) {
+            (Some(r), Some(t)) => (r, t),
+            _ => return None,
+        };
+        let email = log.account_email.as_ref()?;
+        let account_id = tokens
+            .iter()
+            .find(|entry| &entry.value().email == email)
+            .map(|entry| entry.key().clone())?;
+
+        let model = log.model.clone().or_else(|| log.mapped_model.clone()).unwrap_or_default();
+        let request_log = RequestLog {
+            account_id,
+            model,
+            tokens_in: log.input_tokens.map(|v| v as i32),
+            tokens_out: log.output_tokens.map(|v| v as i32),
+            cached_tokens: log.cached_tokens.map(|v| v as i32),
+            latency_ms: Some(log.duration as i32),
+            status_code: i32::from(log.status),
+            error_type: log.error.clone(),
+        };
+        Some((Arc::clone(repo), request_log))
     }
 
     pub async fn get_stats(&self) -> ProxyStats {
