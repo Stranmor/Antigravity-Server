@@ -79,7 +79,7 @@ pub async fn handle_warmup(
                         Json(WarmupResponse {
                             success: false,
                             message: format!("Failed to get token for {}", req.email),
-                            error: Some(e),
+                            error: Some("Upstream request failed".to_string()),
                         }),
                     )
                         .into_response();

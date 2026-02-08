@@ -77,9 +77,9 @@ fn classify_error(status_code: u16, raw_text: &str) -> ErrorCategory {
         },
         404 => ErrorCategory::ModelNotFound,
         400 => {
-            if raw_text.contains("too long")
-                || raw_text.contains("exceeds")
-                || raw_text.contains("prompt is too long")
+            if raw_text.contains("prompt is too long")
+                || raw_text.contains("exceeds the maximum")
+                || raw_text.contains("token limit")
             {
                 ErrorCategory::PromptTooLong
             } else {

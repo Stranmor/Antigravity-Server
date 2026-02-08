@@ -127,7 +127,7 @@ where
 
             let bytes = match item {
                 Some(Ok(b)) => b,
-                Some(Err(e)) => { error!("[Gemini-SSE] {}", e); yield Err(format!("Stream error: {}", e)); break; }
+                Some(Err(e)) => { error!("[Gemini-SSE] {}", e); yield Err("Stream error".to_string()); break; }
                 None => break,
             };
 

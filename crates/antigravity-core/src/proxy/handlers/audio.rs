@@ -145,7 +145,10 @@ pub async fn handle_audio_transcription(
         let status_code = response.status().as_u16();
         let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
         tracing::warn!("Audio upstream error {}: {}", status_code, error_text);
-        return Err((StatusCode::BAD_GATEWAY, format!("Upstream error (HTTP {})", status_code)));
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            crate::proxy::common::sanitize_upstream_error(status_code, &error_text),
+        ));
     }
 
     let result: Value = response

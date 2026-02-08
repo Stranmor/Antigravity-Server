@@ -4,7 +4,7 @@ Rust SDK for Antigravity Manager API with auto-discovery and retry logic.
 
 ## Usage
 
-```rust
+```rust,no_run
 use antigravity_client::{AntigravityClient, ChatRequest, ChatMessage};
 
 #[tokio::main]
