@@ -8,6 +8,7 @@
     clippy::as_conversions,
     reason = "time calculations and counter increments"
 )]
+#![allow(dead_code, reason = "Logging subsystem API — called from server binary via re-export")]
 
 use crate::modules::account::get_data_dir;
 use std::fs;
@@ -28,7 +29,7 @@ impl FormatTime for LocalTimer {
 }
 
 /// Gets the log directory path, creating it if necessary.
-pub fn get_log_dir() -> Result<PathBuf, String> {
+pub(crate) fn get_log_dir() -> Result<PathBuf, String> {
     let data_dir = get_data_dir()?;
     let log_dir = data_dir.join("logs");
 
@@ -41,7 +42,7 @@ pub fn get_log_dir() -> Result<PathBuf, String> {
 }
 
 /// Initialize the logging system.
-pub fn init_logger() {
+pub(crate) fn init_logger() {
     // Capture log macro output
     let _ = tracing_log::LogTracer::init();
 
@@ -99,7 +100,7 @@ pub fn init_logger() {
 }
 
 /// Clean up log files older than the specified number of days.
-pub fn cleanup_old_logs(days_to_keep: u64) -> Result<(), String> {
+pub(crate) fn cleanup_old_logs(days_to_keep: u64) -> Result<(), String> {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let log_dir = get_log_dir()?;
@@ -157,7 +158,7 @@ pub fn cleanup_old_logs(days_to_keep: u64) -> Result<(), String> {
 }
 
 /// Clear log cache (uses truncation to keep file handles valid).
-pub fn clear_logs() -> Result<(), String> {
+pub(crate) fn clear_logs() -> Result<(), String> {
     let log_dir = get_log_dir()?;
     if log_dir.exists() {
         // Iterate through all files and truncate instead of deleting directory
@@ -175,16 +176,16 @@ pub fn clear_logs() -> Result<(), String> {
 }
 
 /// Log info message (backward compatibility interface).
-pub fn log_info(message: &str) {
+pub(crate) fn log_info(message: &str) {
     info!("{}", message);
 }
 
 /// Log warning message (backward compatibility interface).
-pub fn log_warn(message: &str) {
+pub(crate) fn log_warn(message: &str) {
     warn!("{}", message);
 }
 
 /// Log error message (backward compatibility interface).
-pub fn log_error(message: &str) {
+pub(crate) fn log_error(message: &str) {
     error!("{}", message);
 }

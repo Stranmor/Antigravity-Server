@@ -47,7 +47,6 @@ pub struct AppStateInner {
     pub warp_isolation: Option<Arc<WarpIsolationManager>>,
     pub oauth_states: Arc<DashMap<String, Instant>>,
     pub bound_port: AtomicU16,
-    #[allow(dead_code, reason = "WIP: PostgreSQL migration, will be used in phase 7")]
     pub repository: Option<Arc<dyn AccountRepository>>,
 }
 

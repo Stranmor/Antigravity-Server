@@ -183,17 +183,16 @@ impl AppState {
             .retain(|_, created_at: &mut Instant| created_at.elapsed().as_secs() < 600);
     }
 
-    #[allow(dead_code, reason = "API for future PostgreSQL integration")]
     pub fn repository(&self) -> Option<&Arc<dyn AccountRepository>> {
         self.inner.repository.as_ref()
     }
 
-    #[allow(dead_code, reason = "API for future PostgreSQL integration")]
+    #[allow(dead_code, reason = "API for PostgreSQL integration — used by future API endpoints")]
     pub fn has_database(&self) -> bool {
         self.inner.repository.is_some()
     }
 
-    #[allow(dead_code, reason = "API for future PostgreSQL integration")]
+    #[allow(dead_code, reason = "API for PostgreSQL integration — used by future API endpoints")]
     pub async fn list_accounts_db(&self) -> RepoResult<Vec<Account>> {
         match &self.inner.repository {
             Some(repo) => repo.list_accounts().await,

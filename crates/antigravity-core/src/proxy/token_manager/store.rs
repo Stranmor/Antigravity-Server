@@ -4,6 +4,19 @@ use std::{collections::HashSet, path::PathBuf};
 
 impl TokenManager {
     pub async fn load_accounts(&self) -> Result<usize, String> {
+        let repo = {
+            let guard = self.repository.read().await;
+            guard.as_ref().cloned()
+        };
+        if let Some(repo) = repo {
+            tracing::debug!("Loading accounts from PostgreSQL repository");
+            return self.load_accounts_from_repository(&repo).await;
+        }
+
+        self.load_accounts_from_filesystem().await
+    }
+
+    async fn load_accounts_from_filesystem(&self) -> Result<usize, String> {
         let accounts_dir = self.data_dir.join("accounts");
         if !accounts_dir.exists() {
             return Err(format!("Accounts directory not found: {}", accounts_dir.display()));
@@ -37,28 +50,7 @@ impl TokenManager {
             }
         }
 
-        let old_keys: Vec<String> = self.tokens.iter().map(|e| e.key().clone()).collect();
-        let new_keys: HashSet<String> = new_tokens.iter().map(|(k, _)| k.clone()).collect();
-
-        for old_key in &old_keys {
-            if !new_keys.contains(old_key) {
-                self.tokens.remove(old_key);
-            }
-        }
-
-        let count = new_tokens.len();
-        for (account_id, disk_token) in new_tokens {
-            self.tokens
-                .entry(account_id)
-                .and_modify(|existing| {
-                    if disk_token.timestamp > existing.timestamp {
-                        *existing = disk_token.clone();
-                    }
-                })
-                .or_insert(disk_token);
-        }
-
-        Ok(count)
+        self.merge_tokens(new_tokens)
     }
 
     pub async fn reload_account(&self, account_id: &str) -> Result<(), String> {

@@ -82,16 +82,20 @@ pub fn build_contents(
                                 parts.len()
                             );
                             if !thinking.is_empty() {
-                                let sig_str = signature
-                                    .as_ref()
-                                    .filter(|s| s.len() >= super::safety::MIN_SIGNATURE_LENGTH)
-                                    .cloned()
-                                    .unwrap_or_else(|| DUMMY_SIGNATURE.to_string());
+                                let is_claude = mapped_model.starts_with("claude-");
                                 let mut part = json!({
                                     "text": thinking,
-                                    "thought": true,
-                                    "thoughtSignature": sig_str
+                                    "thought": true
                                 });
+                                // Add signature: use original if valid, dummy for Gemini, none for Claude
+                                if let Some(sig) = signature
+                                    .as_ref()
+                                    .filter(|s| s.len() >= super::safety::MIN_SIGNATURE_LENGTH)
+                                {
+                                    part["thoughtSignature"] = json!(sig);
+                                } else if !is_claude {
+                                    part["thoughtSignature"] = json!(DUMMY_SIGNATURE);
+                                }
                                 crate::proxy::common::json_schema::clean_json_schema(&mut part);
                                 parts.push(part);
                             }
@@ -105,11 +109,14 @@ pub fn build_contents(
                                 "[Claude-Request] Thinking disabled but thinking block present. Keeping as thought with dummy signature."
                             );
                             if !thinking.is_empty() {
+                                let is_claude = mapped_model.starts_with("claude-");
                                 let mut part = json!({
                                     "text": thinking,
-                                    "thought": true,
-                                    "thoughtSignature": DUMMY_SIGNATURE
+                                    "thought": true
                                 });
+                                if !is_claude {
+                                    part["thoughtSignature"] = json!(DUMMY_SIGNATURE);
+                                }
                                 crate::proxy::common::json_schema::clean_json_schema(&mut part);
                                 parts.push(part);
                             }
@@ -121,11 +128,19 @@ pub fn build_contents(
                             tracing::warn!(
                                 "[Claude-Request] Empty thinking block detected. Using placeholder with dummy signature."
                             );
-                            parts.push(json!({
-                                "text": "...",
-                                "thought": true,
-                                "thoughtSignature": DUMMY_SIGNATURE
-                            }));
+                            let is_claude = mapped_model.starts_with("claude-");
+                            if is_claude {
+                                parts.push(json!({
+                                    "text": "...",
+                                    "thought": true
+                                }));
+                            } else {
+                                parts.push(json!({
+                                    "text": "...",
+                                    "thought": true,
+                                    "thoughtSignature": DUMMY_SIGNATURE
+                                }));
+                            }
                             continue;
                         }
 

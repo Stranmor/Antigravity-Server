@@ -173,7 +173,7 @@ mod tests {
             thinking,
             Some(&short_sig),
             false,
-            "claude-opus-4-6-thinking",
+            "gemini-2.5-flash",
             &mut last_sig,
         );
 
@@ -198,13 +198,8 @@ mod tests {
         let thinking = "No sig provided...";
         let mut last_sig = None;
 
-        let result = validate_thinking_signature(
-            thinking,
-            None,
-            false,
-            "claude-opus-4-6-thinking",
-            &mut last_sig,
-        );
+        let result =
+            validate_thinking_signature(thinking, None, false, "gemini-2.5-flash", &mut last_sig);
 
         match result {
             SignatureAction::UseWithSignature { part } => {

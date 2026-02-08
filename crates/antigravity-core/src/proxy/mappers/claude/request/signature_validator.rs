@@ -16,12 +16,20 @@ pub fn validate_thinking_signature(
     thinking: &str,
     signature: Option<&String>,
     is_retry: bool,
-    _mapped_model: &str,
+    mapped_model: &str,
     last_thought_signature: &mut Option<String>,
 ) -> SignatureAction {
+    let is_claude = mapped_model.starts_with("claude-");
+
     if let Some(sig) = signature {
-        // Fast path: already a dummy signature — pass through immediately
+        // Dummy signature is Gemini-specific. For Claude models, strip it
+        // and send thinking block without any signature.
         if sig == DUMMY_SIGNATURE {
+            if is_claude {
+                tracing::debug!("[Thinking-Signature] Dummy signature on Claude model — sending without signature.");
+                record_signature_validation("claude_no_sig");
+                return make_thinking_part_no_sig(thinking);
+            }
             tracing::debug!("[Thinking-Signature] Dummy signature detected, passing through.");
             record_signature_validation("dummy_passthrough");
             *last_thought_signature = Some(DUMMY_SIGNATURE.to_string());
@@ -30,6 +38,14 @@ pub fn validate_thinking_signature(
 
         // Validate signature has acceptable length
         if !is_valid_or_dummy_signature(sig) {
+            if is_claude {
+                tracing::warn!(
+                    "[Thinking-Signature] Signature too short (len: {}) on Claude model — sending without signature.",
+                    sig.len()
+                );
+                record_signature_validation("claude_short_no_sig");
+                return make_thinking_part_no_sig(thinking);
+            }
             tracing::warn!(
                 "[Thinking-Signature] Signature too short (len: {}). Using dummy to preserve thinking.",
                 sig.len()
@@ -42,7 +58,6 @@ pub fn validate_thinking_signature(
         // Per Anthropic docs: "signature values are compatible across platforms
         // (Claude APIs, Amazon Bedrock, and Vertex AI). Values generated on one
         // platform will be compatible with another."
-        // Do NOT check model family — signatures are opaque and cross-compatible.
         tracing::debug!(
             "[Thinking-Signature] Valid client signature (len: {}), passing through as-is.",
             sig.len()
@@ -61,7 +76,6 @@ pub fn validate_thinking_signature(
             );
             record_signature_validation("recovered_content");
 
-            // Signatures are cross-platform compatible — no family check needed.
             if !is_retry {
                 *last_thought_signature = Some(recovered_sig.clone());
                 let mut part = json!({
@@ -74,11 +88,21 @@ pub fn validate_thinking_signature(
             }
         }
 
-        tracing::warn!(
-            "[Thinking-Signature] No signature provided and content cache miss. Using dummy signature to preserve thinking."
-        );
-        record_signature_validation("dummy_no_sig");
-        make_thinking_part_with_dummy(thinking, last_thought_signature)
+        // No signature available. For Claude models, send without signature.
+        // For Gemini models, use the dummy bypass.
+        if is_claude {
+            tracing::debug!(
+                "[Thinking-Signature] No signature for Claude model — sending without signature."
+            );
+            record_signature_validation("claude_no_sig");
+            make_thinking_part_no_sig(thinking)
+        } else {
+            tracing::warn!(
+                "[Thinking-Signature] No signature provided and content cache miss. Using dummy signature to preserve thinking."
+            );
+            record_signature_validation("dummy_no_sig");
+            make_thinking_part_with_dummy(thinking, last_thought_signature)
+        }
     }
 }
 
@@ -93,7 +117,19 @@ fn make_thinking_part_with_sig(thinking: &str, sig: &str) -> SignatureAction {
     SignatureAction::UseWithSignature { part }
 }
 
+/// Creates a thinking part WITHOUT any signature.
+/// Used for Claude models where the Gemini dummy is not valid.
+fn make_thinking_part_no_sig(thinking: &str) -> SignatureAction {
+    let mut part = json!({
+        "text": thinking,
+        "thought": true
+    });
+    crate::proxy::common::json_schema::clean_json_schema(&mut part);
+    SignatureAction::UseWithSignature { part }
+}
+
 /// Creates a thinking part with the dummy signature that skips upstream validation.
+/// Only for Gemini models — Claude does not accept this dummy.
 fn make_thinking_part_with_dummy(
     thinking: &str,
     last_thought_signature: &mut Option<String>,

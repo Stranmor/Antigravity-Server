@@ -23,6 +23,7 @@
     clippy::as_conversions,
     reason = "Prometheus metrics: bounded counters and file size calculations"
 )]
+#![allow(dead_code, reason = "Metrics recording API — wired incrementally as handlers adopt it")]
 
 use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gauge, histogram};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
@@ -124,7 +125,7 @@ pub fn init_metrics() -> PrometheusHandle {
 
 /// Get the Prometheus handle for rendering metrics.
 /// Returns None if metrics have not been initialized.
-pub fn get_prometheus_handle() -> Option<&'static PrometheusHandle> {
+fn get_prometheus_handle() -> Option<&'static PrometheusHandle> {
     PROMETHEUS_HANDLE.get()
 }
 
@@ -200,24 +201,24 @@ pub fn update_log_rotation_gauges(log_dir: &Path) -> (usize, u64) {
     (file_count, disk_bytes)
 }
 
-pub fn record_aimd_reward() {
+pub(crate) fn record_aimd_reward() {
     counter!("antigravity_aimd_rewards_total").increment(1);
 }
 
-pub fn record_aimd_penalty() {
+pub(crate) fn record_aimd_penalty() {
     counter!("antigravity_aimd_penalties_total").increment(1);
 }
 
-pub fn record_truncation() {
+pub(crate) fn record_truncation() {
     counter!("antigravity_truncations_total").increment(1);
 }
 
-pub fn record_peek_retry(reason: &str) {
+pub(crate) fn record_peek_retry(reason: &str) {
     let labels = [("reason", reason.to_string())];
     counter!("antigravity_peek_retries_total", &labels).increment(1);
 }
 
-pub fn record_peek_heartbeat() {
+pub(crate) fn record_peek_heartbeat() {
     counter!("antigravity_peek_heartbeats_total").increment(1);
 }
 

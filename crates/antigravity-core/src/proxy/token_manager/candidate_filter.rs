@@ -13,7 +13,7 @@ impl TokenManager {
     /// 2. Rate-limited for the target model
     /// 3. Quota-protected for the target model (if `check_quota` is true)
     /// 4. AIMD usage ratio exceeds 1.2 threshold (if `check_aimd` is true)
-    pub fn is_candidate_eligible(
+    pub(super) fn is_candidate_eligible(
         &self,
         candidate: &ProxyToken,
         model: &str,

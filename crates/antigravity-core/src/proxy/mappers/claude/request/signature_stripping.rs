@@ -1,82 +1,80 @@
-//! Strip non-Claude thinking signatures for Claude models on Vertex AI.
+//! Remove thinking blocks entirely from previous turns for Claude on Vertex AI.
 //!
-//! Claude on Vertex only accepts Claude-generated signatures. Gemini-generated
-//! signatures (even long, valid-looking ones) are incompatible and will be
-//! rejected with "Invalid `signature` in `thinking` block".
+//! The Gemini generateContent endpoint's `thoughtSignature` field is Gemini's own
+//! signature system. Claude API signatures (from Anthropic's `signature` field)
+//! are incompatible when placed in Gemini's `thoughtSignature`.
 //!
-//! Strategy:
-//!   - Claude-origin signatures (family cache hit with "claude-*") → KEEP (valid)
-//!   - Gemini-origin signatures → STRIP (incompatible)
-//!   - Unknown-origin signatures (cache miss) → STRIP (safer than crashing)
-//!   - Dummy/missing/short signatures → STRIP
+//! Per Anthropic docs:
+//!   "you can omit thinking blocks from previous turns, or let the API strip
+//!    them for you if you pass them back"
+//!
+//! But we can't "let the API strip them" because the API rejects them BEFORE
+//! stripping (Invalid signature / Field required).
+//!
+//! Solution: Remove thinking parts entirely from all turns EXCEPT the very last
+//! assistant turn (which doesn't have prior thinking blocks — it's being generated).
+//! This preserves all non-thinking content (text, tool_use, tool_result).
 
 use serde_json::Value;
 
-use super::signature_validator::DUMMY_SIGNATURE;
-use super::MIN_SIGNATURE_LENGTH;
-
 pub fn strip_non_claude_thought_signatures(value: &mut Value) {
-    match value {
-        Value::Object(map) => {
-            let is_thought = map
-                .get("thought")
-                .map(|v| v.as_bool().unwrap_or(false) || v.as_str().is_some())
-                .unwrap_or(false);
+    // Walk into contents array
+    if let Some(contents) = value.pointer_mut("/request/contents").and_then(|c| c.as_array_mut()) {
+        for content in contents.iter_mut() {
+            if let Some(parts) = content.get_mut("parts").and_then(|p| p.as_array_mut()) {
+                // Remove parts that are thinking blocks (have `thought` field)
+                let before = parts.len();
+                parts.retain(|part| {
+                    let is_thought = part
+                        .get("thought")
+                        .map(|v| v.as_bool().unwrap_or(false) || v.as_str().is_some())
+                        .unwrap_or(false);
 
-            if is_thought {
-                let sig = map.get("thoughtSignature").and_then(|s| s.as_str());
+                    if is_thought {
+                        let text_len = part
+                            .get("text")
+                            .and_then(|t| t.as_str())
+                            .map(|s| s.len())
+                            .unwrap_or(0);
+                        tracing::info!(
+                            "[Claude-Vertex] Removing thinking part (text_len: {}) from previous turn",
+                            text_len
+                        );
+                        return false;
+                    }
 
-                let keep = match sig {
-                    Some(s) if s == DUMMY_SIGNATURE => false,
-                    Some(s) if s.len() < MIN_SIGNATURE_LENGTH => false,
-                    Some(s) => {
-                        // Check signature family cache to determine origin
-                        let family = crate::proxy::SignatureCache::global().get_signature_family(s);
-                        match family {
-                            Some(f) if f.starts_with("claude") => {
-                                tracing::info!(
-                                    "[Claude-Vertex] Keeping Claude-origin signature (family: {}, len: {})",
-                                    f, s.len()
-                                );
-                                true
-                            },
-                            Some(f) => {
-                                tracing::info!(
-                                    "[Claude-Vertex] Stripping non-Claude signature (family: {}, len: {})",
-                                    f, s.len()
-                                );
-                                false
-                            },
-                            None => {
-                                tracing::info!(
-                                    "[Claude-Vertex] Stripping unknown-origin signature (len: {}). \
-                                     Cache miss — safer to strip than risk invalid signature error.",
-                                    s.len()
-                                );
-                                false
-                            },
-                        }
-                    },
-                    None => false,
-                };
+                    // Also strip thoughtSignature from functionCall parts
+                    // (tool_use blocks) — same incompatibility
+                    // NOTE: we mutate in retain via unsafe but actually
+                    // we just skip signature stripping here and do it below
+                    true
+                });
 
-                if !keep {
-                    map.remove("thoughtSignature");
-                    map.remove("thought");
+                if parts.len() != before {
+                    tracing::debug!(
+                        "[Claude-Vertex] Removed {} thinking parts from content",
+                        before - parts.len()
+                    );
+                }
+
+                // Strip thoughtSignature from remaining functionCall parts
+                for part in parts.iter_mut() {
+                    if part.get("functionCall").is_some()
+                        && part
+                            .as_object_mut()
+                            .is_some_and(|m| m.remove("thoughtSignature").is_some())
+                    {
+                        tracing::debug!(
+                            "[Claude-Vertex] Removed thoughtSignature from functionCall part"
+                        );
+                    }
                 }
             }
+        }
 
-            for v in map.values_mut() {
-                strip_non_claude_thought_signatures(v);
-            }
-        },
-        Value::Array(arr) => {
-            for v in arr {
-                strip_non_claude_thought_signatures(v);
-            }
-        },
-        // Primitive JSON values (string, number, bool, null) have no nested
-        // thought signatures to strip — nothing to do.
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {},
+        // Remove any content entries that now have empty parts arrays
+        contents.retain(|c| {
+            c.get("parts").and_then(|p| p.as_array()).is_none_or(|arr| !arr.is_empty())
+        });
     }
 }

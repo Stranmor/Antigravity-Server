@@ -54,14 +54,12 @@ impl TokenManager {
         forced_email: &str,
         _target_model: &str,
     ) -> Result<(String, String, String, ActiveRequestGuard), String> {
-        let tokens_snapshot: Vec<ProxyToken> =
-            self.tokens.iter().map(|e| e.value().clone()).collect();
-
         let forced_email_lower = forced_email.to_lowercase();
-        let token = tokens_snapshot
+        let token = self
+            .tokens
             .iter()
-            .find(|t| t.email.to_lowercase() == forced_email_lower)
-            .cloned()
+            .find(|entry| entry.value().email.to_lowercase() == forced_email_lower)
+            .map(|entry| entry.value().clone())
             .ok_or_else(|| format!("Forced account not found: {}", forced_email))?;
 
         if self.is_rate_limited(&token.account_id) {

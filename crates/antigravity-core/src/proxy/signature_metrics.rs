@@ -10,7 +10,7 @@ use metrics::{counter, describe_counter};
 
 /// Register all signature-related metric descriptions.
 /// Called once from `init_metrics()` in prometheus.rs.
-pub fn init_signature_metrics() {
+pub(crate) fn init_signature_metrics() {
     describe_counter!(
         "antigravity_signature_validations_total",
         "Signature validation outcomes by result type"
@@ -28,7 +28,7 @@ pub fn init_signature_metrics() {
 /// Record a signature validation outcome.
 ///
 /// Labels: result = "valid" | "dummy_passthrough" | "dummy_short" | "dummy_no_sig" | "recovered_content"
-pub fn record_signature_validation(result: &str) {
+pub(crate) fn record_signature_validation(result: &str) {
     let labels = [("result", result.to_string())];
     counter!("antigravity_signature_validations_total", &labels).increment(1);
 }
@@ -36,12 +36,12 @@ pub fn record_signature_validation(result: &str) {
 /// Record a signature cache operation.
 ///
 /// Labels: cache = "session" | "content" | "tool" | "family", op = "hit" | "miss" | "store"
-pub fn record_signature_cache(cache: &str, op: &str) {
+pub(crate) fn record_signature_cache(cache: &str, op: &str) {
     let labels = [("cache", cache.to_string()), ("op", op.to_string())];
     counter!("antigravity_signature_cache_total", &labels).increment(1);
 }
 
 /// Record a thinking degradation event (thinking response without cached signature).
-pub fn record_thinking_degradation() {
+pub(crate) fn record_thinking_degradation() {
     counter!("antigravity_thinking_degradation_total").increment(1);
 }
