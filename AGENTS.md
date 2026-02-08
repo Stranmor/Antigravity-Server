@@ -175,6 +175,7 @@ vendor/
 | `proxy/token_manager/mod.rs` | `active_requests` DashMap entries never cleaned up when count drops to zero — grows unbounded with unique emails | Low |
 | `server_utils.rs` | Hardcoded `Domain::IPV4` prevents IPv6 binding; `format!("{}:{}")` generates invalid syntax for IPv6 addresses — should parse `IpAddr` first and derive domain | Low |
 | `proxy/handlers/gemini/models.rs` | `handle_get_model` accepts any model_name without validation against available models, returns incomplete JSON (missing `inputTokenLimit` etc.) | Low |
+| `proxy/token_manager/recovery.rs` | Optimistic reset retry loop (line 63) doesn't check `protected_models` — can route request to account with exhausted quota for that specific model (upstream fixed in 6159a57) | Low |
 
 ---
 
@@ -354,7 +355,7 @@ cargo build --release -p antigravity-server    # ✅ builds (1m 22s, 11MB)
 - **repo:** lbjlaq/Antigravity-Manager
 - **watch:** src-tauri/src/proxy/, src-tauri/src/modules/
 - **ignore:** *.tsx, *.json, README*, i18n/, Tauri-specific
-- **last_reviewed:** 9033f4f (2026-02-03)
+- **last_reviewed:** f86a58d (2026-02-08)
 
 ### What We Port
 
