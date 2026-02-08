@@ -48,11 +48,11 @@ pub async fn handle_count_tokens(
         crate::proxy::common::resolve_model_route(&model_name, &*state.custom_mapping.read().await)
             .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
 
-    let (access_token, project_id, _email, _guard) = state
-        .token_manager
-        .get_token("gemini", false, None, &mapped_model)
-        .await
-        .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, format!("Token error: {}", e)))?;
+    let (access_token, project_id, _email, _guard) =
+        state.token_manager.get_token("gemini", false, None, &mapped_model).await.map_err(|e| {
+            tracing::warn!("countTokens token error for {}: {}", mapped_model, e);
+            (StatusCode::SERVICE_UNAVAILABLE, "No available accounts".to_string())
+        })?;
 
     let wrapped_body =
         crate::proxy::mappers::gemini::wrap_request(&body, &project_id, &mapped_model, None);
@@ -61,13 +61,21 @@ pub async fn handle_count_tokens(
         .upstream
         .call_v1_internal("countTokens", &access_token, wrapped_body, None)
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Upstream error: {}", e)))?;
+        .map_err(|e| {
+            tracing::error!("countTokens upstream error: {}", e);
+            (StatusCode::BAD_GATEWAY, "Upstream request failed".to_string())
+        })?;
 
     let status = response.status();
     if !status.is_success() {
-        let error_text =
-            response.text().await.unwrap_or_else(|_| format!("HTTP {}", status.as_u16()));
-        return Err((status, error_text));
+        let error_text = response.text().await.unwrap_or_default();
+        tracing::warn!(
+            "countTokens upstream {} for {}: {}",
+            status.as_u16(),
+            model_name,
+            error_text
+        );
+        return Err((status, format!("Upstream returned {}", status.as_u16())));
     }
 
     let resp: Value = response
