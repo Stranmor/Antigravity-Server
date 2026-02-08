@@ -15,16 +15,24 @@ pub fn build_generation_config(
     mapped_model: &str,
 ) -> Value {
     const THINKING_BUDGET: u32 = 16000;
+    const THINKING_OVERHEAD: u32 = 32768;
+    const THINKING_MIN_OVERHEAD: u32 = 8192;
+
+    // [FIX 2026-02-08] Sanitize topP: Gemini API rejects 0.0 as invalid argument.
+    // Replace 0.0 with the Gemini default (0.95).
+    let top_p = match request.top_p {
+        Some(v) if v <= 0.0 => {
+            tracing::info!("[OpenAI-GenConfig] Sanitizing topP={} to 0.95 (Gemini rejects 0.0)", v);
+            0.95
+        },
+        Some(v) => v as f64,
+        None => 0.95,
+    };
 
     let mut gen_config = json!({
         "temperature": request.temperature.unwrap_or(1.0),
-        "topP": request.top_p.unwrap_or(0.95),
+        "topP": top_p,
     });
-
-    // [FIX] Always set maxOutputTokens — use client value or 65536 default
-    // Matches Claude path behavior: guarantee maximum output capacity
-    let max_tokens = request.max_tokens.unwrap_or(65536);
-    gen_config["maxOutputTokens"] = json!(max_tokens);
 
     if let Some(n) = request.n {
         gen_config["candidateCount"] = json!(n);
@@ -36,22 +44,32 @@ pub fn build_generation_config(
             "thinkingBudget": THINKING_BUDGET
         });
 
-        let current_max = gen_config["maxOutputTokens"].as_i64().unwrap_or(0);
-        if current_max <= THINKING_BUDGET as i64 {
-            let new_max = THINKING_BUDGET + 8192;
-            gen_config["maxOutputTokens"] = json!(new_max);
-            tracing::debug!(
-                "[OpenAI-Request] Adjusted maxOutputTokens to {} for thinking model (budget={})",
-                new_max,
-                THINKING_BUDGET
-            );
+        // [FIX 2026-02-08] maxOutputTokens MUST be > thinkingBudget (API strict constraint).
+        // If client provides max_tokens and it's too small, bump it.
+        // If client doesn't provide max_tokens, use budget + overhead (matching upstream).
+        if let Some(max_tokens) = request.max_tokens {
+            if (max_tokens as i64) <= THINKING_BUDGET as i64 {
+                gen_config["maxOutputTokens"] = json!(THINKING_BUDGET + THINKING_MIN_OVERHEAD);
+            } else {
+                gen_config["maxOutputTokens"] = json!(max_tokens);
+            }
+        } else {
+            // No client max_tokens → use budget + overhead (upstream default)
+            gen_config["maxOutputTokens"] = json!(THINKING_BUDGET + THINKING_OVERHEAD);
         }
 
+        let new_max = gen_config["maxOutputTokens"].as_i64().unwrap_or(0);
         tracing::debug!(
-            "[OpenAI-Request] Injected thinkingConfig for model {}: thinkingBudget={}",
+            "[OpenAI-Request] Injected thinkingConfig for model {}: thinkingBudget={}, maxOutputTokens={}",
             mapped_model,
-            THINKING_BUDGET
+            THINKING_BUDGET,
+            new_max
         );
+    } else {
+        // Non-thinking models: only set maxOutputTokens if client explicitly provided it
+        if let Some(max_tokens) = request.max_tokens {
+            gen_config["maxOutputTokens"] = json!(max_tokens);
+        }
     }
 
     if let Some(stop) = &request.stop {

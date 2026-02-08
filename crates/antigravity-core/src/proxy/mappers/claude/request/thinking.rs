@@ -20,9 +20,13 @@ use super::safety::MIN_SIGNATURE_LENGTH;
 pub fn should_enable_thinking_by_default(model: &str) -> bool {
     let model_lower = model.to_lowercase();
 
-    // Enable thinking by default for Opus 4.5 variants
-    if model_lower.contains("opus-4-5") || model_lower.contains("opus-4.5") {
-        tracing::debug!("[Thinking-Mode] Auto-enabling thinking for Opus 4.5 model: {}", model);
+    // Enable thinking by default for Opus 4.5 and 4.6 variants
+    if model_lower.contains("opus-4-5")
+        || model_lower.contains("opus-4.5")
+        || model_lower.contains("opus-4-6")
+        || model_lower.contains("opus-4.6")
+    {
+        tracing::debug!("[Thinking-Mode] Auto-enabling thinking for Opus model: {}", model);
         return true;
     }
 

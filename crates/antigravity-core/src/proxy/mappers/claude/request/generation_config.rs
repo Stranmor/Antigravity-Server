@@ -41,14 +41,21 @@ pub fn build_generation_config(
                 config["thinkingConfig"] = thinking_config;
             }
         } else {
-            // [FIX 2026-02-07] Auto-thinking models (e.g. opus-4-5) may not have
+            // [FIX 2026-02-07] Auto-thinking models (e.g. opus-4-5, opus-4-6) may not have
             // explicit thinking config from client. We MUST inject thinkingConfig
-            // to ensure upstream actually enables thinking mode.
+            // with thinkingBudget to ensure upstream actually enables thinking mode.
+            // [FIX 2026-02-08] thinkingBudget is REQUIRED by cloudcode-pa API when
+            // includeThoughts=true. Without it, API returns 400 INVALID_ARGUMENT.
+            let default_budget: u64 = 16000;
             tracing::info!(
-                "[Generation-Config] Auto-injecting thinkingConfig for model: {}",
-                claude_req.model
+                "[Generation-Config] Auto-injecting thinkingConfig for model: {} (budget: {})",
+                claude_req.model,
+                default_budget
             );
-            config["thinkingConfig"] = json!({"includeThoughts": true});
+            config["thinkingConfig"] = json!({
+                "includeThoughts": true,
+                "thinkingBudget": default_budget
+            });
         }
     }
 
@@ -81,31 +88,30 @@ pub fn build_generation_config(
         }
     }
 
-    // web_search force candidateCount=1
-    /*if has_web_search {
-        config["candidateCount"] = json!(1);
-    }*/
-
-    // max_tokens mappingas maxOutputTokens
-    // [FIX] Use client's max_tokens if provided, otherwise use high default (65536)
-    // Gemini supports up to 65536 output tokens for most models
-    let mut final_max_tokens: i64 = claude_req.max_tokens.map(|t| t as i64).unwrap_or(65536);
+    // max_tokens mapping to maxOutputTokens
+    // [FIX 2026-02-08] Only set maxOutputTokens when client provides max_tokens explicitly
+    // or when thinking is enabled and we need to ensure it exceeds budget.
+    // Setting unconditional defaults can cause 400 errors on some model/account combos.
+    let mut final_max_tokens: Option<i64> = claude_req.max_tokens.map(|t| t as i64);
 
     // [NEW] Ensure maxOutputTokens is greater than thinkingBudget (API strict constraint)
     if let Some(thinking_config) = config.get("thinkingConfig") {
         if let Some(budget) = thinking_config.get("thinkingBudget").and_then(|t| t.as_u64()) {
-            if final_max_tokens <= budget as i64 {
-                final_max_tokens = (budget + 8192) as i64;
+            let current = final_max_tokens.unwrap_or(0);
+            if current <= budget as i64 {
+                final_max_tokens = Some((budget + 8192) as i64);
                 tracing::info!(
                     "[Generation-Config] Bumping maxOutputTokens to {} due to thinking budget of {}",
-                    final_max_tokens,
+                    final_max_tokens.unwrap_or(0),
                     budget
                 );
             }
         }
     }
 
-    config["maxOutputTokens"] = json!(final_max_tokens);
+    if let Some(max_tokens) = final_max_tokens {
+        config["maxOutputTokens"] = json!(max_tokens);
+    }
 
     // [optimize] Set global stop sequences to prevent streaming output redundancy (control within 4 tokens)
     config["stopSequences"] = json!(["<|user|>", "<|end_of_turn|>", "\n\nHuman:"]);

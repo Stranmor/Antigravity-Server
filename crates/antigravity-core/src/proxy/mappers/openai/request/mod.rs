@@ -34,11 +34,14 @@ pub fn transform_openai_request(
     );
 
     // [FIX] Detect thinking models early (needed for signature handling)
-    // Only treat as Gemini thinking if model name explicitly contains "-thinking"
-    // Avoid injecting thinkingConfig for gemini-3-pro (preview) which doesn't support it
+    // [FIX #1557] Gemini Pro models (gemini-3-pro, gemini-2.0-pro) support thinking
+    // but don't have "-thinking" suffix. They REQUIRE thinkingConfig or return 400.
     let is_gemini_3_thinking = mapped_model_lower.contains("gemini")
-        && mapped_model_lower.contains("-thinking")
-        && !mapped_model_lower.contains("claude");
+        && (mapped_model_lower.contains("-thinking")
+            || mapped_model_lower.contains("gemini-2.0-pro")
+            || mapped_model_lower.contains("gemini-3-pro"))
+        && !mapped_model_lower.contains("claude")
+        && !mapped_model_lower.contains("-image");
     let is_claude_thinking =
         mapped_model_lower.contains("claude") && mapped_model_lower.ends_with("-thinking");
     let is_thinking_model = is_gemini_3_thinking || is_claude_thinking;

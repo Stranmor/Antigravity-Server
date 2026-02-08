@@ -123,3 +123,96 @@ fn test_tool_response_compression() {
         "Compressed result should be smaller than original"
     );
 }
+
+/// Reproduces exact failing production request (2026-02-08):
+/// POST /v1/chat/completions with model=gemini-3-pro-high, response_format=json_object,
+/// temperature=1.0, top_p=0.0 → Upstream error (HTTP 400) INVALID_ARGUMENT
+///
+/// Root causes identified:
+/// 1. gemini-3-pro-high maps to gemini-3-pro-preview which requires thinkingConfig
+/// 2. maxOutputTokens=65536 must not exceed model limit when thinking is enabled
+/// 3. top_p=0.0 must be sanitized (Gemini API rejects 0.0)
+/// 4. responseMimeType and thinkingConfig combination must be valid
+#[test]
+fn test_gemini_3_pro_high_json_mode_with_thinking() {
+    let req = OpenAIRequest {
+        model: "gemini-3-pro-high".to_string(),
+        messages: vec![OpenAIMessage {
+            role: "user".to_string(),
+            content: Some(OpenAIContent::String(
+                "## ТВОЯ ЗАДАЧА\nПридумай тему для следующего поста.\nТолько JSON, без markdown."
+                    .to_string(),
+            )),
+            reasoning_content: None,
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+        }],
+        stream: false,
+        n: None,
+        max_tokens: None, // Client did not set max_tokens
+        temperature: Some(1.0),
+        top_p: Some(0.0), // Client sent top_p=0.0
+        stop: None,
+        response_format: Some(ResponseFormat { r#type: "json_object".to_string() }),
+        tools: None,
+        tool_choice: None,
+        parallel_tool_calls: None,
+        instructions: None,
+        input: None,
+        prompt: None,
+        size: None,
+        quality: None,
+        person_generation: None,
+    };
+
+    // mapped_model for gemini-3-pro-high is gemini-3-pro-preview
+    let mapped_model = "gemini-3-pro-preview";
+    let result = transform_openai_request(&req, "test-project", mapped_model);
+
+    let gen_config = &result["request"]["generationConfig"];
+
+    // 1. thinkingConfig MUST be injected for gemini-3-pro models
+    assert!(
+        gen_config.get("thinkingConfig").is_some(),
+        "thinkingConfig must be injected for gemini-3-pro-preview (thinking model)"
+    );
+    let thinking_config = &gen_config["thinkingConfig"];
+    assert!(thinking_config["includeThoughts"].as_bool().unwrap(), "includeThoughts must be true");
+    assert!(
+        thinking_config.get("thinkingBudget").is_some(),
+        "thinkingBudget is required by cloudcode API"
+    );
+
+    // 2. maxOutputTokens must be set and > thinkingBudget
+    let max_output = gen_config["maxOutputTokens"].as_i64().unwrap();
+    let thinking_budget = thinking_config["thinkingBudget"].as_i64().unwrap();
+    assert!(
+        max_output > thinking_budget,
+        "maxOutputTokens ({}) must be > thinkingBudget ({})",
+        max_output,
+        thinking_budget
+    );
+
+    // 3. maxOutputTokens must not be excessively large (48768 is safe upper bound for thinking)
+    // Upstream uses budget + 32768 as default overhead
+    assert!(max_output <= 65536, "maxOutputTokens ({}) should not exceed 65536", max_output);
+
+    // 4. topP must NOT be 0.0 (Gemini API rejects this value)
+    let top_p = gen_config["topP"].as_f64().unwrap();
+    assert!(top_p > 0.0, "topP ({}) must be > 0.0 — Gemini API rejects 0.0", top_p);
+
+    // 5. responseMimeType should be set for json_object
+    assert_eq!(
+        gen_config["responseMimeType"].as_str().unwrap(),
+        "application/json",
+        "responseMimeType must be set for json_object response_format"
+    );
+
+    // 6. final_model must be gemini-3-pro-high (physical name, not preview alias)
+    let final_model = result["model"].as_str().unwrap();
+    assert_eq!(
+        final_model, "gemini-3-pro-high",
+        "final_model must be remapped from preview to physical name"
+    );
+}

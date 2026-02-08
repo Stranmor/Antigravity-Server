@@ -1,6 +1,6 @@
 //! Helper functions for PostgreSQL account operations.
 
-use crate::models::{Account, TokenData};
+use crate::models::{Account, ModelQuota, QuotaData, TokenData};
 use crate::modules::repository::{AccountEventType, RepoResult, RepositoryError};
 use sqlx::Row;
 use std::collections::HashSet;
@@ -22,6 +22,26 @@ pub(crate) fn row_to_account(row: &sqlx::postgres::PgRow) -> RepoResult<Account>
     let now = chrono::Utc::now().timestamp();
     let expires_in = (expiry_timestamp.saturating_sub(now)).max(0);
 
+    let token_tier: Option<String> = row.get("token_tier");
+
+    let quota_models: Option<serde_json::Value> = row.get("quota_models");
+    let quota_is_forbidden: Option<bool> = row.get("quota_is_forbidden");
+    let quota_fetched_at: Option<chrono::DateTime<chrono::Utc>> = row.get("quota_fetched_at");
+
+    let quota = match quota_models {
+        Some(models_json) => {
+            let models: Vec<ModelQuota> = serde_json::from_value(models_json)
+                .map_err(|err| RepositoryError::Serialization(err.to_string()))?;
+            Some(QuotaData {
+                models,
+                last_updated: quota_fetched_at.map_or(0, |dt| dt.timestamp()),
+                is_forbidden: quota_is_forbidden.unwrap_or(false),
+                subscription_tier: token_tier,
+            })
+        },
+        None => None,
+    };
+
     Ok(Account {
         id: id.to_string(),
         email: row.get("email"),
@@ -36,7 +56,7 @@ pub(crate) fn row_to_account(row: &sqlx::postgres::PgRow) -> RepoResult<Account>
             project_id: row.get("project_id"),
             session_id: None,
         },
-        quota: None,
+        quota,
         disabled: row.get("disabled"),
         disabled_reason: row.get("disabled_reason"),
         disabled_at: disabled_at.map(|dt| dt.timestamp()),

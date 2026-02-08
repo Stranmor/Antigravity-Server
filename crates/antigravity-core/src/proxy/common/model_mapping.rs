@@ -100,10 +100,17 @@ pub async fn collect_all_model_ids(
     use std::collections::HashSet;
     let mut model_ids: HashSet<String> = HashSet::new();
 
+    // 1. Account-reported models
     for model in account_models {
         let _: bool = model_ids.insert(model.clone());
     }
 
+    // 2. All built-in mapped models (CLAUDE_TO_GEMINI keys)
+    for model in get_supported_models() {
+        let _: bool = model_ids.insert(model);
+    }
+
+    // 3. Custom user mappings
     {
         let mapping = custom_mapping.read().await;
         for key in mapping.keys() {
@@ -111,6 +118,7 @@ pub async fn collect_all_model_ids(
         }
     }
 
+    // 4. Image model variants
     for variant in generate_image_model_variants() {
         let _: bool = model_ids.insert(variant);
     }
