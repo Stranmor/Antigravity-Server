@@ -173,6 +173,7 @@ vendor/
 | `modules/account_pg_events.rs` | UUID parse errors mapped to `RepositoryError::NotFound` instead of validation error — conflates bad input with missing resource | Low |
 | `modules/repository.rs` | `update_token_credentials` accepts both `expires_in` and `expiry_timestamp` — redundant, allows conflicting data | Low |
 | `proxy/token_manager/mod.rs` | `active_requests` DashMap entries never cleaned up when count drops to zero — grows unbounded with unique emails | Low |
+| `server_utils.rs` | Hardcoded `Domain::IPV4` prevents IPv6 binding; `format!("{}:{}")` generates invalid syntax for IPv6 addresses — should parse `IpAddr` first and derive domain | Low |
 
 ---
 

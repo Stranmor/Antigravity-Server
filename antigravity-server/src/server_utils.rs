@@ -60,6 +60,7 @@ pub async fn shutdown_signal() {
         () = terminate => info!("🛑 Received SIGTERM, initiating graceful shutdown..."),
     }
 
-    info!("⏳ Graceful shutdown initiated, draining active connections...");
+    info!("⏳ Graceful shutdown: accepting connections for 1s while overlap takes over...");
     tokio::time::sleep(Duration::from_secs(1)).await;
+    info!("🚫 Stopped accepting new connections, draining in-flight requests...");
 }
