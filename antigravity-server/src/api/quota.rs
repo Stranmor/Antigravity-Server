@@ -38,6 +38,11 @@ pub async fn refresh_account_quota(
                     tracing::warn!("Failed to save account fallback: {}", e);
                 }
             }
+            if let Some(repo) = state.repository() {
+                if let Err(e) = repo.update_quota(&payload.account_id, quota.clone()).await {
+                    tracing::warn!("DB quota update failed for {}: {}", payload.account_id, e);
+                }
+            }
             if let Err(e) = state.reload_accounts().await {
                 tracing::warn!("Failed to reload accounts: {}", e);
             }
@@ -80,9 +85,15 @@ pub async fn refresh_all_quotas(
     while let Some(result) = join_set.join_next().await {
         match result {
             Ok(Ok((account_id, quota))) => {
-                if let Err(e) = account::update_account_quota_async(account_id.clone(), quota).await
+                if let Err(e) =
+                    account::update_account_quota_async(account_id.clone(), quota.clone()).await
                 {
                     tracing::warn!("Quota protection update failed for {}: {}", account_id, e);
+                }
+                if let Some(repo) = state.repository() {
+                    if let Err(e) = repo.update_quota(&account_id, quota).await {
+                        tracing::warn!("DB quota update failed for {}: {}", account_id, e);
+                    }
                 }
                 success += 1;
             },
@@ -181,8 +192,15 @@ pub async fn warmup_account(
     match account::fetch_quota_with_retry(&mut acc).await {
         Ok(_) => {
             if let Some(quota) = acc.quota.clone() {
-                if let Err(e) = account::update_account_quota_async(acc.id.clone(), quota).await {
+                if let Err(e) =
+                    account::update_account_quota_async(acc.id.clone(), quota.clone()).await
+                {
                     tracing::warn!("Failed to update quota for {}: {}", acc.email, e);
+                }
+                if let Some(repo) = state.repository() {
+                    if let Err(e) = repo.update_quota(&acc.id, quota).await {
+                        tracing::warn!("DB quota update failed for {}: {}", acc.email, e);
+                    }
                 }
             }
             if let Err(e) = state.reload_accounts().await {
@@ -238,15 +256,26 @@ pub async fn warmup_all_accounts(
         match result {
             Ok(Ok(warmup_result)) => {
                 if let Some(quota) = warmup_result.quota {
-                    if let Err(e) =
-                        account::update_account_quota_async(warmup_result.account_id.clone(), quota)
-                            .await
+                    if let Err(e) = account::update_account_quota_async(
+                        warmup_result.account_id.clone(),
+                        quota.clone(),
+                    )
+                    .await
                     {
                         tracing::warn!(
                             "Failed to update quota for {}: {}",
                             warmup_result.account_id,
                             e
                         );
+                    }
+                    if let Some(repo) = state.repository() {
+                        if let Err(e) = repo.update_quota(&warmup_result.account_id, quota).await {
+                            tracing::warn!(
+                                "DB quota update failed for {}: {}",
+                                warmup_result.account_id,
+                                e
+                            );
+                        }
                     }
                 }
                 success += 1;
