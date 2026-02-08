@@ -154,8 +154,13 @@ fn transform_tool_calls(
             if let Some(ref sig) = ctx.global_thought_sig {
                 func_call_part["thoughtSignature"] = json!(sig);
             } else {
+                // Google requires thoughtSignature on all functionCall parts.
+                // Use dummy to skip validation when no real signature is cached.
+                func_call_part["thoughtSignature"] = json!(
+                    crate::proxy::mappers::claude::request::signature_validator::DUMMY_SIGNATURE
+                );
                 tracing::debug!(
-                    "[OpenAI-Signature] No signature available for tool_use: {}. Omitting thoughtSignature.",
+                    "[OpenAI-Signature] No signature available for tool_use: {}. Using dummy signature.",
                     tc.id
                 );
             }

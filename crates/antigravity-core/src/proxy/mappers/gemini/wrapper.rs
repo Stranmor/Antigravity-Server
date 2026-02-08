@@ -21,29 +21,20 @@ pub fn wrap_request(
     crate::proxy::mappers::request_config::deep_clean_undefined(&mut inner_request);
 
     // [FIX #765] Inject thought_signature into functionCall parts
-    if let Some(s_id) = session_id {
-        if let Some(contents) = inner_request.get_mut("contents").and_then(|c| c.as_array_mut()) {
-            for content in contents {
-                if let Some(parts) = content.get_mut("parts").and_then(|p| p.as_array_mut()) {
-                    for part in parts {
-                        if part.get("functionCall").is_some() {
-                            // Only inject if it doesn't already have one
-                            if part.get("thoughtSignature").is_none() {
-                                if let Some(sig) = crate::proxy::SignatureCache::global()
-                                    .get_session_signature(s_id)
-                                {
-                                    if let Some(obj) = part.as_object_mut() {
-                                        drop(
-                                            obj.insert("thoughtSignature".to_string(), json!(sig)),
-                                        );
-                                        tracing::debug!(
-                                            "[Gemini-Wrap] Injected signature (len: {}) for session: {}",
-                                            sig.len(),
-                                            s_id
-                                        );
-                                    }
-                                }
-                            }
+    // Google requires thoughtSignature on ALL functionCall parts — use dummy as fallback
+    if let Some(contents) = inner_request.get_mut("contents").and_then(|c| c.as_array_mut()) {
+        let cached_sig = session_id
+            .and_then(|s_id| crate::proxy::SignatureCache::global().get_session_signature(s_id));
+        for content in contents {
+            if let Some(parts) = content.get_mut("parts").and_then(|p| p.as_array_mut()) {
+                for part in parts {
+                    if part.get("functionCall").is_some() && part.get("thoughtSignature").is_none()
+                    {
+                        let sig = cached_sig.as_deref().unwrap_or(
+                            crate::proxy::mappers::claude::request::signature_validator::DUMMY_SIGNATURE,
+                        );
+                        if let Some(obj) = part.as_object_mut() {
+                            drop(obj.insert("thoughtSignature".to_string(), json!(sig)));
                         }
                     }
                 }
