@@ -174,6 +174,8 @@ vendor/
 | `modules/repository.rs` | `update_token_credentials` accepts both `expires_in` and `expiry_timestamp` — redundant, allows conflicting data | Low |
 | `proxy/token_manager/mod.rs` | `active_requests` DashMap entries never cleaned up when count drops to zero — grows unbounded with unique emails | Low |
 | `server_utils.rs` | Hardcoded `Domain::IPV4` prevents IPv6 binding; `format!("{}:{}")` generates invalid syntax for IPv6 addresses — should parse `IpAddr` first and derive domain | Low |
+| `proxy/handlers/gemini/models.rs` | `handle_count_tokens` is a stub returning hardcoded `totalTokens: 0` — acquires token but ignores request body, should forward to upstream | Medium |
+| `proxy/handlers/gemini/models.rs` | `handle_get_model` accepts any model_name without validation against available models, returns incomplete JSON (missing `inputTokenLimit` etc.) | Low |
 
 ---
 
@@ -460,6 +462,7 @@ Vertex AI enforces a **hard 200,000 token limit** on Claude prompt input.
 | `./deploy.sh deploy` | Build Nix closure → copy to VPS → restart service |
 | `./deploy.sh rollback` | Restore previous version from `.previous` backup |
 | `./deploy.sh status` | Show service status, health, current/previous binary |
+| `./deploy.sh deploy-local` | Zero-downtime local deploy (socket activation) |
 | `./deploy.sh logs [-n N]` | Stream VPS service logs |
 
 **Flow:**
@@ -473,21 +476,25 @@ Local: nix build .#antigravity-server
 
 **Rollback:** Each deploy saves previous binary path to `/opt/antigravity/.previous`. Rollback restores symlink + restarts.
 
-### Zero-Downtime (Local Only)
+### Zero-Downtime (Local) — Socket Activation [2026-02-08]
 
-Server supports **SO_REUSEPORT** + **Graceful Shutdown** for overlap deploys:
+Local service uses **systemd socket activation** for zero-downtime deploys:
 
 ```
-[OLD process] ← handles requests
-      ↓ (deploy trigger)
-[OLD] + [NEW] ← BOTH listen on port 8045 via SO_REUSEPORT
-      ↓ (SIGTERM → OLD)
-[OLD draining] + [NEW accepts new connections]
-      ↓ (OLD finishes active requests, exits)
-[NEW] ← sole owner of port
+antigravity-manager.socket ← owns port 8045 (always listening)
+         ↓ (first connection)
+antigravity-manager.service ← started by systemd, receives fd=3
+         ↓ (deploy: systemctl restart)
+[OLD draining] ← socket stays open, kernel buffers new connections (backlog=4096)
+         ↓ (OLD exits, NEW starts, receives fd=3)
+[NEW] ← processes buffered connections (~3s latency during restart)
 ```
 
-**Script:** `scripts/zero-downtime-deploy.sh` (local machine only, not VPS)
+**Command:** `./deploy.sh deploy-local` (build → replace binary → restart service)
+
+**Units:**
+- `~/.config/systemd/user/antigravity-manager.socket` — ListenStream=127.0.0.1:8045
+- `~/.config/systemd/user/antigravity-manager.service` — Requires=antigravity-manager.socket
 
 ### Important: Unified Build
 

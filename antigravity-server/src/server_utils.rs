@@ -2,7 +2,6 @@ use anyhow::Result;
 use listenfd::ListenFd;
 use socket2::{Domain, Protocol, Socket, Type};
 use std::net::SocketAddr;
-use std::time::Duration;
 use tokio::signal;
 use tracing::info;
 
@@ -60,7 +59,5 @@ pub async fn shutdown_signal() {
         () = terminate => info!("🛑 Received SIGTERM, initiating graceful shutdown..."),
     }
 
-    info!("⏳ Graceful shutdown: accepting connections for 1s while overlap takes over...");
-    tokio::time::sleep(Duration::from_secs(1)).await;
-    info!("🚫 Stopped accepting new connections, draining in-flight requests...");
+    info!("⏳ Graceful shutdown initiated, draining in-flight requests...");
 }

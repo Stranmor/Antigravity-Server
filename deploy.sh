@@ -23,70 +23,31 @@ cmd_deploy_local() {
     cargo build --release -p antigravity-server
     success "Built: target/release/antigravity-server"
 
-    cp "target/release/antigravity-server" "${BINARY_PATH}.new"
-    chmod +x "${BINARY_PATH}.new"
+    # Replace binary (rm first — running process holds old inode)
+    rm -f "${BINARY_PATH}"
+    cp "target/release/antigravity-server" "${BINARY_PATH}"
+    chmod +x "${BINARY_PATH}"
+    success "Binary replaced"
 
-    local ENV_ARGS=()
-    while IFS='=' read -r key value; do
-        [[ -n "$key" ]] && ENV_ARGS+=("$key=$value")
-    done < <(systemctl --user show "${SERVICE_LOCAL}" -p Environment --value | tr ' ' '\n')
-
-    log "Starting new instance (SO_REUSEPORT overlap)..."
-    env "${ENV_ARGS[@]}" "${BINARY_PATH}.new" &
-    local NEW_PID=$!
+    # Socket activation = zero-downtime restart
+    # Socket stays open, kernel buffers connections during restart
+    log "Restarting service (socket-activated, zero-downtime)..."
+    systemctl --user restart "${SERVICE_LOCAL}"
 
     local ready=false
     for _ in $(seq 1 15); do
         sleep 1
-        if ! kill -0 "$NEW_PID" 2>/dev/null; then
-            rm -f "${BINARY_PATH}.new"
-            error "New instance died during startup (PID: ${NEW_PID})"
-        fi
-        local http_code
-        http_code=$(curl -sf -o /dev/null -w '%{http_code}' "http://localhost:${PORT_LOCAL}/v1/models" 2>/dev/null || echo "000")
-        if [[ "$http_code" == "200" || "$http_code" == "401" ]]; then
+        if curl -sf "http://localhost:${PORT_LOCAL}/v1/models" > /dev/null 2>&1; then
             ready=true
             break
         fi
     done
 
     if ! $ready; then
-        kill "$NEW_PID" 2>/dev/null || true
-        rm -f "${BINARY_PATH}.new"
-        error "New instance failed health check after 15s"
-    fi
-    success "New instance ready (PID: ${NEW_PID})"
-
-    trap 'kill $NEW_PID 2>/dev/null; rm -f "${BINARY_PATH}.new"' EXIT INT TERM
-
-    mv "${BINARY_PATH}.new" "${BINARY_PATH}" || {
-        trap - EXIT INT TERM
-        kill "$NEW_PID" 2>/dev/null || true
-        error "Failed to replace binary — old version preserved, overlap killed"
-    }
-
-    log "Restarting systemd service (SO_REUSEPORT keeps new instance alive)..."
-    systemctl --user restart "${SERVICE_LOCAL}"
-
-    local systemd_ready=false
-    for _ in $(seq 1 15); do
-        sleep 1
-        if systemctl --user is-active --quiet "${SERVICE_LOCAL}"; then
-            systemd_ready=true
-            break
-        fi
-    done
-
-    if ! $systemd_ready; then
-        log "WARNING: systemd instance failed — overlap still serving traffic"
-        log "Overlap PID: ${NEW_PID} — investigate manually"
-        trap - EXIT INT TERM
-        exit 1
+        error "Service failed health check after 15s — check: journalctl --user -u ${SERVICE_LOCAL}"
     fi
 
-    trap - EXIT INT TERM
-    kill "$NEW_PID" 2>/dev/null || true
-    success "Zero-downtime local deploy complete!"
+    success "Local deploy complete (v$(get_version))"
 }
 
 cmd_deploy() {
@@ -239,7 +200,7 @@ Usage: ./deploy.sh <command> [options]
 
 Commands:
   deploy       Build and deploy to VPS via Nix closure
-  deploy-local Zero-downtime local deploy (SO_REUSEPORT overlap)
+  deploy-local Zero-downtime local deploy (socket activation)
   rollback     Rollback to previous version on VPS
   status       Show VPS service status and health
   logs         Stream VPS service logs (use -n N for line count)
