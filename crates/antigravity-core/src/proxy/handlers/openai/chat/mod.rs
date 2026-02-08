@@ -99,7 +99,22 @@ pub async fn handle_chat_completions(
 
         signature_preload::preload_signatures(&openai_req).await;
 
-        let gemini_body = transform_openai_request(&openai_req, &project_id, &mapped_model);
+        let is_claude_model = mapped_model.starts_with("claude-");
+
+        let gemini_body = if is_claude_model {
+            let claude_req =
+                crate::proxy::mappers::openai::request::claude_bridge::openai_to_claude_request(
+                    &openai_req,
+                );
+            crate::proxy::mappers::claude::transform_claude_request_in(
+                &claude_req,
+                &project_id,
+                false,
+            )
+            .map_err(|e| (StatusCode::BAD_REQUEST, e))?
+        } else {
+            transform_openai_request(&openai_req, &project_id, &mapped_model)
+        };
 
         debug!("[OpenAI-Request] Transformed Gemini Body");
 

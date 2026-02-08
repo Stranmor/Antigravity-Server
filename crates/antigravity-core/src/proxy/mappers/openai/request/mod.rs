@@ -1,3 +1,4 @@
+pub mod claude_bridge;
 mod content_parts;
 mod generation_config;
 mod message_transform;
