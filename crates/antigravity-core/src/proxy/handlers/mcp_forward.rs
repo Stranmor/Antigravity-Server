@@ -5,22 +5,9 @@ use axum::{
 };
 use bytes::Bytes;
 use futures::StreamExt;
-use tokio::time::Duration;
 
+use crate::proxy::common::client_builder::build_http_client;
 use crate::proxy::server::AppState;
-
-pub fn build_client(
-    upstream_proxy: crate::proxy::config::UpstreamProxyConfig,
-    timeout_secs: u64,
-) -> Result<reqwest::Client, String> {
-    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(timeout_secs.max(5)));
-    if upstream_proxy.enabled && !upstream_proxy.url.is_empty() {
-        let proxy = reqwest::Proxy::all(&upstream_proxy.url)
-            .map_err(|e| format!("Invalid upstream proxy url: {}", e))?;
-        builder = builder.proxy(proxy);
-    }
-    builder.build().map_err(|e| format!("Failed to build HTTP client: {}", e))
-}
 
 fn copy_passthrough_headers(incoming: &HeaderMap) -> HeaderMap {
     let mut out = HeaderMap::new();
@@ -53,7 +40,7 @@ async fn forward_mcp(
     }
 
     let upstream_proxy = state.upstream_proxy.read().await.clone();
-    let client = match build_client(upstream_proxy, state.request_timeout) {
+    let client = match build_http_client(Some(&upstream_proxy), state.request_timeout) {
         Ok(c) => c,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     };

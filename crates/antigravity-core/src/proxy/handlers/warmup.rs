@@ -182,9 +182,6 @@ pub async fn handle_warmup(
         ("streamGenerateContent", Some("alt=sse"))
     };
 
-    // Get WARP proxy for IP isolation
-    let warp_proxy = state.warp_isolation.get_proxy_for_email(&req.email).await;
-
     let mut result = state
         .upstream
         .call_v1_internal_with_warp(
@@ -193,7 +190,7 @@ pub async fn handle_warmup(
             body.clone(),
             query,
             std::collections::HashMap::new(),
-            warp_proxy.as_deref(),
+            None,
         )
         .await;
 
@@ -207,7 +204,7 @@ pub async fn handle_warmup(
                 body,
                 None,
                 std::collections::HashMap::new(),
-                warp_proxy.as_deref(),
+                None,
             )
             .await;
     }

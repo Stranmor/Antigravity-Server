@@ -23,25 +23,34 @@ pub fn sanitize_upstream_error(status_code: u16, raw_text: &str) -> String {
     }
 }
 
-/// Sanitize the `last_error` string used in "all accounts exhausted" messages.
+/// Typed upstream error for compile-time safe `last_error` tracking.
 ///
-/// The `last_error` typically contains `"HTTP {code}: {raw_body}"` — we strip
-/// the raw body and return only the sanitized version.
-pub fn sanitize_exhaustion_error(last_error: &str) -> String {
-    if let Some(code_str) = last_error.strip_prefix("HTTP ") {
-        if let Some((code_part, raw_body)) = code_str.split_once(": ") {
-            if let Ok(code) = code_part.parse::<u16>() {
-                return sanitize_upstream_error(code, raw_body);
-            }
-        }
-        // "HTTP {code}" without body — already safe
-        if let Ok(code) = code_str.parse::<u16>() {
-            return format!("Upstream error (HTTP {})", code);
-        }
+/// Replaces the fragile `String`-based `last_error` variable in handler retry
+/// loops — eliminates string parsing in `sanitize_exhaustion_error`.
+pub enum UpstreamError {
+    /// HTTP response with status code and raw body (both logged server-side, sanitized for client).
+    HttpResponse { status_code: u16, body: String },
+    /// Token acquisition / OAuth error from token manager.
+    TokenAcquisition(String),
+    /// Connection / transport error (reqwest failures, DNS, TLS).
+    ConnectionError(String),
+    /// Upstream returned empty response stream.
+    EmptyStream,
+}
+
+/// Sanitize the typed `last_error` used in "all accounts exhausted" messages.
+///
+/// Each variant maps directly to a sanitized client-facing message — no string
+/// parsing required.
+pub fn sanitize_exhaustion_error(error: &UpstreamError) -> String {
+    match error {
+        UpstreamError::HttpResponse { status_code, body } => {
+            sanitize_upstream_error(*status_code, body)
+        },
+        UpstreamError::TokenAcquisition(_) => "Token acquisition failed".to_string(),
+        UpstreamError::ConnectionError(_) => "Upstream request failed".to_string(),
+        UpstreamError::EmptyStream => "Empty response from upstream".to_string(),
     }
-    // Fallback: not in "HTTP xxx: ..." format — could be a connection error
-    // (these don't contain sensitive data, but sanitize defensively)
-    "Upstream request failed".to_string()
 }
 
 enum ErrorCategory {
@@ -192,32 +201,43 @@ mod tests {
     }
 
     #[test]
-    fn exhaustion_parses_http_format() {
-        let last = "HTTP 429: {\"error\":{\"details\":[{\"reason\":\"QUOTA_EXHAUSTED\"}]}}";
-        assert_eq!(sanitize_exhaustion_error(last), "Quota exhausted (HTTP 429)");
+    fn exhaustion_http_response_quota_exhausted() {
+        let err = UpstreamError::HttpResponse {
+            status_code: 429,
+            body: r#"{"error":{"details":[{"reason":"QUOTA_EXHAUSTED"}]}}"#.to_string(),
+        };
+        assert_eq!(sanitize_exhaustion_error(&err), "Quota exhausted (HTTP 429)");
     }
 
     #[test]
-    fn exhaustion_http_without_body() {
-        assert_eq!(sanitize_exhaustion_error("HTTP 500"), "Upstream error (HTTP 500)");
+    fn exhaustion_http_response_server_error() {
+        let err = UpstreamError::HttpResponse {
+            status_code: 500,
+            body: "internal server error".to_string(),
+        };
+        assert_eq!(sanitize_exhaustion_error(&err), "Upstream server error (HTTP 500)");
     }
 
     #[test]
-    fn exhaustion_connection_error_fallback() {
-        assert_eq!(
-            sanitize_exhaustion_error("HTTP request failed at https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro"),
-            "Upstream request failed"
+    fn exhaustion_connection_error() {
+        let err = UpstreamError::ConnectionError(
+            "HTTP request failed at https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro".to_string(),
         );
+        assert_eq!(sanitize_exhaustion_error(&err), "Upstream request failed");
     }
 
     #[test]
-    fn exhaustion_non_http_fallback() {
-        assert_eq!(sanitize_exhaustion_error("Connection refused"), "Upstream request failed");
+    fn exhaustion_token_acquisition() {
+        let err = UpstreamError::TokenAcquisition("invalid_grant".to_string());
+        assert_eq!(sanitize_exhaustion_error(&err), "Token acquisition failed");
     }
 
     #[test]
-    fn exhaustion_empty_string() {
-        assert_eq!(sanitize_exhaustion_error(""), "Upstream request failed");
+    fn exhaustion_empty_stream() {
+        assert_eq!(
+            sanitize_exhaustion_error(&UpstreamError::EmptyStream),
+            "Empty response from upstream"
+        );
     }
 
     #[test]

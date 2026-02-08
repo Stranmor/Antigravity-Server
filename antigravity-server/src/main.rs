@@ -155,32 +155,6 @@ async fn run_server(port: u16) -> Result<()> {
     token_manager.start_auto_cleanup();
     token_manager.start_auto_account_sync();
 
-    let warp_mapping_path = std::env::var("WARP_MAPPING_FILE").unwrap_or_else(|_| {
-        antigravity_core::proxy::warp_isolation::DEFAULT_WARP_MAPPING_PATH.to_string()
-    });
-
-    let warp_manager =
-        Arc::new(antigravity_core::proxy::warp_isolation::WarpIsolationManager::with_path(
-            &warp_mapping_path,
-        ));
-
-    match warp_manager.load_mappings().await {
-        Ok(count) if count > 0 => {
-            tracing::info!(
-                "🔐 WARP IP isolation enabled: {} accounts mapped to SOCKS5 proxies",
-                count
-            );
-        },
-        Ok(_) => {
-            tracing::info!(
-                "ℹ️ WARP IP isolation: no mappings found (direct connections will be used)"
-            );
-        },
-        Err(e) => {
-            tracing::warn!("⚠️ WARP IP isolation disabled: {}", e);
-        },
-    }
-
     let monitor = if let Some(ref repo) = repository {
         Arc::new(antigravity_core::proxy::ProxyMonitor::with_db(
             Arc::new(antigravity_core::proxy::monitor::NoopEventBus),
@@ -195,7 +169,6 @@ async fn run_server(port: u16) -> Result<()> {
         token_manager.clone(),
         monitor.clone(),
         initial_proxy_config.clone(),
-        Some(warp_manager.clone()),
         repository,
     )
     .await?;

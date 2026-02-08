@@ -18,7 +18,7 @@ pub async fn test_app_state() -> (AppState, TempDir) {
     let monitor = Arc::new(ProxyMonitor::new());
     let proxy_config = ProxyConfig::default();
 
-    let state = AppState::new_with_components(token_manager, monitor, proxy_config, None, None)
+    let state = AppState::new_with_components(token_manager, monitor, proxy_config, None)
         .await
         .expect("failed to create test AppState");
 

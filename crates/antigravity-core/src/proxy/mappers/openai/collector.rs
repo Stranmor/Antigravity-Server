@@ -7,21 +7,12 @@ use futures::StreamExt;
 use serde_json::Value;
 use std::io;
 
+use crate::proxy::common::sse_parser::parse_sse_line;
+
 /// SSE event type
 #[derive(Debug, Clone)]
 struct SseEvent {
     data: Value,
-}
-
-/// Parse SSE line
-fn parse_sse_line(line: &str) -> Option<(String, String)> {
-    if let Some(colon_pos) = line.find(':') {
-        let key = &line[..colon_pos];
-        let value = line[colon_pos + 1..].trim_start();
-        Some((key.to_string(), value.to_string()))
-    } else {
-        None
-    }
 }
 
 /// Collect OpenAI SSE Stream to complete OpenAIResponse

@@ -15,7 +15,7 @@ use axum::{
 use serde_json::Value;
 use tracing::{debug, error, info, warn};
 
-use crate::proxy::common::{sanitize_exhaustion_error, sanitize_upstream_error};
+use crate::proxy::common::{sanitize_exhaustion_error, sanitize_upstream_error, UpstreamError};
 use crate::proxy::handlers::openai::completions::request_parser::ensure_non_empty_messages;
 use crate::proxy::mappers::openai::{transform_openai_request, OpenAIRequest};
 use crate::proxy::server::AppState;
@@ -53,7 +53,7 @@ pub async fn handle_chat_completions(
     let pool_size = token_manager.len();
     let max_attempts = MAX_RETRY_ATTEMPTS.min(pool_size).max(1);
 
-    let mut last_error = String::new();
+    let mut last_error = UpstreamError::EmptyStream;
     let mut last_email: Option<String> = None;
     let trace_id = format!("oai_{}", chrono::Utc::now().timestamp_micros());
     let mut grace_retry_used = false;
@@ -108,15 +108,13 @@ pub async fn handle_chat_completions(
             info!("[OpenAI] 🔄 Auto-converting non-stream request to stream for better quota");
         }
 
-        let warp_proxy = state.warp_isolation.get_proxy_for_email(&email).await;
-
         let response = match call_upstream_with_retry(
             upstream.clone(),
             "streamGenerateContent",
             &access_token,
             gemini_body,
             Some("alt=sse"),
-            warp_proxy.as_deref(),
+            None,
             &email,
             attempt,
             max_attempts,
@@ -125,7 +123,7 @@ pub async fn handle_chat_completions(
         {
             UpstreamResult::Success(r) => r,
             UpstreamResult::ConnectionError(e) => {
-                last_error = e;
+                last_error = UpstreamError::ConnectionError(e);
                 attempted_accounts.insert(email.clone());
                 attempt += 1;
                 grace_retry_used = false;
@@ -166,7 +164,7 @@ pub async fn handle_chat_completions(
                         .into_response());
                 },
                 OpenAIStreamResult::Retry(err) => {
-                    last_error = err;
+                    last_error = UpstreamError::ConnectionError(err);
                     attempted_accounts.insert(email.clone());
                     attempt += 1;
                     grace_retry_used = false;
@@ -174,7 +172,7 @@ pub async fn handle_chat_completions(
                 },
                 OpenAIStreamResult::EmptyStream => {
                     warn!("[{}] Stream ended immediately, rotating...", trace_id);
-                    last_error = "Empty response stream".to_string();
+                    last_error = UpstreamError::EmptyStream;
                     attempted_accounts.insert(email.clone());
                     attempt += 1;
                     grace_retry_used = false;
@@ -190,7 +188,7 @@ pub async fn handle_chat_completions(
             .and_then(|h| h.to_str().ok())
             .map(|s| s.to_string());
         let error_text = response.text().await.unwrap_or_else(|_| format!("HTTP {}", status_code));
-        last_error = format!("HTTP {}: {}", status_code, error_text);
+        last_error = UpstreamError::HttpResponse { status_code, body: error_text.clone() };
 
         error!("[OpenAI-Upstream] Error Response {}: {}", status_code, error_text);
 

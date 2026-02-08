@@ -1,6 +1,6 @@
 //! Request parsing and validation for Claude messages handler
 
-use crate::proxy::common::sanitize_exhaustion_error;
+use crate::proxy::common::{sanitize_exhaustion_error, UpstreamError};
 use crate::proxy::mappers::claude::ClaudeRequest;
 use axum::{
     http::StatusCode,
@@ -42,9 +42,10 @@ pub fn generate_trace_id() -> String {
 /// Create error response for service unavailable (no accounts)
 pub fn no_accounts_error(message: String) -> Response {
     let safe_message = if message.contains("invalid_grant") {
-        "OAuth refresh failed (invalid_grant): refresh_token likely revoked/expired; reauthorize account(s) to restore service.".to_string()
+        "OAuth refresh failed: refresh token likely revoked or expired; reauthorize account(s) to restore service.".to_string()
     } else {
-        message
+        // Sanitize unknown token acquisition errors — may contain internal details
+        "Token acquisition failed; all accounts temporarily unavailable.".to_string()
     };
     (
         StatusCode::SERVICE_UNAVAILABLE,
@@ -80,7 +81,7 @@ pub fn prompt_too_long_error(email: &str) -> Response {
 /// Create final error response after all retries exhausted
 pub fn all_retries_exhausted_error(
     max_attempts: usize,
-    last_error: &str,
+    last_error: &UpstreamError,
     last_email: Option<&str>,
 ) -> Response {
     let error_json = json!({

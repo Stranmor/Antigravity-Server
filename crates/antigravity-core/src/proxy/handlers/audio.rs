@@ -126,9 +126,6 @@ pub async fn handle_audio_transcription(
     // 8. sendrequestto Gemini
     let upstream = state.upstream.clone();
 
-    // Get WARP proxy for IP isolation
-    let warp_proxy = state.warp_isolation.get_proxy_for_email(&email).await;
-
     let response = upstream
         .call_v1_internal_with_warp(
             "generateContent",
@@ -136,7 +133,7 @@ pub async fn handle_audio_transcription(
             wrapped_body,
             None,
             std::collections::HashMap::new(),
-            warp_proxy.as_deref(),
+            None,
         )
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, format!("upstreamRequest failed: {}", e)))?;

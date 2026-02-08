@@ -4,7 +4,7 @@ mod response_mapper;
 mod streaming_handler;
 
 use super::*;
-use crate::proxy::common::{sanitize_exhaustion_error, sanitize_upstream_error};
+use crate::proxy::common::{sanitize_exhaustion_error, sanitize_upstream_error, UpstreamError};
 use crate::proxy::SignatureCache;
 use request_parser::{ensure_non_empty_messages, normalize_request_body};
 
@@ -23,7 +23,7 @@ pub async fn handle_completions(
     let pool_size = token_manager.len();
     let max_attempts = MAX_RETRY_ATTEMPTS.min(pool_size).max(1);
 
-    let mut last_error = String::new();
+    let mut last_error = UpstreamError::EmptyStream;
 
     let mut last_email: Option<String> = None;
     let trace_id = format!("req_{}", chrono::Utc::now().timestamp_micros());
@@ -87,9 +87,6 @@ pub async fn handle_completions(
         let method = if list_response { "streamGenerateContent" } else { "generateContent" };
         let query_string = if list_response { Some("alt=sse") } else { None };
 
-        // Get per-account WARP proxy for IP isolation
-        let warp_proxy = state.warp_isolation.get_proxy_for_email(&email).await;
-
         let response = match upstream
             .call_v1_internal_with_warp(
                 method,
@@ -97,13 +94,13 @@ pub async fn handle_completions(
                 gemini_body,
                 query_string,
                 std::collections::HashMap::new(),
-                warp_proxy.as_deref(),
+                None,
             )
             .await
         {
             Ok(r) => r,
             Err(e) => {
-                last_error = e.clone();
+                last_error = UpstreamError::TokenAcquisition(e.clone());
                 debug!("Codex Request failed on attempt {}/{}: {}", attempt + 1, max_attempts, e);
                 continue;
             },
@@ -146,7 +143,7 @@ pub async fn handle_completions(
                 ) = match peek_first_data_chunk(sse_stream, &peek_config, &trace_id).await {
                     PeekResult::Data(bytes, stream) => (Some(bytes), stream),
                     PeekResult::Retry(err) => {
-                        last_error = err;
+                        last_error = UpstreamError::ConnectionError(err);
                         continue;
                     },
                 };
@@ -166,7 +163,7 @@ pub async fn handle_completions(
                             "[{}] Stream ended immediately (Empty Response), retrying...",
                             trace_id
                         );
-                        last_error = "Empty response stream (None)".to_string();
+                        last_error = UpstreamError::EmptyStream;
                         continue;
                     },
                 }
@@ -191,7 +188,7 @@ pub async fn handle_completions(
             .and_then(|h| h.to_str().ok())
             .map(|s| s.to_string());
         let error_text = response.text().await.unwrap_or_else(|_| format!("HTTP {}", status_code));
-        last_error = format!("HTTP {}: {}", status_code, error_text);
+        last_error = UpstreamError::HttpResponse { status_code, body: error_text.clone() };
 
         tracing::error!("[Codex-Upstream] Error Response {}: {}", status_code, error_text);
 

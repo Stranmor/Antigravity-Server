@@ -79,7 +79,7 @@ pub async fn handle_messages(
     let pool_size = token_manager.len();
     let max_attempts = MAX_RETRY_ATTEMPTS.min(pool_size).max(1);
 
-    let mut last_error = String::new();
+    let mut last_error = crate::proxy::common::UpstreamError::EmptyStream;
     let mut retried_without_thinking = false;
     let mut last_email: Option<String> = None;
     let mut grace_retry_used = false;
@@ -159,11 +159,6 @@ pub async fn handle_messages(
 
         let call_config = prepare_upstream_call(&request, &request_with_mapped, &trace_id);
 
-        let warp_proxy = state.warp_isolation.get_proxy_for_email(&email).await;
-        if warp_proxy.is_some() {
-            tracing::debug!("[{}] Using WARP proxy for account {}", trace_id, email);
-        }
-
         let response = match upstream
             .call_v1_internal_with_warp(
                 call_config.method,
@@ -171,13 +166,13 @@ pub async fn handle_messages(
                 gemini_body,
                 call_config.query,
                 call_config.extra_headers.clone(),
-                warp_proxy.as_deref(),
+                None,
             )
             .await
         {
             Ok(r) => r,
             Err(e) => {
-                last_error = e.clone();
+                last_error = crate::proxy::common::UpstreamError::TokenAcquisition(e.clone());
                 debug!("Request failed on attempt {}/{}: {}", attempt + 1, max_attempts, e);
                 attempt += 1;
                 grace_retry_used = false;
@@ -219,7 +214,7 @@ pub async fn handle_messages(
                 match handle_streaming_response(response, &ctx).await {
                     ClaudeStreamResult::Success(resp) => return resp,
                     ClaudeStreamResult::Retry(err) => {
-                        last_error = err;
+                        last_error = crate::proxy::common::UpstreamError::ConnectionError(err);
                         attempt += 1;
                         grace_retry_used = false;
                         continue;
@@ -247,7 +242,10 @@ pub async fn handle_messages(
             .map(|s| s.to_string());
 
         let error_text = response.text().await.unwrap_or_else(|_| format!("HTTP {}", status));
-        last_error = format!("HTTP {}: {}", status_code, error_text);
+        last_error = crate::proxy::common::UpstreamError::HttpResponse {
+            status_code,
+            body: error_text.clone(),
+        };
         debug!("[{}] Upstream Error Response: {}", trace_id, error_text);
 
         let err_ctx = ErrorContext {

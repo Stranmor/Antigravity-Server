@@ -9,7 +9,7 @@ use crate::proxy::ZaiConfig;
 
 pub use specs::tool_specs;
 
-use client::{build_client, vision_chat_completion};
+use client::{build_http_client, vision_chat_completion};
 use media::{image_source_to_content, video_source_to_content};
 
 pub async fn call_tool(
@@ -24,7 +24,7 @@ pub async fn call_tool(
         return Err("z.ai api_key is missing".to_string());
     }
 
-    let client = build_client(upstream_proxy, timeout_secs)?;
+    let client = build_http_client(Some(&upstream_proxy), timeout_secs)?;
 
     let tool_result = match tool_name {
         "ui_to_artifact" => {

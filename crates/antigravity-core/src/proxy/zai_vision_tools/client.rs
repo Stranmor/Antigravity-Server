@@ -1,29 +1,12 @@
 //! HTTP client and vision chat completion for ZAI API.
 
 use serde_json::{json, Value};
-use tokio::time::Duration;
-
-use crate::proxy::config::UpstreamProxyConfig;
 
 use super::media::user_message_with_content;
 
+pub use crate::proxy::common::client_builder::build_http_client;
+
 pub const ZAI_PAAZ_CHAT_COMPLETIONS_URL: &str = "https://api.z.ai/api/paas/v4/chat/completions";
-
-/// Build HTTP client with optional upstream proxy.
-pub fn build_client(
-    upstream_proxy: UpstreamProxyConfig,
-    timeout_secs: u64,
-) -> Result<reqwest::Client, String> {
-    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(timeout_secs.max(5)));
-
-    if upstream_proxy.enabled && !upstream_proxy.url.is_empty() {
-        let proxy = reqwest::Proxy::all(&upstream_proxy.url)
-            .map_err(|e| format!("Invalid upstream proxy url: {}", e))?;
-        builder = builder.proxy(proxy);
-    }
-
-    builder.build().map_err(|e| format!("Failed to build HTTP client: {}", e))
-}
 
 /// Execute vision chat completion request to ZAI API.
 pub async fn vision_chat_completion(

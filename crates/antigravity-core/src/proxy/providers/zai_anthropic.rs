@@ -6,8 +6,8 @@ use axum::{
 use bytes::Bytes;
 use futures::StreamExt;
 use serde_json::Value;
-use tokio::time::Duration;
 
+use crate::proxy::common::client_builder::build_http_client;
 use crate::proxy::server::AppState;
 
 fn map_model_for_zai(original: &str, state: &crate::proxy::ZaiConfig) -> String {
@@ -40,26 +40,6 @@ fn join_base_url(base: &str, path: &str) -> Result<String, String> {
     let base = base.trim_end_matches('/');
     let path = if path.starts_with('/') { path.to_string() } else { format!("/{}", path) };
     Ok(format!("{}{}", base, path))
-}
-
-fn build_client(
-    upstream_proxy: Option<crate::proxy::config::UpstreamProxyConfig>,
-    timeout_secs: u64,
-) -> Result<reqwest::Client, String> {
-    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(timeout_secs.max(5)));
-
-    if let Some(config) = upstream_proxy {
-        if config.enabled && !config.url.is_empty() {
-            let proxy = reqwest::Proxy::all(&config.url)
-                .map_err(|e| format!("Invalid upstream proxy url: {}", e))?;
-            builder = builder.proxy(proxy);
-        }
-    }
-
-    builder
-        .tcp_nodelay(true) // [FIX #307] Disable Nagle's algorithm to improve latency for small requests
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))
 }
 
 fn copy_passthrough_headers(incoming: &HeaderMap) -> HeaderMap {
@@ -155,7 +135,7 @@ pub async fn forward_anthropic_json(
 
     let timeout_secs = state.request_timeout.max(5);
     let upstream_proxy = state.upstream_proxy.read().await.clone();
-    let client = match build_client(Some(upstream_proxy), timeout_secs) {
+    let client = match build_http_client(Some(&upstream_proxy), timeout_secs) {
         Ok(c) => c,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     };

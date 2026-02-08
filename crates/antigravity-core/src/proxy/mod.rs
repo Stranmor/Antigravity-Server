@@ -43,7 +43,6 @@ pub mod signature_cache;
 #[cfg(test)]
 mod signature_cache_tests;
 pub mod upstream;
-pub mod warp_isolation;
 pub mod zai_vision_mcp;
 pub mod zai_vision_tools;
 
@@ -64,7 +63,6 @@ pub use server::{
 };
 pub use signature_cache::SignatureCache;
 pub use token_manager::TokenManager;
-pub use warp_isolation::WarpIsolationManager;
 
 // AIMD rate limiting types
 pub use adaptive_limit::{

@@ -28,8 +28,6 @@ pub struct AppState {
     pub upstream: Arc<crate::proxy::upstream::client::UpstreamClient>,
     pub provider_rr: Arc<AtomicUsize>,
     pub zai_vision_mcp: Arc<crate::proxy::zai_vision_mcp::ZaiVisionMcpState>,
-    /// WARP IP isolation manager for per-account SOCKS5 proxy routing.
-    pub warp_isolation: Arc<crate::proxy::warp_isolation::WarpIsolationManager>,
 }
 
 /// Build proxy router with shared state references for hot-reload support.
@@ -48,13 +46,10 @@ pub fn build_proxy_router_with_shared_state(
     adaptive_limits: Arc<crate::proxy::AdaptiveLimitManager>,
     health_monitor: Arc<crate::proxy::HealthMonitor>,
     circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
-    warp_isolation: Option<Arc<crate::proxy::warp_isolation::WarpIsolationManager>>,
 ) -> Router<()> {
     let proxy_state = Arc::new(RwLock::new(upstream_proxy.clone()));
     let provider_rr = Arc::new(AtomicUsize::new(0));
     let zai_vision_mcp_state = Arc::new(crate::proxy::zai_vision_mcp::ZaiVisionMcpState::new());
-    let warp_isolation = warp_isolation
-        .unwrap_or_else(|| Arc::new(crate::proxy::warp_isolation::WarpIsolationManager::new()));
 
     let state = AppState {
         token_manager,
@@ -74,7 +69,6 @@ pub fn build_proxy_router_with_shared_state(
         health_monitor,
         circuit_breaker,
         security_config: Arc::clone(&security_config),
-        warp_isolation,
     };
 
     use crate::proxy::handlers;
@@ -165,7 +159,6 @@ pub struct ServerStartConfig {
     pub adaptive_limits: Arc<crate::proxy::AdaptiveLimitManager>,
     pub health_monitor: Arc<crate::proxy::HealthMonitor>,
     pub circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
-    pub warp_isolation: Option<Arc<crate::proxy::warp_isolation::WarpIsolationManager>>,
 }
 
 /// Axum server instance
@@ -198,7 +191,6 @@ impl AxumServer {
             self.config.adaptive_limits,
             self.config.health_monitor,
             self.config.circuit_breaker,
-            self.config.warp_isolation.clone(),
         );
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;
@@ -241,6 +233,5 @@ pub fn build_proxy_router(
         adaptive_limits,
         health_monitor,
         circuit_breaker,
-        None,
     )
 }

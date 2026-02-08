@@ -5,7 +5,7 @@ mod streaming;
 
 pub use models::{handle_count_tokens, handle_get_model, handle_list_models};
 
-use crate::proxy::common::{sanitize_exhaustion_error, sanitize_upstream_error};
+use crate::proxy::common::{sanitize_exhaustion_error, sanitize_upstream_error, UpstreamError};
 use crate::proxy::{
     mappers::gemini::{unwrap_response, wrap_request},
     server::AppState,
@@ -48,7 +48,7 @@ pub async fn handle_generate(
     let token_manager = state.token_manager.clone();
     let max_attempts = MAX_RETRY_ATTEMPTS.min(token_manager.len()).max(1);
 
-    let mut last_error = String::new();
+    let mut last_error = UpstreamError::EmptyStream;
     let mut last_email: Option<String> = None;
     let mut attempt = 0usize;
     let mut grace_retry_used = false;
@@ -146,7 +146,7 @@ pub async fn handle_generate(
         {
             Ok(r) => r,
             Err(e) => {
-                last_error = e.clone();
+                last_error = UpstreamError::TokenAcquisition(e.clone());
                 debug!("[Gemini] Attempt {}/{} failed: {}", attempt + 1, max_attempts, e);
                 attempt += 1;
                 continue;
@@ -162,7 +162,7 @@ pub async fn handle_generate(
                     Ok(chunk) => chunk,
                     Err(peek_err) => {
                         warn!("[Gemini] Peek failed: {}, rotating account", peek_err);
-                        last_error = peek_err;
+                        last_error = UpstreamError::ConnectionError(peek_err);
                         attempted_accounts.insert(email.clone());
                         attempt += 1;
                         continue;
@@ -201,7 +201,7 @@ pub async fn handle_generate(
             .and_then(|h| h.to_str().ok())
             .map(|s| s.to_string());
         let error_text = response.text().await.unwrap_or_else(|_| format!("HTTP {}", code));
-        last_error = format!("HTTP {}: {}", code, error_text);
+        last_error = UpstreamError::HttpResponse { status_code: code, body: error_text.clone() };
 
         if matches!(code, 429 | 529 | 503 | 500 | 403 | 401) {
             token_manager.mark_rate_limited(&email, code, retry_after.as_deref(), &error_text);

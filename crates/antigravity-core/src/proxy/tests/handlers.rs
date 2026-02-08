@@ -17,7 +17,7 @@ mod integration_tests {
     use crate::proxy::server::AppState;
     use crate::proxy::{
         AdaptiveLimitManager, CircuitBreakerManager, HealthMonitor, ProxyMonitor,
-        ProxySecurityConfig, TokenManager, WarpIsolationManager,
+        ProxySecurityConfig, TokenManager,
     };
     use axum::{routing::get, Router};
     use std::collections::HashMap;
@@ -46,7 +46,6 @@ mod integration_tests {
         let health_monitor = HealthMonitor::new();
         let circuit_breaker = Arc::new(CircuitBreakerManager::new());
         let upstream = Arc::new(crate::proxy::upstream::client::UpstreamClient::new(None, None));
-        let warp_isolation = Arc::new(WarpIsolationManager::new());
 
         AppState {
             token_manager,
@@ -63,7 +62,6 @@ mod integration_tests {
             upstream,
             provider_rr: Arc::new(AtomicUsize::new(0)),
             zai_vision_mcp: Arc::new(crate::proxy::zai_vision_mcp::ZaiVisionMcpState::new()),
-            warp_isolation,
         }
     }
 
