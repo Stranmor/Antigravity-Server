@@ -70,6 +70,56 @@ pub fn get_supported_models() -> Vec<String> {
     CLAUDE_TO_GEMINI.keys().map(|key| (*key).to_owned()).collect()
 }
 
+/// Generate all image model variant IDs (3 resolutions × 7 ratios = 21 variants).
+#[must_use]
+pub fn generate_image_model_variants() -> Vec<String> {
+    let base = "gemini-3-pro-image";
+    let resolutions = ["", "-2k", "-4k"];
+    let ratios = ["", "-1x1", "-4x3", "-3x4", "-16x9", "-9x16", "-21x9"];
+    let mut variants = Vec::with_capacity(21);
+    for res in resolutions {
+        for ratio in ratios {
+            let mut id = base.to_owned();
+            id.push_str(res);
+            id.push_str(ratio);
+            variants.push(id);
+        }
+    }
+    variants
+}
+
+/// Collect all available model IDs from loaded accounts, custom mappings, and image variants.
+/// This is the Single Point of Truth for model listing across all protocol handlers.
+pub async fn collect_all_model_ids(
+    token_manager: &crate::proxy::TokenManager,
+    custom_mapping: &tokio::sync::RwLock<HashMap<String, String>>,
+) -> Vec<String> {
+    use std::collections::HashSet;
+    let mut model_ids: HashSet<String> = HashSet::new();
+
+    // 1. Real models from loaded accounts
+    for model in token_manager.get_all_available_models() {
+        let _: bool = model_ids.insert(model);
+    }
+
+    // 2. Custom mapping keys
+    {
+        let mapping = custom_mapping.read().await;
+        for key in mapping.keys() {
+            let _: bool = model_ids.insert(key.clone());
+        }
+    }
+
+    // 3. Image model variants
+    for variant in generate_image_model_variants() {
+        let _: bool = model_ids.insert(variant);
+    }
+
+    let mut sorted_ids: Vec<String> = model_ids.into_iter().collect();
+    sorted_ids.sort();
+    sorted_ids
+}
+
 /// Get all available models including custom mappings.
 pub async fn get_all_dynamic_models(
     custom_mapping: &tokio::sync::RwLock<HashMap<String, String>>,
@@ -88,17 +138,8 @@ pub async fn get_all_dynamic_models(
         }
     }
 
-    let base = "gemini-3-pro-image";
-    let resolutions = ["", "-2k", "-4k"];
-    let ratios = ["", "-1x1", "-4x3", "-3x4", "-16x9", "-9x16", "-21x9"];
-
-    for res in resolutions {
-        for ratio in ratios {
-            let mut id = base.to_owned();
-            id.push_str(res);
-            id.push_str(ratio);
-            let _: bool = model_ids.insert(id);
-        }
+    for variant in generate_image_model_variants() {
+        let _: bool = model_ids.insert(variant);
     }
 
     let _: bool = model_ids.insert("gemini-2.0-flash-exp".to_owned());

@@ -1,27 +1,13 @@
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-
     #[test]
     fn test_image_model_variants_generation() {
-        let base = "gemini-3-pro-image";
-        let resolutions = ["", "-2k", "-4k"];
-        let ratios = ["", "-1x1", "-4x3", "-3x4", "-16x9", "-9x16", "-21x9"];
-
-        let mut ids: HashSet<String> = HashSet::new();
-        for res in resolutions {
-            for ratio in ratios {
-                let mut id = base.to_owned();
-                id.push_str(res);
-                id.push_str(ratio);
-                let _: bool = ids.insert(id);
-            }
-        }
-
-        assert_eq!(ids.len(), 21, "3 resolutions × 7 ratios = 21 variants");
-        assert!(ids.contains("gemini-3-pro-image"));
-        assert!(ids.contains("gemini-3-pro-image-4k-16x9"));
-        assert!(ids.contains("gemini-3-pro-image-2k-1x1"));
+        use crate::proxy::common::model_mapping::generate_image_model_variants;
+        let variants = generate_image_model_variants();
+        assert_eq!(variants.len(), 21, "3 resolutions × 7 ratios = 21 variants");
+        assert!(variants.contains(&"gemini-3-pro-image".to_owned()));
+        assert!(variants.contains(&"gemini-3-pro-image-4k-16x9".to_owned()));
+        assert!(variants.contains(&"gemini-3-pro-image-2k-1x1".to_owned()));
     }
 }
 
