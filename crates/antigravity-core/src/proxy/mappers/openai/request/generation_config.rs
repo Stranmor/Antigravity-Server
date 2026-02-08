@@ -21,9 +21,10 @@ pub fn build_generation_config(
         "topP": request.top_p.unwrap_or(0.95),
     });
 
-    if let Some(max_tokens) = request.max_tokens {
-        gen_config["maxOutputTokens"] = json!(max_tokens);
-    }
+    // [FIX] Always set maxOutputTokens — use client value or 65536 default
+    // Matches Claude path behavior: guarantee maximum output capacity
+    let max_tokens = request.max_tokens.unwrap_or(65536);
+    gen_config["maxOutputTokens"] = json!(max_tokens);
 
     if let Some(n) = request.n {
         gen_config["candidateCount"] = json!(n);
