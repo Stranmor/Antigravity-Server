@@ -2,26 +2,33 @@
 use super::*;
 
 pub async fn handle_list_models(State(state): State<AppState>) -> impl IntoResponse {
-    use crate::proxy::common::model_mapping::get_all_dynamic_models;
     use std::collections::HashSet;
 
     let mut model_ids: HashSet<String> = HashSet::new();
 
-    let account_models = state.token_manager.get_all_available_models();
-    if account_models.is_empty() {
-        let fallback = get_all_dynamic_models(&state.custom_mapping).await;
-        for model in fallback {
-            let _: bool = model_ids.insert(model);
+    // 1. Real models from loaded accounts
+    for model in state.token_manager.get_all_available_models() {
+        let _: bool = model_ids.insert(model);
+    }
+
+    // 2. Custom mapping keys
+    {
+        let mapping = state.custom_mapping.read().await;
+        for key in mapping.keys() {
+            let _: bool = model_ids.insert(key.clone());
         }
-    } else {
-        for model in account_models {
-            let _: bool = model_ids.insert(model);
-        }
-        {
-            let mapping = state.custom_mapping.read().await;
-            for key in mapping.keys() {
-                let _: bool = model_ids.insert(key.clone());
-            }
+    }
+
+    // 3. Image model variants
+    let base = "gemini-3-pro-image";
+    let resolutions = ["", "-2k", "-4k"];
+    let ratios = ["", "-1x1", "-4x3", "-3x4", "-16x9", "-9x16", "-21x9"];
+    for res in resolutions {
+        for ratio in ratios {
+            let mut id = base.to_owned();
+            id.push_str(res);
+            id.push_str(ratio);
+            let _: bool = model_ids.insert(id);
         }
     }
 

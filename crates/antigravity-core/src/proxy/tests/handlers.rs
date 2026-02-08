@@ -1,41 +1,27 @@
 #[cfg(test)]
 mod tests {
-    use crate::proxy::common::model_mapping::get_all_dynamic_models;
-    use std::collections::HashMap;
-    use tokio::sync::RwLock;
+    use std::collections::HashSet;
 
-    #[tokio::test]
-    async fn test_get_all_dynamic_models_returns_custom_mapping() {
-        let custom_mapping = RwLock::new(HashMap::from([
-            ("gpt-4o".to_string(), "gemini-3-pro".to_string()),
-            ("my-custom-alias".to_string(), "claude-opus-4-5".to_string()),
-        ]));
+    #[test]
+    fn test_image_model_variants_generation() {
+        let base = "gemini-3-pro-image";
+        let resolutions = ["", "-2k", "-4k"];
+        let ratios = ["", "-1x1", "-4x3", "-3x4", "-16x9", "-9x16", "-21x9"];
 
-        let models = get_all_dynamic_models(&custom_mapping).await;
+        let mut ids: HashSet<String> = HashSet::new();
+        for res in resolutions {
+            for ratio in ratios {
+                let mut id = base.to_owned();
+                id.push_str(res);
+                id.push_str(ratio);
+                let _: bool = ids.insert(id);
+            }
+        }
 
-        assert!(models.contains(&"gpt-4o".to_string()));
-        assert!(models.contains(&"my-custom-alias".to_string()));
-    }
-
-    #[tokio::test]
-    async fn test_get_all_dynamic_models_includes_default_models() {
-        let custom_mapping = RwLock::new(HashMap::new());
-
-        let models = get_all_dynamic_models(&custom_mapping).await;
-
-        assert!(!models.is_empty(), "Should include default models even with empty custom mapping");
-        assert!(models.len() > 10, "Should have many built-in models, got {}", models.len());
-    }
-
-    #[tokio::test]
-    async fn test_get_all_dynamic_models_includes_image_models() {
-        let custom_mapping = RwLock::new(HashMap::new());
-
-        let models = get_all_dynamic_models(&custom_mapping).await;
-
-        let image_models: Vec<_> = models.iter().filter(|m| m.contains("image")).collect();
-
-        assert!(!image_models.is_empty(), "Should include image generation models");
+        assert_eq!(ids.len(), 21, "3 resolutions × 7 ratios = 21 variants");
+        assert!(ids.contains("gemini-3-pro-image"));
+        assert!(ids.contains("gemini-3-pro-image-4k-16x9"));
+        assert!(ids.contains("gemini-3-pro-image-2k-1x1"));
     }
 }
 
@@ -142,7 +128,11 @@ mod integration_tests {
         let json: serde_json::Value = response.json();
         let data = json["data"].as_array().unwrap();
 
-        assert!(data.len() > 10, "Expected >10 models, got {}", data.len());
+        assert!(data.len() >= 21, "Expected >=21 image variant models, got {}", data.len());
+
+        let model_ids: Vec<&str> = data.iter().filter_map(|m| m["id"].as_str()).collect();
+        assert!(model_ids.contains(&"gemini-3-pro-image"), "Should contain base image model");
+        assert!(model_ids.contains(&"gemini-3-pro-image-4k-16x9"), "Should contain image variant");
 
         for model in data {
             assert!(model["id"].is_string());
@@ -170,6 +160,12 @@ mod integration_tests {
 
         assert!(model_ids.contains(&"my-custom-gpt"), "Custom model not found in list");
         assert!(model_ids.contains(&"test-model-alias"), "Test alias not found in list");
+        assert_eq!(
+            data.len(),
+            23,
+            "Expected 21 image variants + 2 custom mappings = 23, got {}",
+            data.len()
+        );
     }
 
     #[tokio::test]
@@ -188,7 +184,12 @@ mod integration_tests {
             .filter(|id| id.contains("image"))
             .collect();
 
-        assert!(!image_models.is_empty(), "No image models found in response");
+        assert_eq!(
+            image_models.len(),
+            21,
+            "Expected 21 image model variants (3 res × 7 ratios), got {}",
+            image_models.len()
+        );
     }
 
     fn build_chat_completions_router(state: AppState) -> Router {
