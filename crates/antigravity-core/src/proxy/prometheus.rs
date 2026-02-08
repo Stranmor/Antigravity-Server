@@ -23,7 +23,6 @@
     clippy::as_conversions,
     reason = "Prometheus metrics: bounded counters and file size calculations"
 )]
-#![allow(dead_code, reason = "Metrics recording API — wired incrementally as handlers adopt it")]
 
 use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gauge, histogram};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};

@@ -45,13 +45,6 @@ struct LoadProjectResponse {
 #[derive(Debug, Deserialize)]
 struct Tier {
     id: Option<String>,
-    #[allow(dead_code, reason = "deserialized from API response")]
-    #[serde(rename = "quotaTier")]
-    quota_tier: Option<String>,
-    #[allow(dead_code, reason = "deserialized from API response")]
-    name: Option<String>,
-    #[allow(dead_code, reason = "deserialized from API response")]
-    slug: Option<String>,
 }
 
 /// Create configured HTTP Client

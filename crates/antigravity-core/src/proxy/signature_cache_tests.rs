@@ -71,23 +71,3 @@ fn test_session_signature_replacement() {
     cache.cache_session_signature("sid-prog", sig2.clone());
     assert_eq!(cache.get_session_signature("sid-prog"), Some(sig1));
 }
-
-#[test]
-fn test_clear_all_caches() {
-    let cache = SignatureCache::new();
-    let sig = "x".repeat(60);
-
-    cache.cache_tool_signature("tool_1", sig.clone());
-    cache.cache_thinking_family(sig.clone(), "model".to_string());
-    cache.cache_session_signature("sid-1", sig.clone());
-
-    assert!(cache.get_tool_signature("tool_1").is_some());
-    assert!(cache.get_signature_family(&sig).is_some());
-    assert!(cache.get_session_signature("sid-1").is_some());
-
-    cache.clear();
-
-    assert!(cache.get_tool_signature("tool_1").is_none());
-    assert!(cache.get_signature_family(&sig).is_none());
-    assert!(cache.get_session_signature("sid-1").is_none());
-}

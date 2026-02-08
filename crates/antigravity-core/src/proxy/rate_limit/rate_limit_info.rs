@@ -80,7 +80,6 @@ impl std::fmt::Display for RateLimitKey {
 }
 
 /// Information about an active rate limit.
-#[allow(dead_code, reason = "fields read via Debug trait and in rate limit decision logic")]
 #[derive(Debug, Clone)]
 pub struct RateLimitInfo {
     /// When the rate limit resets.

@@ -15,7 +15,7 @@ use tokio::sync::RwLock;
 
 use antigravity_core::modules::repository::AccountRepository;
 use antigravity_core::proxy::{
-    build_proxy_router_with_shared_state, server::AxumServer, warp_isolation::WarpIsolationManager,
+    build_proxy_router_with_shared_state, warp_isolation::WarpIsolationManager,
     AdaptiveLimitManager, CircuitBreakerManager, HealthMonitor, ProxyMonitor, ProxySecurityConfig,
     TokenManager,
 };
@@ -34,8 +34,6 @@ pub struct AppStateInner {
     pub token_manager: Arc<TokenManager>,
     pub monitor: Arc<ProxyMonitor>,
     pub proxy_config: Arc<RwLock<ProxyConfig>>,
-    #[allow(dead_code, reason = "Reserved for future hot-reload (listener restart)")]
-    pub axum_server: Arc<AxumServer>,
     pub custom_mapping: Arc<RwLock<std::collections::HashMap<String, String>>>,
     pub mapping_timestamps: Arc<RwLock<std::collections::HashMap<String, i64>>>,
     pub security_config: Arc<RwLock<ProxySecurityConfig>>,
@@ -56,7 +54,6 @@ impl AppState {
         token_manager: Arc<TokenManager>,
         monitor: Arc<ProxyMonitor>,
         proxy_config: ProxyConfig,
-        axum_server: Arc<AxumServer>,
         warp_isolation: Option<Arc<WarpIsolationManager>>,
         repository: Option<Arc<dyn AccountRepository>>,
     ) -> Result<Self> {
@@ -85,7 +82,6 @@ impl AppState {
                 token_manager,
                 monitor,
                 proxy_config: Arc::new(RwLock::new(proxy_config)),
-                axum_server,
                 custom_mapping,
                 mapping_timestamps: Arc::new(RwLock::new(std::collections::HashMap::new())),
                 security_config,

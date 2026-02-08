@@ -53,7 +53,6 @@ mod warmup_commands;
 
 use antigravity_core::modules::account_pg::PostgresAccountRepository;
 use antigravity_core::modules::repository::AccountRepository;
-use antigravity_core::proxy::server::AxumServer;
 use antigravity_core::proxy::SignatureCache;
 use cli::{Cli, Commands};
 use state::AppState;
@@ -192,34 +191,10 @@ async fn run_server(port: u16) -> Result<()> {
         Arc::new(antigravity_core::proxy::ProxyMonitor::new())
     };
 
-    let server_config = antigravity_core::proxy::server::ServerStartConfig {
-        host: initial_proxy_config.get_bind_address(),
-        port,
-        token_manager: token_manager.clone(),
-        custom_mapping: initial_proxy_config.custom_mapping.clone(),
-        upstream_proxy: initial_proxy_config.upstream_proxy.clone(),
-        security_config: antigravity_core::proxy::ProxySecurityConfig::from_proxy_config(
-            &initial_proxy_config,
-        ),
-        zai: initial_proxy_config.zai.clone(),
-        monitor: monitor.clone(),
-        experimental: initial_proxy_config.experimental,
-        adaptive_limits: Arc::new(antigravity_core::proxy::AdaptiveLimitManager::new(
-            0.85,
-            antigravity_core::proxy::AIMDController::default(),
-        )),
-        health_monitor: antigravity_core::proxy::HealthMonitor::new(),
-        circuit_breaker: Arc::new(antigravity_core::proxy::CircuitBreakerManager::new()),
-        warp_isolation: Some(warp_manager.clone()),
-    };
-
-    let axum_server = Arc::new(AxumServer::new(server_config));
-
     let state = AppState::new_with_components(
         token_manager.clone(),
         monitor.clone(),
         initial_proxy_config.clone(),
-        axum_server.clone(),
         Some(warp_manager.clone()),
         repository,
     )
@@ -239,7 +214,7 @@ async fn run_server(port: u16) -> Result<()> {
     let local_addr = listener.local_addr()?;
     state.set_bound_port(local_addr.port());
 
-    let app = router::build_router(state, axum_server).await;
+    let app = router::build_router(state).await;
 
     info!("🌐 Server listening on http://{}", local_addr);
     info!("📊 WebUI available at http://localhost:{}/", local_addr.port());

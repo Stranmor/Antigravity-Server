@@ -17,9 +17,6 @@ struct CacheEntry {
     schema: Value,
     /// Last access time
     last_used: Instant,
-    /// Hit count
-    #[allow(dead_code, reason = "reserved for future LFU eviction policy")]
-    hit_count: usize,
 }
 
 /// LRU schema cache.
@@ -99,7 +96,7 @@ impl SchemaCache {
             self.evict_lru();
         }
 
-        let entry = CacheEntry { schema, last_used: Instant::now(), hit_count: 0 };
+        let entry = CacheEntry { schema, last_used: Instant::now() };
         self.cache.insert(key, entry);
     }
 

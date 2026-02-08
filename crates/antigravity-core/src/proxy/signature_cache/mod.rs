@@ -1,5 +1,3 @@
-#![allow(dead_code, reason = "content_signatures reserved for future use")]
-
 mod content;
 mod session;
 
@@ -150,13 +148,5 @@ impl SignatureCache {
                 None
             },
         }
-    }
-
-    #[allow(dead_code, reason = "used in tests to verify cache clearing behavior")]
-    pub fn clear(&self) {
-        self.tool_signatures.write().clear();
-        self.thinking_families.write().clear();
-        self.session_signatures.write().clear();
-        self.content_signatures.write().clear();
     }
 }

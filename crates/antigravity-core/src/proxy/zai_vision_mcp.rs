@@ -8,10 +8,7 @@ pub struct ZaiVisionMcpState {
 }
 
 #[derive(Debug, Clone)]
-struct ZaiVisionSession {
-    #[allow(dead_code, reason = "stored for future session expiry logic")]
-    created_at: std::time::Instant,
-}
+struct ZaiVisionSession {}
 
 impl ZaiVisionMcpState {
     pub fn new() -> Self {
@@ -21,8 +18,7 @@ impl ZaiVisionMcpState {
     pub async fn create_session(&self) -> String {
         let session_id = uuid::Uuid::new_v4().to_string();
         let mut sessions = self.sessions.lock().await;
-        sessions
-            .insert(session_id.clone(), ZaiVisionSession { created_at: std::time::Instant::now() });
+        sessions.insert(session_id.clone(), ZaiVisionSession {});
         session_id
     }
 

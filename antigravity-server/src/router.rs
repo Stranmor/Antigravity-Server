@@ -2,7 +2,6 @@ use axum::{
     extract::DefaultBodyLimit, http::StatusCode, middleware, response::IntoResponse, routing::get,
     Router,
 };
-use std::sync::Arc;
 use tower_http::{
     cors::{Any, CorsLayer},
     services::{ServeDir, ServeFile},
@@ -12,9 +11,8 @@ use tower_http::{
 use crate::api;
 use crate::state::AppState;
 use antigravity_core::proxy::middleware::admin_auth_middleware;
-use antigravity_core::proxy::server::AxumServer;
 
-pub async fn build_router(state: AppState, _axum_server: Arc<AxumServer>) -> Router {
+pub async fn build_router(state: AppState) -> Router {
     let proxy_router = state.build_proxy_router();
 
     let static_dir =
