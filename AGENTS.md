@@ -285,7 +285,7 @@ REST API for managing Cursor/VSCode device fingerprints (storage.json):
 |------------|--------|-------|
 | Device fingerprint API | ✅ IMPLEMENTED | REST endpoints for profile management |
 | User-Agent rotation | ❌ REVERTED | Caused CONSUMER_INVALID errors from Google |
-| WARP IP isolation | ❌ DISABLED | Google detects WARP → stricter rate limits |
+| WARP IP isolation | ❌ REMOVED | Module deleted [2026-02-08] — Google detects WARP → stricter rate limits |
 | TLS/JA3 fingerprint | ❌ MISSING | Would require custom TLS config |
 | HTTP header randomization | ❌ MISSING | Accept-Language, etc. |
 
