@@ -22,24 +22,30 @@ pub fn openai_to_claude_request(req: &OpenAIRequest) -> ClaudeRequest {
     let mut system_texts: Vec<String> = Vec::new();
     let mut messages: Vec<Message> = Vec::new();
 
+    let mut pending_tool_results: Vec<ContentBlock> = Vec::new();
+
     for msg in &req.messages {
         match msg.role.as_str() {
             "system" | "developer" => {
+                flush_tool_results(&mut pending_tool_results, &mut messages);
                 if let Some(text) = extract_text_content(&msg.content) {
                     system_texts.push(text);
                 }
             },
             "assistant" => {
+                flush_tool_results(&mut pending_tool_results, &mut messages);
                 messages.push(convert_assistant_message(msg));
             },
             "tool" => {
-                messages.push(convert_tool_message(msg));
+                pending_tool_results.push(convert_tool_result_block(msg));
             },
             _ => {
+                flush_tool_results(&mut pending_tool_results, &mut messages);
                 messages.push(convert_user_message(msg));
             },
         }
     }
+    flush_tool_results(&mut pending_tool_results, &mut messages);
 
     if let Some(inst) = &req.instructions {
         if !inst.is_empty() {
@@ -86,7 +92,7 @@ pub fn openai_to_claude_request(req: &OpenAIRequest) -> ClaudeRequest {
 }
 
 fn extract_text_content(content: &Option<OpenAIContent>) -> Option<String> {
-    content.as_ref().map(|c| match c {
+    let text = content.as_ref().map(|c| match c {
         OpenAIContent::String(s) => s.clone(),
         OpenAIContent::Array(blocks) => blocks
             .iter()
@@ -96,7 +102,12 @@ fn extract_text_content(content: &Option<OpenAIContent>) -> Option<String> {
             })
             .collect::<Vec<_>>()
             .join("\n"),
-    })
+    })?;
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
 }
 
 fn convert_user_message(msg: &OpenAIMessage) -> Message {
@@ -151,8 +162,17 @@ fn convert_assistant_message(msg: &OpenAIMessage) -> Message {
 
     if let Some(tool_calls) = &msg.tool_calls {
         for tc in tool_calls {
-            let input: serde_json::Value =
-                serde_json::from_str(&tc.function.arguments).unwrap_or(serde_json::Value::Null);
+            let input: serde_json::Value = match serde_json::from_str(&tc.function.arguments) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!(
+                        "[Claude-Bridge] Malformed tool call arguments for '{}': {}",
+                        tc.function.name,
+                        e
+                    );
+                    serde_json::json!({})
+                },
+            };
             blocks.push(ContentBlock::ToolUse {
                 id: tc.id.clone(),
                 name: tc.function.name.clone(),
@@ -170,7 +190,15 @@ fn convert_assistant_message(msg: &OpenAIMessage) -> Message {
     Message { role: "assistant".to_string(), content: MessageContent::Array(blocks) }
 }
 
-fn convert_tool_message(msg: &OpenAIMessage) -> Message {
+fn flush_tool_results(pending: &mut Vec<ContentBlock>, messages: &mut Vec<Message>) {
+    if pending.is_empty() {
+        return;
+    }
+    let blocks = std::mem::take(pending);
+    messages.push(Message { role: "user".to_string(), content: MessageContent::Array(blocks) });
+}
+
+fn convert_tool_result_block(msg: &OpenAIMessage) -> ContentBlock {
     let tool_use_id = msg.tool_call_id.clone().unwrap_or_default();
     let text = match &msg.content {
         Some(OpenAIContent::String(s)) => s.clone(),
@@ -187,35 +215,34 @@ fn convert_tool_message(msg: &OpenAIMessage) -> Message {
 
     let content_value = serde_json::json!([{"type": "text", "text": text}]);
 
-    Message {
-        role: "user".to_string(),
-        content: MessageContent::Array(vec![ContentBlock::ToolResult {
-            tool_use_id,
-            content: content_value,
-            is_error: None,
-        }]),
-    }
+    ContentBlock::ToolResult { tool_use_id, content: content_value, is_error: None }
 }
 
 fn convert_content_block(block: &OpenAIContentBlock) -> Option<ContentBlock> {
     match block {
         OpenAIContentBlock::Text { text } => Some(ContentBlock::Text { text: text.clone() }),
         OpenAIContentBlock::ImageUrl { image_url } => {
-            // Parse data URI: data:<media_type>;base64,<data>
             if let Some(rest) = image_url.url.strip_prefix("data:") {
                 if let Some((media_and_enc, data)) = rest.split_once(',') {
-                    let media_type = media_and_enc.strip_suffix(";base64").unwrap_or(media_and_enc);
-                    return Some(ContentBlock::Image {
-                        source: crate::proxy::mappers::claude::content_block::ImageSource {
-                            source_type: "base64".to_string(),
-                            media_type: media_type.to_string(),
-                            data: data.to_string(),
-                        },
-                        cache_control: None,
-                    });
+                    // Only accept base64-encoded data URIs (RFC 2397)
+                    if let Some(media_with_params) = media_and_enc.strip_suffix(";base64") {
+                        // Strip MIME parameters (e.g., "image/png;charset=utf-8" → "image/png")
+                        let media_type = media_with_params
+                            .split_once(';')
+                            .map_or(media_with_params, |(mime, _)| mime);
+                        if media_type.starts_with("image/") {
+                            return Some(ContentBlock::Image {
+                                source: crate::proxy::mappers::claude::content_block::ImageSource {
+                                    source_type: "base64".to_string(),
+                                    media_type: media_type.to_string(),
+                                    data: data.to_string(),
+                                },
+                                cache_control: None,
+                            });
+                        }
+                    }
                 }
             }
-            // Non-data-URI images: wrap as text with URL (Claude doesn't support URL refs directly)
             Some(ContentBlock::Text { text: format!("[Image: {}]", image_url.url) })
         },
         // Audio and video are not supported by Claude — skip
