@@ -5,6 +5,20 @@ use tokio::time::interval;
 
 use crate::state::AppState;
 use antigravity_core::modules::{account, config};
+use antigravity_types::models::QuotaData;
+
+/// Persist quota to both JSON and PostgreSQL (if available).
+async fn persist_quota(state: &AppState, account_id: &str, quota: QuotaData) {
+    if let Err(e) = account::update_account_quota_async(account_id.to_owned(), quota.clone()).await
+    {
+        tracing::warn!("[QuotaRefresh] Failed to update JSON quota for {account_id}: {e}");
+    }
+    if let Some(repo) = state.repository() {
+        if let Err(e) = repo.update_quota(account_id, quota).await {
+            tracing::warn!("[QuotaRefresh] Failed to update DB quota for {account_id}: {e}");
+        }
+    }
+}
 
 /// Start the auto quota refresh scheduler as a background tokio task
 pub fn start_quota_refresh(state: AppState) {
@@ -63,16 +77,7 @@ pub fn start_quota_refresh(state: AppState) {
                     match account::fetch_quota_with_retry(&mut acc_clone).await {
                         Ok(_) => {
                             if let Some(quota) = acc_clone.quota.clone() {
-                                if let Err(e) =
-                                    account::update_account_quota_async(acc_clone.id.clone(), quota)
-                                        .await
-                                {
-                                    tracing::warn!(
-                                        "[QuotaRefresh] Failed to update quota for {}: {}",
-                                        acc_clone.id,
-                                        e
-                                    );
-                                }
+                                persist_quota(&state, &acc_clone.id, quota).await;
                             }
                             already_refreshed.insert(acc_clone.id.clone());
                             tracing::debug!(
@@ -129,16 +134,7 @@ pub fn start_quota_refresh(state: AppState) {
                         match account::fetch_quota_with_retry(&mut acc).await {
                             Ok(_) => {
                                 if let Some(quota) = acc.quota.clone() {
-                                    if let Err(e) =
-                                        account::update_account_quota_async(acc.id.clone(), quota)
-                                            .await
-                                    {
-                                        tracing::warn!(
-                                            "[QuotaRefresh] Failed to update quota for {}: {}",
-                                            acc.id,
-                                            e
-                                        );
-                                    }
+                                    persist_quota(&state, &acc.id, quota).await;
                                 }
                                 success += 1;
                             },
