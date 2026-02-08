@@ -433,6 +433,27 @@ For large files, use incremental approach:
 
 ---
 
+## ⚠️ MANDATORY thoughtSignature ON functionCall PARTS [2026-02-08]
+
+Google now **requires** `thoughtSignature` field on ALL `functionCall` parts in request body. Without it → 400 INVALID_ARGUMENT.
+
+**Error message:** `"Function call is missing a thought_signature in functionCall parts. This is required for tools to work correctly."`
+
+**Docs:** https://ai.google.dev/gemini-api/docs/thought-signatures
+
+**Fix applied:** Both OpenAI path (`message_transform.rs`) and Gemini native path (`wrapper.rs`) now inject `"skip_thought_signature_validator"` dummy signature when no real signature is cached. This dummy is documented by Google as a valid bypass.
+
+**Injection points:**
+| Path | File | Behavior |
+|------|------|----------|
+| OpenAI | `mappers/openai/request/message_transform.rs:154` | Session cache → fallback to dummy |
+| Gemini native | `mappers/gemini/wrapper.rs:23` | Session cache → fallback to dummy |
+| Claude/Anthropic | `mappers/claude/request/content_builder.rs:253` | Already had dummy fallback (unaffected) |
+
+**Scope:** Applies to ALL Gemini models. Claude via Vertex AI is unaffected (different protocol).
+
+---
+
 ## ⚠️ INPUT TOKEN LIMIT — CLAUDE VIA VERTEX AI [2026-02-07]
 
 Vertex AI enforces a **hard 200,000 token limit** on Claude prompt input.
