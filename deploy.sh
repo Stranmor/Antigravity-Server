@@ -14,6 +14,65 @@ error()   { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
 get_version() { git describe --tags --always --dirty 2>/dev/null || echo "unknown"; }
 
+cmd_deploy_local() {
+    local SERVICE_LOCAL="antigravity-manager"
+    local BINARY_PATH="${HOME}/.local/bin/antigravity-server"
+    local PORT_LOCAL=8045
+
+    log "Building release binary..."
+    cargo build --release -p antigravity-server
+    success "Built: target/release/antigravity-server"
+
+    cp "target/release/antigravity-server" "${BINARY_PATH}.new"
+    chmod +x "${BINARY_PATH}.new"
+
+    local ENV_ARGS=()
+    while IFS='=' read -r key value; do
+        [[ -n "$key" ]] && ENV_ARGS+=("$key=$value")
+    done < <(systemctl --user show "${SERVICE_LOCAL}" -p Environment --value | tr ' ' '\n')
+
+    log "Starting new instance (SO_REUSEPORT overlap)..."
+    env "${ENV_ARGS[@]}" "${BINARY_PATH}.new" &
+    local NEW_PID=$!
+
+    local ready=false
+    for _ in $(seq 1 15); do
+        sleep 1
+        if ! kill -0 "$NEW_PID" 2>/dev/null; then
+            rm -f "${BINARY_PATH}.new"
+            error "New instance died during startup (PID: ${NEW_PID})"
+        fi
+        local http_code
+        http_code=$(curl -sf -o /dev/null -w '%{http_code}' "http://localhost:${PORT_LOCAL}/v1/models" 2>/dev/null || echo "000")
+        if [[ "$http_code" == "200" || "$http_code" == "401" ]]; then
+            ready=true
+            break
+        fi
+    done
+
+    if ! $ready; then
+        kill "$NEW_PID" 2>/dev/null || true
+        rm -f "${BINARY_PATH}.new"
+        error "New instance failed health check after 15s"
+    fi
+    success "New instance ready (PID: ${NEW_PID})"
+
+    mv "${BINARY_PATH}.new" "${BINARY_PATH}"
+
+    log "Restarting systemd service (SO_REUSEPORT keeps new instance alive)..."
+    systemctl --user restart "${SERVICE_LOCAL}"
+    sleep 2
+
+    log "Stopping overlap instance..."
+    kill "$NEW_PID" 2>/dev/null || true
+
+    if systemctl --user is-active --quiet "${SERVICE_LOCAL}"; then
+        success "Zero-downtime local deploy complete!"
+    else
+        error "Service failed after deploy — check: systemctl --user status ${SERVICE_LOCAL}"
+    fi
+}
+
 cmd_deploy() {
     log "Building Nix closure..."
     [[ -f flake.nix ]] || error "flake.nix not found"
@@ -163,11 +222,12 @@ Antigravity Deploy v$(get_version)
 Usage: ./deploy.sh <command> [options]
 
 Commands:
-  deploy     Build and deploy to VPS via Nix closure
-  rollback   Rollback to previous version
-  status     Show service status and health
-  logs       Stream service logs (use -n N for line count)
-  help       Show this help
+  deploy       Build and deploy to VPS via Nix closure
+  deploy-local Zero-downtime local deploy (SO_REUSEPORT overlap)
+  rollback     Rollback to previous version on VPS
+  status       Show VPS service status and health
+  logs         Stream VPS service logs (use -n N for line count)
+  help         Show this help
 
 Target: ${URL}
 EOF
@@ -176,9 +236,10 @@ EOF
 echo -e "${BLUE}Antigravity Deploy v$(get_version)${NC}"
 
 case "${1:-help}" in
-    deploy)   cmd_deploy ;;
-    rollback) cmd_rollback ;;
-    status)   cmd_status ;;
-    logs)     cmd_logs "$@" ;;
-    help|*)   usage ;;
+    deploy)       cmd_deploy ;;
+    deploy-local) cmd_deploy_local ;;
+    rollback)     cmd_rollback ;;
+    status)       cmd_status ;;
+    logs)         cmd_logs "$@" ;;
+    help|*)       usage ;;
 esac
