@@ -102,10 +102,12 @@ pub async fn handle_chat_completions(
         let is_claude_model = mapped_model.starts_with("claude-");
 
         let gemini_body = if is_claude_model {
-            let claude_req =
+            let mut claude_req =
                 crate::proxy::mappers::openai::request::claude_bridge::openai_to_claude_request(
                     &openai_req,
                 );
+            claude_req.model = mapped_model.clone();
+
             let mut body = crate::proxy::mappers::claude::transform_claude_request_in(
                 &claude_req,
                 &project_id,
