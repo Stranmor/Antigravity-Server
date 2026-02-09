@@ -70,7 +70,7 @@ pub fn start(state: AppState) {
                 warmup_config.models.clone()
             };
 
-            let accounts = match account::list_accounts() {
+            let accounts = match state.list_accounts().await {
                 Ok(a) => a,
                 Err(e) => {
                     tracing::warn!("[Scheduler] Failed to list accounts: {}", e);
@@ -179,14 +179,26 @@ pub fn start(state: AppState) {
                     match account::fetch_quota_with_retry(&mut acc).await {
                         Ok(_) => {
                             if let Some(quota) = acc.quota.clone() {
-                                if let Err(e) =
-                                    account::update_account_quota_async(acc.id.clone(), quota).await
+                                if let Err(e) = account::update_account_quota_async(
+                                    acc.id.clone(),
+                                    quota.clone(),
+                                )
+                                .await
                                 {
                                     tracing::warn!(
                                         "[Warmup] Failed to update quota for {}: {}",
                                         email,
                                         e
                                     );
+                                }
+                                if let Some(repo) = state.repository() {
+                                    if let Err(e) = repo.update_quota(&acc.id, quota).await {
+                                        tracing::warn!(
+                                            "[Warmup] DB quota update failed for {}: {}",
+                                            email,
+                                            e
+                                        );
+                                    }
                                 }
                             }
                             success += 1;

@@ -190,9 +190,24 @@ pub async fn handle_oauth_callback(
         None,
     );
 
-    match account::upsert_account(user_info.email.clone(), user_info.get_display_name(), token_data)
-    {
+    match account::upsert_account(
+        user_info.email.clone(),
+        user_info.get_display_name(),
+        token_data.clone(),
+    ) {
         Ok(acc) => {
+            if let Some(repo) = app_state.repository() {
+                if let Err(e) = repo
+                    .upsert_account(
+                        user_info.email.clone(),
+                        user_info.get_display_name(),
+                        token_data,
+                    )
+                    .await
+                {
+                    tracing::warn!("Failed to upsert account to DB: {}", e);
+                }
+            }
             if let Err(e) = app_state.reload_accounts().await {
                 tracing::warn!("Failed to reload accounts after OAuth callback: {}", e);
             }
@@ -254,9 +269,18 @@ pub async fn submit_oauth_code(
         None,
     );
 
-    account::upsert_account(user_info.email.clone(), user_info.name.clone(), token_data).map_err(
-        |e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to add account: {}", e)),
-    )?;
+    account::upsert_account(user_info.email.clone(), user_info.name.clone(), token_data.clone())
+        .map_err(|e| {
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to add account: {}", e))
+        })?;
+
+    if let Some(repo) = app_state.repository() {
+        if let Err(e) =
+            repo.upsert_account(user_info.email.clone(), user_info.name.clone(), token_data).await
+        {
+            tracing::warn!("Failed to upsert account to DB: {}", e);
+        }
+    }
 
     if let Err(e) = app_state.reload_accounts().await {
         tracing::warn!("Failed to reload accounts after OAuth code submit: {}", e);

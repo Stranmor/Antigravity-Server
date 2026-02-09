@@ -48,7 +48,7 @@ pub fn start_quota_refresh(state: AppState) {
                 if app_config.refresh_interval < 5 { 15 } else { app_config.refresh_interval };
             let interval_secs = i64::from(interval_minutes) * 60_i64;
 
-            let accounts = match account::list_accounts() {
+            let accounts = match state.list_accounts().await {
                 Ok(accs) => accs,
                 Err(e) => {
                     tracing::warn!("[QuotaRefresh] Failed to list accounts: {}", e);

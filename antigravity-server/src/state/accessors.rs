@@ -45,6 +45,9 @@ impl AppState {
     }
 
     pub async fn switch_account(&self, account_id: &str) -> Result<(), String> {
+        if let Some(repo) = self.repository() {
+            repo.set_current_account_id(account_id).await.map_err(|e| e.to_string())?;
+        }
         account::switch_account(account_id).await
     }
 
