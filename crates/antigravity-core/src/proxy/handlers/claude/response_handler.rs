@@ -30,9 +30,7 @@ pub async fn handle_nonstreaming_success(
         },
     };
 
-    if let Ok(text) = String::from_utf8(bytes.to_vec()) {
-        tracing::debug!("Upstream Claude response received, len: {} bytes", text.len());
-    }
+    tracing::debug!("Upstream Claude response received, len: {} bytes", bytes.len());
 
     let gemini_resp: serde_json::Value = match serde_json::from_slice(&bytes) {
         Ok(v) => v,
@@ -41,9 +39,9 @@ pub async fn handle_nonstreaming_success(
         },
     };
 
-    let raw = gemini_resp.get("response").unwrap_or(&gemini_resp);
+    let raw = gemini_resp.get("response").cloned().unwrap_or(gemini_resp);
 
-    let gemini_response: GeminiResponse = match serde_json::from_value(raw.clone()) {
+    let gemini_response: GeminiResponse = match serde_json::from_value(raw) {
         Ok(r) => r,
         Err(e) => {
             return (StatusCode::INTERNAL_SERVER_ERROR, format!("Convert error: {}", e))
