@@ -14,6 +14,7 @@ use crate::proxy::server::AppState;
 use axum::{
     body::Body,
     extract::{Request, State},
+    http::StatusCode,
     middleware::Next,
     response::Response,
 };
@@ -48,7 +49,7 @@ pub async fn monitor_middleware(
         None
     };
 
-    let request_body_str;
+    let monitor = state.monitor.clone();
     let request = if method == "POST" {
         let (parts, body) = request.into_parts();
         match axum::body::to_bytes(body, MAX_REQUEST_LOG_SIZE).await {
@@ -58,16 +59,36 @@ pub async fn monitor_middleware(
                         v.get("model").and_then(|m| m.as_str()).map(|s| s.to_string())
                     });
                 }
-                request_body_str = None;
                 Request::from_parts(parts, Body::from(bytes))
             },
             Err(_) => {
-                request_body_str = None;
-                Request::from_parts(parts, Body::empty())
+                let duration = start.elapsed().as_millis() as u64;
+                let log = ProxyRequestLog {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    timestamp: chrono::Utc::now().timestamp_millis(),
+                    method,
+                    url: uri,
+                    status: StatusCode::PAYLOAD_TOO_LARGE.as_u16(),
+                    duration,
+                    model,
+                    mapped_model: None,
+                    mapping_reason: None,
+                    account_email: None,
+                    error: Some("Request body too large to inspect".to_string()),
+                    request_body: None,
+                    response_body: None,
+                    input_tokens: None,
+                    output_tokens: None,
+                    cached_tokens: None,
+                };
+                monitor.log_request(log).await;
+                return Response::builder()
+                    .status(StatusCode::PAYLOAD_TOO_LARGE)
+                    .body(Body::from("Request body too large"))
+                    .unwrap_or_else(|_| Response::new(Body::empty()));
             },
         }
     } else {
-        request_body_str = None;
         request
     };
 
@@ -98,7 +119,6 @@ pub async fn monitor_middleware(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let monitor = state.monitor.clone();
     let log = ProxyRequestLog {
         id: uuid::Uuid::new_v4().to_string(),
         timestamp: chrono::Utc::now().timestamp_millis(),
@@ -111,7 +131,7 @@ pub async fn monitor_middleware(
         mapping_reason,
         account_email,
         error: None,
-        request_body: request_body_str,
+        request_body: None,
         response_body: None,
         input_tokens: None,
         output_tokens: None,
@@ -158,17 +178,16 @@ async fn handle_sse_response(
 
         log.response_body = None;
 
-        if let Ok(full_tail) = std::str::from_utf8(&last_few_bytes) {
-            for line in full_tail.lines().rev() {
-                if line.starts_with("data: ")
-                    && (line.contains("\"usage\"") || line.contains("\"usageMetadata\""))
-                {
-                    let json_str = line.trim_start_matches("data: ").trim();
-                    if let Ok(json) = serde_json::from_str::<Value>(json_str) {
-                        if let Some(usage) = json.get("usage").or(json.get("usageMetadata")) {
-                            extract_usage_from_json(usage, &mut log);
-                            break;
-                        }
+        let full_tail = String::from_utf8_lossy(&last_few_bytes);
+        for line in full_tail.lines().rev() {
+            if line.starts_with("data: ")
+                && (line.contains("\"usage\"") || line.contains("\"usageMetadata\""))
+            {
+                let json_str = line.trim_start_matches("data: ").trim();
+                if let Ok(json) = serde_json::from_str::<Value>(json_str) {
+                    if let Some(usage) = json.get("usage").or(json.get("usageMetadata")) {
+                        extract_usage_from_json(usage, &mut log);
+                        break;
                     }
                 }
             }
@@ -209,7 +228,10 @@ async fn handle_json_response(
             log.response_body = None;
             log.error = Some("Response too large to log".to_string());
             monitor.log_request(log).await;
-            Response::from_parts(parts, Body::empty())
+            Response::builder()
+                .status(StatusCode::BAD_GATEWAY)
+                .body(Body::from("Upstream response too large"))
+                .unwrap_or_else(|_| Response::new(Body::empty()))
         },
     }
 }
