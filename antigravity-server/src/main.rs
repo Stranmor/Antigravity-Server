@@ -178,6 +178,7 @@ async fn run_server(port: u16) -> Result<()> {
 
     scheduler::start(state.clone());
     scheduler::start_quota_refresh(state.clone());
+    scheduler::start_oauth_cleanup(state.clone());
 
     if let Ok(remote_url) = std::env::var("ANTIGRAVITY_SYNC_REMOTE") {
         config_sync::start_auto_config_sync(Arc::new(state.clone()), remote_url);

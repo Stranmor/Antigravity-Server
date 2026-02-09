@@ -66,8 +66,10 @@ pub fn skip_field(data: &[u8], offset: usize, wire_type: u8) -> Result<usize, St
         2 => {
             // Length-delimited
             let (length, content_offset) = read_varint(data, offset)?;
+            let length_usize = usize::try_from(length)
+                .map_err(|_| "field length exceeds platform address space".to_string())?;
             let end = content_offset
-                .checked_add(length as usize)
+                .checked_add(length_usize)
                 .ok_or_else(|| "overflow in length-delimited field".to_string())?;
             if end > data.len() {
                 return Err("data not complete: length-delimited field".to_string());
@@ -118,18 +120,17 @@ pub fn find_field(data: &[u8], target_field: u32) -> Result<Option<Vec<u8>>, Str
     let mut offset = 0;
 
     while offset < data.len() {
-        let (tag, new_offset) = match read_varint(data, offset) {
-            Ok(v) => v,
-            Err(_) => break, // datanotcomplete，stop
-        };
+        let (tag, new_offset) = read_varint(data, offset)?;
 
         let wire_type = (tag & 7) as u8;
         let field_num = (tag >> 3) as u32;
 
         if field_num == target_field && wire_type == 2 {
             let (length, content_offset) = read_varint(data, new_offset)?;
+            let length_usize = usize::try_from(length)
+                .map_err(|_| "field length exceeds platform address space".to_string())?;
             let end = content_offset
-                .checked_add(length as usize)
+                .checked_add(length_usize)
                 .ok_or_else(|| "overflow in length-delimited field".to_string())?;
             if end > data.len() {
                 return Err("truncated field data".to_string());

@@ -28,3 +28,23 @@ mod warmup;
 
 pub use quota_refresh::start_quota_refresh;
 pub use warmup::start;
+
+use crate::state::AppState;
+use std::time::Duration;
+use tokio::time::interval;
+
+pub fn start_oauth_cleanup(state: AppState) {
+    tokio::spawn(async move {
+        let mut cleanup_interval = interval(Duration::from_secs(60));
+        loop {
+            cleanup_interval.tick().await;
+            let before = state.inner.oauth_states.len();
+            state.inner.oauth_states.retain(|_, created_at| created_at.elapsed().as_secs() < 600);
+            let after = state.inner.oauth_states.len();
+            let removed = before - after;
+            if removed > 0 {
+                tracing::debug!("[Scheduler] Cleaned up {} expired OAuth states", removed);
+            }
+        }
+    });
+}
