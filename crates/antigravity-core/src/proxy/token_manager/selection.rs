@@ -82,9 +82,15 @@ impl TokenManager {
         let now = chrono::Utc::now().timestamp();
         if now >= token.timestamp - 300 {
             self.try_refresh_token(&mut token).await?;
+            // Persist refreshed token back to shared cache
+            self.tokens.insert(token.account_id.clone(), token.clone());
         }
 
         let project_id = self.ensure_project_id(&mut token).await?;
+        // Persist project_id back to shared cache if it was fetched
+        if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
+            entry.project_id = Some(project_id.clone());
+        }
 
         tracing::info!(
             "[Force-Account] Using forced account: {} (bypassing smart routing)",
@@ -266,10 +272,18 @@ impl TokenManager {
                     attempted.insert(token.email.clone());
                     continue;
                 }
+                // Persist refreshed token back to shared cache
+                self.tokens.insert(token.account_id.clone(), token.clone());
             }
 
             let project_id = match self.ensure_project_id(&mut token).await {
-                Ok(pid) => pid,
+                Ok(pid) => {
+                    // Persist project_id back to shared cache if it was fetched
+                    if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
+                        entry.project_id = Some(pid.clone());
+                    }
+                    pid
+                },
                 Err(e) => {
                     last_error = Some(e);
                     attempted.insert(token.email.clone());

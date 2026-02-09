@@ -102,8 +102,8 @@ impl AppState {
         })
     }
 
-    pub fn build_proxy_router(&self) -> Router {
-        let upstream_proxy = self.inner.proxy_config.blocking_read().upstream_proxy.clone();
+    pub async fn build_proxy_router(&self) -> Router {
+        let upstream_proxy = self.inner.proxy_config.read().await.upstream_proxy.clone();
         build_proxy_router_with_shared_state(
             self.inner.token_manager.clone(),
             self.inner.custom_mapping.clone(),

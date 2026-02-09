@@ -33,7 +33,11 @@ async fn setup_server() -> MockServer {
 async fn test_upstream_proxy_flow() {
     let server = setup_server().await;
     let mock_url = format!("{}/v1internal", server.uri());
-    let client = UpstreamClient::new(UpstreamProxyConfig::default(), Some(vec![mock_url]));
+    let client = UpstreamClient::new(
+        reqwest::Client::new(),
+        UpstreamProxyConfig::default(),
+        Some(vec![mock_url]),
+    );
 
     {
         let _guard = Mock::given(method("POST"))

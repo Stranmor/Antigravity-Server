@@ -82,9 +82,19 @@ impl TokenManager {
         let mut content: serde_json::Value = serde_json::from_str(&content_str)
             .map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
-        content["token"]["project_id"] = serde_json::Value::String(project_id.to_string());
+        if let Some(token_obj) = content.get_mut("token") {
+            token_obj["project_id"] = serde_json::Value::String(project_id.to_string());
+        } else {
+            return Err("Malformed JSON: missing 'token' object".to_string());
+        }
+
         atomic_write_json(&path, &content).await?;
-        tracing::debug!("Saved project_id to file for account {}", account_id);
+
+        if let Some(mut entry) = self.tokens.get_mut(account_id) {
+            entry.project_id = Some(project_id.to_string());
+        }
+
+        tracing::debug!("Saved project_id to file and cache for account {}", account_id);
         Ok(())
     }
 
@@ -148,19 +158,32 @@ impl TokenManager {
             .map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
         let now = chrono::Utc::now().timestamp();
-        content["token"]["access_token"] =
-            serde_json::Value::String(token_response.access_token.clone());
-        content["token"]["expires_in"] =
-            serde_json::Value::Number(token_response.expires_in.into());
-        content["token"]["expiry_timestamp"] =
-            serde_json::Value::Number((now + token_response.expires_in).into());
+        if let Some(token_obj) = content.get_mut("token") {
+            token_obj["access_token"] =
+                serde_json::Value::String(token_response.access_token.clone());
+            token_obj["expires_in"] = serde_json::Value::Number(token_response.expires_in.into());
+            token_obj["expiry_timestamp"] =
+                serde_json::Value::Number((now + token_response.expires_in).into());
 
-        if let Some(rt) = &token_response.refresh_token {
-            content["token"]["refresh_token"] = serde_json::Value::String(rt.clone());
+            if let Some(rt) = &token_response.refresh_token {
+                token_obj["refresh_token"] = serde_json::Value::String(rt.clone());
+            }
+        } else {
+            return Err("Malformed JSON: missing 'token' object".to_string());
         }
 
         atomic_write_json(&path, &content).await?;
-        tracing::debug!("Saved refreshed token to file for account {}", account_id);
+
+        if let Some(mut entry) = self.tokens.get_mut(account_id) {
+            entry.access_token = token_response.access_token.clone();
+            entry.expires_in = token_response.expires_in;
+            entry.timestamp = now;
+            if let Some(rt) = &token_response.refresh_token {
+                entry.refresh_token = rt.clone();
+            }
+        }
+
+        tracing::debug!("Saved refreshed token to file and cache for account {}", account_id);
         Ok(())
     }
 
@@ -227,7 +250,14 @@ impl TokenManager {
         content["disabled_reason"] = serde_json::Value::String(truncate_reason(reason, 800));
 
         atomic_write_json(&path, &content).await?;
-        tracing::warn!("Account disabled in file: {} ({:?})", account_id, path);
+
+        self.tokens.remove(account_id);
+
+        tracing::warn!(
+            "Account disabled in file and removed from cache: {} ({:?})",
+            account_id,
+            path
+        );
         Ok(())
     }
 }

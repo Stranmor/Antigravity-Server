@@ -57,9 +57,10 @@ pub fn build_proxy_router_with_shared_state(
         token_manager,
         custom_mapping: Arc::clone(&custom_mapping),
         request_timeout: 300,
-        http_client,
+        http_client: http_client.clone(),
         upstream_proxy: Arc::clone(&proxy_state),
         upstream: Arc::new(crate::proxy::upstream::client::UpstreamClient::new(
+            http_client,
             upstream_proxy,
             None,
         )),
