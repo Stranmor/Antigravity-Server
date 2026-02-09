@@ -45,10 +45,15 @@ impl AppState {
     }
 
     pub async fn switch_account(&self, account_id: &str) -> Result<(), String> {
+        // Write JSON first (primary) — if this fails, we don't touch repo
+        account::switch_account(account_id).await?;
+        // Then update repo (best-effort, non-blocking)
         if let Some(repo) = self.repository() {
-            repo.set_current_account_id(account_id).await.map_err(|e| e.to_string())?;
+            if let Err(e) = repo.set_current_account_id(account_id).await {
+                tracing::warn!("Failed to set current account in DB: {}", e);
+            }
         }
-        account::switch_account(account_id).await
+        Ok(())
     }
 
     pub async fn get_account_count(&self) -> usize {
@@ -208,10 +213,11 @@ impl AppState {
 }
 
 pub fn get_model_quota(account: &Account, model_prefix: &str) -> Option<i32> {
+    let prefix_lower = model_prefix.to_lowercase();
     account.quota.as_ref().and_then(|q| {
         q.models
             .iter()
-            .find(|m| m.name.to_lowercase().contains(&model_prefix.to_lowercase()))
+            .find(|m| m.name.to_lowercase().contains(&prefix_lower))
             .map(|m| m.percentage)
     })
 }
