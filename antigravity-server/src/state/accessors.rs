@@ -47,11 +47,11 @@ impl AppState {
     pub async fn switch_account(&self, account_id: &str) -> Result<(), String> {
         // Write JSON first (primary) — if this fails, we don't touch repo
         account::switch_account(account_id).await?;
-        // Then update repo (best-effort, non-blocking)
+        // Then update repo — hard-fail because get_current_account reads repo-first
         if let Some(repo) = self.repository() {
-            if let Err(e) = repo.set_current_account_id(account_id).await {
-                tracing::warn!("Failed to set current account in DB: {}", e);
-            }
+            repo.set_current_account_id(account_id)
+                .await
+                .map_err(|e| format!("Failed to set current account in DB: {e}"))?;
         }
         Ok(())
     }
