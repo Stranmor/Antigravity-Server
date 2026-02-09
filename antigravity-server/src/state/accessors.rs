@@ -122,6 +122,10 @@ impl AppState {
                     let mut experimental = self.inner.experimental_config.write().await;
                     *experimental = proxy_config.experimental;
                 }
+                {
+                    let mut upstream = self.inner.upstream_proxy.write().await;
+                    *upstream = proxy_config.upstream_proxy.clone();
+                }
 
                 let mut inner_proxy_config = self.inner.proxy_config.write().await;
                 *inner_proxy_config = proxy_config;

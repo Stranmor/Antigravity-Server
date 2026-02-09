@@ -36,6 +36,7 @@ pub struct AppStateInner {
     pub custom_mapping: Arc<RwLock<std::collections::HashMap<String, String>>>,
     pub mapping_timestamps: Arc<RwLock<std::collections::HashMap<String, i64>>>,
     pub security_config: Arc<RwLock<ProxySecurityConfig>>,
+    pub upstream_proxy: Arc<RwLock<antigravity_types::models::UpstreamProxyConfig>>,
     pub zai_config: Arc<RwLock<antigravity_types::models::ZaiConfig>>,
     pub experimental_config: Arc<RwLock<antigravity_types::models::ExperimentalConfig>>,
     pub adaptive_limits: Arc<AdaptiveLimitManager>,
@@ -56,6 +57,7 @@ impl AppState {
         repository: Option<Arc<dyn AccountRepository>>,
     ) -> Result<Self> {
         let custom_mapping = Arc::new(RwLock::new(proxy_config.custom_mapping.clone()));
+        let upstream_proxy = Arc::new(RwLock::new(proxy_config.upstream_proxy.clone()));
         let security_config =
             Arc::new(RwLock::new(ProxySecurityConfig::from_proxy_config(&proxy_config)));
         let zai_config = Arc::new(RwLock::new(proxy_config.zai.clone()));
@@ -87,6 +89,7 @@ impl AppState {
                 monitor,
                 proxy_config: Arc::new(RwLock::new(proxy_config)),
                 custom_mapping,
+                upstream_proxy,
                 mapping_timestamps: Arc::new(RwLock::new(std::collections::HashMap::new())),
                 security_config,
                 zai_config,
@@ -103,14 +106,10 @@ impl AppState {
     }
 
     pub async fn build_proxy_router(&self) -> Router {
-        let upstream_proxy = {
-            let config = self.inner.proxy_config.read().await;
-            Arc::new(RwLock::new(config.upstream_proxy.clone()))
-        };
         build_proxy_router_with_shared_state(
             self.inner.token_manager.clone(),
             self.inner.custom_mapping.clone(),
-            upstream_proxy,
+            Arc::clone(&self.inner.upstream_proxy),
             self.inner.security_config.clone(),
             self.inner.zai_config.clone(),
             self.inner.monitor.clone(),
