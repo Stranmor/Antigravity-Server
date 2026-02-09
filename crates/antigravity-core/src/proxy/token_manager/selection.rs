@@ -129,7 +129,7 @@ impl TokenManager {
 
         let preferred_id = self.preferred_account_id.read().await.clone();
         if let Some(ref pref_id) = preferred_id {
-            if let Some(result) = self
+            if let Some((token, guard)) = self
                 .try_preferred_account(
                     &tokens_snapshot,
                     pref_id,
@@ -139,7 +139,12 @@ impl TokenManager {
                 )
                 .await
             {
-                return Ok(result);
+                return Ok((
+                    token.access_token,
+                    token.project_id.unwrap_or_default(),
+                    token.email,
+                    guard,
+                ));
             }
         }
 
@@ -186,6 +191,7 @@ impl TokenManager {
                                 &attempted,
                                 &normalized_target,
                                 quota_protection_enabled,
+                                &aimd,
                                 &routing,
                             )
                             .await

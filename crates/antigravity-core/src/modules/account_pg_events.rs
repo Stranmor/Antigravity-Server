@@ -14,6 +14,7 @@ pub(crate) async fn update_quota_impl(
     pool: &PgPool,
     account_id: &str,
     quota: QuotaData,
+    protected_models: Option<Vec<String>>,
 ) -> RepoResult<()> {
     let uuid = Uuid::parse_str(account_id)
         .map_err(|err| RepositoryError::InvalidInput(err.to_string()))?;
@@ -38,6 +39,17 @@ pub(crate) async fn update_quota_impl(
     if let Some(ref tier) = quota.subscription_tier {
         sqlx::query("UPDATE tokens SET tier = $1 WHERE account_id = $2")
             .bind(tier)
+            .bind(uuid)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_err)?;
+    }
+
+    if let Some(models) = protected_models {
+        let protected_json = serde_json::to_value(&models)
+            .map_err(|err| RepositoryError::Serialization(err.to_string()))?;
+        sqlx::query("UPDATE accounts SET protected_models = $1 WHERE id = $2")
+            .bind(protected_json)
             .bind(uuid)
             .execute(&mut *tx)
             .await

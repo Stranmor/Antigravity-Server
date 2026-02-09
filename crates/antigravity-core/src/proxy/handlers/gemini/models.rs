@@ -35,15 +35,39 @@ pub async fn handle_list_models(
     Ok(Json(json!({ "models": models })))
 }
 
-pub async fn handle_get_model(Path(model_name): Path<String>) -> impl IntoResponse {
-    Json(json!({
+pub async fn handle_get_model(
+    State(state): State<AppState>,
+    Path(model_name): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    use crate::proxy::common::model_mapping::collect_all_model_ids;
+
+    let available_ids = collect_all_model_ids(
+        &state.token_manager.get_all_available_models(),
+        &state.custom_mapping,
+    )
+    .await;
+
+    if !available_ids.contains(&model_name) {
+        return Err((StatusCode::NOT_FOUND, format!("Model {} not found", model_name)));
+    }
+
+    // Determine limits based on model family
+    let (input_limit, output_limit) = if model_name.contains("pro") {
+        (2_097_152, 8192)
+    } else if model_name.contains("flash") {
+        (1_048_576, 8192)
+    } else {
+        (1_048_576, 4096)
+    };
+
+    Ok(Json(json!({
         "name": format!("models/{}", model_name),
         "version": "001",
         "displayName": model_name,
-        "inputTokenLimit": 1_048_576,
-        "outputTokenLimit": 65536,
+        "inputTokenLimit": input_limit,
+        "outputTokenLimit": output_limit,
         "supportedGenerationMethods": ["generateContent", "countTokens"]
-    }))
+    })))
 }
 
 pub async fn handle_count_tokens(

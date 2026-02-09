@@ -26,6 +26,7 @@ impl TokenManager {
                 token.access_token = entry.access_token.clone();
                 token.expires_in = entry.expires_in;
                 token.timestamp = entry.timestamp;
+                token.refresh_token = entry.refresh_token.clone();
                 return Ok(());
             }
         }

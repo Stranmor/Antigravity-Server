@@ -23,12 +23,23 @@ pub async fn refresh_account_quota(
     State(state): State<AppState>,
     Json(payload): Json<RefreshQuotaRequest>,
 ) -> Result<Json<QuotaResponse>, (StatusCode, String)> {
-    let mut acc = if let Some(repo) = state.repository() {
-        repo.get_account(&payload.account_id)
-            .await
-            .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?
+    let mut acc =
+        account::load_account(&payload.account_id).map_err(|e| (StatusCode::NOT_FOUND, e))?;
+
+    let pg_account_id = if let Some(repo) = state.repository() {
+        match repo.get_account_by_email(&acc.email).await {
+            Ok(Some(pg_account)) => Some(pg_account.id),
+            Ok(None) => {
+                tracing::warn!("PG account lookup failed for {}", acc.email);
+                None
+            },
+            Err(e) => {
+                tracing::warn!("PG account lookup error for {}: {}", acc.email, e);
+                None
+            },
+        }
     } else {
-        account::load_account(&payload.account_id).map_err(|e| (StatusCode::NOT_FOUND, e))?
+        None
     };
 
     match account::fetch_quota_with_retry(&mut acc).await {
@@ -41,9 +52,23 @@ pub async fn refresh_account_quota(
                     tracing::warn!("Failed to save account fallback: {}", e);
                 }
             }
-            if let Some(repo) = state.repository() {
-                if let Err(e) = repo.update_quota(&payload.account_id, quota.clone()).await {
-                    tracing::warn!("DB quota update failed for {}: {}", payload.account_id, e);
+            let protected_models = match account::load_account(&payload.account_id) {
+                Ok(updated) => Some(updated.protected_models.iter().cloned().collect()),
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to reload account for protected models {}: {}",
+                        acc.email,
+                        e
+                    );
+                    None
+                },
+            };
+            if let (Some(repo), Some(pg_account_id)) = (state.repository(), pg_account_id.as_ref())
+            {
+                if let Err(e) =
+                    repo.update_quota(pg_account_id, quota.clone(), protected_models).await
+                {
+                    tracing::warn!("DB quota update failed for {}: {}", acc.email, e);
                 }
             }
             if let Err(e) = state.reload_accounts().await {
@@ -59,12 +84,12 @@ pub async fn refresh_account_quota(
 pub async fn refresh_all_quotas(
     State(state): State<AppState>,
 ) -> Result<Json<antigravity_types::models::RefreshStats>, (StatusCode, String)> {
-    let accounts =
-        state.list_accounts().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let accounts = account::list_accounts().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     let total = accounts.len();
-    let mut join_set: JoinSet<Result<(String, antigravity_types::models::QuotaData), String>> =
-        JoinSet::new();
+    let mut join_set: JoinSet<
+        Result<(String, String, antigravity_types::models::QuotaData), String>,
+    > = JoinSet::new();
 
     for mut acc in accounts {
         if acc.disabled {
@@ -72,11 +97,12 @@ pub async fn refresh_all_quotas(
         }
 
         let account_id = acc.id.clone();
+        let email = acc.email.clone();
         join_set.spawn(async move {
             let quota = account::fetch_quota_with_retry(&mut acc)
                 .await
                 .map_err(|e| format!("{}: {}", acc.email, e))?;
-            Ok((account_id, quota))
+            Ok((account_id, email, quota))
         });
     }
 
@@ -85,15 +111,38 @@ pub async fn refresh_all_quotas(
 
     while let Some(result) = join_set.join_next().await {
         match result {
-            Ok(Ok((account_id, quota))) => {
+            Ok(Ok((account_id, email, quota))) => {
                 if let Err(e) =
                     account::update_account_quota_async(account_id.clone(), quota.clone()).await
                 {
                     tracing::warn!("Quota protection update failed for {}: {}", account_id, e);
                 }
+                let protected_models = match account::load_account(&account_id) {
+                    Ok(updated) => Some(updated.protected_models.iter().cloned().collect()),
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to reload account for protected models {}: {}",
+                            email,
+                            e
+                        );
+                        None
+                    },
+                };
                 if let Some(repo) = state.repository() {
-                    if let Err(e) = repo.update_quota(&account_id, quota).await {
-                        tracing::warn!("DB quota update failed for {}: {}", account_id, e);
+                    match repo.get_account_by_email(&email).await {
+                        Ok(Some(pg_account)) => {
+                            if let Err(e) =
+                                repo.update_quota(&pg_account.id, quota, protected_models).await
+                            {
+                                tracing::warn!("DB quota update failed for {}: {}", email, e);
+                            }
+                        },
+                        Ok(None) => {
+                            tracing::warn!("PG account lookup failed for {}", email);
+                        },
+                        Err(e) => {
+                            tracing::warn!("PG account lookup error for {}: {}", email, e);
+                        },
                     }
                 }
                 success += 1;
@@ -141,22 +190,28 @@ pub async fn toggle_proxy_status(
         "Toggling proxy status"
     );
 
-    let mut acc = if let Some(repo) = state.repository() {
-        repo.get_account(&payload.account_id)
-            .await
-            .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?
-    } else {
-        account::load_account(&payload.account_id).map_err(|e| (StatusCode::NOT_FOUND, e))?
-    };
+    let mut acc =
+        account::load_account(&payload.account_id).map_err(|e| (StatusCode::NOT_FOUND, e))?;
 
     acc.proxy_disabled = !payload.enable;
 
+    account::save_account(&acc).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
     if let Some(repo) = state.repository() {
-        repo.update_account(&acc)
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    } else {
-        account::save_account(&acc).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        match repo.get_account_by_email(&acc.email).await {
+            Ok(Some(mut pg_account)) => {
+                pg_account.proxy_disabled = acc.proxy_disabled;
+                repo.update_account(&pg_account)
+                    .await
+                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            },
+            Ok(None) => {
+                return Err((StatusCode::NOT_FOUND, format!("Account not found: {}", acc.email)));
+            },
+            Err(e) => {
+                return Err((StatusCode::NOT_FOUND, e.to_string()));
+            },
+        }
     }
 
     if let Err(e) = state.reload_accounts().await {
@@ -185,12 +240,23 @@ pub async fn warmup_account(
     State(state): State<AppState>,
     Json(payload): Json<WarmupAccountRequest>,
 ) -> Result<Json<WarmupResponse>, (StatusCode, String)> {
-    let mut acc = if let Some(repo) = state.repository() {
-        repo.get_account(&payload.account_id)
-            .await
-            .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?
+    let mut acc =
+        account::load_account(&payload.account_id).map_err(|e| (StatusCode::NOT_FOUND, e))?;
+
+    let pg_account_id = if let Some(repo) = state.repository() {
+        match repo.get_account_by_email(&acc.email).await {
+            Ok(Some(pg_account)) => Some(pg_account.id),
+            Ok(None) => {
+                tracing::warn!("PG account lookup failed for {}", acc.email);
+                None
+            },
+            Err(e) => {
+                tracing::warn!("PG account lookup error for {}: {}", acc.email, e);
+                None
+            },
+        }
     } else {
-        account::load_account(&payload.account_id).map_err(|e| (StatusCode::NOT_FOUND, e))?
+        None
     };
 
     match account::fetch_quota_with_retry(&mut acc).await {
@@ -201,8 +267,22 @@ pub async fn warmup_account(
                 {
                     tracing::warn!("Failed to update quota for {}: {}", acc.email, e);
                 }
-                if let Some(repo) = state.repository() {
-                    if let Err(e) = repo.update_quota(&acc.id, quota).await {
+                let protected_models = match account::load_account(&acc.id) {
+                    Ok(updated) => Some(updated.protected_models.iter().cloned().collect()),
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to reload account for protected models {}: {}",
+                            acc.email,
+                            e
+                        );
+                        None
+                    },
+                };
+                if let (Some(repo), Some(pg_account_id)) =
+                    (state.repository(), pg_account_id.as_ref())
+                {
+                    if let Err(e) = repo.update_quota(pg_account_id, quota, protected_models).await
+                    {
                         tracing::warn!("DB quota update failed for {}: {}", acc.email, e);
                     }
                 }
@@ -223,13 +303,13 @@ pub async fn warmup_account(
 pub async fn warmup_all_accounts(
     State(state): State<AppState>,
 ) -> Result<Json<WarmupResponse>, (StatusCode, String)> {
-    let accounts =
-        state.list_accounts().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let accounts = account::list_accounts().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     let total = accounts.len();
 
     struct WarmupResult {
         account_id: String,
+        email: String,
         quota: Option<antigravity_types::models::QuotaData>,
     }
 
@@ -247,7 +327,7 @@ pub async fn warmup_all_accounts(
                 .await
                 .map_err(|e| format!("{}: {}", email, e))?;
 
-            Ok(WarmupResult { account_id, quota: acc.quota })
+            Ok(WarmupResult { account_id, email, quota: acc.quota })
         });
     }
 
@@ -270,13 +350,43 @@ pub async fn warmup_all_accounts(
                             e
                         );
                     }
-                    if let Some(repo) = state.repository() {
-                        if let Err(e) = repo.update_quota(&warmup_result.account_id, quota).await {
+                    let protected_models = match account::load_account(&warmup_result.account_id) {
+                        Ok(updated) => Some(updated.protected_models.iter().cloned().collect()),
+                        Err(e) => {
                             tracing::warn!(
-                                "DB quota update failed for {}: {}",
-                                warmup_result.account_id,
+                                "Failed to reload account for protected models {}: {}",
+                                warmup_result.email,
                                 e
                             );
+                            None
+                        },
+                    };
+                    if let Some(repo) = state.repository() {
+                        match repo.get_account_by_email(&warmup_result.email).await {
+                            Ok(Some(pg_account)) => {
+                                if let Err(e) =
+                                    repo.update_quota(&pg_account.id, quota, protected_models).await
+                                {
+                                    tracing::warn!(
+                                        "DB quota update failed for {}: {}",
+                                        warmup_result.email,
+                                        e
+                                    );
+                                }
+                            },
+                            Ok(None) => {
+                                tracing::warn!(
+                                    "PG account lookup failed for {}",
+                                    warmup_result.email
+                                );
+                            },
+                            Err(e) => {
+                                tracing::warn!(
+                                    "PG account lookup error for {}: {}",
+                                    warmup_result.email,
+                                    e
+                                );
+                            },
                         }
                     }
                 }

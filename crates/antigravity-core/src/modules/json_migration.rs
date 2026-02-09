@@ -111,7 +111,9 @@ pub async fn migrate_json_to_postgres(
                         }
 
                         if let Some(quota) = &account.quota {
-                            if let Err(e) = repo.update_quota(&updated.id, quota.clone()).await {
+                            if let Err(e) =
+                                repo.update_quota(&updated.id, quota.clone(), None).await
+                            {
                                 warn!("Failed to migrate quota for {}: {}", account.email, e);
                             }
                         }

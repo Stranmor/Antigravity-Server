@@ -7,7 +7,6 @@ use bytes::Bytes;
 use futures::StreamExt;
 use serde_json::Value;
 
-use crate::proxy::common::client_builder::build_http_client;
 use crate::proxy::server::AppState;
 
 fn map_model_for_zai(original: &str, state: &crate::proxy::ZaiConfig) -> String {
@@ -80,9 +79,7 @@ fn set_zai_auth(headers: &mut HeaderMap, _incoming: &HeaderMap, api_key: &str) {
 pub fn deep_remove_cache_control(value: &mut Value) {
     match value {
         Value::Object(map) => {
-            if let Some(v) = map.remove("cache_control") {
-                tracing::info!("[ISSUE-744] Deep Cleaning found nested cache_control: {:?}", v);
-            }
+            map.remove("cache_control");
             for v in map.values_mut() {
                 deep_remove_cache_control(v);
             }
@@ -123,13 +120,6 @@ pub async fn forward_anthropic_json(
         Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
     };
 
-    let timeout_secs = state.request_timeout.max(5);
-    let upstream_proxy = state.upstream_proxy.read().await.clone();
-    let client = match build_http_client(Some(&upstream_proxy), timeout_secs) {
-        Ok(c) => c,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
-    };
-
     let mut headers = copy_passthrough_headers(incoming_headers);
     set_zai_auth(&mut headers, incoming_headers, &zai.api_key);
 
@@ -138,9 +128,6 @@ pub async fn forward_anthropic_json(
 
     // [FIX #290] Clean cache_control before sending to Anthropic API
     // This prevents "Extra inputs are not permitted" errors
-    if let Some(cc) = body.get("cache_control") {
-        tracing::info!("[ISSUE-744] Deep cleaning cache_control from ROOT: {:?}", cc);
-    }
     deep_remove_cache_control(&mut body);
 
     // [FIX #307] Explicitly serialize body to Vec<u8> to ensure Content-Length is set correctly.
@@ -160,7 +147,7 @@ pub async fn forward_anthropic_json(
 
     tracing::debug!("Forwarding request to z.ai (len: {} bytes)", body_len);
 
-    let req = client.request(method, &url).headers(headers).body(body_bytes); // Use .body(Vec<u8>) instead of .json()
+    let req = state.http_client.request(method, &url).headers(headers).body(body_bytes);
 
     let resp = match req.send().await {
         Ok(r) => r,

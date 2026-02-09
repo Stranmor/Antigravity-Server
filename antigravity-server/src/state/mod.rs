@@ -43,6 +43,7 @@ pub struct AppStateInner {
     pub circuit_breaker: Arc<CircuitBreakerManager>,
     pub oauth_states: Arc<DashMap<String, Instant>>,
     pub bound_port: AtomicU16,
+    pub http_client: reqwest::Client,
     pub repository: Option<Arc<dyn AccountRepository>>,
 }
 
@@ -67,6 +68,12 @@ impl AppState {
         let health_monitor = HealthMonitor::new();
         let circuit_breaker = Arc::new(CircuitBreakerManager::new());
 
+        let http_client = antigravity_core::proxy::common::client_builder::build_http_client(
+            Some(&proxy_config.upstream_proxy),
+            300,
+        )
+        .unwrap_or_else(|_| reqwest::Client::new());
+
         health_monitor.start_recovery_task();
 
         token_manager.set_adaptive_limits(adaptive_limits.clone()).await;
@@ -89,6 +96,7 @@ impl AppState {
                 circuit_breaker,
                 oauth_states: Arc::new(DashMap::new()),
                 bound_port: AtomicU16::new(0),
+                http_client,
                 repository,
             }),
         })
@@ -107,6 +115,7 @@ impl AppState {
             self.inner.adaptive_limits.clone(),
             self.inner.health_monitor.clone(),
             self.inner.circuit_breaker.clone(),
+            self.inner.http_client.clone(),
         )
     }
 }

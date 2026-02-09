@@ -1,5 +1,6 @@
 use super::{file_utils::calculate_max_quota_percentage, proxy_token::ProxyToken, TokenManager};
 use crate::modules::oauth;
+use std::sync::Arc;
 use std::{collections::HashSet, path::PathBuf};
 
 impl TokenManager {
@@ -56,6 +57,7 @@ impl TokenManager {
     pub async fn reload_account(&self, account_id: &str) -> Result<(), String> {
         let path = self.data_dir.join("accounts").join(format!("{}.json", account_id));
         if !path.exists() {
+            self.tokens.remove(account_id);
             return Err(format!("Account file not found: {}", path.display()));
         }
 
@@ -64,7 +66,10 @@ impl TokenManager {
                 self.tokens.insert(account_id.to_string(), token);
                 Ok(())
             },
-            Ok(None) => Err("Account load failed".to_string()),
+            Ok(None) => {
+                self.tokens.remove(account_id);
+                Err("Account load failed".to_string())
+            },
             Err(e) => Err(format!("Failed to sync account: {}", e)),
         }
     }
@@ -190,18 +195,31 @@ impl TokenManager {
         )))
     }
 
-    pub async fn has_available_account(&self, quota_group: &str, _target_model: &str) -> bool {
+    pub async fn has_available_account(&self, quota_group: &str, target_model: &str) -> bool {
         if self.tokens.is_empty() {
             return false;
         }
 
         for entry in self.tokens.iter() {
-            if !self.is_rate_limited(&entry.value().email) {
+            let token = entry.value();
+            // Check if account belongs to quota group (if applicable)
+            if !quota_group.is_empty() && !token.email.contains(quota_group) {
+                continue;
+            }
+            // Check if account supports the model
+            if !target_model.is_empty() && !token.available_models.contains(target_model) {
+                continue;
+            }
+            if !self.is_rate_limited_for_model(&token.email, target_model) {
                 return true;
             }
         }
 
-        tracing::debug!("No available accounts for quota_group={}", quota_group);
+        tracing::debug!(
+            "No available accounts for quota_group={} model={}",
+            quota_group,
+            target_model
+        );
         false
     }
 
@@ -209,19 +227,39 @@ impl TokenManager {
         &self,
         email: &str,
     ) -> Result<(String, String, String), String> {
-        let token = self
+        let token_data = self
             .tokens
             .iter()
             .find(|entry| entry.value().email == email)
             .map(|entry| entry.value().clone());
 
-        let mut token = match token {
+        let mut token = match token_data {
             Some(t) => t,
             None => return Err(format!("Account not found: {}", email)),
         };
 
         let now = chrono::Utc::now().timestamp();
         if now >= token.timestamp - 300 {
+            // Acquire per-account refresh lock to prevent race conditions
+            let lock = self
+                .refresh_locks
+                .entry(token.account_id.clone())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                .clone();
+
+            let _guard = lock.lock().await;
+
+            // Re-check after acquiring lock
+            if let Some(entry) = self.tokens.get(&token.account_id) {
+                if entry.timestamp > now + 300 {
+                    return Ok((
+                        entry.access_token.clone(),
+                        entry.project_id.clone().unwrap_or_default(),
+                        entry.email.clone(),
+                    ));
+                }
+            }
+
             match oauth::refresh_access_token(&token.refresh_token).await {
                 Ok(token_response) => {
                     token.access_token = token_response.access_token.clone();

@@ -26,13 +26,15 @@ pub fn get_proxy_db_path() -> Result<PathBuf, String> {
 fn with_connection<T>(f: impl FnOnce(&Connection) -> Result<T, String>) -> Result<T, String> {
     let db_path = get_proxy_db_path()?;
     PROXY_DB_CONN.with(|cell| {
-        let needs_init = cell.borrow().is_none();
-        if needs_init {
+        let mut cell_borrow = cell.borrow_mut();
+        if cell_borrow.is_none() {
             let conn = Connection::open(&db_path).map_err(|err| err.to_string())?;
-            *cell.borrow_mut() = Some(conn);
+            // Enable WAL mode and busy timeout for better concurrency
+            let _ = conn.execute("PRAGMA journal_mode=WAL", []);
+            let _ = conn.execute("PRAGMA busy_timeout=5000", []);
+            *cell_borrow = Some(conn);
         }
-        let conn_ref = cell.borrow();
-        let conn = conn_ref.as_ref().ok_or_else(|| "Proxy DB connection missing".to_string())?;
+        let conn = cell_borrow.as_ref().ok_or_else(|| "Proxy DB connection missing".to_string())?;
         f(conn)
     })
 }
@@ -99,12 +101,10 @@ pub fn init_db() -> Result<(), String> {
 /// Save a request log entry to the database.
 pub fn save_log(log: &ProxyRequestLog) -> Result<(), String> {
     with_connection(|conn| {
-        let request_body: Option<String> = None;
-        let response_body: Option<String> = None;
         let _rows_affected: usize = conn
             .execute(
                 "INSERT INTO request_logs (id, timestamp, method, url, status, duration, model, error, request_body, response_body, input_tokens, output_tokens, account_email, mapped_model, mapping_reason, cached_tokens)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 params![
                     log.id,
                     log.timestamp,
@@ -114,8 +114,8 @@ pub fn save_log(log: &ProxyRequestLog) -> Result<(), String> {
                     log.duration,
                     log.model,
                     log.error,
-                    request_body,
-                    response_body,
+                    log.request_body,
+                    log.response_body,
                     log.input_tokens,
                     log.output_tokens,
                     log.account_email,
@@ -131,7 +131,10 @@ pub fn save_log(log: &ProxyRequestLog) -> Result<(), String> {
             let current = count.get() + 1;
             if current >= 1000 {
                 count.set(0);
-                let _ = cleanup_old_logs(7);
+                // Cutoff for cleanup
+                let cutoff = chrono::Utc::now().timestamp_millis() - 7 * 86_400_000;
+                let _ =
+                    conn.execute("DELETE FROM request_logs WHERE timestamp < ?1", params![cutoff]);
             } else {
                 count.set(current);
             }

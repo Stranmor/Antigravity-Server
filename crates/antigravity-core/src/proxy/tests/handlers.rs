@@ -60,6 +60,7 @@ mod integration_tests {
             circuit_breaker,
             request_timeout: 300,
             upstream,
+            http_client: reqwest::Client::new(),
             provider_rr: Arc::new(AtomicUsize::new(0)),
             zai_vision_mcp: Arc::new(crate::proxy::zai_vision_mcp::ZaiVisionMcpState::new()),
         }

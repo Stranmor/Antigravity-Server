@@ -18,13 +18,15 @@ pub async fn create_listener(
     }
 
     let bind_addr = proxy_config.get_bind_address();
-    let addr: SocketAddr = format!("{}:{}", bind_addr, port)
+    let ip: std::net::IpAddr = bind_addr
         .parse()
-        .map_err(|e| anyhow::anyhow!("Invalid bind address '{}:{}': {}", bind_addr, port, e))?;
+        .map_err(|e| anyhow::anyhow!("Invalid bind address '{}': {}", bind_addr, e))?;
+    let addr = SocketAddr::new(ip, port);
     let domain = if addr.is_ipv4() { Domain::IPV4 } else { Domain::IPV6 };
     let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
 
     socket.set_reuse_address(true)?;
+    #[cfg(unix)]
     socket.set_reuse_port(true)?;
     socket.set_nonblocking(true)?;
     socket.bind(&addr.into())?;

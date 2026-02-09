@@ -104,8 +104,13 @@ impl AccountRepository for PostgresAccountRepository {
         delete_accounts_impl(&self.pool, ids).await
     }
 
-    async fn update_quota(&self, account_id: &str, quota: QuotaData) -> RepoResult<()> {
-        update_quota_impl(&self.pool, account_id, quota).await
+    async fn update_quota(
+        &self,
+        account_id: &str,
+        quota: QuotaData,
+        protected_models: Option<Vec<String>>,
+    ) -> RepoResult<()> {
+        update_quota_impl(&self.pool, account_id, quota, protected_models).await
     }
 
     async fn get_current_account_id(&self) -> RepoResult<Option<String>> {
@@ -136,17 +141,9 @@ impl AccountRepository for PostgresAccountRepository {
         &self,
         account_id: &str,
         access_token: &str,
-        expires_in: i64,
-        expiry_timestamp: i64,
+        expiry: chrono::DateTime<chrono::Utc>,
     ) -> RepoResult<()> {
-        update_token_credentials_impl(
-            &self.pool,
-            account_id,
-            access_token,
-            expires_in,
-            expiry_timestamp,
-        )
-        .await
+        update_token_credentials_impl(&self.pool, account_id, access_token, expiry).await
     }
 
     async fn update_project_id(&self, account_id: &str, project_id: &str) -> RepoResult<()> {
@@ -157,7 +154,7 @@ impl AccountRepository for PostgresAccountRepository {
         &self,
         account_id: &str,
         reason: &str,
-        disabled_at: i64,
+        disabled_at: chrono::DateTime<chrono::Utc>,
     ) -> RepoResult<()> {
         set_account_disabled_impl(&self.pool, account_id, reason, disabled_at).await
     }

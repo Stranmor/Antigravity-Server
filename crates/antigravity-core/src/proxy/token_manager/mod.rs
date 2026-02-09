@@ -118,6 +118,11 @@ impl TokenManager {
                         cleaned
                     );
                 }
+
+                // Collect active IDs first to avoid deadlock during retain
+                let active_ids: std::collections::HashSet<String> =
+                    tokens.iter().map(|e| e.key().clone()).collect();
+
                 let before = session_failures.len();
                 session_failures.retain(|_, v| v.load(Ordering::Relaxed) > 0);
                 let cleaned_sessions = before - session_failures.len();
@@ -144,9 +149,9 @@ impl TokenManager {
                     );
                 }
                 // Clean refresh locks for accounts no longer in memory
-                refresh_locks.retain(|k, _| tokens.contains_key(k));
+                refresh_locks.retain(|k, _| active_ids.contains(k));
                 // Clean file locks for accounts no longer in memory
-                file_locks.retain(|k, _| tokens.contains_key(k));
+                file_locks.retain(|k, _| active_ids.contains(k));
                 // Clean active requests with zero count
                 active_requests.retain(|_, v| v.load(Ordering::Relaxed) > 0);
             }

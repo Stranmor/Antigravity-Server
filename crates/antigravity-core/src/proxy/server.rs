@@ -25,6 +25,7 @@ pub struct AppState {
     pub health_monitor: Arc<crate::proxy::HealthMonitor>,
     pub circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
     pub request_timeout: u64,
+    pub http_client: reqwest::Client,
     pub upstream: Arc<crate::proxy::upstream::client::UpstreamClient>,
     pub provider_rr: Arc<AtomicUsize>,
     pub zai_vision_mcp: Arc<crate::proxy::zai_vision_mcp::ZaiVisionMcpState>,
@@ -46,6 +47,7 @@ pub fn build_proxy_router_with_shared_state(
     adaptive_limits: Arc<crate::proxy::AdaptiveLimitManager>,
     health_monitor: Arc<crate::proxy::HealthMonitor>,
     circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
+    http_client: reqwest::Client,
 ) -> Router<()> {
     let proxy_state = Arc::new(RwLock::new(upstream_proxy.clone()));
     let provider_rr = Arc::new(AtomicUsize::new(0));
@@ -55,6 +57,7 @@ pub fn build_proxy_router_with_shared_state(
         token_manager,
         custom_mapping: Arc::clone(&custom_mapping),
         request_timeout: 300,
+        http_client,
         upstream_proxy: Arc::clone(&proxy_state),
         upstream: Arc::new(crate::proxy::upstream::client::UpstreamClient::new(
             Some(upstream_proxy),
@@ -183,7 +186,7 @@ impl AxumServer {
         let app = build_proxy_router_with_shared_state(
             self.config.token_manager,
             custom_mapping,
-            self.config.upstream_proxy,
+            self.config.upstream_proxy.clone(),
             security_config,
             zai,
             self.config.monitor,
@@ -191,6 +194,7 @@ impl AxumServer {
             self.config.adaptive_limits,
             self.config.health_monitor,
             self.config.circuit_breaker,
+            reqwest::Client::new(),
         );
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;
@@ -233,5 +237,6 @@ pub fn build_proxy_router(
         adaptive_limits,
         health_monitor,
         circuit_breaker,
+        reqwest::Client::new(),
     )
 }

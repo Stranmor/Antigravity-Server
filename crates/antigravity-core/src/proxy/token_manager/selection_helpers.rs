@@ -1,5 +1,4 @@
 use super::proxy_token::ProxyToken;
-use super::session::STICKY_UNBIND_RATE_LIMIT_SECONDS;
 use super::TokenManager;
 use crate::proxy::active_request_guard::ActiveRequestGuard;
 use crate::proxy::routing_config::SmartRoutingConfig;
@@ -30,7 +29,7 @@ impl TokenManager {
         normalized_target: &str,
         quota_protection_enabled: bool,
         routing: &SmartRoutingConfig,
-    ) -> Option<(String, String, String, ActiveRequestGuard)> {
+    ) -> Option<(ProxyToken, ActiveRequestGuard)> {
         let preferred_token = tokens_snapshot.iter().find(|t| t.account_id == pref_id)?;
 
         let is_rate_limited =
@@ -88,13 +87,12 @@ impl TokenManager {
                 },
                 Err(e) => {
                     tracing::warn!("Preferred account token refresh failed: {}", e);
+                    return None;
                 },
             }
         }
 
-        let project_id = if let Some(pid) = &token.project_id {
-            pid.clone()
-        } else {
+        if token.project_id.is_none() {
             match crate::proxy::project_resolver::fetch_project_id(&token.access_token).await {
                 Ok(pid) => {
                     if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
@@ -103,7 +101,7 @@ impl TokenManager {
                     if let Err(e) = self.save_project_id(&token.account_id, &pid).await {
                         tracing::warn!("Failed to save project_id for {}: {}", token.email, e);
                     }
-                    pid
+                    token.project_id = Some(pid);
                 },
                 Err(e) => {
                     tracing::warn!("Failed to fetch project_id for {}: {}", token.account_id, e);
@@ -118,7 +116,7 @@ impl TokenManager {
             routing.max_concurrent_per_account,
         )?;
 
-        Some((token.access_token, project_id, token.email, guard))
+        Some((token, guard))
     }
 
     pub(super) async fn try_ultra_tier_selection(
@@ -130,7 +128,7 @@ impl TokenManager {
         aimd: &Option<Arc<AdaptiveLimitManager>>,
         routing: &SmartRoutingConfig,
     ) -> Option<(ProxyToken, ActiveRequestGuard)> {
-        let mut ultra_candidates: Vec<(&ProxyToken, u8, u32)> = Vec::new();
+        let mut ultra_candidates: Vec<&ProxyToken> = Vec::new();
 
         for candidate in tokens_snapshot {
             if !candidate.is_ultra_tier() {
@@ -148,18 +146,22 @@ impl TokenManager {
                 continue;
             }
 
-            let active = self.get_active_requests(&candidate.email);
-            let tier = candidate.tier_priority();
-            ultra_candidates.push((candidate, tier, active));
+            ultra_candidates.push(candidate);
         }
 
         if ultra_candidates.is_empty() {
             return None;
         }
 
-        ultra_candidates.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.2.cmp(&b.2)));
+        ultra_candidates.sort_by(|a, b| {
+            compare_tokens_by_priority(a, b).then_with(|| {
+                let active_a = self.get_active_requests(&a.email);
+                let active_b = self.get_active_requests(&b.email);
+                active_a.cmp(&active_b)
+            })
+        });
 
-        for (candidate, _tier, _active) in ultra_candidates {
+        for candidate in ultra_candidates {
             if let Some(guard) = ActiveRequestGuard::try_new(
                 Arc::clone(&self.active_requests),
                 candidate.email.clone(),
@@ -184,53 +186,31 @@ impl TokenManager {
         attempted: &HashSet<String>,
         normalized_target: &str,
         quota_protection_enabled: bool,
+        aimd: &Option<Arc<AdaptiveLimitManager>>,
         routing: &SmartRoutingConfig,
     ) -> Option<(ProxyToken, ActiveRequestGuard)> {
         let bound_id = self.get_session_account(session_id)?;
 
-        let reset_sec =
-            self.rate_limit_tracker.get_remaining_wait_for_model(&bound_id, normalized_target);
+        let found = tokens_snapshot.iter().find(|t| t.email == bound_id)?;
 
-        if reset_sec > 0 {
-            if reset_sec > STICKY_UNBIND_RATE_LIMIT_SECONDS {
-                self.session_accounts.remove(session_id);
-                tracing::warn!(
-                    "Sticky Session: {} rate-limited ({}s), unbinding session {}",
-                    bound_id,
-                    reset_sec,
-                    session_id
-                );
-            } else {
-                tracing::debug!(
-                    "Sticky Session: {} rate-limited ({}s), migrating this request only",
-                    bound_id,
-                    reset_sec
-                );
-            }
-            return None;
-        }
-
-        if attempted.contains(&bound_id) {
-            return None;
-        }
-
-        let is_quota_protected = quota_protection_enabled
-            && tokens_snapshot
-                .iter()
-                .find(|t| t.email == bound_id)
-                .is_some_and(|t| self.is_model_protected(&t.account_id, normalized_target));
-
-        if is_quota_protected {
-            tracing::debug!(
-                "Sticky Session: {} is quota-protected for {}, unbinding",
+        // Check eligibility for sticky session
+        if !self.is_candidate_eligible(
+            found,
+            normalized_target,
+            attempted,
+            quota_protection_enabled,
+            aimd,
+            true,
+            true,
+        ) {
+            tracing::warn!(
+                "Sticky Session: {} is no longer eligible, unbinding session {}",
                 bound_id,
-                normalized_target
+                session_id
             );
             self.session_accounts.remove(session_id);
             return None;
         }
-
-        let found = tokens_snapshot.iter().find(|t| t.email == bound_id)?;
 
         let guard = ActiveRequestGuard::try_new(
             Arc::clone(&self.active_requests),
@@ -251,7 +231,7 @@ impl TokenManager {
         aimd: &Option<Arc<AdaptiveLimitManager>>,
         routing: &SmartRoutingConfig,
     ) -> Option<(ProxyToken, ActiveRequestGuard)> {
-        let mut scored_candidates: Vec<(&ProxyToken, u8, u32)> = Vec::new();
+        let mut scored_candidates: Vec<&ProxyToken> = Vec::new();
 
         for candidate in tokens_snapshot {
             if !self.is_candidate_eligible(
@@ -266,14 +246,18 @@ impl TokenManager {
                 continue;
             }
 
-            let active = self.get_active_requests(&candidate.email);
-            let tier = candidate.tier_priority();
-            scored_candidates.push((candidate, tier, active));
+            scored_candidates.push(candidate);
         }
 
-        scored_candidates.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.2.cmp(&b.2)));
+        scored_candidates.sort_by(|a, b| {
+            compare_tokens_by_priority(a, b).then_with(|| {
+                let active_a = self.get_active_requests(&a.email);
+                let active_b = self.get_active_requests(&b.email);
+                active_a.cmp(&active_b)
+            })
+        });
 
-        for (candidate, _tier, _active) in scored_candidates {
+        for candidate in scored_candidates {
             if let Some(guard) = ActiveRequestGuard::try_new(
                 Arc::clone(&self.active_requests),
                 candidate.email.clone(),

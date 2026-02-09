@@ -161,7 +161,12 @@ pub trait AccountRepository: Send + Sync {
     /// Delete multiple accounts by IDs.
     async fn delete_accounts(&self, ids: &[String]) -> RepoResult<()>;
     /// Update quota data for account.
-    async fn update_quota(&self, account_id: &str, quota: QuotaData) -> RepoResult<()>;
+    async fn update_quota(
+        &self,
+        account_id: &str,
+        quota: QuotaData,
+        protected_models: Option<Vec<String>>,
+    ) -> RepoResult<()>;
     /// Get currently selected account ID.
     async fn get_current_account_id(&self) -> RepoResult<Option<String>>;
     /// Set currently selected account ID.
@@ -180,8 +185,7 @@ pub trait AccountRepository: Send + Sync {
         &self,
         account_id: &str,
         access_token: &str,
-        expires_in: i64,
-        expiry_timestamp: i64,
+        expiry: chrono::DateTime<chrono::Utc>,
     ) -> RepoResult<()>;
 
     /// Update only the project_id on a token (atomic, no read-modify-write).
@@ -192,6 +196,6 @@ pub trait AccountRepository: Send + Sync {
         &self,
         account_id: &str,
         reason: &str,
-        disabled_at: i64,
+        disabled_at: chrono::DateTime<chrono::Utc>,
     ) -> RepoResult<()>;
 }

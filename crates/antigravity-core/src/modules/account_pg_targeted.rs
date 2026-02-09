@@ -13,10 +13,10 @@ pub(crate) async fn update_token_credentials_impl(
     pool: &PgPool,
     account_id: &str,
     access_token: &str,
-    expires_in: i64,
-    expiry_timestamp: i64,
+    expiry: chrono::DateTime<chrono::Utc>,
 ) -> RepoResult<()> {
     let uuid = Uuid::parse_str(account_id).map_err(|e| RepositoryError::NotFound(e.to_string()))?;
+    let expiry_timestamp = expiry.timestamp();
 
     let mut tx = pool.begin().await.map_err(map_sqlx_err)?;
 
@@ -33,6 +33,8 @@ pub(crate) async fn update_token_credentials_impl(
     if result.rows_affected() == 0 {
         return Err(RepositoryError::NotFound(account_id.to_string()));
     }
+
+    let expires_in = expiry.signed_duration_since(chrono::Utc::now()).num_seconds();
 
     log_event_internal_impl(
         &mut tx,
@@ -80,11 +82,9 @@ pub(crate) async fn set_account_disabled_impl(
     pool: &PgPool,
     account_id: &str,
     reason: &str,
-    disabled_at: i64,
+    disabled_at: chrono::DateTime<chrono::Utc>,
 ) -> RepoResult<()> {
     let uuid = Uuid::parse_str(account_id).map_err(|e| RepositoryError::NotFound(e.to_string()))?;
-    let ts = chrono::DateTime::from_timestamp(disabled_at, 0)
-        .ok_or_else(|| RepositoryError::Database(format!("Invalid timestamp: {}", disabled_at)))?;
 
     let mut tx = pool.begin().await.map_err(map_sqlx_err)?;
 
@@ -93,7 +93,7 @@ pub(crate) async fn set_account_disabled_impl(
     )
     .bind(uuid)
     .bind(reason)
-    .bind(ts)
+    .bind(disabled_at)
     .execute(&mut *tx)
     .await
     .map_err(map_sqlx_err)?;

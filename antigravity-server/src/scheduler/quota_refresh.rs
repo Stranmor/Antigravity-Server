@@ -8,14 +8,31 @@ use antigravity_core::modules::{account, config};
 use antigravity_types::models::QuotaData;
 
 /// Persist quota to both JSON and PostgreSQL (if available).
-async fn persist_quota(state: &AppState, account_id: &str, quota: QuotaData) {
+async fn persist_quota(state: &AppState, account_id: &str, email: &str, quota: QuotaData) {
     if let Err(e) = account::update_account_quota_async(account_id.to_owned(), quota.clone()).await
     {
         tracing::warn!("[QuotaRefresh] Failed to update JSON quota for {account_id}: {e}");
     }
+    let protected_models = match account::load_account(account_id) {
+        Ok(updated) => Some(updated.protected_models.iter().cloned().collect()),
+        Err(e) => {
+            tracing::warn!("[QuotaRefresh] Failed to reload protected models for {email}: {e}");
+            None
+        },
+    };
     if let Some(repo) = state.repository() {
-        if let Err(e) = repo.update_quota(account_id, quota).await {
-            tracing::warn!("[QuotaRefresh] Failed to update DB quota for {account_id}: {e}");
+        match repo.get_account_by_email(email).await {
+            Ok(Some(pg_account)) => {
+                if let Err(e) = repo.update_quota(&pg_account.id, quota, protected_models).await {
+                    tracing::warn!("[QuotaRefresh] Failed to update DB quota for {email}: {e}");
+                }
+            },
+            Ok(None) => {
+                tracing::warn!("[QuotaRefresh] PG account lookup failed for {email}");
+            },
+            Err(e) => {
+                tracing::warn!("[QuotaRefresh] PG account lookup error for {email}: {e}");
+            },
         }
     }
 }
@@ -48,7 +65,7 @@ pub fn start_quota_refresh(state: AppState) {
                 if app_config.refresh_interval < 5 { 15 } else { app_config.refresh_interval };
             let interval_secs = i64::from(interval_minutes) * 60_i64;
 
-            let accounts = match state.list_accounts().await {
+            let accounts = match account::list_accounts() {
                 Ok(accs) => accs,
                 Err(e) => {
                     tracing::warn!("[QuotaRefresh] Failed to list accounts: {}", e);
@@ -77,7 +94,7 @@ pub fn start_quota_refresh(state: AppState) {
                     match account::fetch_quota_with_retry(&mut acc_clone).await {
                         Ok(_) => {
                             if let Some(quota) = acc_clone.quota.clone() {
-                                persist_quota(&state, &acc_clone.id, quota).await;
+                                persist_quota(&state, &acc_clone.id, &acc_clone.email, quota).await;
                             }
                             already_refreshed.insert(acc_clone.id.clone());
                             tracing::debug!(
@@ -134,7 +151,7 @@ pub fn start_quota_refresh(state: AppState) {
                         match account::fetch_quota_with_retry(&mut acc).await {
                             Ok(_) => {
                                 if let Some(quota) = acc.quota.clone() {
-                                    persist_quota(&state, &acc.id, quota).await;
+                                    persist_quota(&state, &acc.id, &acc.email, quota).await;
                                 }
                                 success += 1;
                             },

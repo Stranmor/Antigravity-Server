@@ -8,7 +8,6 @@ use std::sync::atomic::Ordering;
 // Session failure counters are heuristic — Relaxed ordering is sufficient.
 
 const SESSION_FAILURE_THRESHOLD: u32 = 3;
-pub const STICKY_UNBIND_RATE_LIMIT_SECONDS: u64 = 15;
 
 impl TokenManager {
     /// Record a failure for a session, returns new failure count.

@@ -94,16 +94,10 @@ impl TokenManager {
         account_id: &str,
         token_response: &oauth::TokenResponse,
     ) -> Result<(), String> {
-        let now = chrono::Utc::now().timestamp();
-        let expiry = now + token_response.expires_in;
-        repo.update_token_credentials(
-            account_id,
-            &token_response.access_token,
-            token_response.expires_in,
-            expiry,
-        )
-        .await
-        .map_err(|e| format!("DB write: {}", e))?;
+        let expiry = chrono::Utc::now() + chrono::Duration::seconds(token_response.expires_in);
+        repo.update_token_credentials(account_id, &token_response.access_token, expiry)
+            .await
+            .map_err(|e| format!("DB write: {}", e))?;
         tracing::debug!("Saved refreshed token to DB for account {}", account_id);
         Ok(())
     }
@@ -158,7 +152,7 @@ impl TokenManager {
     ) -> Result<(), String> {
         use super::file_utils::truncate_reason;
 
-        let now = chrono::Utc::now().timestamp();
+        let now = chrono::Utc::now();
         let truncated = truncate_reason(reason, 800);
         repo.set_account_disabled(account_id, &truncated, now)
             .await

@@ -1,14 +1,10 @@
 # Antigravity Manager - Architecture Status
 
 ## TARGET GOAL
-- Fix monitoring middleware bugs and resilience issues (100% complete).
+- Fix quota persistence and dual-write consistency bugs (in progress).
 
 ## Current Status
-- ✅ COMPLETED [2026-02-09]: Fixed 4 bugs in monitor middleware (resource waste, buffer churn, null usage handling).
-- ✅ COMPLETED [2026-02-09]: Fixed refresh token persistence and DashMap memory leaks in TokenManager.
-- ✅ COMPLETED [2026-02-09]: Fixed Anthropic auth header logic to always include x-api-key.
-- ✅ COMPLETED [2026-02-09]: Stream truncation error handling — upstream mid-stream drops now emit explicit `stream_truncated` error events instead of fake `max_tokens` completion. Cancellation-safe heartbeat via pump task. Silent SSE failures now logged and relayed to client. Deployed, verified in production (328 requests, 0 errors in 30min window).
-- ✅ COMPLETED [2026-02-09]: Content capture removal + CORS hardening deployed to VPS. Monitoring records metadata only (no request/response bodies). CORS restricted to explicit origin whitelist.
+- 🔄 IN PROGRESS [2026-02-09]: Quota persistence and dual-write consistency fixes implemented; verification pending due to existing build errors in unrelated modules.
 
 ## ✅ COMPLETED: PostgreSQL Migration [2026-02-03]
 
@@ -174,31 +170,33 @@ vendor/
 |------|-------|----------|
 | `proxy/common/json_schema/recursive.rs` | `if/else if/else` for `properties`/`items` is mutually exclusive — if schema has BOTH, `items` won't be recursively cleaned | Medium |
 | `proxy/common/json_schema/recursive.rs` | `else` fallback block treats ALL remaining fields as schemas — data fields like `enum` values or `const` containing object-like structures could be corrupted by normalization | Low |
-| `proxy/token_manager/token_refresh.rs` | Missing refresh_token update: if OAuth provider returns a new refresh_token (rotation), only access_token is updated in memory — old refresh_token persisted | Medium |
-| `proxy/token_manager/persistence.rs` | `file_locks` DashMap grows unbounded — one Mutex per account_id, never cleaned up | Low |
-| `proxy/token_manager/store.rs` | JSON indexing (`content["token"]["field"]`) can panic if file has unexpected structure (not object, missing "token" key) | Low |
-| `proxy/token_manager/persistence.rs` | JSON indexing in `save_project_id_to_file`/`save_refreshed_token_to_file` can panic if "token" key missing from file | Low |
 | `proxy/token_manager/selection_helpers.rs` | Hardcoded fallback project_id `"bamboo-precept-lgxtn"` when fetch_project_id fails — should propagate error | Medium |
 | `modules/account_pg_events.rs` | `update_quota_impl` atomicity: quota update and audit log are separate operations on `pool`, not wrapped in transaction — audit trail can be lost if log INSERT fails | Low |
 | `modules/account_pg_events.rs` | UUID parse errors mapped to `RepositoryError::NotFound` instead of validation error — conflates bad input with missing resource | Low |
 | `modules/repository.rs` | `update_token_credentials` accepts both `expires_in` and `expiry_timestamp` — redundant, allows conflicting data | Low |
-| `proxy/token_manager/mod.rs` | `active_requests` DashMap entries never cleaned up when count drops to zero — grows unbounded with unique emails | Low |
 | `server_utils.rs` | Hardcoded `Domain::IPV4` prevents IPv6 binding; `format!("{}:{}")` generates invalid syntax for IPv6 addresses — should parse `IpAddr` first and derive domain | Low |
 | `proxy/handlers/gemini/models.rs` | `handle_get_model` accepts any model_name without validation against available models, returns incomplete JSON (missing `inputTokenLimit` etc.) | Low |
 | `modules/account/` + `api/quota.rs` | JSON and PostgreSQL have different UUIDs for same accounts (dual-storage ID mismatch). `repo.update_quota(json_id)` fails with FK violation because JSON IDs don't exist in PostgreSQL | High |
 | `api/quota.rs` `toggle_proxy_status` | Uses repo-only write (not dual-write) when repo exists — if repo goes down, JSON has stale `proxy_disabled` field | Medium |
 | `proxy/middleware/monitor.rs` | `std::str::from_utf8(&chunk)` on raw stream chunks — multi-byte UTF-8 split across chunk boundaries causes decoding failure, chunk skipped in line_buffer | Medium |
-| `proxy/middleware/monitor.rs` | SSE processing loop ignores `tx.send()` errors — if client disconnects, middleware continues consuming entire upstream stream (wasted resources) | Medium |
-| `proxy/middleware/monitor.rs` | `line_buffer = line_buffer[newline_pos + 1..].to_string()` allocates new String for every SSE line — excessive allocation churn | Low |
-| `proxy/middleware/monitor_usage.rs` | `.or()` on `serde_json::Value` refs: `Some(Null)` satisfies `.or()`, so fallback key is never checked when primary key exists but is null — use `.and_then(as_u64)` before `.or_else()` | Medium |
-| `proxy/middleware/monitor_usage.rs` | `total_tokens` assigned to `log.output_tokens` when specific counts missing — misrepresents sum as output-only, distorts metrics | Medium |
 | `proxy/handlers/claude/response_handler.rs` | `bytes.to_vec()` + `String::from_utf8` allocation just for logging length — use `bytes.len()` directly | Low |
-| `proxy/providers/zai_anthropic.rs` | `set_zai_auth` skips `x-api-key` if incoming request has `Authorization` header — Anthropic upstream requires `x-api-key` regardless | Medium |
 | `proxy/providers/zai_anthropic.rs` | Stream errors mapped to `Ok(Bytes::from(...))` — swallows error and injects raw text into response body, corrupting JSON/SSE format | Medium |
 | `modules/account/quota.rs` + `modules/account_pg_events.rs` + `api/quota.rs` | Model protection updates only persisted to JSON, not PostgreSQL — protected models re-enable after restart | Critical |
 | `modules/account/fetch.rs` + `api/quota.rs` + `main.rs` | Dual-write strategy mixes JSON and PostgreSQL updates, risking desynchronization | Medium |
 | `modules/proxy_db.rs` | `proxy_logs.db` grows unbounded without retention cleanup | Medium |
 | `modules/oauth.rs` | Hardcoded OAuth client secret makes rotation difficult | Low |
+| `proxy/middleware/monitor.rs` | DoS Risk: parses entire request/response bodies (up to 100MB) into JSON DOM. Should use streaming parser or limit size. | High |
+| `proxy/middleware/monitor.rs` | Latency: `handle_json_response` buffers full response before forwarding, breaking streaming and increasing TTFB. | High |
+| `proxy/middleware/monitor.rs` | Inefficient: attempts to parse all `text/*` as JSON. | Low |
+| `proxy/providers/zai_anthropic.rs` | DoS Risk: `deep_remove_cache_control` logs at `info` for every field, vulnerable to log flooding. | Medium |
+| `proxy/providers/zai_anthropic.rs` | Performance: `reqwest::Client` built per request; lacks connection pooling. | Medium |
+| `proxy/providers/zai_anthropic.rs` | Inefficient: `copy_passthrough_headers` performs unnecessary string allocations in hot path. | Low |
+| `modules/proxy_db.rs` | Runtime Panic: `save_log` double-borrows `PROXY_DB_CONN` RefCell via `cleanup_old_logs`. | Critical |
+| `modules/proxy_db.rs` | Concurrency: Missing `busy_timeout` and WAL mode; prone to "database is locked" errors. | Medium |
+| `modules/proxy_db.rs` | Data Loss: `save_log` hardcodes `request_body`/`response_body` to `None`. | Medium |
+| `server_utils.rs` | Portability: `set_reuse_port(true)` lacks `#[cfg(unix)]` guard. | Low |
+| `repository.rs` | Inconsistent time types (DateTime vs i64) and redundant arguments in `update_token_credentials`. | Low |
+| `gemini/models.rs` | `handle_get_model` ignores state/mappings and uses hardcoded token limits. | Medium |
 
 ---
 

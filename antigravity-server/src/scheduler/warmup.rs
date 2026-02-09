@@ -70,7 +70,7 @@ pub fn start(state: AppState) {
                 warmup_config.models.clone()
             };
 
-            let accounts = match state.list_accounts().await {
+            let accounts = match account::list_accounts() {
                 Ok(a) => a,
                 Err(e) => {
                     tracing::warn!("[Scheduler] Failed to list accounts: {}", e);
@@ -191,13 +191,50 @@ pub fn start(state: AppState) {
                                         e
                                     );
                                 }
-                                if let Some(repo) = state.repository() {
-                                    if let Err(e) = repo.update_quota(&acc.id, quota).await {
+                                let protected_models = match account::load_account(&acc.id) {
+                                    Ok(updated) => {
+                                        Some(updated.protected_models.iter().cloned().collect())
+                                    },
+                                    Err(e) => {
                                         tracing::warn!(
-                                            "[Warmup] DB quota update failed for {}: {}",
+                                            "[Warmup] Failed to reload protected models for {}: {}",
                                             email,
                                             e
                                         );
+                                        None
+                                    },
+                                };
+                                if let Some(repo) = state.repository() {
+                                    match repo.get_account_by_email(&acc.email).await {
+                                        Ok(Some(pg_account)) => {
+                                            if let Err(e) = repo
+                                                .update_quota(
+                                                    &pg_account.id,
+                                                    quota,
+                                                    protected_models,
+                                                )
+                                                .await
+                                            {
+                                                tracing::warn!(
+                                                    "[Warmup] DB quota update failed for {}: {}",
+                                                    email,
+                                                    e
+                                                );
+                                            }
+                                        },
+                                        Ok(None) => {
+                                            tracing::warn!(
+                                                "[Warmup] PG account lookup failed for {}",
+                                                email
+                                            );
+                                        },
+                                        Err(e) => {
+                                            tracing::warn!(
+                                                "[Warmup] PG account lookup error for {}: {}",
+                                                email,
+                                                e
+                                            );
+                                        },
                                     }
                                 }
                             }
