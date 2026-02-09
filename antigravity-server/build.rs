@@ -50,7 +50,6 @@ fn main() {
     // NOTE: We intentionally do NOT skip on CI=true because that's often set
     // by shell scripts to disable prompts, not to skip frontend builds
     if env::var("DOCS_RS").is_ok() || env::var("SKIP_TRUNK_BUILD").is_ok() {
-        println!("cargo:warning=Skipping trunk build (DOCS_RS/SKIP_TRUNK_BUILD set)");
         return;
     }
 
@@ -63,18 +62,13 @@ fn main() {
     let dist_dir = leptos_dir.join("dist");
 
     if should_skip_trunk_build(&leptos_dir, &dist_dir) {
-        println!("cargo:warning=Frontend up-to-date, skipping trunk build");
         return;
     }
 
     let trunk_check = Command::new("trunk").arg("--version").output();
     if trunk_check.is_err() {
-        println!("cargo:warning=trunk not found, skipping frontend build");
-        println!("cargo:warning=Install with: cargo install trunk");
         return;
     }
-
-    println!("cargo:warning=Building Leptos frontend with trunk...");
 
     let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_owned());
     let trunk_target_dir = leptos_dir.join("target");
@@ -93,9 +87,7 @@ fn main() {
 
     let status = cmd.status();
     match status {
-        Ok(exit_status) if exit_status.success() => {
-            println!("cargo:warning=Frontend build complete");
-        },
+        Ok(exit_status) if exit_status.success() => {},
         Ok(exit_status) => {
             panic!("trunk build failed with exit code: {:?}", exit_status.code());
         },
