@@ -39,7 +39,7 @@ pub struct AppState {
 pub fn build_proxy_router_with_shared_state(
     token_manager: Arc<TokenManager>,
     custom_mapping: Arc<RwLock<std::collections::HashMap<String, String>>>,
-    upstream_proxy: antigravity_types::models::UpstreamProxyConfig,
+    upstream_proxy: Arc<RwLock<antigravity_types::models::UpstreamProxyConfig>>,
     security_config: Arc<RwLock<crate::proxy::ProxySecurityConfig>>,
     zai: Arc<RwLock<antigravity_types::models::ZaiConfig>>,
     monitor: Arc<crate::proxy::monitor::ProxyMonitor>,
@@ -49,7 +49,6 @@ pub fn build_proxy_router_with_shared_state(
     circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
     http_client: reqwest::Client,
 ) -> Router<()> {
-    let proxy_state = Arc::new(RwLock::new(upstream_proxy.clone()));
     let provider_rr = Arc::new(AtomicUsize::new(0));
     let zai_vision_mcp_state = Arc::new(crate::proxy::zai_vision_mcp::ZaiVisionMcpState::new());
 
@@ -58,10 +57,10 @@ pub fn build_proxy_router_with_shared_state(
         custom_mapping: Arc::clone(&custom_mapping),
         request_timeout: 300,
         http_client: http_client.clone(),
-        upstream_proxy: Arc::clone(&proxy_state),
+        upstream_proxy: Arc::clone(&upstream_proxy),
         upstream: Arc::new(crate::proxy::upstream::client::UpstreamClient::new(
             http_client,
-            Arc::clone(&proxy_state),
+            Arc::clone(&upstream_proxy),
             None,
         )),
         zai,
@@ -187,7 +186,7 @@ impl AxumServer {
         let app = build_proxy_router_with_shared_state(
             self.config.token_manager,
             custom_mapping,
-            self.config.upstream_proxy.clone(),
+            Arc::new(RwLock::new(self.config.upstream_proxy.clone())),
             security_config,
             zai,
             self.config.monitor,
@@ -223,6 +222,7 @@ pub fn build_proxy_router(
     circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
 ) -> Router<()> {
     let custom_mapping_state = Arc::new(RwLock::new(custom_mapping));
+    let upstream_proxy_state = Arc::new(RwLock::new(upstream_proxy));
     let security_state = Arc::new(RwLock::new(security_config));
     let zai_state = Arc::new(RwLock::new(zai));
     let experimental_state = Arc::new(RwLock::new(experimental));
@@ -230,7 +230,7 @@ pub fn build_proxy_router(
     build_proxy_router_with_shared_state(
         token_manager,
         custom_mapping_state,
-        upstream_proxy,
+        upstream_proxy_state,
         security_state,
         zai_state,
         monitor,

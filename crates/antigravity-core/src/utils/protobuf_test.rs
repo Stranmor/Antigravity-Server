@@ -1,4 +1,4 @@
-#[cfg(test) ]
+#[cfg(test)]
 mod tests {
     use super::super::protobuf::*;
 
@@ -52,8 +52,9 @@ mod tests {
             val >>= 7;
         }
         data.push(val as u8);
-        
+
         let res = find_field(&data, 2);
-        assert!(res.is_err() || res.is_ok(), "Should not panic on large length in find_field");
+        // Should not panic on large length — either returns error or handles gracefully
+        assert!(res.is_err(), "Should return error for absurdly large length in find_field");
     }
 }
