@@ -267,14 +267,14 @@ pub fn build_contents(
                             .cloned()
                             .unwrap_or_else(|| tool_use_id.clone());
 
-                        let part = build_tool_result_part(
+                        let tool_parts = build_tool_result_part(
                             tool_use_id,
                             content,
                             *is_error,
                             func_name,
                             last_thought_signature.as_ref(),
                         );
-                        parts.push(part);
+                        parts.extend(tool_parts);
                         *previous_was_tool_result = true;
                     },
                     // ContentBlock::RedactedThinking handled above at line 583

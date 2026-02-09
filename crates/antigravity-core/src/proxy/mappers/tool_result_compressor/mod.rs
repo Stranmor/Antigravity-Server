@@ -239,9 +239,10 @@ pub fn sanitize_tool_result_blocks(blocks: &mut Vec<Value>) {
     *blocks = cleaned_blocks;
 }
 
-/// Detect if block is an oversized base64 image
-/// Returns Some(size) if oversized, None otherwise
-fn is_oversized_base64_image(block: &Value) -> Option<usize> {
+/// Detect if block is an oversized base64 image.
+/// Returns Some(size_in_chars) if image exceeds MAX_IMAGE_BASE64_CHARS, None otherwise.
+/// Small/medium images pass through to the model; only truly huge ones are stripped.
+pub fn is_oversized_base64_image(block: &Value) -> Option<usize> {
     if block.get("type").and_then(|v| v.as_str()) == Some("image")
         && block.get("source").and_then(|s| s.get("type")).and_then(|v| v.as_str())
             == Some("base64")
@@ -259,3 +260,6 @@ fn is_oversized_base64_image(block: &Value) -> Option<usize> {
     }
     None
 }
+
+#[cfg(test)]
+mod adversarial_tests;

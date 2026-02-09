@@ -9,14 +9,14 @@ pub fn build_tool_result_part(
     is_error: Option<bool>,
     func_name: String,
     last_thought_signature: Option<&String>,
-) -> Value {
+) -> Vec<Value> {
     let mut compacted_content = content.clone();
     if let Some(blocks) = compacted_content.as_array_mut() {
         tool_result_compressor::sanitize_tool_result_blocks(blocks);
     }
 
-    let mut merged_content = extract_text_content(&compacted_content, content);
-    merged_content = truncate_if_needed(merged_content);
+    let (text_content, image_parts) = extract_content_and_images(&compacted_content, content);
+    let mut merged_content = truncate_if_needed(text_content);
     merged_content = ensure_non_empty(merged_content, is_error);
 
     let mut part = json!({
@@ -31,42 +31,72 @@ pub fn build_tool_result_part(
         part["thoughtSignature"] = json!(sig);
     }
 
-    part
+    let mut result = vec![part];
+    result.extend(image_parts);
+    result
 }
 
-fn extract_text_content(compacted: &Value, original: &Value) -> String {
-    match compacted {
+fn extract_content_and_images(compacted: &Value, original: &Value) -> (String, Vec<Value>) {
+    let mut images = Vec::new();
+    let text = match compacted {
         Value::String(s) => s.clone(),
-        Value::Array(arr) => arr
-            .iter()
-            .filter_map(|block| {
-                if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
-                    Some(text.to_string())
-                } else if block.get("source").is_some() {
-                    if block.get("type").and_then(|v| v.as_str()) == Some("image") {
-                        Some("[image present in tool output but cannot be forwarded in function response format]".to_string())
+        Value::Array(arr) => {
+            let text_parts: Vec<_> = arr
+                .iter()
+                .filter_map(|block| {
+                    let block_type = block.get("type").and_then(|v| v.as_str());
+                    if block_type == Some("text") {
+                        block.get("text").and_then(|v| v.as_str()).map(|s| s.to_string())
+                    } else if block_type == Some("image") {
+                        if let Some(source) = block.get("source") {
+                            let data = source.get("data").and_then(|v| v.as_str());
+                            let media = source
+                                .get("media_type")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("image/png");
+                            if let Some(b64) = data {
+                                images.push(json!({
+                                    "inlineData": {
+                                        "mimeType": media,
+                                        "data": b64
+                                    }
+                                }));
+                                return Some("[image attached below]".to_string());
+                            }
+                        }
+                        None
                     } else {
                         None
                     }
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
+                })
+                .collect();
+
+            if text_parts.is_empty() && !arr.is_empty() {
+                compacted.to_string()
+            } else {
+                text_parts.join("\n")
+            }
+        },
         _ => original.to_string(),
-    }
+    };
+    (text, images)
 }
 
 fn truncate_if_needed(content: String) -> String {
-    if content.len() > MAX_TOOL_RESULT_CHARS {
+    let char_count = content.chars().count();
+    if char_count > MAX_TOOL_RESULT_CHARS {
         tracing::warn!(
             "Truncating tool result from {} chars to {}",
-            content.len(),
+            char_count,
             MAX_TOOL_RESULT_CHARS
         );
-        let mut truncated = content.chars().take(MAX_TOOL_RESULT_CHARS).collect::<String>();
-        truncated.push_str("\n...[truncated output]");
+        let suffix = "\n...[truncated output]";
+        let suffix_len = suffix.chars().count();
+        let mut truncated = content
+            .chars()
+            .take(MAX_TOOL_RESULT_CHARS.saturating_sub(suffix_len))
+            .collect::<String>();
+        truncated.push_str(suffix);
         truncated
     } else {
         content
