@@ -23,9 +23,12 @@ pub async fn refresh_account_quota(
     State(state): State<AppState>,
     Json(payload): Json<RefreshQuotaRequest>,
 ) -> Result<Json<QuotaResponse>, (StatusCode, String)> {
-    let mut acc = match account::load_account(&payload.account_id) {
-        Ok(a) => a,
-        Err(e) => return Err((StatusCode::NOT_FOUND, e)),
+    let mut acc = if let Some(repo) = state.repository() {
+        repo.get_account(&payload.account_id)
+            .await
+            .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?
+    } else {
+        account::load_account(&payload.account_id).map_err(|e| (StatusCode::NOT_FOUND, e))?
     };
 
     match account::fetch_quota_with_retry(&mut acc).await {
@@ -56,10 +59,8 @@ pub async fn refresh_account_quota(
 pub async fn refresh_all_quotas(
     State(state): State<AppState>,
 ) -> Result<Json<antigravity_types::models::RefreshStats>, (StatusCode, String)> {
-    let accounts = match account::list_accounts() {
-        Ok(a) => a,
-        Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
-    };
+    let accounts =
+        state.list_accounts().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     let total = accounts.len();
     let mut join_set: JoinSet<Result<(String, antigravity_types::models::QuotaData), String>> =
@@ -184,9 +185,12 @@ pub async fn warmup_account(
     State(state): State<AppState>,
     Json(payload): Json<WarmupAccountRequest>,
 ) -> Result<Json<WarmupResponse>, (StatusCode, String)> {
-    let mut acc = match account::load_account(&payload.account_id) {
-        Ok(a) => a,
-        Err(e) => return Err((StatusCode::NOT_FOUND, e)),
+    let mut acc = if let Some(repo) = state.repository() {
+        repo.get_account(&payload.account_id)
+            .await
+            .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?
+    } else {
+        account::load_account(&payload.account_id).map_err(|e| (StatusCode::NOT_FOUND, e))?
     };
 
     match account::fetch_quota_with_retry(&mut acc).await {
@@ -219,10 +223,8 @@ pub async fn warmup_account(
 pub async fn warmup_all_accounts(
     State(state): State<AppState>,
 ) -> Result<Json<WarmupResponse>, (StatusCode, String)> {
-    let accounts = match account::list_accounts() {
-        Ok(a) => a,
-        Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
-    };
+    let accounts =
+        state.list_accounts().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     let total = accounts.len();
 
