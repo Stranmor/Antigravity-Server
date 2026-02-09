@@ -67,14 +67,6 @@ impl UpstreamClient {
         }
     }
 
-    pub async fn update_proxy_config(&self, config: crate::proxy::config::UpstreamProxyConfig) {
-        let mut guard = self.proxy_config.write().await;
-        *guard = config;
-
-        let mut client_guard = self.proxied_client.write().await;
-        *client_guard = None;
-    }
-
     async fn get_client(&self) -> Client {
         let config = self.proxy_config.read().await;
         if config.enabled && !config.url.is_empty() {

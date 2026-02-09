@@ -58,9 +58,7 @@ pub use antigravity_types::models::{ProxyAuthMode, ZaiConfig, ZaiDispatchMode};
 pub use monitor::{ProxyEventBus, ProxyMonitor};
 pub use routing_config::SmartRoutingConfig;
 pub use security::ProxySecurityConfig;
-pub use server::{
-    build_proxy_router, build_proxy_router_with_shared_state, AxumServer, ServerStartConfig,
-};
+pub use server::{build_proxy_router_with_shared_state, AxumServer, ServerStartConfig};
 pub use signature_cache::SignatureCache;
 pub use token_manager::TokenManager;
 

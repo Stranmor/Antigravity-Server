@@ -194,6 +194,11 @@ vendor/
 | `modules/account/fetch.rs` | Race condition: concurrent fetches can cause lost updates (token/quota desync) | High |
 | `token_manager/selection_helpers.rs` | Thundering herd: pre-calculated load snapshot can lead to skewed distribution during bursts | Medium |
 | `proxy/handlers/` | ~~OOM Risk: 50MB buffer per stream can exhaust VPS RAM under high concurrency~~ **Mitigated [2026-02-09]**: Reduced to 10MB per stream. Still a concern at extreme concurrency (1000+ streams = 10GB). | ~~High~~ Medium |
+| `state/accessors.rs` | Race condition: `hot_reload_proxy_config` updates fields non-atomically. | High |
+| `state/accessors.rs` | Logic error: `get_model_quota` uses `.contains()` instead of `.starts_with()`. | Medium |
+| `state/accessors.rs` | Split-brain: `switch_account` updates file before repository. | Medium |
+| `state/mod.rs` | Bug: `proxy_config.experimental` moved then used (compilation error). | High |
+| `state/mod.rs` | Bug: `health_monitor` shared instance vs separate instances in `token_manager`. | Medium |
 
 ---
 
