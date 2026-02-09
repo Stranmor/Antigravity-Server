@@ -63,6 +63,12 @@ pub struct StreamingState {
     pub(super) thinking_received: bool,
     /// Whether thinking was requested for this request.
     pub thinking_requested: bool,
+    /// Whether a finish reason was received from upstream.
+    received_finish_reason: bool,
+    /// Whether the stream errored (network/decoding error from upstream).
+    /// When true, emit_force_stop skips generating error/termination events
+    /// because the error path in build_combined_stream already emitted them.
+    pub stream_errored: bool,
 }
 
 impl Default for StreamingState {
@@ -94,6 +100,8 @@ impl StreamingState {
             accumulated_thinking: String::new(),
             thinking_received: false,
             thinking_requested: false,
+            received_finish_reason: false,
+            stream_errored: false,
         }
     }
 
@@ -196,6 +204,16 @@ impl StreamingState {
     /// Returns whether thinking was received.
     pub fn has_thinking_received(&self) -> bool {
         self.thinking_received
+    }
+
+    /// Marks that a finish reason was received from upstream.
+    pub fn mark_finish_reason_received(&mut self) {
+        self.received_finish_reason = true;
+    }
+
+    /// Returns whether a finish reason was received.
+    pub fn has_finish_reason(&self) -> bool {
+        self.received_finish_reason
     }
 
     /// Returns the current block type.

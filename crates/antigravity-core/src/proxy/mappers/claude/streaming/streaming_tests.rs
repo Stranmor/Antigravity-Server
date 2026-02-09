@@ -81,7 +81,10 @@ mod tests {
             .collect::<Vec<_>>()
             .join("");
 
-        assert!(output.contains(r#""stop_reason":"max_tokens""#));
+        assert!(output.contains("event: error"));
+        assert!(output.contains(r#""code":"stream_truncated""#));
+        assert!(output.contains("message_stop"));
+        assert!(!output.contains(r#""stop_reason":"max_tokens""#));
     }
 
     #[test]
@@ -97,7 +100,10 @@ mod tests {
             .collect::<Vec<_>>()
             .join("");
 
-        assert!(output.contains(r#""stop_reason":"max_tokens""#));
+        assert!(output.contains("event: error"));
+        assert!(output.contains(r#""code":"stream_truncated""#));
+        assert!(output.contains("message_stop"));
+        assert!(!output.contains(r#""stop_reason":"max_tokens""#));
     }
 
     #[test]

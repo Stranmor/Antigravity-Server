@@ -66,6 +66,7 @@ pub fn create_claude_sse_stream(
                             }
                         }
                         Err(e) => {
+                            state.stream_errored = true;
                             yield Err(format!("Stream error: {}", e));
                             break;
                         }
@@ -227,6 +228,8 @@ pub fn emit_force_stop(state: &mut StreamingState) -> Vec<Bytes> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proxy::mappers::claude::streaming::BlockType;
+    use serde_json::json;
 
     #[test]
     fn test_process_sse_line_done() {
@@ -260,5 +263,21 @@ mod tests {
         assert!(all_text.contains("message_start"));
         assert!(all_text.contains("content_block_start"));
         assert!(all_text.contains("Hello"));
+    }
+
+    #[test]
+    fn test_emit_force_stop_truncation_emits_error_event() {
+        let mut state = StreamingState::new();
+
+        state.start_block(BlockType::Text, json!({ "type": "text", "text": "" }));
+
+        let chunks = emit_force_stop(&mut state);
+        let all_text: String =
+            chunks.iter().map(|b| String::from_utf8(b.to_vec()).unwrap_or_default()).collect();
+
+        assert!(all_text.contains("event: error"));
+        assert!(all_text.contains("stream_truncated"));
+        assert!(all_text.contains("message_stop"));
+        assert!(!all_text.contains("max_tokens"));
     }
 }

@@ -12,6 +12,10 @@ impl StreamingState {
         finish_reason: Option<&str>,
         usage_metadata: Option<&UsageMetadata>,
     ) -> Vec<Bytes> {
+        if finish_reason.is_some() {
+            self.mark_finish_reason_received();
+        }
+
         if self.message_stop_sent {
             return vec![];
         }
@@ -49,8 +53,37 @@ impl StreamingState {
 
         chunks.extend(self.emit_grounding_block());
 
-        let stop_reason =
-            self.determine_stop_reason(finish_reason, was_inside_block, prev_block_type);
+        let stream_truncated = finish_reason.is_none() && was_inside_block;
+        if stream_truncated {
+            tracing::warn!(
+                "[Truncation Detected] Stream ended without finish_reason while inside {:?} block",
+                prev_block_type
+            );
+            crate::proxy::prometheus::record_truncation();
+
+            chunks.push(self.emit(
+                "error",
+                json!({
+                    "type": "error",
+                    "error": {
+                        "type": "overloaded_error",
+                        "code": "stream_truncated",
+                        "message": "Upstream closed connection mid-stream. Response was truncated. Please retry your request."
+                    }
+                }),
+            ));
+
+            if !self.message_stop_sent {
+                chunks.push(Bytes::from(
+                    "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+                ));
+                self.message_stop_sent = true;
+            }
+
+            return chunks;
+        }
+
+        let stop_reason = self.determine_stop_reason(finish_reason);
 
         let usage = usage_metadata
             .map(|u| to_claude_usage(u, self.scaling_enabled, self.context_limit))
@@ -88,22 +121,10 @@ impl StreamingState {
         chunks
     }
 
-    fn determine_stop_reason(
-        &self,
-        finish_reason: Option<&str>,
-        was_inside_block: bool,
-        prev_block_type: BlockType,
-    ) -> &'static str {
+    fn determine_stop_reason(&self, finish_reason: Option<&str>) -> &'static str {
         if self.used_tool {
             "tool_use"
         } else if finish_reason == Some("MAX_TOKENS") {
-            "max_tokens"
-        } else if finish_reason.is_none() && was_inside_block {
-            tracing::warn!(
-                "[Truncation Detected] Stream ended without finish_reason while inside {:?} block",
-                prev_block_type
-            );
-            crate::proxy::prometheus::record_truncation();
             "max_tokens"
         } else {
             "end_turn"

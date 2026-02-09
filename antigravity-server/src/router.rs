@@ -3,14 +3,13 @@ use axum::{
     Router,
 };
 use tower_http::{
-    cors::{Any, CorsLayer},
     services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
 
 use crate::api;
 use crate::state::AppState;
-use antigravity_core::proxy::middleware::admin_auth_middleware;
+use antigravity_core::proxy::middleware::{admin_auth_middleware, cors::cors_layer};
 
 pub async fn build_router(state: AppState) -> Router {
     let proxy_router = state.build_proxy_router();
@@ -45,7 +44,7 @@ pub async fn build_router(state: AppState) -> Router {
         .fallback_service(spa_service)
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
         .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))
+        .layer(cors_layer())
 }
 
 async fn health_check() -> impl IntoResponse {
