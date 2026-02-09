@@ -47,7 +47,9 @@ mod integration_tests {
         let circuit_breaker = Arc::new(CircuitBreakerManager::new());
         let upstream = Arc::new(crate::proxy::upstream::client::UpstreamClient::new(
             reqwest::Client::new(),
-            antigravity_types::models::UpstreamProxyConfig::default(),
+            Arc::new(tokio::sync::RwLock::new(
+                antigravity_types::models::UpstreamProxyConfig::default(),
+            )),
             None,
         ));
 

@@ -54,11 +54,10 @@ impl UpstreamClient {
     /// inside an async runtime (which causes a panic on native-tls).
     pub fn new(
         http_client: Client,
-        proxy_config: crate::proxy::config::UpstreamProxyConfig,
+        proxy_config: Arc<tokio::sync::RwLock<crate::proxy::config::UpstreamProxyConfig>>,
         base_urls: Option<Vec<String>>,
     ) -> Self {
         let base_urls = resolve_upstream_urls(base_urls);
-        let proxy_config = Arc::new(tokio::sync::RwLock::new(proxy_config));
 
         Self {
             http_client,

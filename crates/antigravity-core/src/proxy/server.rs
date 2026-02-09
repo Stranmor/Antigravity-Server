@@ -61,7 +61,7 @@ pub fn build_proxy_router_with_shared_state(
         upstream_proxy: Arc::clone(&proxy_state),
         upstream: Arc::new(crate::proxy::upstream::client::UpstreamClient::new(
             http_client,
-            upstream_proxy,
+            Arc::clone(&proxy_state),
             None,
         )),
         zai,

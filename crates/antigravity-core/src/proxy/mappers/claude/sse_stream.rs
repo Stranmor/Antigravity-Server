@@ -38,7 +38,7 @@ pub fn create_claude_sse_stream(
         state.context_limit = context_limit;
         state.estimated_tokens = estimated_tokens;
         let mut buffer = BytesMut::new();
-        const MAX_BUFFER_SIZE: usize = 50 * 1024 * 1024; // 50MB — supports 2K+ image generation
+        const MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10MB safety limit for SSE line buffering
 
         let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<Bytes, reqwest::Error>>(2);
 

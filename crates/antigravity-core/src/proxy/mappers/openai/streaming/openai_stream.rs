@@ -29,7 +29,7 @@ pub fn create_openai_sse_stream(
     session_id: Option<String>,
 ) -> Pin<Box<dyn Stream<Item = Result<Bytes, String>> + Send>> {
     let mut buffer = BytesMut::new();
-    const MAX_BUFFER_SIZE: usize = 50 * 1024 * 1024; // 50MB — supports 2K+ image generation (~12MB base64)
+    const MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10MB safety limit for SSE line buffering
     let stream_id = format!("chatcmpl-{}", Uuid::new_v4());
     let created_ts = Utc::now().timestamp();
 

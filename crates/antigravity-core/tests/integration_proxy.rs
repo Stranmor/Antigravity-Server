@@ -35,7 +35,7 @@ async fn test_upstream_proxy_flow() {
     let mock_url = format!("{}/v1internal", server.uri());
     let client = UpstreamClient::new(
         reqwest::Client::new(),
-        UpstreamProxyConfig::default(),
+        std::sync::Arc::new(tokio::sync::RwLock::new(UpstreamProxyConfig::default())),
         Some(vec![mock_url]),
     );
 

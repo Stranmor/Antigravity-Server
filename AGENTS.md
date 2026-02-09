@@ -6,6 +6,7 @@
 
 ## Current Status
 - ✅ COMPLETED [2026-02-09]: Fixed production crash caused by blocking native-TLS initialization inside tokio async runtime. `UpstreamClient::new()` now accepts pre-built `reqwest::Client`; proxy/WARP client builds wrapped in `spawn_blocking`. Deployed and verified on VPS.
+- ✅ COMPLETED [2026-02-09]: Fixed production outage — all requests failing "All accounts exhausted". Root cause: `upstream_proxy` in `gui_config.json` was `enabled: true` pointing to `http://127.0.0.1:8046` where nothing was listening. Every outgoing request got instant `Connection refused`, all 16 accounts cycled through and marked exhausted. Fix: disabled upstream proxy in config. Additionally promoted transport error logging from `debug` to `error` level for future visibility.
 
 ## ✅ COMPLETED: PostgreSQL Migration [2026-02-03]
 
