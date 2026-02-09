@@ -214,6 +214,9 @@ fn process_sse_line(
 
 /// Send force end event
 pub fn emit_force_stop(state: &mut StreamingState) -> Vec<Bytes> {
+    if state.stream_errored {
+        return vec![];
+    }
     if !state.message_stop_sent {
         let mut chunks = state.emit_finish(None, None);
         if chunks.is_empty() {
@@ -279,5 +282,15 @@ mod tests {
         assert!(all_text.contains("stream_truncated"));
         assert!(all_text.contains("message_stop"));
         assert!(!all_text.contains("max_tokens"));
+    }
+
+    #[test]
+    fn test_emit_force_stop_skips_when_stream_errored() {
+        let mut state = StreamingState::new();
+        state.start_block(BlockType::Text, json!({ "type": "text", "text": "" }));
+        state.stream_errored = true;
+
+        let chunks = emit_force_stop(&mut state);
+        assert!(chunks.is_empty());
     }
 }

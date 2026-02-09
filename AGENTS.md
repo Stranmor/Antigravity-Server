@@ -1,12 +1,11 @@
 # Antigravity Manager - Architecture Status
 
 ## TARGET GOAL
-- Remove request/response content capture from proxy monitoring while keeping metadata-only logging and UI handling.
 - Fix Claude streaming truncation handling so upstream mid-stream drops emit explicit error events instead of fake normal completion.
 
 ## Current Status
-- In progress: content capture removal, monitoring protocol fixes, and UI polling improvements implemented; awaiting final verification entry.
 - In progress: stream truncation error handling implemented; awaiting final verification entry.
+- ✅ COMPLETED [2026-02-09]: Content capture removal + CORS hardening deployed to VPS. Monitoring records metadata only (no request/response bodies). CORS restricted to explicit origin whitelist.
 
 ## ✅ COMPLETED: PostgreSQL Migration [2026-02-03]
 
