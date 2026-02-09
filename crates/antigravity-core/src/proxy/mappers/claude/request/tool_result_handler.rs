@@ -44,7 +44,7 @@ fn extract_text_content(compacted: &Value, original: &Value) -> String {
                     Some(text.to_string())
                 } else if block.get("source").is_some() {
                     if block.get("type").and_then(|v| v.as_str()) == Some("image") {
-                        Some("[image omitted to save context]".to_string())
+                        Some("[image present in tool output but cannot be forwarded in function response format]".to_string())
                     } else {
                         None
                     }
