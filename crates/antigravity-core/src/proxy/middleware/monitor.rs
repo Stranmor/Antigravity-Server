@@ -187,7 +187,11 @@ async fn handle_sse_response(
         }
 
         if collected_text.is_empty() {
-            log.response_body = Some("[Stream Data - No text extracted]".to_string());
+            log.response_body = if let Ok(tail) = std::str::from_utf8(&last_few_bytes) {
+                Some(format!("[Stream - raw tail]\n{}", tail))
+            } else {
+                Some("[Stream Data - No text extracted]".to_string())
+            };
         } else {
             log.response_body = Some(collected_text);
         }
