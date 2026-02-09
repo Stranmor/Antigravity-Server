@@ -126,6 +126,9 @@ pub enum RepositoryError {
     /// JSON serialization/deserialization failed.
     #[error("Serialization error: {0}")]
     Serialization(String),
+    /// Invalid input provided.
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
 }
 
 /// Abstract repository for account storage operations.

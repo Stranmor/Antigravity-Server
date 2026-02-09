@@ -15,10 +15,12 @@ pub(crate) async fn update_quota_impl(
     account_id: &str,
     quota: QuotaData,
 ) -> RepoResult<()> {
-    let uuid =
-        Uuid::parse_str(account_id).map_err(|err| RepositoryError::NotFound(err.to_string()))?;
+    let uuid = Uuid::parse_str(account_id)
+        .map_err(|err| RepositoryError::InvalidInput(err.to_string()))?;
     let models_json = serde_json::to_value(&quota.models)
         .map_err(|err| RepositoryError::Serialization(err.to_string()))?;
+
+    let mut tx = pool.begin().await.map_err(map_sqlx_err)?;
 
     sqlx::query(
         r#"INSERT INTO quotas (account_id, is_forbidden, models, fetched_at)
@@ -28,7 +30,7 @@ pub(crate) async fn update_quota_impl(
     .bind(uuid)
     .bind(quota.is_forbidden)
     .bind(models_json)
-    .execute(pool)
+    .execute(&mut *tx)
     .await
     .map_err(map_sqlx_err)?;
 
@@ -37,21 +39,20 @@ pub(crate) async fn update_quota_impl(
         sqlx::query("UPDATE tokens SET tier = $1 WHERE account_id = $2")
             .bind(tier)
             .bind(uuid)
-            .execute(pool)
+            .execute(&mut *tx)
             .await
             .map_err(map_sqlx_err)?;
     }
 
-    log_event_impl(
-        pool,
-        AccountEvent {
-            account_id: account_id.to_string(),
-            event_type: AccountEventType::QuotaUpdated,
-            metadata: serde_json::json!({"is_forbidden": quota.is_forbidden}),
-            created_at: chrono::Utc::now(),
-        },
+    log_event_internal_impl(
+        &mut tx,
+        account_id.to_string(),
+        AccountEventType::QuotaUpdated,
+        serde_json::json!({"is_forbidden": quota.is_forbidden}),
     )
     .await?;
+
+    tx.commit().await.map_err(map_sqlx_err)?;
 
     Ok(())
 }
@@ -81,7 +82,7 @@ pub(crate) async fn set_current_account_id_impl(pool: &PgPool, id: &str) -> Repo
 /// Log an account event.
 pub(crate) async fn log_event_impl(pool: &PgPool, event: AccountEvent) -> RepoResult<()> {
     let uuid = Uuid::parse_str(&event.account_id)
-        .map_err(|err| RepositoryError::NotFound(err.to_string()))?;
+        .map_err(|err| RepositoryError::InvalidInput(err.to_string()))?;
     sqlx::query(
         "INSERT INTO account_events (account_id, event_type, metadata) VALUES ($1, $2, $3)",
     )
@@ -97,7 +98,7 @@ pub(crate) async fn log_event_impl(pool: &PgPool, event: AccountEvent) -> RepoRe
 /// Log a request for analytics.
 pub(crate) async fn log_request_impl(pool: &PgPool, request: RequestLog) -> RepoResult<()> {
     let uuid = Uuid::parse_str(&request.account_id)
-        .map_err(|err| RepositoryError::NotFound(err.to_string()))?;
+        .map_err(|err| RepositoryError::InvalidInput(err.to_string()))?;
     sqlx::query(
         r#"INSERT INTO requests (account_id, model, tokens_in, tokens_out, cached_tokens, latency_ms, status_code, error_type)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
@@ -121,8 +122,8 @@ pub(crate) async fn get_account_health_impl(
     pool: &PgPool,
     account_id: &str,
 ) -> RepoResult<AccountHealth> {
-    let uuid =
-        Uuid::parse_str(account_id).map_err(|err| RepositoryError::NotFound(err.to_string()))?;
+    let uuid = Uuid::parse_str(account_id)
+        .map_err(|err| RepositoryError::InvalidInput(err.to_string()))?;
     let row = sqlx::query("SELECT * FROM account_health WHERE id = $1")
         .bind(uuid)
         .fetch_optional(pool)
@@ -147,8 +148,8 @@ pub(crate) async fn get_events_impl(
     account_id: &str,
     limit: i64,
 ) -> RepoResult<Vec<AccountEvent>> {
-    let uuid =
-        Uuid::parse_str(account_id).map_err(|err| RepositoryError::NotFound(err.to_string()))?;
+    let uuid = Uuid::parse_str(account_id)
+        .map_err(|err| RepositoryError::InvalidInput(err.to_string()))?;
     let rows = sqlx::query(
         "SELECT event_type, metadata, created_at FROM account_events WHERE account_id = $1 ORDER BY created_at DESC LIMIT $2",
     )
@@ -176,8 +177,8 @@ pub(crate) async fn log_event_internal_impl(
     event_type: AccountEventType,
     metadata: serde_json::Value,
 ) -> RepoResult<()> {
-    let uuid =
-        Uuid::parse_str(&account_id).map_err(|err| RepositoryError::NotFound(err.to_string()))?;
+    let uuid = Uuid::parse_str(&account_id)
+        .map_err(|err| RepositoryError::InvalidInput(err.to_string()))?;
     sqlx::query(
         "INSERT INTO account_events (account_id, event_type, metadata) VALUES ($1, $2, $3)",
     )

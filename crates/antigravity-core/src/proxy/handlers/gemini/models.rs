@@ -36,7 +36,14 @@ pub async fn handle_list_models(
 }
 
 pub async fn handle_get_model(Path(model_name): Path<String>) -> impl IntoResponse {
-    Json(json!({ "name": format!("models/{}", model_name), "displayName": model_name }))
+    Json(json!({
+        "name": format!("models/{}", model_name),
+        "version": "001",
+        "displayName": model_name,
+        "inputTokenLimit": 1_048_576,
+        "outputTokenLimit": 65536,
+        "supportedGenerationMethods": ["generateContent", "countTokens"]
+    }))
 }
 
 pub async fn handle_count_tokens(

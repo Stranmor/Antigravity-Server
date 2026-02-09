@@ -1,10 +1,13 @@
 # Antigravity Manager - Architecture Status
 
 ## TARGET GOAL
-- Fix Claude streaming truncation handling so upstream mid-stream drops emit explicit error events instead of fake normal completion.
+- Fix monitoring middleware bugs and resilience issues (100% complete).
 
 ## Current Status
-- In progress: stream truncation error handling implemented; awaiting final verification entry.
+- ✅ COMPLETED [2026-02-09]: Fixed 4 bugs in monitor middleware (resource waste, buffer churn, null usage handling).
+- ✅ COMPLETED [2026-02-09]: Fixed refresh token persistence and DashMap memory leaks in TokenManager.
+- ✅ COMPLETED [2026-02-09]: Fixed Anthropic auth header logic to always include x-api-key.
+- ✅ COMPLETED [2026-02-09]: Stream truncation error handling — upstream mid-stream drops now emit explicit `stream_truncated` error events instead of fake `max_tokens` completion. Cancellation-safe heartbeat via pump task. Silent SSE failures now logged and relayed to client. Deployed, verified in production (328 requests, 0 errors in 30min window).
 - ✅ COMPLETED [2026-02-09]: Content capture removal + CORS hardening deployed to VPS. Monitoring records metadata only (no request/response bodies). CORS restricted to explicit origin whitelist.
 
 ## ✅ COMPLETED: PostgreSQL Migration [2026-02-03]

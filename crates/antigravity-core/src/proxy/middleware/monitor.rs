@@ -167,12 +167,18 @@ async fn handle_sse_response(
                 } else {
                     last_few_bytes.extend_from_slice(&chunk);
                     if last_few_bytes.len() > 8192 {
-                        last_few_bytes.drain(0..last_few_bytes.len() - 8192);
+                        let keep_from = last_few_bytes.len() - 8192;
+                        last_few_bytes.copy_within(keep_from.., 0);
+                        last_few_bytes.truncate(8192);
                     }
                 }
-                let _ = tx.send(Ok::<_, axum::Error>(chunk)).await;
+                if tx.send(Ok::<_, axum::Error>(chunk)).await.is_err() {
+                    break;
+                }
             } else if let Err(e) = chunk_res {
-                let _ = tx.send(Err(axum::Error::new(e))).await;
+                if tx.send(Err(axum::Error::new(e))).await.is_err() {
+                    break;
+                }
             }
         }
 

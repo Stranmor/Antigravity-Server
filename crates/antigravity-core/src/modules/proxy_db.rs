@@ -9,11 +9,12 @@
 
 use antigravity_types::models::{ProxyRequestLog, ProxyStats};
 use rusqlite::{params, Connection, Error as SqliteError};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 
 thread_local! {
     static PROXY_DB_CONN: RefCell<Option<Connection>> = const { RefCell::new(None) };
+    static INSERT_COUNT: Cell<u32> = const { Cell::new(0) };
 }
 
 /// Get the path to the proxy database file.
@@ -124,7 +125,30 @@ pub fn save_log(log: &ProxyRequestLog) -> Result<(), String> {
                 ],
             )
             .map_err(|err| err.to_string())?;
+
+        // Periodic cleanup
+        INSERT_COUNT.with(|count| {
+            let current = count.get() + 1;
+            if current >= 1000 {
+                count.set(0);
+                let _ = cleanup_old_logs(7);
+            } else {
+                count.set(current);
+            }
+        });
+
         Ok(())
+    })
+}
+
+/// Delete logs older than the given number of days.
+pub fn cleanup_old_logs(retention_days: u32) -> Result<usize, String> {
+    with_connection(|conn| {
+        let cutoff = chrono::Utc::now().timestamp_millis() - i64::from(retention_days) * 86_400_000;
+        let deleted: usize = conn
+            .execute("DELETE FROM request_logs WHERE timestamp < ?1", params![cutoff])
+            .map_err(|err| err.to_string())?;
+        Ok(deleted)
     })
 }
 

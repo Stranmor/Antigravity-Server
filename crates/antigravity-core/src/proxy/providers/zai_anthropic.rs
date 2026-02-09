@@ -64,24 +64,14 @@ fn copy_passthrough_headers(incoming: &HeaderMap) -> HeaderMap {
     out
 }
 
-fn set_zai_auth(headers: &mut HeaderMap, incoming: &HeaderMap, api_key: &str) {
-    // Prefer to keep the same auth scheme as the incoming request:
-    // - If the client used x-api-key (Anthropic style), replace it.
-    // - Else if it used Authorization, replace it with Bearer.
-    // - Else default to x-api-key.
-    let has_x_api_key = incoming.contains_key("x-api-key");
-    let has_auth = incoming.contains_key(header::AUTHORIZATION);
-
-    if has_x_api_key || !has_auth {
-        if let Ok(v) = HeaderValue::from_str(api_key) {
-            headers.insert("x-api-key", v);
-        }
+fn set_zai_auth(headers: &mut HeaderMap, _incoming: &HeaderMap, api_key: &str) {
+    // Anthropic API requires x-api-key regardless of other auth headers
+    if let Ok(v) = HeaderValue::from_str(api_key) {
+        headers.insert("x-api-key", v);
     }
-
-    if has_auth {
-        if let Ok(v) = HeaderValue::from_str(&format!("Bearer {}", api_key)) {
-            headers.insert(header::AUTHORIZATION, v);
-        }
+    // Also set Authorization for providers that prefer Bearer auth
+    if let Ok(v) = HeaderValue::from_str(&format!("Bearer {}", api_key)) {
+        headers.insert(header::AUTHORIZATION, v);
     }
 }
 

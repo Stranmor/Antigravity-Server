@@ -21,7 +21,8 @@ pub async fn create_listener(
     let addr: SocketAddr = format!("{}:{}", bind_addr, port)
         .parse()
         .map_err(|e| anyhow::anyhow!("Invalid bind address '{}:{}': {}", bind_addr, port, e))?;
-    let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
+    let domain = if addr.is_ipv4() { Domain::IPV4 } else { Domain::IPV6 };
+    let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
 
     socket.set_reuse_address(true)?;
     socket.set_reuse_port(true)?;
