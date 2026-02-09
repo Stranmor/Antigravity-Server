@@ -21,6 +21,9 @@ pub use strategies::{
 /// Maximum tool result characters (~200k, prevents prompt overflow)
 pub const MAX_TOOL_RESULT_CHARS: usize = 200_000;
 
+/// Maximum base64 image characters (~1.5M, roughly 1MB of binary data)
+pub const MAX_IMAGE_BASE64_CHARS: usize = 1_500_000;
+
 /// Browser snapshot max chars after compression
 pub const SNAPSHOT_MAX_CHARS: usize = 16_000;
 
@@ -159,7 +162,7 @@ fn deep_clean_html(html: &str) -> String {
 pub fn sanitize_tool_result_blocks(blocks: &mut Vec<Value>) {
     let mut used_chars = 0;
     let mut cleaned_blocks = Vec::new();
-    let mut removed_image = false;
+    let mut removed_image_size = None;
 
     if !blocks.is_empty() {
         info!(
@@ -170,10 +173,12 @@ pub fn sanitize_tool_result_blocks(blocks: &mut Vec<Value>) {
     }
 
     for block in blocks.iter() {
-        // Remove base64 images
-        if is_base64_image(block) {
-            removed_image = true;
-            debug!("[ToolCompressor] Removed base64 image block");
+        if let Some(size) = is_oversized_base64_image(block) {
+            removed_image_size = Some(size);
+            debug!(
+                "[ToolCompressor] Removed oversized base64 image block ({} chars, threshold: {})",
+                size, MAX_IMAGE_BASE64_CHARS
+            );
             continue;
         }
 
@@ -197,8 +202,19 @@ pub fn sanitize_tool_result_blocks(blocks: &mut Vec<Value>) {
                 compacted.len()
             );
         } else {
+            let block_size = if block.get("type").and_then(|v| v.as_str()) == Some("image") {
+                block
+                    .get("source")
+                    .and_then(|s| s.get("data"))
+                    .and_then(|d| d.as_str())
+                    .map(|s| s.len())
+                    .unwrap_or(100)
+            } else {
+                100
+            };
+
             cleaned_blocks.push(block.clone());
-            used_chars += 100; // Estimate non-text block size
+            used_chars += block_size;
         }
 
         if used_chars >= MAX_TOOL_RESULT_CHARS {
@@ -206,10 +222,10 @@ pub fn sanitize_tool_result_blocks(blocks: &mut Vec<Value>) {
         }
     }
 
-    if removed_image {
+    if let Some(size) = removed_image_size {
         cleaned_blocks.push(serde_json::json!({
             "type": "text",
-            "text": "[image omitted to fit Antigravity prompt limits; use the file path in the previous text block]"
+            "text": format!("[image omitted: {}KB exceeds limit; use the file path in the previous text block]", size / 1024)
         }));
     }
 
@@ -223,9 +239,23 @@ pub fn sanitize_tool_result_blocks(blocks: &mut Vec<Value>) {
     *blocks = cleaned_blocks;
 }
 
-/// Detect if block is a base64 image
-fn is_base64_image(block: &Value) -> bool {
-    block.get("type").and_then(|v| v.as_str()) == Some("image")
+/// Detect if block is an oversized base64 image
+/// Returns Some(size) if oversized, None otherwise
+fn is_oversized_base64_image(block: &Value) -> Option<usize> {
+    if block.get("type").and_then(|v| v.as_str()) == Some("image")
         && block.get("source").and_then(|s| s.get("type")).and_then(|v| v.as_str())
             == Some("base64")
+    {
+        let data_len = block
+            .get("source")
+            .and_then(|s| s.get("data"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.len())
+            .unwrap_or(0);
+
+        if data_len > MAX_IMAGE_BASE64_CHARS {
+            return Some(data_len);
+        }
+    }
+    None
 }
