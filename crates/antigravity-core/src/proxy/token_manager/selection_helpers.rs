@@ -68,10 +68,17 @@ impl TokenManager {
                     token.expires_in = token_response.expires_in;
                     token.timestamp = now + token_response.expires_in;
 
+                    if let Some(ref new_refresh) = token_response.refresh_token {
+                        token.refresh_token = new_refresh.clone();
+                    }
+
                     if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
                         entry.access_token = token.access_token.clone();
                         entry.expires_in = token.expires_in;
                         entry.timestamp = token.timestamp;
+                        if let Some(ref new_refresh) = token_response.refresh_token {
+                            entry.refresh_token = new_refresh.clone();
+                        }
                     }
                     if let Err(e) =
                         self.save_refreshed_token(&token.account_id, &token_response).await
@@ -99,13 +106,8 @@ impl TokenManager {
                     pid
                 },
                 Err(e) => {
-                    // FIXME: fallback project ID, should propagate error
-                    tracing::warn!(
-                        "Failed to fetch project_id for {}, using fallback: {}",
-                        token.account_id,
-                        e
-                    );
-                    "bamboo-precept-lgxtn".to_string()
+                    tracing::warn!("Failed to fetch project_id for {}: {}", token.account_id, e);
+                    return None;
                 },
             }
         };

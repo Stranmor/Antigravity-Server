@@ -104,6 +104,8 @@ impl TokenManager {
         let session_failures = self.session_failures.clone();
         let session_accounts = self.session_accounts.clone();
         let refresh_locks = self.refresh_locks.clone();
+        let file_locks = self.file_locks.clone();
+        let active_requests = self.active_requests.clone();
         let tokens = self.tokens.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
@@ -143,6 +145,10 @@ impl TokenManager {
                 }
                 // Clean refresh locks for accounts no longer in memory
                 refresh_locks.retain(|k, _| tokens.contains_key(k));
+                // Clean file locks for accounts no longer in memory
+                file_locks.retain(|k, _| tokens.contains_key(k));
+                // Clean active requests with zero count
+                active_requests.retain(|_, v| v.load(Ordering::Relaxed) > 0);
             }
         });
         tracing::info!("Rate limit auto-cleanup task started (interval: 60s)");
