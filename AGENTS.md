@@ -175,6 +175,11 @@ vendor/
 | `proxy/token_manager/mod.rs` | `active_requests` DashMap entries never cleaned up when count drops to zero — grows unbounded with unique emails | Low |
 | `server_utils.rs` | Hardcoded `Domain::IPV4` prevents IPv6 binding; `format!("{}:{}")` generates invalid syntax for IPv6 addresses — should parse `IpAddr` first and derive domain | Low |
 | `proxy/handlers/gemini/models.rs` | `handle_get_model` accepts any model_name without validation against available models, returns incomplete JSON (missing `inputTokenLimit` etc.) | Low |
+| `api/quota.rs` | All quota API endpoints (`refresh_account_quota`, `refresh_all_quotas`, `warmup_*`) use `account::list_accounts()` (JSON filesystem) instead of `state.repository()` (PostgreSQL). Should check repo first like `toggle_proxy_status` does | Medium |
+| `modules/account/` + `api/quota.rs` | JSON and PostgreSQL have different UUIDs for same accounts (dual-storage ID mismatch). `repo.update_quota(json_id)` fails with FK violation because JSON IDs don't exist in PostgreSQL | High |
+| `proxy/middleware/monitor.rs` | `std::str::from_utf8(&chunk)` on raw stream chunks — multi-byte UTF-8 split across chunk boundaries causes decoding failure, chunk skipped in line_buffer | Medium |
+| `proxy/middleware/monitor.rs` | SSE processing loop ignores `tx.send()` errors — if client disconnects, middleware continues consuming entire upstream stream (wasted resources) | Medium |
+| `proxy/middleware/monitor.rs` | `line_buffer = line_buffer[newline_pos + 1..].to_string()` allocates new String for every SSE line — excessive allocation churn | Low |
 
 ---
 
