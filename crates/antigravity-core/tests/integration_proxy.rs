@@ -3,6 +3,7 @@
 #![allow(clippy::expect_used, reason = "integration test — panics are the assertion mechanism")]
 
 use antigravity_core::proxy::upstream::client::UpstreamClient;
+use antigravity_types::models::config::UpstreamProxyConfig;
 use wiremock::matchers::{method, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -32,7 +33,7 @@ async fn setup_server() -> MockServer {
 async fn test_upstream_proxy_flow() {
     let server = setup_server().await;
     let mock_url = format!("{}/v1internal", server.uri());
-    let client = UpstreamClient::new(None, Some(vec![mock_url]));
+    let client = UpstreamClient::new(UpstreamProxyConfig::default(), Some(vec![mock_url]));
 
     {
         let _guard = Mock::given(method("POST"))

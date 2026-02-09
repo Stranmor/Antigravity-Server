@@ -56,6 +56,17 @@ impl TokenManager {
 
                 if let Err(e) = self.save_refreshed_token(&token.account_id, &token_response).await
                 {
+                    if token_response.refresh_token.is_some() {
+                        // Provider rotated refresh_token — failing to persist means
+                        // account will be locked out on restart (old token invalidated).
+                        tracing::error!(
+                            "CRITICAL: Failed to persist rotated refresh_token ({}): {}",
+                            token.email,
+                            e
+                        );
+                        return Err(format!("Failed to persist rotated refresh token: {}", e));
+                    }
+                    // Access token only — can be refreshed again, just warn
                     tracing::warn!("Failed to save refreshed token ({}): {}", token.email, e);
                 }
                 Ok(())

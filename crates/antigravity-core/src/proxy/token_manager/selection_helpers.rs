@@ -60,55 +60,10 @@ impl TokenManager {
         let now = chrono::Utc::now().timestamp();
 
         if now >= token.timestamp - 300 {
-            tracing::debug!("Preferred account {} token expiring, refreshing...", token.email);
-            match crate::modules::oauth::refresh_access_token(&token.refresh_token).await {
-                Ok(token_response) => {
-                    token.access_token = token_response.access_token.clone();
-                    token.expires_in = token_response.expires_in;
-                    token.timestamp = now + token_response.expires_in;
-
-                    if let Some(ref new_refresh) = token_response.refresh_token {
-                        token.refresh_token = new_refresh.clone();
-                    }
-
-                    if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
-                        entry.access_token = token.access_token.clone();
-                        entry.expires_in = token.expires_in;
-                        entry.timestamp = token.timestamp;
-                        if let Some(ref new_refresh) = token_response.refresh_token {
-                            entry.refresh_token = new_refresh.clone();
-                        }
-                    }
-                    if let Err(e) =
-                        self.save_refreshed_token(&token.account_id, &token_response).await
-                    {
-                        tracing::warn!("Failed to save refreshed token for {}: {}", token.email, e);
-                    }
-                },
-                Err(e) => {
-                    tracing::warn!("Preferred account token refresh failed: {}", e);
-                    return None;
-                },
-            }
+            self.try_refresh_token(&mut token).await.ok()?;
         }
 
-        if token.project_id.is_none() {
-            match crate::proxy::project_resolver::fetch_project_id(&token.access_token).await {
-                Ok(pid) => {
-                    if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
-                        entry.project_id = Some(pid.clone());
-                    }
-                    if let Err(e) = self.save_project_id(&token.account_id, &pid).await {
-                        tracing::warn!("Failed to save project_id for {}: {}", token.email, e);
-                    }
-                    token.project_id = Some(pid);
-                },
-                Err(e) => {
-                    tracing::warn!("Failed to fetch project_id for {}: {}", token.account_id, e);
-                    return None;
-                },
-            }
-        };
+        self.ensure_project_id(&mut token).await.ok()?;
 
         let guard = ActiveRequestGuard::try_new(
             Arc::clone(&self.active_requests),

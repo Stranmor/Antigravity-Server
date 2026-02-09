@@ -1,10 +1,10 @@
 # Antigravity Manager - Architecture Status
 
 ## TARGET GOAL
-- Fix quota persistence and dual-write consistency bugs (in progress).
+- Fix quota persistence and dual-write consistency bugs (completed).
 
 ## Current Status
-- 🔄 IN PROGRESS [2026-02-09]: Quota persistence and dual-write consistency fixes implemented; verification pending due to existing build errors in unrelated modules.
+- ✅ COMPLETED [2026-02-09]: Quota persistence and dual-write consistency fixes; local build and API refresh-quota verified.
 
 ## ✅ COMPLETED: PostgreSQL Migration [2026-02-03]
 
@@ -47,16 +47,16 @@
 
 ### Database Replication [2026-02-08]
 
-VPS PostgreSQL реплицируется на home-server через streaming replication. См. глобальный AGENTS.md секцию 3.5 для полной схемы.
+VPS PostgreSQL is replicated to the home-server via streaming replication. See the global AGENTS.md section 3.5 for the full schema.
 
-| Роль | Где | Connection string |
+| Role | Location | Connection string |
 |------|-----|-------------------|
 | **Primary (read-write)** | VPS | `postgres://antigravity@localhost/antigravity?host=/run/postgresql` |
 | **Replica (read-only)** | home-server:5436 | `postgres://antigravity@192.168.0.124:5436/antigravity` |
 
 - VPS: `wal_level=replica`, `max_wal_senders=10`, `wal_keep_size=1GB`
-- Replication user: `replicator` (password в глобальном AGENTS.md)
-- SSH tunnel: `pg-replication-tunnel.service` на home-server
+- Replication user: `replicator` (password stored in global AGENTS.md)
+- SSH tunnel: `pg-replication-tunnel.service` on home-server
 
 ### Files Modified
 
@@ -170,33 +170,25 @@ vendor/
 |------|-------|----------|
 | `proxy/common/json_schema/recursive.rs` | `if/else if/else` for `properties`/`items` is mutually exclusive — if schema has BOTH, `items` won't be recursively cleaned | Medium |
 | `proxy/common/json_schema/recursive.rs` | `else` fallback block treats ALL remaining fields as schemas — data fields like `enum` values or `const` containing object-like structures could be corrupted by normalization | Low |
-| `proxy/token_manager/selection_helpers.rs` | Hardcoded fallback project_id `"bamboo-precept-lgxtn"` when fetch_project_id fails — should propagate error | Medium |
-| `modules/account_pg_events.rs` | `update_quota_impl` atomicity: quota update and audit log are separate operations on `pool`, not wrapped in transaction — audit trail can be lost if log INSERT fails | Low |
-| `modules/account_pg_events.rs` | UUID parse errors mapped to `RepositoryError::NotFound` instead of validation error — conflates bad input with missing resource | Low |
 | `modules/repository.rs` | `update_token_credentials` accepts both `expires_in` and `expiry_timestamp` — redundant, allows conflicting data | Low |
-| `server_utils.rs` | Hardcoded `Domain::IPV4` prevents IPv6 binding; `format!("{}:{}")` generates invalid syntax for IPv6 addresses — should parse `IpAddr` first and derive domain | Low |
-| `proxy/handlers/gemini/models.rs` | `handle_get_model` accepts any model_name without validation against available models, returns incomplete JSON (missing `inputTokenLimit` etc.) | Low |
-| `modules/account/` + `api/quota.rs` | JSON and PostgreSQL have different UUIDs for same accounts (dual-storage ID mismatch). `repo.update_quota(json_id)` fails with FK violation because JSON IDs don't exist in PostgreSQL | High |
-| `api/quota.rs` `toggle_proxy_status` | Uses repo-only write (not dual-write) when repo exists — if repo goes down, JSON has stale `proxy_disabled` field | Medium |
-| `proxy/middleware/monitor.rs` | `std::str::from_utf8(&chunk)` on raw stream chunks — multi-byte UTF-8 split across chunk boundaries causes decoding failure, chunk skipped in line_buffer | Medium |
-| `proxy/handlers/claude/response_handler.rs` | `bytes.to_vec()` + `String::from_utf8` allocation just for logging length — use `bytes.len()` directly | Low |
-| `proxy/providers/zai_anthropic.rs` | Stream errors mapped to `Ok(Bytes::from(...))` — swallows error and injects raw text into response body, corrupting JSON/SSE format | Medium |
-| `modules/account/quota.rs` + `modules/account_pg_events.rs` + `api/quota.rs` | Model protection updates only persisted to JSON, not PostgreSQL — protected models re-enable after restart | Critical |
-| `modules/account/fetch.rs` + `api/quota.rs` + `main.rs` | Dual-write strategy mixes JSON and PostgreSQL updates, risking desynchronization | Medium |
-| `modules/proxy_db.rs` | `proxy_logs.db` grows unbounded without retention cleanup | Medium |
 | `modules/oauth.rs` | Hardcoded OAuth client secret makes rotation difficult | Low |
 | `proxy/middleware/monitor.rs` | DoS Risk: parses entire request/response bodies (up to 100MB) into JSON DOM. Should use streaming parser or limit size. | High |
-| `proxy/middleware/monitor.rs` | Latency: `handle_json_response` buffers full response before forwarding, breaking streaming and increasing TTFB. | High |
+| `proxy/middleware/monitor.rs` | Latency: `handle_json_response` buffers full response before forwarding, breaking streaming and increasing TTFB. Destroys responses >1MB. | High |
+| `proxy/middleware/monitor.rs` | Request body handling returns `Body::empty()` on buffering failure — should return 400/500 instead of forwarding corrupted request. | High |
 | `proxy/middleware/monitor.rs` | Inefficient: attempts to parse all `text/*` as JSON. | Low |
 | `proxy/providers/zai_anthropic.rs` | DoS Risk: `deep_remove_cache_control` logs at `info` for every field, vulnerable to log flooding. | Medium |
-| `proxy/providers/zai_anthropic.rs` | Performance: `reqwest::Client` built per request; lacks connection pooling. | Medium |
 | `proxy/providers/zai_anthropic.rs` | Inefficient: `copy_passthrough_headers` performs unnecessary string allocations in hot path. | Low |
-| `modules/proxy_db.rs` | Runtime Panic: `save_log` double-borrows `PROXY_DB_CONN` RefCell via `cleanup_old_logs`. | Critical |
-| `modules/proxy_db.rs` | Concurrency: Missing `busy_timeout` and WAL mode; prone to "database is locked" errors. | Medium |
 | `modules/proxy_db.rs` | Data Loss: `save_log` hardcodes `request_body`/`response_body` to `None`. | Medium |
 | `server_utils.rs` | Portability: `set_reuse_port(true)` lacks `#[cfg(unix)]` guard. | Low |
 | `repository.rs` | Inconsistent time types (DateTime vs i64) and redundant arguments in `update_token_credentials`. | Low |
-| `gemini/models.rs` | `handle_get_model` ignores state/mappings and uses hardcoded token limits. | Medium |
+| `state/mod.rs` | `build_proxy_router` ignores `UpstreamProxyConfig` from `proxy_config` — passes default instead of actual config. | High |
+| `account_pg_targeted.rs` | `project_id` stored in `tokens` instead of `accounts`; `update_token_credentials_impl` overwrites all sessions. | Medium |
+| `token_manager/mod.rs` | Arbitrary session eviction (hash order, not LRU); race condition in active request cleanup. | Medium |
+| `token_manager/selection.rs` | `get_token_forced` bypasses expiry check and project ID lookup. | Medium |
+| `token_manager/selection_helpers.rs` | Sort comparator calls `get_active_requests` per comparison — O(N log N) DashMap lookups. Should pre-fetch. | Medium |
+| `token_manager/token_refresh.rs` | `refresh_locks` DashMap entries never removed — memory leak proportional to unique account_ids. | Medium |
+| `proxy/server.rs` | `build_proxy_router_with_shared_state` takes `upstream_proxy` by value, breaking hot-reload. `auth_middleware` gets `security_config` instead of full `AppState`. | High |
+| `modules/json_migration.rs` | `migrate_json_to_postgres` counts partial migration as success; `verify_migration` fails if PG has more accounts than JSON. | Low |
 
 ---
 
@@ -647,4 +639,4 @@ curl -X POST https://antigravity.quantumind.ru/api/config/mapping \
 - `crates/antigravity-types/src/models/sync.rs` — `SyncableMapping`, `MappingEntry`, LWW merge logic
 - `antigravity-server/src/config_sync.rs` — Auto-sync background task
 - `antigravity-server/src/state.rs` — `get_syncable_mapping()`, `merge_remote_mapping()`
-- `antigravity-server/src/api.rs` — `/api/config/mapping` endpoints
+- `antigravity-server/src/api/mod.rs` — `/api/config/mapping` endpoints

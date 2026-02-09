@@ -141,9 +141,11 @@ impl AccountRepository for PostgresAccountRepository {
         &self,
         account_id: &str,
         access_token: &str,
+        refresh_token: Option<&str>,
         expiry: chrono::DateTime<chrono::Utc>,
     ) -> RepoResult<()> {
-        update_token_credentials_impl(&self.pool, account_id, access_token, expiry).await
+        update_token_credentials_impl(&self.pool, account_id, access_token, refresh_token, expiry)
+            .await
     }
 
     async fn update_project_id(&self, account_id: &str, project_id: &str) -> RepoResult<()> {

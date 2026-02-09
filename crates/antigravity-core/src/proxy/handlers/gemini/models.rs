@@ -15,7 +15,7 @@ pub async fn handle_list_models(
 
     let sorted_ids = collect_all_model_ids(
         &state.token_manager.get_all_available_models(),
-        &state.custom_mapping,
+        state.custom_mapping.as_ref(),
     )
     .await;
 
@@ -43,7 +43,7 @@ pub async fn handle_get_model(
 
     let available_ids = collect_all_model_ids(
         &state.token_manager.get_all_available_models(),
-        &state.custom_mapping,
+        state.custom_mapping.as_ref(),
     )
     .await;
 
@@ -90,7 +90,12 @@ pub async fn handle_count_tokens(
 
     let response = state
         .upstream
-        .call_v1_internal("countTokens", &access_token, wrapped_body, None)
+        .call_v1_internal(
+            &format!("models/{}:countTokens", mapped_model),
+            &access_token,
+            wrapped_body,
+            None,
+        )
         .await
         .map_err(|e| {
             tracing::error!("countTokens upstream error: {}", e);
@@ -114,6 +119,5 @@ pub async fn handle_count_tokens(
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Parse error: {}", e)))?;
 
-    let unwrapped = crate::proxy::mappers::gemini::unwrap_response(&resp);
-    Ok(Json(unwrapped))
+    Ok(Json(resp))
 }

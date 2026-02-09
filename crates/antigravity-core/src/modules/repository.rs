@@ -185,6 +185,7 @@ pub trait AccountRepository: Send + Sync {
         &self,
         account_id: &str,
         access_token: &str,
+        refresh_token: Option<&str>,
         expiry: chrono::DateTime<chrono::Utc>,
     ) -> RepoResult<()>;
 

@@ -13,6 +13,7 @@ pub(crate) async fn update_token_credentials_impl(
     pool: &PgPool,
     account_id: &str,
     access_token: &str,
+    refresh_token: Option<&str>,
     expiry: chrono::DateTime<chrono::Utc>,
 ) -> RepoResult<()> {
     let uuid = Uuid::parse_str(account_id).map_err(|e| RepositoryError::NotFound(e.to_string()))?;
@@ -20,14 +21,26 @@ pub(crate) async fn update_token_credentials_impl(
 
     let mut tx = pool.begin().await.map_err(map_sqlx_err)?;
 
-    let result = sqlx::query(
-        "UPDATE tokens SET access_token = $2, expiry_timestamp = $3 WHERE account_id = $1",
-    )
-    .bind(uuid)
-    .bind(access_token)
-    .bind(expiry_timestamp)
-    .execute(&mut *tx)
-    .await
+    let result = if let Some(rt) = refresh_token {
+        sqlx::query(
+            "UPDATE tokens SET access_token = $2, expiry_timestamp = $3, refresh_token = $4 WHERE account_id = $1",
+        )
+        .bind(uuid)
+        .bind(access_token)
+        .bind(expiry_timestamp)
+        .bind(rt)
+        .execute(&mut *tx)
+        .await
+    } else {
+        sqlx::query(
+            "UPDATE tokens SET access_token = $2, expiry_timestamp = $3 WHERE account_id = $1",
+        )
+        .bind(uuid)
+        .bind(access_token)
+        .bind(expiry_timestamp)
+        .execute(&mut *tx)
+        .await
+    }
     .map_err(map_sqlx_err)?;
 
     if result.rows_affected() == 0 {

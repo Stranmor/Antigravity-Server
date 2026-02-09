@@ -204,7 +204,7 @@ pub struct MigrationStats {
 pub async fn verify_migration(
     repo: &PostgresAccountRepository,
 ) -> Result<VerificationResult, String> {
-    let json_index = load_account_index().map_err(|e| e.clone())?;
+    let json_index = load_account_index().map_err(|e| e.to_string())?;
     let pg_accounts = repo.list_accounts().await.map_err(|e| e.to_string())?;
 
     let json_count = json_index.accounts.len();

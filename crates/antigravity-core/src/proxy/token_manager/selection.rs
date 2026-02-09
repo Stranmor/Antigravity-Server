@@ -55,7 +55,7 @@ impl TokenManager {
         _target_model: &str,
     ) -> Result<(String, String, String, ActiveRequestGuard), String> {
         let forced_email_lower = forced_email.to_lowercase();
-        let token = self
+        let mut token = self
             .tokens
             .iter()
             .find(|entry| entry.value().email.to_lowercase() == forced_email_lower)
@@ -79,12 +79,19 @@ impl TokenManager {
             )
         })?;
 
+        let now = chrono::Utc::now().timestamp();
+        if now >= token.timestamp - 300 {
+            self.try_refresh_token(&mut token).await?;
+        }
+
+        let project_id = self.ensure_project_id(&mut token).await?;
+
         tracing::info!(
             "[Force-Account] Using forced account: {} (bypassing smart routing)",
             token.email
         );
 
-        Ok((token.access_token, token.project_id.unwrap_or_default(), token.email, guard))
+        Ok((token.access_token, project_id, token.email, guard))
     }
 
     async fn get_token_internal(

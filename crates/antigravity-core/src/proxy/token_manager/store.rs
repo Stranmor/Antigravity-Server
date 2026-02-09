@@ -1,6 +1,4 @@
 use super::{file_utils::calculate_max_quota_percentage, proxy_token::ProxyToken, TokenManager};
-use crate::modules::oauth;
-use std::sync::Arc;
 use std::{collections::HashSet, path::PathBuf};
 
 impl TokenManager {
@@ -240,58 +238,10 @@ impl TokenManager {
 
         let now = chrono::Utc::now().timestamp();
         if now >= token.timestamp - 300 {
-            // Acquire per-account refresh lock to prevent race conditions
-            let lock = self
-                .refresh_locks
-                .entry(token.account_id.clone())
-                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
-                .clone();
-
-            let _guard = lock.lock().await;
-
-            // Re-check after acquiring lock
-            if let Some(entry) = self.tokens.get(&token.account_id) {
-                if entry.timestamp > now + 300 {
-                    return Ok((
-                        entry.access_token.clone(),
-                        entry.project_id.clone().unwrap_or_default(),
-                        entry.email.clone(),
-                    ));
-                }
-            }
-
-            match oauth::refresh_access_token(&token.refresh_token).await {
-                Ok(token_response) => {
-                    token.access_token = token_response.access_token.clone();
-                    token.expires_in = token_response.expires_in;
-                    token.timestamp = now + token_response.expires_in;
-
-                    if let Some(ref new_refresh) = token_response.refresh_token {
-                        token.refresh_token = new_refresh.clone();
-                    }
-
-                    if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
-                        entry.access_token = token.access_token.clone();
-                        entry.expires_in = token.expires_in;
-                        entry.timestamp = token.timestamp;
-                        if let Some(ref new_refresh) = token_response.refresh_token {
-                            entry.refresh_token = new_refresh.clone();
-                        }
-                    }
-
-                    if let Err(e) =
-                        self.save_refreshed_token(&token.account_id, &token_response).await
-                    {
-                        tracing::warn!("Failed to save refreshed token for {}: {}", email, e);
-                    }
-                },
-                Err(e) => {
-                    return Err(format!("Token refresh failed for {}: {}", email, e));
-                },
-            }
+            self.try_refresh_token(&mut token).await?;
         }
 
-        let project_id = token.project_id.clone().unwrap_or_default();
+        let project_id = self.ensure_project_id(&mut token).await?;
         Ok((token.access_token, project_id, token.email))
     }
 

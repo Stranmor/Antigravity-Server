@@ -13,10 +13,16 @@ use super::state::{SchedulerState, DEFAULT_WARMUP_MODELS, LOW_QUOTA_THRESHOLD};
 /// Start the smart warmup scheduler as a background tokio task
 pub fn start(state: AppState) {
     tokio::spawn(async move {
-        let data_dir = match account::get_data_dir() {
-            Ok(dir) => dir,
+        let data_dir = match tokio::task::spawn_blocking(account::get_data_dir).await {
+            Ok(res) => match res {
+                Ok(dir) => dir,
+                Err(e) => {
+                    tracing::error!("[Scheduler] Failed to get data dir: {}", e);
+                    return;
+                },
+            },
             Err(e) => {
-                tracing::error!("[Scheduler] Failed to get data dir: {}", e);
+                tracing::error!("[Scheduler] spawn_blocking panic for get_data_dir: {}", e);
                 return;
             },
         };
@@ -31,9 +37,18 @@ pub fn start(state: AppState) {
         loop {
             check_interval.tick().await;
 
-            let app_config = match config::load_config() {
-                Ok(cfg) => cfg,
-                Err(_) => continue,
+            let app_config = match tokio::task::spawn_blocking(config::load_config).await {
+                Ok(res) => match res {
+                    Ok(cfg) => cfg,
+                    Err(e) => {
+                        tracing::error!("[Scheduler] Failed to load config: {}", e);
+                        continue;
+                    },
+                },
+                Err(e) => {
+                    tracing::error!("[Scheduler] spawn_blocking panic for load_config: {}", e);
+                    continue;
+                },
             };
 
             let warmup_config = &app_config.smart_warmup;
@@ -70,10 +85,16 @@ pub fn start(state: AppState) {
                 warmup_config.models.clone()
             };
 
-            let accounts = match account::list_accounts() {
-                Ok(a) => a,
+            let accounts = match tokio::task::spawn_blocking(account::list_accounts).await {
+                Ok(res) => match res {
+                    Ok(a) => a,
+                    Err(e) => {
+                        tracing::warn!("[Scheduler] Failed to list accounts: {}", e);
+                        continue;
+                    },
+                },
                 Err(e) => {
-                    tracing::warn!("[Scheduler] Failed to list accounts: {}", e);
+                    tracing::error!("[Scheduler] spawn_blocking panic for list_accounts: {}", e);
                     continue;
                 },
             };
@@ -179,25 +200,18 @@ pub fn start(state: AppState) {
                     match account::fetch_quota_with_retry(&mut acc).await {
                         Ok(_) => {
                             if let Some(quota) = acc.quota.clone() {
-                                if let Err(e) = account::update_account_quota_async(
+                                let protected_models = match account::update_account_quota_async(
                                     acc.id.clone(),
                                     quota.clone(),
                                 )
                                 .await
                                 {
-                                    tracing::warn!(
-                                        "[Warmup] Failed to update quota for {}: {}",
-                                        email,
-                                        e
-                                    );
-                                }
-                                let protected_models = match account::load_account(&acc.id) {
                                     Ok(updated) => {
                                         Some(updated.protected_models.iter().cloned().collect())
                                     },
                                     Err(e) => {
                                         tracing::warn!(
-                                            "[Warmup] Failed to reload protected models for {}: {}",
+                                            "[Warmup] Failed to update quota for {}: {}",
                                             email,
                                             e
                                         );

@@ -2,6 +2,8 @@
 
 use axum::{extract::State, http::StatusCode, response::Json};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use antigravity_core::modules::account;
@@ -44,25 +46,23 @@ pub async fn refresh_account_quota(
 
     match account::fetch_quota_with_retry(&mut acc).await {
         Ok(quota) => {
-            if let Err(e) =
-                account::update_account_quota_async(payload.account_id.clone(), quota.clone()).await
+            let updated_account = match account::update_account_quota_async(
+                payload.account_id.clone(),
+                quota.clone(),
+            )
+            .await
             {
-                tracing::warn!("Failed to update quota protection: {}", e);
-                if let Err(e) = account::save_account(&acc) {
-                    tracing::warn!("Failed to save account fallback: {}", e);
-                }
-            }
-            let protected_models = match account::load_account(&payload.account_id) {
-                Ok(updated) => Some(updated.protected_models.iter().cloned().collect()),
+                Ok(updated) => Some(updated),
                 Err(e) => {
-                    tracing::warn!(
-                        "Failed to reload account for protected models {}: {}",
-                        acc.email,
-                        e
-                    );
+                    tracing::warn!("Failed to update quota protection: {}", e);
+                    if let Err(e) = account::save_account(&acc) {
+                        tracing::warn!("Failed to save account fallback: {}", e);
+                    }
                     None
                 },
             };
+            let protected_models =
+                updated_account.map(|updated| updated.protected_models.iter().cloned().collect());
             if let (Some(repo), Some(pg_account_id)) = (state.repository(), pg_account_id.as_ref())
             {
                 if let Err(e) =
@@ -91,6 +91,8 @@ pub async fn refresh_all_quotas(
         Result<(String, String, antigravity_types::models::QuotaData), String>,
     > = JoinSet::new();
 
+    let semaphore = Arc::new(Semaphore::new(10));
+
     for mut acc in accounts {
         if acc.disabled {
             continue;
@@ -98,7 +100,13 @@ pub async fn refresh_all_quotas(
 
         let account_id = acc.id.clone();
         let email = acc.email.clone();
+        let permit =
+            semaphore.clone().acquire_owned().await.map_err(|e| {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("Semaphore error: {}", e))
+            })?;
+
         join_set.spawn(async move {
+            let _permit = permit;
             let quota = account::fetch_quota_with_retry(&mut acc)
                 .await
                 .map_err(|e| format!("{}: {}", acc.email, e))?;
@@ -112,22 +120,20 @@ pub async fn refresh_all_quotas(
     while let Some(result) = join_set.join_next().await {
         match result {
             Ok(Ok((account_id, email, quota))) => {
-                if let Err(e) =
-                    account::update_account_quota_async(account_id.clone(), quota.clone()).await
-                {
-                    tracing::warn!("Quota protection update failed for {}: {}", account_id, e);
-                }
-                let protected_models = match account::load_account(&account_id) {
-                    Ok(updated) => Some(updated.protected_models.iter().cloned().collect()),
-                    Err(e) => {
-                        tracing::warn!(
-                            "Failed to reload account for protected models {}: {}",
-                            email,
-                            e
-                        );
-                        None
-                    },
-                };
+                let protected_models =
+                    match account::update_account_quota_async(account_id.clone(), quota.clone())
+                        .await
+                    {
+                        Ok(updated) => Some(updated.protected_models.iter().cloned().collect()),
+                        Err(e) => {
+                            tracing::warn!(
+                                "Quota protection update failed for {}: {}",
+                                account_id,
+                                e
+                            );
+                            None
+                        },
+                    };
                 if let Some(repo) = state.repository() {
                     match repo.get_account_by_email(&email).await {
                         Ok(Some(pg_account)) => {
@@ -195,8 +201,6 @@ pub async fn toggle_proxy_status(
 
     acc.proxy_disabled = !payload.enable;
 
-    account::save_account(&acc).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
-
     if let Some(repo) = state.repository() {
         match repo.get_account_by_email(&acc.email).await {
             Ok(Some(mut pg_account)) => {
@@ -213,6 +217,8 @@ pub async fn toggle_proxy_status(
             },
         }
     }
+
+    account::save_account(&acc).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     if let Err(e) = state.reload_accounts().await {
         tracing::warn!("Failed to reload accounts after proxy toggle: {}", e);
@@ -262,19 +268,15 @@ pub async fn warmup_account(
     match account::fetch_quota_with_retry(&mut acc).await {
         Ok(_) => {
             if let Some(quota) = acc.quota.clone() {
-                if let Err(e) =
-                    account::update_account_quota_async(acc.id.clone(), quota.clone()).await
+                let protected_models = match account::update_account_quota_async(
+                    acc.id.clone(),
+                    quota.clone(),
+                )
+                .await
                 {
-                    tracing::warn!("Failed to update quota for {}: {}", acc.email, e);
-                }
-                let protected_models = match account::load_account(&acc.id) {
                     Ok(updated) => Some(updated.protected_models.iter().cloned().collect()),
                     Err(e) => {
-                        tracing::warn!(
-                            "Failed to reload account for protected models {}: {}",
-                            acc.email,
-                            e
-                        );
+                        tracing::warn!("Failed to update quota for {}: {}", acc.email, e);
                         None
                     },
                 };
@@ -314,6 +316,7 @@ pub async fn warmup_all_accounts(
     }
 
     let mut join_set: JoinSet<Result<WarmupResult, String>> = JoinSet::new();
+    let semaphore = Arc::new(Semaphore::new(10));
 
     for mut acc in accounts {
         if acc.disabled || acc.proxy_disabled {
@@ -322,7 +325,13 @@ pub async fn warmup_all_accounts(
 
         let account_id = acc.id.clone();
         let email = acc.email.clone();
+        let permit =
+            semaphore.clone().acquire_owned().await.map_err(|e| {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("Semaphore error: {}", e))
+            })?;
+
         join_set.spawn(async move {
+            let _permit = permit;
             account::fetch_quota_with_retry(&mut acc)
                 .await
                 .map_err(|e| format!("{}: {}", email, e))?;
@@ -338,24 +347,17 @@ pub async fn warmup_all_accounts(
         match result {
             Ok(Ok(warmup_result)) => {
                 if let Some(quota) = warmup_result.quota {
-                    if let Err(e) = account::update_account_quota_async(
+                    let protected_models = match account::update_account_quota_async(
                         warmup_result.account_id.clone(),
                         quota.clone(),
                     )
                     .await
                     {
-                        tracing::warn!(
-                            "Failed to update quota for {}: {}",
-                            warmup_result.account_id,
-                            e
-                        );
-                    }
-                    let protected_models = match account::load_account(&warmup_result.account_id) {
                         Ok(updated) => Some(updated.protected_models.iter().cloned().collect()),
                         Err(e) => {
                             tracing::warn!(
-                                "Failed to reload account for protected models {}: {}",
-                                warmup_result.email,
+                                "Failed to update quota for {}: {}",
+                                warmup_result.account_id,
                                 e
                             );
                             None

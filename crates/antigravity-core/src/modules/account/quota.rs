@@ -1,6 +1,6 @@
 //! Quota update with protection logic.
 
-use crate::models::QuotaData;
+use crate::models::{Account, QuotaData};
 use crate::modules::logger;
 
 use super::index::ACCOUNT_INDEX_LOCK;
@@ -11,7 +11,7 @@ use super::storage::{load_account, save_account};
 /// When quota protection is enabled in config:
 /// - If a monitored model's percentage <= threshold, the model is added to protected_models
 /// - If a monitored model's percentage > threshold and was protected, it's removed
-pub fn update_account_quota(account_id: &str, quota: QuotaData) -> Result<(), String> {
+pub fn update_account_quota(account_id: &str, quota: QuotaData) -> Result<Account, String> {
     use crate::modules::config::load_config;
     use crate::proxy::common::model_mapping::normalize_to_standard_id;
 
@@ -85,5 +85,6 @@ pub fn update_account_quota(account_id: &str, quota: QuotaData) -> Result<(), St
         }
     }
 
-    save_account(&account)
+    save_account(&account)?;
+    Ok(account)
 }

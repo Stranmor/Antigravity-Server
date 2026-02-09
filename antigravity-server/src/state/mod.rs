@@ -103,11 +103,11 @@ impl AppState {
     }
 
     pub fn build_proxy_router(&self) -> Router {
+        let upstream_proxy = self.inner.proxy_config.blocking_read().upstream_proxy.clone();
         build_proxy_router_with_shared_state(
             self.inner.token_manager.clone(),
             self.inner.custom_mapping.clone(),
-            // We need to get upstream_proxy, but it's in proxy_config - for now use default
-            antigravity_types::models::UpstreamProxyConfig::default(),
+            upstream_proxy,
             self.inner.security_config.clone(),
             self.inner.zai_config.clone(),
             self.inner.monitor.clone(),

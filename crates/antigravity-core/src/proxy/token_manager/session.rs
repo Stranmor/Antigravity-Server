@@ -47,9 +47,8 @@ impl TokenManager {
 
     /// Unbind session from its current account due to failures.
     pub(crate) fn unbind_session_on_failures(&self, session_id: &str) -> Option<String> {
-        if let Some(bound_id) = self.session_accounts.get(session_id).map(|v| v.clone()) {
+        if let Some((_, bound_id)) = self.session_accounts.remove(session_id) {
             let failures = self.get_session_failures(session_id);
-            self.session_accounts.remove(session_id);
             self.clear_session_failures(session_id);
             tracing::warn!(
                 "Session {} unbound from {} after {} consecutive failures",

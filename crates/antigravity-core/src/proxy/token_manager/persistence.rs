@@ -34,10 +34,21 @@ impl TokenManager {
         account_id: &str,
         project_id: &str,
     ) -> Result<(), String> {
-        if let Some(repo) = self.get_repo().await {
-            return self.save_project_id_to_db(&repo, account_id, project_id).await;
+        let repo = self.get_repo().await;
+        let file_result = self.save_project_id_to_file(account_id, project_id).await;
+
+        let db_result = if let Some(repo) = repo {
+            self.save_project_id_to_db(&repo, account_id, project_id).await
+        } else {
+            Ok(())
+        };
+
+        match (file_result, db_result) {
+            (Ok(_), Ok(_)) => Ok(()),
+            (Err(e1), Err(e2)) => Err(format!("Dual-write failure: [File: {}] [DB: {}]", e1, e2)),
+            (Err(e), Ok(_)) => Err(format!("File write failure (DB succeeded): {}", e)),
+            (Ok(_), Err(e)) => Err(format!("DB write failure (File succeeded): {}", e)),
         }
-        self.save_project_id_to_file(account_id, project_id).await
     }
 
     async fn save_project_id_to_db(
@@ -82,10 +93,21 @@ impl TokenManager {
         account_id: &str,
         token_response: &oauth::TokenResponse,
     ) -> Result<(), String> {
-        if let Some(repo) = self.get_repo().await {
-            return self.save_refreshed_token_to_db(&repo, account_id, token_response).await;
+        let repo = self.get_repo().await;
+        let file_result = self.save_refreshed_token_to_file(account_id, token_response).await;
+
+        let db_result = if let Some(repo) = repo {
+            self.save_refreshed_token_to_db(&repo, account_id, token_response).await
+        } else {
+            Ok(())
+        };
+
+        match (file_result, db_result) {
+            (Ok(_), Ok(_)) => Ok(()),
+            (Err(e1), Err(e2)) => Err(format!("Dual-write failure: [File: {}] [DB: {}]", e1, e2)),
+            (Err(e), Ok(_)) => Err(format!("File write failure (DB succeeded): {}", e)),
+            (Ok(_), Err(e)) => Err(format!("DB write failure (File succeeded): {}", e)),
         }
-        self.save_refreshed_token_to_file(account_id, token_response).await
     }
 
     async fn save_refreshed_token_to_db(
@@ -95,9 +117,14 @@ impl TokenManager {
         token_response: &oauth::TokenResponse,
     ) -> Result<(), String> {
         let expiry = chrono::Utc::now() + chrono::Duration::seconds(token_response.expires_in);
-        repo.update_token_credentials(account_id, &token_response.access_token, expiry)
-            .await
-            .map_err(|e| format!("DB write: {}", e))?;
+        repo.update_token_credentials(
+            account_id,
+            &token_response.access_token,
+            token_response.refresh_token.as_deref(),
+            expiry,
+        )
+        .await
+        .map_err(|e| format!("DB write: {}", e))?;
         tracing::debug!("Saved refreshed token to DB for account {}", account_id);
         Ok(())
     }
@@ -128,6 +155,10 @@ impl TokenManager {
         content["token"]["expiry_timestamp"] =
             serde_json::Value::Number((now + token_response.expires_in).into());
 
+        if let Some(rt) = &token_response.refresh_token {
+            content["token"]["refresh_token"] = serde_json::Value::String(rt.clone());
+        }
+
         atomic_write_json(&path, &content).await?;
         tracing::debug!("Saved refreshed token to file for account {}", account_id);
         Ok(())
@@ -138,10 +169,21 @@ impl TokenManager {
         account_id: &str,
         reason: &str,
     ) -> Result<(), String> {
-        if let Some(repo) = self.get_repo().await {
-            return self.disable_account_in_db(&repo, account_id, reason).await;
+        let repo = self.get_repo().await;
+        let file_result = self.disable_account_in_file(account_id, reason).await;
+
+        let db_result = if let Some(repo) = repo {
+            self.disable_account_in_db(&repo, account_id, reason).await
+        } else {
+            Ok(())
+        };
+
+        match (file_result, db_result) {
+            (Ok(_), Ok(_)) => Ok(()),
+            (Err(e1), Err(e2)) => Err(format!("Dual-write failure: [File: {}] [DB: {}]", e1, e2)),
+            (Err(e), Ok(_)) => Err(format!("File write failure (DB succeeded): {}", e)),
+            (Ok(_), Err(e)) => Err(format!("DB write failure (File succeeded): {}", e)),
         }
-        self.disable_account_in_file(account_id, reason).await
     }
 
     async fn disable_account_in_db(

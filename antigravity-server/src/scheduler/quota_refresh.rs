@@ -9,17 +9,14 @@ use antigravity_types::models::QuotaData;
 
 /// Persist quota to both JSON and PostgreSQL (if available).
 async fn persist_quota(state: &AppState, account_id: &str, email: &str, quota: QuotaData) {
-    if let Err(e) = account::update_account_quota_async(account_id.to_owned(), quota.clone()).await
-    {
-        tracing::warn!("[QuotaRefresh] Failed to update JSON quota for {account_id}: {e}");
-    }
-    let protected_models = match account::load_account(account_id) {
-        Ok(updated) => Some(updated.protected_models.iter().cloned().collect()),
-        Err(e) => {
-            tracing::warn!("[QuotaRefresh] Failed to reload protected models for {email}: {e}");
-            None
-        },
-    };
+    let protected_models =
+        match account::update_account_quota_async(account_id.to_owned(), quota.clone()).await {
+            Ok(updated) => Some(updated.protected_models.iter().cloned().collect()),
+            Err(e) => {
+                tracing::warn!("[QuotaRefresh] Failed to update JSON quota for {account_id}: {e}");
+                return;
+            },
+        };
     if let Some(repo) = state.repository() {
         match repo.get_account_by_email(email).await {
             Ok(Some(pg_account)) => {
@@ -48,10 +45,16 @@ pub fn start_quota_refresh(state: AppState) {
         loop {
             check_interval.tick().await;
 
-            let app_config = match config::load_config() {
-                Ok(cfg) => cfg,
+            let app_config = match tokio::task::spawn_blocking(config::load_config).await {
+                Ok(res) => match res {
+                    Ok(cfg) => cfg,
+                    Err(e) => {
+                        tracing::warn!("[QuotaRefresh] Failed to load config: {}", e);
+                        continue;
+                    },
+                },
                 Err(e) => {
-                    tracing::warn!("[QuotaRefresh] Failed to load config: {}", e);
+                    tracing::error!("[QuotaRefresh] spawn_blocking panic for load_config: {}", e);
                     continue;
                 },
             };
@@ -65,10 +68,16 @@ pub fn start_quota_refresh(state: AppState) {
                 if app_config.refresh_interval < 5 { 15 } else { app_config.refresh_interval };
             let interval_secs = i64::from(interval_minutes) * 60_i64;
 
-            let accounts = match account::list_accounts() {
-                Ok(accs) => accs,
+            let accounts = match tokio::task::spawn_blocking(account::list_accounts).await {
+                Ok(res) => match res {
+                    Ok(accs) => accs,
+                    Err(e) => {
+                        tracing::warn!("[QuotaRefresh] Failed to list accounts: {}", e);
+                        continue;
+                    },
+                },
                 Err(e) => {
-                    tracing::warn!("[QuotaRefresh] Failed to list accounts: {}", e);
+                    tracing::error!("[QuotaRefresh] spawn_blocking panic for list_accounts: {}", e);
                     continue;
                 },
             };

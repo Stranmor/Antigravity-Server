@@ -6,6 +6,7 @@ mod tests;
 use reqwest::Client;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::time::Duration;
 
 use super::user_agent::DEFAULT_USER_AGENT;
@@ -42,35 +43,55 @@ fn resolve_upstream_urls(explicit: Option<Vec<String>>) -> Vec<String> {
 pub struct UpstreamClient {
     http_client: Client,
     base_urls: Vec<String>,
+    proxy_config: Arc<tokio::sync::RwLock<crate::proxy::config::UpstreamProxyConfig>>,
 }
 
 impl UpstreamClient {
     #[allow(clippy::expect_used, reason = "HTTP client is required for server to function")]
     pub fn new(
-        proxy_config: Option<crate::proxy::config::UpstreamProxyConfig>,
+        proxy_config: crate::proxy::config::UpstreamProxyConfig,
         base_urls: Option<Vec<String>>,
     ) -> Self {
         let base_urls = resolve_upstream_urls(base_urls);
+        let proxy_config = Arc::new(tokio::sync::RwLock::new(proxy_config));
 
-        let mut builder = Client::builder()
+        let http_client = Client::builder()
             .connect_timeout(Duration::from_secs(20))
             .pool_max_idle_per_host(16)
             .pool_idle_timeout(Duration::from_secs(90))
             .tcp_keepalive(Duration::from_secs(60))
             .timeout(Duration::from_secs(600))
-            .user_agent(DEFAULT_USER_AGENT);
+            .user_agent(DEFAULT_USER_AGENT)
+            .build()
+            .expect("Failed to create HTTP client");
 
-        if let Some(config) = proxy_config {
-            if config.enabled && !config.url.is_empty() {
-                if let Ok(proxy) = reqwest::Proxy::all(&config.url) {
-                    builder = builder.proxy(proxy);
-                    tracing::info!("UpstreamClient enabled proxy: {}", config.url);
-                }
-            }
+        Self { http_client, base_urls, proxy_config }
+    }
+
+    pub async fn update_proxy_config(&self, config: crate::proxy::config::UpstreamProxyConfig) {
+        let mut guard = self.proxy_config.write().await;
+        *guard = config;
+    }
+
+    async fn get_client(&self) -> Client {
+        let config = self.proxy_config.read().await;
+        if config.enabled && !config.url.is_empty() {
+            // If proxy is enabled, we need a client with that proxy.
+            // For performance, we could cache the client, but for now we build it.
+            // In a real high-load scenario, we'd use a client pool or cache.
+            Client::builder()
+                .connect_timeout(Duration::from_secs(20))
+                .pool_max_idle_per_host(16)
+                .pool_idle_timeout(Duration::from_secs(90))
+                .tcp_keepalive(Duration::from_secs(60))
+                .timeout(Duration::from_secs(600))
+                .user_agent(DEFAULT_USER_AGENT)
+                .proxy(reqwest::Proxy::all(&config.url).expect("Invalid proxy URL"))
+                .build()
+                .expect("Failed to build proxied client")
+        } else {
+            self.http_client.clone()
         }
-
-        let http_client = builder.build().expect("Failed to create HTTP client");
-        Self { http_client, base_urls }
     }
 
     pub async fn call_v1_internal(
@@ -108,7 +129,7 @@ impl UpstreamClient {
                 .build()
                 .map_err(|e| format!("Failed to create WARP client: {}", e))?
         } else {
-            self.http_client.clone()
+            self.get_client().await
         };
 
         let headers = request_executor::build_headers(access_token, extra_headers)?;
@@ -133,8 +154,9 @@ impl UpstreamClient {
         extra_headers: HashMap<String, String>,
     ) -> Result<reqwest::Response, String> {
         let headers = request_executor::build_headers(access_token, extra_headers)?;
+        let client = self.get_client().await;
         request_executor::execute_with_fallback(
-            &self.http_client,
+            &client,
             method,
             headers,
             &body,

@@ -47,10 +47,16 @@ pub async fn monitor_middleware(
     };
 
     let monitor = state.monitor.clone();
-    let request = if method == "POST" {
+    let content_length = request
+        .headers()
+        .get(axum::http::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<usize>().ok());
+
+    let request = if method == "POST" && content_length.is_some_and(|l| l <= 2 * 1024 * 1024) {
         let (parts, body) = request.into_parts();
-        // Limit request body inspection to 1MB to avoid DoS
-        match axum::body::to_bytes(body, 1024 * 1024).await {
+        // Limit request body inspection to 2MB to avoid DoS
+        match axum::body::to_bytes(body, 2 * 1024 * 1024).await {
             Ok(bytes) => {
                 if model.is_none() {
                     model = serde_json::from_slice::<Value>(&bytes).ok().and_then(|v| {
@@ -59,33 +65,11 @@ pub async fn monitor_middleware(
                 }
                 Request::from_parts(parts, Body::from(bytes))
             },
-            Err(_) => {
-                // If body > 1MB, we still want to process it, just without inspection
-                // But axum::body::to_bytes consumes the body. We need to handle this.
-                // For now, keep the original logic but with a more reasonable limit.
-                let duration = start.elapsed().as_millis() as u64;
-                let log = ProxyRequestLog {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    timestamp: chrono::Utc::now().timestamp_millis(),
-                    method,
-                    url: uri,
-                    status: StatusCode::PAYLOAD_TOO_LARGE.as_u16(),
-                    duration,
-                    model,
-                    mapped_model: None,
-                    mapping_reason: None,
-                    account_email: None,
-                    error: Some("Request body too large to inspect".to_string()),
-                    request_body: None,
-                    response_body: None,
-                    input_tokens: None,
-                    output_tokens: None,
-                    cached_tokens: None,
-                };
-                monitor.log_request(log).await;
+            Err(e) => {
+                tracing::error!("Failed to buffer request body: {}", e);
                 return Response::builder()
-                    .status(StatusCode::PAYLOAD_TOO_LARGE)
-                    .body(Body::from("Request body too large"))
+                    .status(StatusCode::BAD_GATEWAY)
+                    .body(Body::from("Failed to buffer request body"))
                     .unwrap_or_else(|_| Response::new(Body::empty()));
             },
         }
@@ -214,36 +198,66 @@ async fn handle_json_response(
     mut log: ProxyRequestLog,
     monitor: Arc<crate::proxy::monitor::ProxyMonitor>,
 ) -> Response {
+    let content_length = response
+        .headers()
+        .get(axum::http::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<usize>().ok());
+
+    // If response is too large, don't even try to buffer it in background
+    if content_length.is_some_and(|l| l > 2 * 1024 * 1024) {
+        if log.status >= 400 {
+            log.error = Some("Large upstream error response".to_string());
+        }
+        monitor.log_request(log).await;
+        return response;
+    }
+
     let (parts, body) = response.into_parts();
-    // Limit response body inspection to 1MB to avoid DoS and excessive latency
-    match axum::body::to_bytes(body, 1024 * 1024).await {
-        Ok(bytes) => {
-            if let Ok(s) = std::str::from_utf8(&bytes) {
-                if let Ok(json) = serde_json::from_str::<Value>(s) {
-                    if let Some(usage) = json.get("usage").or(json.get("usageMetadata")) {
-                        extract_usage_from_json(usage, &mut log);
+    let mut stream = body.into_data_stream();
+    let (tx, rx) = tokio::sync::mpsc::channel(64);
+
+    tokio::spawn(async move {
+        let mut buffer = Vec::new();
+        let mut failed_to_buffer = false;
+
+        while let Some(chunk_res) = stream.next().await {
+            match chunk_res {
+                Ok(chunk) => {
+                    if !failed_to_buffer {
+                        if buffer.len() + chunk.len() <= 2 * 1024 * 1024 {
+                            buffer.extend_from_slice(&chunk);
+                        } else {
+                            failed_to_buffer = true;
+                            buffer.clear();
+                            buffer.shrink_to_fit();
+                        }
                     }
+                    if tx.send(Ok::<_, axum::Error>(chunk)).await.is_err() {
+                        break;
+                    }
+                },
+                Err(e) => {
+                    let _ = tx.send(Err(axum::Error::new(e))).await;
+                    break;
+                },
+            }
+        }
+
+        if !failed_to_buffer && !buffer.is_empty() {
+            if let Ok(json) = serde_json::from_slice::<Value>(&buffer) {
+                if let Some(usage) = json.get("usage").or(json.get("usageMetadata")) {
+                    extract_usage_from_json(usage, &mut log);
                 }
             }
-            if log.status >= 400 {
-                log.error = Some("Upstream error response received".to_string());
-            }
-            log.response_body = None;
-            monitor.log_request(log).await;
-            Response::from_parts(parts, Body::from(bytes))
-        },
-        Err(_) => {
-            // If response > 1MB, we log it as too large but still return it
-            // Note: axum::body::to_bytes consumes the body.
-            // For now, we return BAD_GATEWAY as we can't easily reconstruct the stream here
-            // without significant complexity.
-            log.response_body = None;
-            log.error = Some("Response too large to log".to_string());
-            monitor.log_request(log).await;
-            Response::builder()
-                .status(StatusCode::BAD_GATEWAY)
-                .body(Body::from("Upstream response too large"))
-                .unwrap_or_else(|_| Response::new(Body::empty()))
-        },
-    }
+        }
+
+        if log.status >= 400 {
+            log.error = Some("Upstream error response received".to_string());
+        }
+        log.response_body = None;
+        monitor.log_request(log).await;
+    });
+
+    Response::from_parts(parts, Body::from_stream(tokio_stream::wrappers::ReceiverStream::new(rx)))
 }

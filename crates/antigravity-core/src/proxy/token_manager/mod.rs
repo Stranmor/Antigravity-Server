@@ -109,8 +109,11 @@ impl TokenManager {
         let tokens = self.tokens.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+            let mut ticks = 0u64;
             loop {
                 interval.tick().await;
+                ticks += 1;
+
                 let cleaned = tracker.cleanup_expired();
                 if cleaned > 0 {
                     tracing::info!(
@@ -123,12 +126,15 @@ impl TokenManager {
                 let active_ids: std::collections::HashSet<String> =
                     tokens.iter().map(|e| e.key().clone()).collect();
 
-                let before = session_failures.len();
-                session_failures.retain(|_, v| v.load(Ordering::Relaxed) > 0);
-                let cleaned_sessions = before - session_failures.len();
-                if cleaned_sessions > 0 {
-                    tracing::debug!("Cleaned {} stale session failure record(s)", cleaned_sessions);
+                if ticks.is_multiple_of(30) {
+                    // Periodically clear all failure counters to prevent memory leaks
+                    // from sessions that failed once and were never used again.
+                    session_failures.clear();
+                    tracing::info!("Periodic cleanup: cleared all session failure counters");
+                } else {
+                    session_failures.retain(|_, v| v.load(Ordering::Relaxed) > 0);
                 }
+
                 // Clean stale session bindings (keep max 10000)
                 let session_count = session_accounts.len();
                 if session_count > 10_000 {

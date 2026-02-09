@@ -60,7 +60,7 @@ pub fn build_proxy_router_with_shared_state(
         http_client,
         upstream_proxy: Arc::clone(&proxy_state),
         upstream: Arc::new(crate::proxy::upstream::client::UpstreamClient::new(
-            Some(upstream_proxy),
+            upstream_proxy,
             None,
         )),
         zai,
@@ -134,16 +134,16 @@ pub fn build_proxy_router_with_shared_state(
             post(|| async { StatusCode::OK }),
         )
         .route("/v1/api/event_logging", post(|| async { StatusCode::OK }))
+        .layer(axum::middleware::from_fn_with_state(
+            security_config,
+            crate::proxy::middleware::auth_middleware,
+        ))
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             crate::proxy::middleware::monitor::monitor_middleware,
         ))
         .layer(TraceLayer::new_for_http())
-        .layer(axum::middleware::from_fn_with_state(
-            security_config,
-            crate::proxy::middleware::auth_middleware,
-        ))
         .with_state(state)
 }
 

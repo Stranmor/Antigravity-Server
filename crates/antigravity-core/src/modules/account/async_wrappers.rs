@@ -20,7 +20,7 @@ pub async fn load_account_async(account_id: String) -> Result<Account, String> {
 pub async fn update_account_quota_async(
     account_id: String,
     quota: QuotaData,
-) -> Result<(), String> {
+) -> Result<Account, String> {
     tokio::task::spawn_blocking(move || update_account_quota(&account_id, quota))
         .await
         .map_err(|e| format!("Task join error: {}", e))?

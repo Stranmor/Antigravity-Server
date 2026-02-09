@@ -98,10 +98,13 @@ pub async fn fetch_quota_with_retry(account: &mut Account) -> AppResult<QuotaDat
             }
         }
 
-        if let Err(e) = update_account_quota_async(account.id.clone(), quota_data.clone()).await {
-            logger::log_warn(&format!("Failed to save quota for {}: {}", account.email, e));
-        } else if let Ok(updated) = load_account_async(account.id.clone()).await {
-            *account = updated;
+        match update_account_quota_async(account.id.clone(), quota_data.clone()).await {
+            Ok(updated) => {
+                *account = updated;
+            },
+            Err(e) => {
+                logger::log_warn(&format!("Failed to save quota for {}: {}", account.email, e));
+            },
         }
     }
 
