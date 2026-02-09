@@ -44,8 +44,10 @@ impl DashboardStats {
         clippy::as_conversions,
         clippy::cast_possible_truncation,
         clippy::cast_possible_wrap,
+        clippy::cast_precision_loss,
+        clippy::float_arithmetic,
         clippy::integer_division,
-        reason = "Statistics calculation with bounded values, len() fits in i32"
+        reason = "Statistics calculation with bounded values and float averages"
     )]
     pub fn from_accounts(accounts: &[Account]) -> Self {
         let mut stats = Self { total_accounts: accounts.len(), ..Default::default() };
@@ -54,28 +56,55 @@ impl DashboardStats {
             return stats;
         }
 
-        let mut gemini_sum = 0i32;
-        let mut gemini_image_sum = 0i32;
-        let mut claude_sum = 0i32;
+        let mut gemini_sum = 0f64;
+        let mut gemini_image_sum = 0f64;
+        let mut claude_sum = 0f64;
+        let mut gemini_account_count = 0i32;
+        let mut gemini_image_account_count = 0i32;
+        let mut claude_account_count = 0i32;
 
         for account in accounts {
             if let Some(ref quota) = account.quota {
+                let mut gemini_total = 0i32;
+                let mut gemini_count = 0i32;
+                let mut gemini_image_total = 0i32;
+                let mut gemini_image_count = 0i32;
+                let mut claude_total = 0i32;
+                let mut claude_count = 0i32;
+
                 for model in &quota.models {
                     let percent = model.percentage;
 
-                    if model.name.contains("gemini-3-pro") || model.name.contains("flash") {
-                        gemini_sum += percent;
+                    if model.name.contains("gemini") || model.name.contains("flash") {
+                        gemini_total += percent;
+                        gemini_count += 1;
                     }
                     if model.name.contains("image") {
-                        gemini_image_sum += percent;
+                        gemini_image_total += percent;
+                        gemini_image_count += 1;
                     }
                     if model.name.contains("claude") {
-                        claude_sum += percent;
+                        claude_total += percent;
+                        claude_count += 1;
                     }
                 }
 
+                if gemini_count > 0_i32 {
+                    gemini_sum += f64::from(gemini_total) / f64::from(gemini_count);
+                    gemini_account_count += 1;
+                }
+                if gemini_image_count > 0_i32 {
+                    gemini_image_sum +=
+                        f64::from(gemini_image_total) / f64::from(gemini_image_count);
+                    gemini_image_account_count += 1;
+                }
+                if claude_count > 0_i32 {
+                    claude_sum += f64::from(claude_total) / f64::from(claude_count);
+                    claude_account_count += 1;
+                }
+
                 // Tier determination
-                let tier = quota.subscription_tier.clone().unwrap_or_default().to_lowercase();
+                let tier = quota.subscription_tier.as_deref().unwrap_or_default().to_lowercase();
                 if tier.contains("ultra") {
                     stats.ultra_count += 1;
                 } else if tier.contains("pro") {
@@ -98,11 +127,15 @@ impl DashboardStats {
             clippy::as_conversions,
             reason = "usize to i32 is safe for account counts < 2 billion"
         )]
-        let n = accounts.len() as i32;
-        if n > 0_i32 {
-            stats.avg_gemini_quota = gemini_sum / n;
-            stats.avg_gemini_image_quota = gemini_image_sum / n;
-            stats.avg_claude_quota = claude_sum / n;
+        if gemini_account_count > 0_i32 {
+            stats.avg_gemini_quota = (gemini_sum / f64::from(gemini_account_count)).round() as i32;
+        }
+        if gemini_image_account_count > 0_i32 {
+            stats.avg_gemini_image_quota =
+                (gemini_image_sum / f64::from(gemini_image_account_count)).round() as i32;
+        }
+        if claude_account_count > 0_i32 {
+            stats.avg_claude_quota = (claude_sum / f64::from(claude_account_count)).round() as i32;
         }
 
         stats
