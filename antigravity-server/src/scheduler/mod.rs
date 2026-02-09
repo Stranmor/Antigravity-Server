@@ -41,7 +41,7 @@ pub fn start_oauth_cleanup(state: AppState) {
             let before = state.inner.oauth_states.len();
             state.inner.oauth_states.retain(|_, created_at| created_at.elapsed().as_secs() < 600);
             let after = state.inner.oauth_states.len();
-            let removed = before - after;
+            let removed = before.saturating_sub(after);
             if removed > 0 {
                 tracing::debug!("[Scheduler] Cleaned up {} expired OAuth states", removed);
             }
