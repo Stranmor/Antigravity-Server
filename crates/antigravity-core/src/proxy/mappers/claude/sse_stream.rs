@@ -8,6 +8,14 @@ use bytes::Bytes;
 use futures::Stream;
 use std::pin::Pin;
 
+/// Guard that aborts a spawned task when dropped (client disconnect cleanup)
+struct AbortOnDrop<T>(tokio::task::JoinHandle<T>);
+impl<T> Drop for AbortOnDrop<T> {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 /// Create Gemini SSE stream to Claude SSE stream converter
 pub fn create_claude_sse_stream(
     mut gemini_stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
@@ -21,6 +29,7 @@ pub fn create_claude_sse_stream(
     use async_stream::stream;
     use bytes::BytesMut;
     use futures::StreamExt;
+    use tokio::time::MissedTickBehavior;
 
     Box::pin(stream! {
         let mut state = StreamingState::new();
@@ -29,19 +38,28 @@ pub fn create_claude_sse_stream(
         state.context_limit = context_limit;
         state.estimated_tokens = estimated_tokens;
         let mut buffer = BytesMut::new();
-        const MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10MB
+        const MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024;
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<Bytes, reqwest::Error>>(2);
+
+        let pump = tokio::spawn(async move {
+            while let Some(item) = gemini_stream.next().await {
+                if tx.send(item).await.is_err() {
+                    break;
+                }
+            }
+        });
+        let _pump_guard = AbortOnDrop(pump);
+
+        let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(15));
+        heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        heartbeat.tick().await;
 
         loop {
-            // 15 second heartbeat keepalive: if no data for long time, send ping packet
-            let next_chunk = tokio::time::timeout(
-                std::time::Duration::from_secs(15),
-                gemini_stream.next()
-            ).await;
-
-            match next_chunk {
-                Ok(Some(chunk_result)) => {
-                    match chunk_result {
-                        Ok(chunk) => {
+            tokio::select! {
+                maybe_chunk = rx.recv() => {
+                    match maybe_chunk {
+                        Some(Ok(chunk)) => {
                             buffer.extend_from_slice(&chunk);
 
                             if buffer.len() > MAX_BUFFER_SIZE {
@@ -50,7 +68,6 @@ pub fn create_claude_sse_stream(
                                 break;
                             }
 
-                            // Process complete lines
                             while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
                                 let line_raw = buffer.split_to(pos + 1);
                                 if let Ok(line_str) = std::str::from_utf8(&line_raw) {
@@ -65,22 +82,20 @@ pub fn create_claude_sse_stream(
                                 }
                             }
                         }
-                        Err(e) => {
+                        Some(Err(e)) => {
                             state.stream_errored = true;
                             yield Err(format!("Stream error: {}", e));
                             break;
                         }
+                        None => break,
                     }
                 }
-                Ok(None) => break, // Stream ended normally
-                Err(_) => {
-                    // Timeout, send heartbeat packet (SSE Comment format)
+                _ = heartbeat.tick() => {
                     yield Ok(Bytes::from(": ping\n\n"));
                 }
             }
         }
 
-        // Ensure termination events are sent
         for chunk in emit_force_stop(&mut state) {
             yield Ok(chunk);
         }
