@@ -174,26 +174,26 @@ vendor/
 | `proxy/common/json_schema/recursive.rs` | `else` fallback block treats ALL remaining fields as schemas — data fields like `enum` values or `const` containing object-like structures could be corrupted by normalization | Low |
 | `modules/repository.rs` | `update_token_credentials` accepts both `expires_in` and `expiry_timestamp` — redundant, allows conflicting data | Low |
 | `modules/oauth.rs` | Hardcoded OAuth client secret makes rotation difficult | Low |
-| `proxy/middleware/monitor.rs` | DoS Risk: parses entire request/response bodies (up to 100MB) into JSON DOM. Should use streaming parser or limit size. | High |
-| `proxy/middleware/monitor.rs` | Latency: `handle_json_response` buffers full response before forwarding, breaking streaming and increasing TTFB. Destroys responses >1MB. | High |
-| `proxy/middleware/monitor.rs` | Request body handling returns `Body::empty()` on buffering failure — should return 400/500 instead of forwarding corrupted request. | High |
+| `proxy/middleware/monitor.rs` | ~~DoS Risk: parses entire request/response bodies (up to 100MB) into JSON DOM.~~ **Partially mitigated [2026-02-09]**: Actual limit is 2MB, not 100MB. SSE uses mpsc channel (streaming preserved). Remaining: 2MB buffer per connection under high concurrency still causes memory pressure. | Medium |
+| `proxy/middleware/monitor.rs` | ~~Latency: `handle_json_response` buffers full response before forwarding.~~ **Partially mitigated [2026-02-09]**: Actually uses mpsc channel — client receives data as it arrives. Server-side buffering up to 2MB for usage extraction. | Low |
+| `proxy/middleware/monitor.rs` | ~~Request body handling returns `Body::empty()` on buffering failure.~~ **Fixed [2026-02-09]**: Actually returns 502 Bad Gateway on request buffering failure (code was misread). | ~~High~~ Fixed |
 | `proxy/middleware/monitor.rs` | Inefficient: attempts to parse all `text/*` as JSON. | Low |
 | `proxy/providers/zai_anthropic.rs` | DoS Risk: `deep_remove_cache_control` logs at `info` for every field, vulnerable to log flooding. | Medium |
 | `proxy/providers/zai_anthropic.rs` | Inefficient: `copy_passthrough_headers` performs unnecessary string allocations in hot path. | Low |
 | `modules/proxy_db.rs` | Data Loss: `save_log` hardcodes `request_body`/`response_body` to `None`. | Medium |
 | `server_utils.rs` | Portability: `set_reuse_port(true)` lacks `#[cfg(unix)]` guard. | Low |
 | `repository.rs` | Inconsistent time types (DateTime vs i64) and redundant arguments in `update_token_credentials`. | Low |
-| `state/mod.rs` | `build_proxy_router` ignores `UpstreamProxyConfig` from `proxy_config` — passes default instead of actual config. | High |
+| `state/mod.rs` | ~~`build_proxy_router` ignores `UpstreamProxyConfig` from `proxy_config` — passes default instead of actual config.~~ **Fixed [2026-02-09]**: Investigation showed `build_proxy_router` does pass its argument correctly. The real issue was `UpstreamClient` creating a separate `Arc<RwLock<>>` — now shares the same reference as `AppState.upstream_proxy`. | ~~High~~ Fixed |
 | `account_pg_targeted.rs` | `project_id` stored in `tokens` instead of `accounts`; `update_token_credentials_impl` overwrites all sessions. | Medium |
 | `token_manager/mod.rs` | Arbitrary session eviction (hash order, not LRU); race condition in active request cleanup. | Medium |
 | `token_manager/selection.rs` | `get_token_forced` bypasses expiry check and project ID lookup. | Medium |
 | `token_manager/selection_helpers.rs` | Sort comparator calls `get_active_requests` per comparison — O(N log N) DashMap lookups. Should pre-fetch. | Medium |
 | `token_manager/token_refresh.rs` | `refresh_locks` DashMap entries never removed — memory leak proportional to unique account_ids. | Medium |
-| `proxy/server.rs` | `build_proxy_router_with_shared_state` takes `upstream_proxy` by value, breaking hot-reload. `auth_middleware` gets `security_config` instead of full `AppState`. | High |
+| `proxy/server.rs` | ~~`build_proxy_router_with_shared_state` takes `upstream_proxy` by value, breaking hot-reload.~~ **Fixed [2026-02-09]**: `UpstreamClient::new` now accepts `Arc<RwLock<UpstreamProxyConfig>>` directly, sharing the same reference as `AppState`. `auth_middleware` gets `security_config` instead of full `AppState`. | ~~High~~ Fixed (proxy part) |
 | `modules/json_migration.rs` | `migrate_json_to_postgres` counts partial migration as success; `verify_migration` fails if PG has more accounts than JSON. | Low |
 | `modules/account/fetch.rs` | Race condition: concurrent fetches can cause lost updates (token/quota desync) | High |
 | `token_manager/selection_helpers.rs` | Thundering herd: pre-calculated load snapshot can lead to skewed distribution during bursts | Medium |
-| `proxy/handlers/` | OOM Risk: 50MB buffer per stream can exhaust VPS RAM under high concurrency | High |
+| `proxy/handlers/` | ~~OOM Risk: 50MB buffer per stream can exhaust VPS RAM under high concurrency~~ **Mitigated [2026-02-09]**: Reduced to 10MB per stream. Still a concern at extreme concurrency (1000+ streams = 10GB). | ~~High~~ Medium |
 
 ---
 
