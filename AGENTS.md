@@ -4,7 +4,7 @@
 - Remove request/response content capture from proxy monitoring while keeping metadata-only logging and UI handling.
 
 ## Current Status
-- In progress: content capture removal and UI fallback adjustments implemented; awaiting final verification entry.
+- In progress: content capture removal, monitoring protocol fixes, and UI polling improvements implemented; awaiting final verification entry.
 
 ## ✅ COMPLETED: PostgreSQL Migration [2026-02-03]
 
