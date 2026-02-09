@@ -70,8 +70,14 @@ pub fn create_claude_sse_stream(
 
                             while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
                                 let line_raw = buffer.split_to(pos + 1);
-                                if let Ok(line_str) = std::str::from_utf8(&line_raw) {
-                                    let line = line_str.trim();
+                                let line_str = match std::str::from_utf8(&line_raw) {
+                                    Ok(s) => s,
+                                    Err(e) => {
+                                        tracing::warn!("[{}] SSE line UTF-8 decode error: {} | {} bytes", trace_id, e, line_raw.len());
+                                        continue;
+                                    }
+                                };
+                                let line = line_str.trim();
                                     if line.is_empty() { continue; }
 
                                     if let Some(sse_chunks) = process_sse_line(line, &mut state, &trace_id, &email) {
@@ -79,7 +85,6 @@ pub fn create_claude_sse_stream(
                                             yield Ok(sse_chunk);
                                         }
                                     }
-                                }
                             }
                         }
                         Some(Err(e)) => {
@@ -129,13 +134,30 @@ fn process_sse_line(
     // parse JSON
     let json_value: serde_json::Value = match serde_json::from_str(data_str) {
         Ok(v) => v,
-        Err(_) => return None,
+        Err(e) => {
+            tracing::warn!(
+                "[{}] SSE JSON parse error: {} | data: {}",
+                trace_id,
+                e,
+                &data_str[..data_str.len().min(200)]
+            );
+            return None;
+        },
     };
 
     let mut chunks = Vec::new();
 
     // unwrap response field (ifexist)
     let raw_json = json_value.get("response").unwrap_or(&json_value);
+
+    if let Some(error) = raw_json.get("error") {
+        tracing::error!("[{}] Upstream error in SSE stream: {}", trace_id, error);
+        let error_event = format!(
+            "event: error\ndata: {{\"type\":\"overloaded_error\",\"error\":{{\"type\":\"overloaded_error\",\"message\":\"Upstream error: {}\"}}}}\n\n",
+            error.get("message").and_then(|m| m.as_str()).unwrap_or("unknown upstream error")
+        );
+        return Some(vec![Bytes::from(error_event)]);
+    }
 
     // send message_start
     if !state.message_start_sent {
@@ -177,9 +199,19 @@ fn process_sse_line(
         .and_then(|p| p.as_array())
     {
         for part_value in parts {
-            if let Ok(part) = serde_json::from_value::<GeminiPart>(part_value.clone()) {
-                let mut processor = PartProcessor::new(state);
-                chunks.extend(processor.process(&part));
+            match serde_json::from_value::<GeminiPart>(part_value.clone()) {
+                Ok(part) => {
+                    let mut processor = PartProcessor::new(state);
+                    chunks.extend(processor.process(&part));
+                },
+                Err(e) => {
+                    tracing::warn!(
+                        "[{}] Failed to deserialize GeminiPart: {} | part: {}",
+                        trace_id,
+                        e,
+                        part_value
+                    );
+                },
             }
         }
     }
