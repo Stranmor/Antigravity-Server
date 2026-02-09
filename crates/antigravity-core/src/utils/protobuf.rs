@@ -33,6 +33,9 @@ pub fn read_varint(data: &[u8], offset: usize) -> Result<(u64, usize), String> {
         if pos >= data.len() {
             return Err("datanotcomplete".to_string());
         }
+        if shift >= 64 {
+            return Err("varint too large".to_string());
+        }
         let byte = data[pos];
         result |= ((byte & 0x7F) as u64) << shift;
         pos += 1;
@@ -125,7 +128,9 @@ pub fn find_field(data: &[u8], target_field: u32) -> Result<Option<Vec<u8>>, Str
 
         if field_num == target_field && wire_type == 2 {
             let (length, content_offset) = read_varint(data, new_offset)?;
-            let end = content_offset + length as usize;
+            let end = content_offset
+                .checked_add(length as usize)
+                .ok_or_else(|| "overflow in length-delimited field".to_string())?;
             if end > data.len() {
                 return Err("truncated field data".to_string());
             }
@@ -204,4 +209,65 @@ pub fn create_oauth_field(access_token: &str, refresh_token: &str, expiry: i64) 
     field6.extend(oauth_info);
 
     field6
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncated_varint() {
+        let data = vec![0x80, 0x80];
+        let res = read_varint(&data, 0);
+        assert!(res.is_err(), "Should return error for truncated varint");
+        assert_eq!(res.unwrap_err(), "datanotcomplete");
+    }
+
+    #[test]
+    fn test_truncated_64bit() {
+        let data = vec![0x09, 0x01, 0x02]; // Tag 1, Wire 1 (64-bit), but only 2 bytes
+        let res = skip_field(&data, 1, 1);
+        assert!(res.is_err(), "Should return error for truncated 64-bit field");
+    }
+
+    #[test]
+    fn test_truncated_length_delimited() {
+        let data = vec![0x12, 0x05, 0x01, 0x02]; // Tag 2, Wire 2, Length 5, but only 2 bytes
+        let res = skip_field(&data, 1, 2);
+        assert!(res.is_err(), "Should return error for truncated length-delimited field");
+    }
+
+    #[test]
+    fn test_length_overflow() {
+        // Tag 2, Wire 2, Length = u64::MAX
+        let mut data = vec![0x12];
+        data.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01]);
+        let res = skip_field(&data, 1, 2);
+        assert!(res.is_err(), "Should return error for length overflow");
+        assert_eq!(res.unwrap_err(), "overflow in length-delimited field");
+    }
+
+    #[test]
+    fn test_invalid_wire_type() {
+        let data = vec![0x0B]; // Tag 1, Wire 3 (deprecated/unhandled)
+        let res = skip_field(&data, 1, 3);
+        assert!(res.is_err(), "Should return error for unknown wire type");
+    }
+
+    #[test]
+    fn test_varint_shift_overflow() {
+        // 11 bytes of 0x80 followed by 0x00
+        let data = vec![0x80; 11];
+        // This should ideally return an error instead of panicking or wrapping
+        let _ = read_varint(&data, 0);
+    }
+
+    #[test]
+    fn test_find_field_potential_overflow() {
+        // Tag 2, Wire 2, Length = u64::MAX
+        let mut data = vec![0x12];
+        data.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01]);
+        // find_field for target_field 2
+        let _ = find_field(&data, 2);
+    }
 }
