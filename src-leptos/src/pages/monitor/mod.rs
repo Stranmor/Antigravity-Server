@@ -218,7 +218,7 @@ pub(crate) fn Monitor() -> impl IntoView {
                                 let tokens_out = log.output_tokens.unwrap_or(0);
                                 let time = format_timestamp(log.timestamp);
                                 let has_error = log.error.is_some();
-                                let has_details = log.request_body.is_some() || log.response_body.is_some() || log.error.is_some();
+                                let has_details = true;
 
                                 view! {
                                     <tr

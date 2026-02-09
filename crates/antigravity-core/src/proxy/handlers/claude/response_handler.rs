@@ -31,7 +31,7 @@ pub async fn handle_nonstreaming_success(
     };
 
     if let Ok(text) = String::from_utf8(bytes.to_vec()) {
-        tracing::debug!("Upstream Response for Claude request: {}", text);
+        tracing::debug!("Upstream Claude response received, len: {} bytes", text.len());
     }
 
     let gemini_resp: serde_json::Value = match serde_json::from_slice(&bytes) {

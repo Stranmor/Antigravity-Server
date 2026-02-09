@@ -185,8 +185,10 @@ pub struct ProxyRequestLog {
     #[serde(alias = "error_message")]
     pub error: Option<String>,
     /// Request body (truncated)
+    #[serde(skip_serializing)]
     pub request_body: Option<String>,
     /// Response body (truncated)
+    #[serde(skip_serializing)]
     pub response_body: Option<String>,
     /// Input tokens used (non-cached)
     pub input_tokens: Option<u32>,

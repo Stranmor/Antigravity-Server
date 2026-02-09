@@ -168,7 +168,7 @@ pub async fn forward_anthropic_json(
     };
     let body_len = body_bytes.len();
 
-    tracing::debug!("Forwarding request to z.ai (len: {} bytes): {}", body_len, url);
+    tracing::debug!("Forwarding request to z.ai (len: {} bytes)", body_len);
 
     let req = client.request(method, &url).headers(headers).body(body_bytes); // Use .body(Vec<u8>) instead of .json()
 

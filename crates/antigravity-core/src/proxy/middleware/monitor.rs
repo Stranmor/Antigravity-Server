@@ -8,7 +8,7 @@
     reason = "Monitoring middleware: bounded buffer sizes, safe byte operations"
 )]
 
-use super::monitor_usage::{extract_text_from_sse_line, extract_usage_from_json};
+use super::monitor_usage::extract_usage_from_json;
 use crate::proxy::monitor::ProxyRequestLog;
 use crate::proxy::server::AppState;
 use axum::{
@@ -58,11 +58,7 @@ pub async fn monitor_middleware(
                         v.get("model").and_then(|m| m.as_str()).map(|s| s.to_string())
                     });
                 }
-                request_body_str = if let Ok(s) = std::str::from_utf8(&bytes) {
-                    Some(s.to_string())
-                } else {
-                    Some("[Binary Request Data]".to_string())
-                };
+                request_body_str = None;
                 Request::from_parts(parts, Body::from(bytes))
             },
             Err(_) => {
@@ -127,8 +123,6 @@ pub async fn monitor_middleware(
     } else if content_type.contains("application/json") || content_type.contains("text/") {
         handle_json_response(response, log, monitor).await
     } else {
-        let mut log = log;
-        log.response_body = Some(format!("[{}]", content_type));
         monitor.log_request(log).await;
         response
     }
@@ -144,34 +138,10 @@ async fn handle_sse_response(
     let (tx, rx) = tokio::sync::mpsc::channel(64);
 
     tokio::spawn(async move {
-        let mut collected_text = String::new();
         let mut last_few_bytes = Vec::new();
-        let mut line_buffer = String::new();
-        const MAX_COLLECTED_TEXT: usize = 512 * 1024;
 
         while let Some(chunk_res) = stream.next().await {
             if let Ok(chunk) = chunk_res {
-                if let Ok(chunk_str) = std::str::from_utf8(&chunk) {
-                    line_buffer.push_str(chunk_str);
-
-                    while let Some(newline_pos) = line_buffer.find('\n') {
-                        let line = line_buffer[..newline_pos].trim();
-                        if let Some(json_str) = line.strip_prefix("data: ") {
-                            let json_str = json_str.trim();
-                            if json_str != "[DONE]" {
-                                if let Ok(json) = serde_json::from_str::<Value>(json_str) {
-                                    extract_text_from_sse_line(
-                                        &json,
-                                        &mut collected_text,
-                                        MAX_COLLECTED_TEXT,
-                                    );
-                                }
-                            }
-                        }
-                        line_buffer = line_buffer[newline_pos + 1..].to_string();
-                    }
-                }
-
                 if chunk.len() > 8192 {
                     last_few_bytes = chunk.slice(chunk.len() - 8192..).to_vec();
                 } else {
@@ -186,15 +156,7 @@ async fn handle_sse_response(
             }
         }
 
-        if collected_text.is_empty() {
-            log.response_body = if let Ok(tail) = std::str::from_utf8(&last_few_bytes) {
-                Some(format!("[Stream - raw tail]\n{}", tail))
-            } else {
-                Some("[Stream Data - No text extracted]".to_string())
-            };
-        } else {
-            log.response_body = Some(collected_text);
-        }
+        log.response_body = None;
 
         if let Ok(full_tail) = std::str::from_utf8(&last_few_bytes) {
             for line in full_tail.lines().rev() {
@@ -235,18 +197,17 @@ async fn handle_json_response(
                         extract_usage_from_json(usage, &mut log);
                     }
                 }
-                log.response_body = Some(s.to_string());
-            } else {
-                log.response_body = Some("[Binary Response Data]".to_string());
             }
             if log.status >= 400 {
-                log.error = log.response_body.clone();
+                log.error = Some("Upstream error response received".to_string());
             }
+            log.response_body = None;
             monitor.log_request(log).await;
             Response::from_parts(parts, Body::from(bytes))
         },
         Err(_) => {
-            log.response_body = Some("[Response too large (>100MB)]".to_string());
+            log.response_body = None;
+            log.error = Some("Response too large to log".to_string());
             monitor.log_request(log).await;
             Response::from_parts(parts, Body::empty())
         },

@@ -186,6 +186,11 @@ vendor/
 | `proxy/middleware/monitor.rs` | `std::str::from_utf8(&chunk)` on raw stream chunks — multi-byte UTF-8 split across chunk boundaries causes decoding failure, chunk skipped in line_buffer | Medium |
 | `proxy/middleware/monitor.rs` | SSE processing loop ignores `tx.send()` errors — if client disconnects, middleware continues consuming entire upstream stream (wasted resources) | Medium |
 | `proxy/middleware/monitor.rs` | `line_buffer = line_buffer[newline_pos + 1..].to_string()` allocates new String for every SSE line — excessive allocation churn | Low |
+| `proxy/middleware/monitor_usage.rs` | `.or()` on `serde_json::Value` refs: `Some(Null)` satisfies `.or()`, so fallback key is never checked when primary key exists but is null — use `.and_then(as_u64)` before `.or_else()` | Medium |
+| `proxy/middleware/monitor_usage.rs` | `total_tokens` assigned to `log.output_tokens` when specific counts missing — misrepresents sum as output-only, distorts metrics | Medium |
+| `proxy/handlers/claude/response_handler.rs` | `bytes.to_vec()` + `String::from_utf8` allocation just for logging length — use `bytes.len()` directly | Low |
+| `proxy/providers/zai_anthropic.rs` | `set_zai_auth` skips `x-api-key` if incoming request has `Authorization` header — Anthropic upstream requires `x-api-key` regardless | Medium |
+| `proxy/providers/zai_anthropic.rs` | Stream errors mapped to `Ok(Bytes::from(...))` — swallows error and injects raw text into response body, corrupting JSON/SSE format | Medium |
 
 ---
 

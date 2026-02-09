@@ -29,8 +29,16 @@ pub(crate) fn LogDetailModal(
         }
     };
 
-    let request_body = log.request_body.clone().map(|b| format_json(&b));
-    let response_body = log.response_body.clone().map(|b| format_json(&b));
+    let request_body = log
+        .request_body
+        .clone()
+        .map(|b| format_json(&b))
+        .unwrap_or_else(|| "[Content not recorded]".to_string());
+    let response_body = log
+        .response_body
+        .clone()
+        .map(|b| format_json(&b))
+        .unwrap_or_else(|| "[Content not recorded]".to_string());
     let error_msg = log.error.clone();
 
     view! {
@@ -109,25 +117,15 @@ pub(crate) fn LogDetailModal(
                         </section>
                     })}
 
-                    {request_body.map(|body| view! {
-                        <section class="detail-section">
-                            <h3>"📤 Request Body"</h3>
-                            <pre class="code-block">{body}</pre>
-                        </section>
-                    })}
+                    <section class="detail-section">
+                        <h3>"📤 Request Body"</h3>
+                        <pre class="code-block">{request_body}</pre>
+                    </section>
 
-                    {response_body.map(|body| view! {
-                        <section class="detail-section">
-                            <h3>"📥 Response Body"</h3>
-                            <pre class="code-block">{body}</pre>
-                        </section>
-                    })}
-
-                    <Show when=move || log.request_body.is_none() && log.response_body.is_none() && log.error.is_none()>
-                        <div class="empty-detail">
-                            <p>"No request/response data available for this log entry."</p>
-                        </div>
-                    </Show>
+                    <section class="detail-section">
+                        <h3>"📥 Response Body"</h3>
+                        <pre class="code-block">{response_body}</pre>
+                    </section>
                 </div>
             </div>
         </div>
