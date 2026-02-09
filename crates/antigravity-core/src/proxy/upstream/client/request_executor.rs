@@ -117,7 +117,7 @@ pub async fn execute_with_fallback(
                 },
                 Err(e) => {
                     let msg = format!("HTTP request failed at {}: {}", base_url, e);
-                    tracing::debug!("{}", msg);
+                    tracing::error!("{}", msg);
                     last_err = Some(msg);
 
                     if transport_retries < MAX_TRANSPORT_RETRIES_PER_ENDPOINT {
