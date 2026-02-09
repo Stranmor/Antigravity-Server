@@ -108,15 +108,15 @@ impl TokenManager {
             return None;
         }
 
-        ultra_candidates.sort_by(|a, b| {
-            compare_tokens_by_priority(a, b).then_with(|| {
-                let active_a = self.get_active_requests(&a.email);
-                let active_b = self.get_active_requests(&b.email);
-                active_a.cmp(&active_b)
-            })
+        // Pre-calculate active requests for stable O(N log N) sorting with O(N) lookups
+        let mut candidates_with_load: Vec<(&ProxyToken, u32)> =
+            ultra_candidates.into_iter().map(|t| (t, self.get_active_requests(&t.email))).collect();
+
+        candidates_with_load.sort_by(|(a, load_a), (b, load_b)| {
+            compare_tokens_by_priority(a, b).then_with(|| load_a.cmp(load_b))
         });
 
-        for candidate in ultra_candidates {
+        for (candidate, _) in candidates_with_load {
             if let Some(guard) = ActiveRequestGuard::try_new(
                 Arc::clone(&self.active_requests),
                 candidate.email.clone(),
@@ -204,15 +204,17 @@ impl TokenManager {
             scored_candidates.push(candidate);
         }
 
-        scored_candidates.sort_by(|a, b| {
-            compare_tokens_by_priority(a, b).then_with(|| {
-                let active_a = self.get_active_requests(&a.email);
-                let active_b = self.get_active_requests(&b.email);
-                active_a.cmp(&active_b)
-            })
+        // Pre-calculate active requests for stable O(N log N) sorting with O(N) lookups
+        let mut candidates_with_load: Vec<(&ProxyToken, u32)> = scored_candidates
+            .into_iter()
+            .map(|t| (t, self.get_active_requests(&t.email)))
+            .collect();
+
+        candidates_with_load.sort_by(|(a, load_a), (b, load_b)| {
+            compare_tokens_by_priority(a, b).then_with(|| load_a.cmp(load_b))
         });
 
-        for candidate in scored_candidates {
+        for (candidate, _) in candidates_with_load {
             if let Some(guard) = ActiveRequestGuard::try_new(
                 Arc::clone(&self.active_requests),
                 candidate.email.clone(),

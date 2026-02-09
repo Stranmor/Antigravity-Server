@@ -124,9 +124,9 @@ pub async fn monitor_middleware(
     };
 
     if content_type.contains("text/event-stream") {
-        handle_sse_response(response, log, monitor).await
+        handle_sse_response(response, log, monitor, start).await
     } else if content_type.contains("application/json") {
-        handle_json_response(response, log, monitor).await
+        handle_json_response(response, log, monitor, start).await
     } else {
         monitor.log_request(log).await;
         response
@@ -137,6 +137,7 @@ async fn handle_sse_response(
     response: Response,
     mut log: ProxyRequestLog,
     monitor: Arc<crate::proxy::monitor::ProxyMonitor>,
+    start: Instant,
 ) -> Response {
     let (parts, body) = response.into_parts();
     let mut stream = body.into_data_stream();
@@ -161,6 +162,7 @@ async fn handle_sse_response(
                     break;
                 }
             } else if let Err(e) = chunk_res {
+                log.error = Some(format!("Stream error: {}", e));
                 if tx.send(Err(axum::Error::new(e))).await.is_err() {
                     break;
                 }
@@ -184,9 +186,10 @@ async fn handle_sse_response(
             }
         }
 
-        if log.status >= 400 {
+        if log.status >= 400 && log.error.is_none() {
             log.error = Some("Stream Error or Failed".to_string());
         }
+        log.duration = start.elapsed().as_millis() as u64;
         monitor.log_request(log).await;
     });
 
@@ -197,6 +200,7 @@ async fn handle_json_response(
     response: Response,
     mut log: ProxyRequestLog,
     monitor: Arc<crate::proxy::monitor::ProxyMonitor>,
+    _start: Instant,
 ) -> Response {
     let content_length = response
         .headers()

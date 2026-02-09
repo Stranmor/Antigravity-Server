@@ -2,9 +2,10 @@
 
 ## TARGET GOAL
 - Fix quota persistence and dual-write consistency bugs (completed).
+- Fix production crash: blocking TLS init in async runtime (completed).
 
 ## Current Status
-- ✅ COMPLETED [2026-02-09]: Quota persistence and dual-write consistency fixes; local build and API refresh-quota verified.
+- ✅ COMPLETED [2026-02-09]: Fixed production crash caused by blocking native-TLS initialization inside tokio async runtime. `UpstreamClient::new()` now accepts pre-built `reqwest::Client`; proxy/WARP client builds wrapped in `spawn_blocking`. Deployed and verified on VPS.
 
 ## ✅ COMPLETED: PostgreSQL Migration [2026-02-03]
 
@@ -189,6 +190,9 @@ vendor/
 | `token_manager/token_refresh.rs` | `refresh_locks` DashMap entries never removed — memory leak proportional to unique account_ids. | Medium |
 | `proxy/server.rs` | `build_proxy_router_with_shared_state` takes `upstream_proxy` by value, breaking hot-reload. `auth_middleware` gets `security_config` instead of full `AppState`. | High |
 | `modules/json_migration.rs` | `migrate_json_to_postgres` counts partial migration as success; `verify_migration` fails if PG has more accounts than JSON. | Low |
+| `modules/account/fetch.rs` | Race condition: concurrent fetches can cause lost updates (token/quota desync) | High |
+| `token_manager/selection_helpers.rs` | Thundering herd: pre-calculated load snapshot can lead to skewed distribution during bursts | Medium |
+| `proxy/handlers/` | OOM Risk: 50MB buffer per stream can exhaust VPS RAM under high concurrency | High |
 
 ---
 

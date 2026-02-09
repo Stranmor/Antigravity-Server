@@ -67,6 +67,7 @@ pub async fn migrate_json_to_postgres(
         match repo.get_account_by_email(&account.email).await {
             Ok(Some(existing)) => {
                 let mut updated = existing.clone();
+                updated.name = account.name.clone();
                 updated.token = account.token.clone();
                 updated.disabled = account.disabled;
                 updated.disabled_reason = account.disabled_reason.clone();
@@ -81,6 +82,14 @@ pub async fn migrate_json_to_postgres(
                     error!("Failed to update {}: {}", account.email, e);
                     stats.failed += 1;
                 } else {
+                    if let Some(quota) = &account.quota {
+                        if let Err(e) = repo.update_quota(&updated.id, quota.clone(), None).await {
+                            warn!(
+                                "Failed to sync quota for existing account {}: {}",
+                                account.email, e
+                            );
+                        }
+                    }
                     stats.updated += 1;
                 }
             },
