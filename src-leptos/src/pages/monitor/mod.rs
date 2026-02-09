@@ -8,9 +8,12 @@ use crate::api_models::{ProxyRequestLog, ProxyStats};
 use crate::app::AppState;
 use crate::components::{Button, ButtonVariant};
 use formatters::{format_timestamp, format_tokens};
+use gloo_timers::callback::Interval;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use log_detail::LogDetailModal;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 /// Monitor page for real-time request logging.
 #[component]
@@ -24,8 +27,10 @@ pub(crate) fn Monitor() -> impl IntoView {
     let loading = RwSignal::new(false);
     let selected_log = RwSignal::new(Option::<ProxyRequestLog>::None);
 
-    let load_data = move || {
-        loading.set(true);
+    let load_data = move |show_loading: bool| {
+        if show_loading {
+            loading.set(true);
+        }
         spawn_local(async move {
             if let Ok(new_logs) = commands::get_proxy_logs(Some(100)).await {
                 logs.set(new_logs);
@@ -33,22 +38,32 @@ pub(crate) fn Monitor() -> impl IntoView {
             if let Ok(new_stats) = commands::get_proxy_stats().await {
                 stats.set(new_stats);
             }
-            loading.set(false);
+            if show_loading {
+                loading.set(false);
+            }
         });
     };
 
     Effect::new(move |_| {
-        load_data();
+        load_data(true);
     });
 
+    let poller = Rc::new(RefCell::new(None::<Interval>));
     Effect::new(move |_| {
-        if logging_enabled.get() && state.proxy_status.get().running {
-            spawn_local(async move {
-                gloo_timers::future::TimeoutFuture::new(2000).await;
-                if logging_enabled.get() {
-                    load_data();
-                }
-            });
+        let should_poll = logging_enabled.get() && state.proxy_status.get().running;
+        if should_poll {
+            if poller.borrow().is_none() {
+                load_data(false);
+                let poller_ref = poller.clone();
+                let interval = Interval::new(2000, move || {
+                    if logging_enabled.get() && state.proxy_status.get().running {
+                        load_data(false);
+                    }
+                });
+                *poller_ref.borrow_mut() = Some(interval);
+            }
+        } else {
+            poller.borrow_mut().take();
         }
     });
 
@@ -165,7 +180,7 @@ pub(crate) fn Monitor() -> impl IntoView {
                         text="🔄".to_string()
                         variant=ButtonVariant::Ghost
                         loading=loading.get()
-                        on_click=load_data
+                        on_click=move || load_data(true)
                     />
                     <Button
                         text="🗑".to_string()
