@@ -190,7 +190,7 @@ pub async fn forward_anthropic_json(
     // Stream response body to the client (covers SSE and non-SSE).
     let stream = resp.bytes_stream().map(|chunk| match chunk {
         Ok(b) => Ok::<Bytes, std::io::Error>(b),
-        Err(e) => Ok(Bytes::from(format!("Upstream stream error: {}", e))),
+        Err(e) => Err(std::io::Error::other(e)),
     });
 
     out.body(Body::from_stream(stream)).unwrap_or_else(|_| {
