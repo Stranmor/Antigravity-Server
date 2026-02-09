@@ -197,7 +197,7 @@ vendor/
 | `state/accessors.rs` | Race condition: `hot_reload_proxy_config` updates fields non-atomically. | High |
 | `state/accessors.rs` | Logic error: `get_model_quota` uses `.contains()` instead of `.starts_with()`. | Medium |
 | `state/accessors.rs` | Split-brain: `switch_account` updates file before repository. | Medium |
-| `state/mod.rs` | Bug: `proxy_config.experimental` moved then used (compilation error). | High |
+| `state/mod.rs` | Potential bug: `proxy_config.experimental` may cause partial-move if `ExperimentalConfig` stops deriving `Copy`. Currently works because `Copy` is derived. | Low |
 | `state/mod.rs` | Bug: `health_monitor` shared instance vs separate instances in `token_manager`. | Medium |
 | `state/accessors.rs` | `get_account_count` swallows DB errors and returns 0 silently. | Medium |
 | `state/accessors.rs` | `load_config()` performs sync file I/O inside async context. | Medium |
@@ -205,6 +205,8 @@ vendor/
 | `proxy/server.rs` | `UpstreamClient` initialized with `None` for circuit_breaker — circuit breaking disabled for upstream. | Medium |
 | `proxy/server.rs` | `provider_rr` and `zai_vision_mcp_state` recreated on each `build_proxy_router_with_shared_state` call — state lost on hot-reload. | Medium |
 | `proxy/server.rs` | `/v1/api/event_logging` and `/v1/api/event_logging/batch` are stubs returning 200 OK without processing data. | Low |
+| `upstream/client/mod.rs` | `get_client()` silently falls back to direct connection on proxy build failure — traffic leak risk when proxy is intentionally configured. | Medium |
+| `upstream/client/mod.rs` | Single-slot client cache (`proxied_client`, `warp_client`) thrashes if alternating proxy URLs. | Low |
 
 ---
 

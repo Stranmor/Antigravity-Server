@@ -133,25 +133,25 @@ impl UpstreamClient {
     }
 
     async fn get_warp_client(&self, proxy_url: &str) -> Result<Client, String> {
-        let proxy_url = proxy_url.to_string();
         {
             let client_guard = self.warp_client.read().await;
             if let Some((cached_url, client)) = client_guard.as_ref() {
-                if cached_url == &proxy_url {
+                if cached_url == proxy_url {
                     return Ok(client.clone());
                 }
             }
         }
 
+        let proxy_url_owned = proxy_url.to_string();
         let mut client_guard = self.warp_client.write().await;
         if let Some((cached_url, client)) = client_guard.as_ref() {
-            if cached_url == &proxy_url {
+            if cached_url == proxy_url {
                 return Ok(client.clone());
             }
         }
 
-        let proxy = reqwest::Proxy::all(&proxy_url)
-            .map_err(|e| format!("Invalid WARP proxy URL '{}': {}", proxy_url, e))?;
+        let proxy = reqwest::Proxy::all(&proxy_url_owned)
+            .map_err(|e| format!("Invalid WARP proxy URL '{}': {}", proxy_url_owned, e))?;
 
         let new_client = tokio::task::spawn_blocking(move || {
             Client::builder()
@@ -168,7 +168,7 @@ impl UpstreamClient {
         .await
         .map_err(|e| format!("spawn_blocking panicked building WARP client: {}", e))??;
 
-        *client_guard = Some((proxy_url, new_client.clone()));
+        *client_guard = Some((proxy_url_owned, new_client.clone()));
         Ok(new_client)
     }
 

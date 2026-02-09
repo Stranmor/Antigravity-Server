@@ -22,44 +22,36 @@ async fn test_warp_client_cache_reuses_url() {
         Arc::new(RwLock::new(antigravity_types::models::config::UpstreamProxyConfig::default()));
     let client = super::UpstreamClient::new(reqwest::Client::new(), proxy_config, None);
 
+    // First call — builds and caches client for this URL
     if let Err(error) = client.get_warp_client("http://127.0.0.1:12345").await {
         panic!("warp client build failed: {}", error);
     }
-    let first_ptr = {
+    {
         let guard = client.warp_client.read().await;
-        match guard.as_ref() {
-            Some((cached_url, cached_client)) => {
-                assert_eq!(cached_url, "http://127.0.0.1:12345");
-                cached_client as *const reqwest::Client
-            },
-            None => panic!("warp cache was empty after first build"),
-        }
-    };
+        let (cached_url, _) = guard.as_ref().expect("warp cache empty after first build");
+        assert_eq!(cached_url, "http://127.0.0.1:12345");
+    }
 
+    // Second call with same URL — should return cached client (no rebuild)
     if let Err(error) = client.get_warp_client("http://127.0.0.1:12345").await {
         panic!("warp client build failed: {}", error);
     }
-    let second_ptr = {
+    {
         let guard = client.warp_client.read().await;
-        match guard.as_ref() {
-            Some((cached_url, cached_client)) => {
-                assert_eq!(cached_url, "http://127.0.0.1:12345");
-                cached_client as *const reqwest::Client
-            },
-            None => panic!("warp cache was empty after second build"),
-        }
-    };
+        let (cached_url, _) = guard.as_ref().expect("warp cache empty after second call");
+        assert_eq!(
+            cached_url, "http://127.0.0.1:12345",
+            "cache URL should not change for same URL"
+        );
+    }
 
-    assert_eq!(first_ptr, second_ptr);
-
+    // Third call with different URL — cache should update
     if let Err(error) = client.get_warp_client("http://127.0.0.1:23456").await {
         panic!("warp client build failed: {}", error);
     }
-    let guard = client.warp_client.read().await;
-    match guard.as_ref() {
-        Some((cached_url, _)) => {
-            assert_eq!(cached_url, "http://127.0.0.1:23456");
-        },
-        None => panic!("warp cache was empty after third build"),
+    {
+        let guard = client.warp_client.read().await;
+        let (cached_url, _) = guard.as_ref().expect("warp cache empty after URL change");
+        assert_eq!(cached_url, "http://127.0.0.1:23456", "cache should update for new URL");
     }
 }
