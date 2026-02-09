@@ -55,15 +55,27 @@ pub fn skip_field(data: &[u8], offset: usize, wire_type: u8) -> Result<usize, St
         },
         1 => {
             // 64-bit
+            if offset + 8 > data.len() {
+                return Err("data not complete: 64-bit field".to_string());
+            }
             Ok(offset + 8)
         },
         2 => {
             // Length-delimited
             let (length, content_offset) = read_varint(data, offset)?;
-            Ok(content_offset + length as usize)
+            let end = content_offset
+                .checked_add(length as usize)
+                .ok_or_else(|| "overflow in length-delimited field".to_string())?;
+            if end > data.len() {
+                return Err("data not complete: length-delimited field".to_string());
+            }
+            Ok(end)
         },
         5 => {
             // 32-bit
+            if offset + 4 > data.len() {
+                return Err("data not complete: 32-bit field".to_string());
+            }
             Ok(offset + 4)
         },
         _ => Err(format!("Unknown wire_type: {}", wire_type)),
@@ -87,6 +99,9 @@ pub fn remove_field(data: &[u8], field_num: u32) -> Result<Vec<u8>, String> {
         } else {
             // preserveotherfield
             let next_offset = skip_field(data, new_offset, wire_type)?;
+            if next_offset > data.len() {
+                return Err("invalid field offset".to_string());
+            }
             result.extend_from_slice(&data[start_offset..next_offset]);
             offset = next_offset;
         }
@@ -110,7 +125,11 @@ pub fn find_field(data: &[u8], target_field: u32) -> Result<Option<Vec<u8>>, Str
 
         if field_num == target_field && wire_type == 2 {
             let (length, content_offset) = read_varint(data, new_offset)?;
-            return Ok(Some(data[content_offset..content_offset + length as usize].to_vec()));
+            let end = content_offset + length as usize;
+            if end > data.len() {
+                return Err("truncated field data".to_string());
+            }
+            return Ok(Some(data[content_offset..end].to_vec()));
         }
 
         // skipfield
