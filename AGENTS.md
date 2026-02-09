@@ -49,7 +49,7 @@
 
 ### Database Replication [2026-02-08]
 
-VPS PostgreSQL is replicated to the home-server via streaming replication. See the global AGENTS.md section 3.5 for the full schema.
+VPS PostgreSQL is replicated to the home-server via streaming replication. See the global AGENTS.md for the full schema.
 
 | Role | Location | Connection string |
 |------|-----|-------------------|
@@ -199,6 +199,12 @@ vendor/
 | `state/accessors.rs` | Split-brain: `switch_account` updates file before repository. | Medium |
 | `state/mod.rs` | Bug: `proxy_config.experimental` moved then used (compilation error). | High |
 | `state/mod.rs` | Bug: `health_monitor` shared instance vs separate instances in `token_manager`. | Medium |
+| `state/accessors.rs` | `get_account_count` swallows DB errors and returns 0 silently. | Medium |
+| `state/accessors.rs` | `load_config()` performs sync file I/O inside async context. | Medium |
+| `state/accessors.rs` | `generate_oauth_state` clears ALL pending states when limit hit (aggressive eviction). | Low |
+| `proxy/server.rs` | `UpstreamClient` initialized with `None` for circuit_breaker — circuit breaking disabled for upstream. | Medium |
+| `proxy/server.rs` | `provider_rr` and `zai_vision_mcp_state` recreated on each `build_proxy_router_with_shared_state` call — state lost on hot-reload. | Medium |
+| `proxy/server.rs` | `/v1/api/event_logging` and `/v1/api/event_logging/batch` are stubs returning 200 OK without processing data. | Low |
 
 ---
 
@@ -453,7 +459,7 @@ For large files, use incremental approach:
 2. Fill each section with separate Edit calls
 3. Each operation <100 lines
 
-**Status:** No fix implemented. Using system prompt workaround (see global AGENTS.md rule 20).
+**Status:** No fix implemented. Using system prompt workaround (see global AGENTS.md).
 
 ---
 
