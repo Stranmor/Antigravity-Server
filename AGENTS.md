@@ -192,6 +192,10 @@ vendor/
 | `proxy/handlers/claude/response_handler.rs` | `bytes.to_vec()` + `String::from_utf8` allocation just for logging length — use `bytes.len()` directly | Low |
 | `proxy/providers/zai_anthropic.rs` | `set_zai_auth` skips `x-api-key` if incoming request has `Authorization` header — Anthropic upstream requires `x-api-key` regardless | Medium |
 | `proxy/providers/zai_anthropic.rs` | Stream errors mapped to `Ok(Bytes::from(...))` — swallows error and injects raw text into response body, corrupting JSON/SSE format | Medium |
+| `modules/account/quota.rs` + `modules/account_pg_events.rs` + `api/quota.rs` | Model protection updates only persisted to JSON, not PostgreSQL — protected models re-enable after restart | Critical |
+| `modules/account/fetch.rs` + `api/quota.rs` + `main.rs` | Dual-write strategy mixes JSON and PostgreSQL updates, risking desynchronization | Medium |
+| `modules/proxy_db.rs` | `proxy_logs.db` grows unbounded without retention cleanup | Medium |
+| `modules/oauth.rs` | Hardcoded OAuth client secret makes rotation difficult | Low |
 
 ---
 
