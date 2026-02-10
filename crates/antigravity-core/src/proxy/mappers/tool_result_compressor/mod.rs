@@ -21,9 +21,6 @@ pub use strategies::{
 /// Maximum tool result characters (~200k, prevents prompt overflow)
 pub const MAX_TOOL_RESULT_CHARS: usize = 200_000;
 
-/// Maximum base64 image characters (~1.5M, roughly 1MB of binary data)
-pub const MAX_IMAGE_BASE64_CHARS: usize = 1_500_000;
-
 /// Browser snapshot max chars after compression
 pub const SNAPSHOT_MAX_CHARS: usize = 16_000;
 
@@ -167,8 +164,6 @@ fn deep_clean_html(html: &str) -> String {
 pub fn sanitize_tool_result_blocks(blocks: &mut Vec<Value>) {
     let mut used_chars = 0;
     let mut cleaned_blocks = Vec::new();
-    let mut removed_image_count: usize = 0;
-    let mut removed_image_total_size: usize = 0;
 
     if !blocks.is_empty() {
         info!(
@@ -179,16 +174,6 @@ pub fn sanitize_tool_result_blocks(blocks: &mut Vec<Value>) {
     }
 
     for block in blocks.iter() {
-        if let Some(size) = is_oversized_base64_image(block) {
-            removed_image_count += 1;
-            removed_image_total_size += size;
-            debug!(
-                "[ToolCompressor] Removed oversized base64 image block ({} chars, threshold: {})",
-                size, MAX_IMAGE_BASE64_CHARS
-            );
-            continue;
-        }
-
         // Compress text content
         if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
             let remaining = MAX_TOOL_RESULT_CHARS.saturating_sub(used_chars);
@@ -229,22 +214,6 @@ pub fn sanitize_tool_result_blocks(blocks: &mut Vec<Value>) {
         }
     }
 
-    if removed_image_count > 0 {
-        let msg = if removed_image_count == 1 {
-            format!("[1 image omitted: {}KB exceeds limit]", removed_image_total_size / 1024)
-        } else {
-            format!(
-                "[{} images omitted: {}KB total exceeds limit]",
-                removed_image_count,
-                removed_image_total_size / 1024
-            )
-        };
-        cleaned_blocks.push(serde_json::json!({
-            "type": "text",
-            "text": msg
-        }));
-    }
-
     info!(
         "[ToolCompressor] Sanitization complete: {} -> {} blocks, {} chars used",
         blocks.len(),
@@ -254,28 +223,3 @@ pub fn sanitize_tool_result_blocks(blocks: &mut Vec<Value>) {
 
     *blocks = cleaned_blocks;
 }
-
-/// Detect if block is an oversized base64 image.
-/// Returns Some(size_in_chars) if image exceeds MAX_IMAGE_BASE64_CHARS, None otherwise.
-/// Small/medium images pass through to the model; only truly huge ones are stripped.
-pub fn is_oversized_base64_image(block: &Value) -> Option<usize> {
-    if block.get("type").and_then(|v| v.as_str()) == Some("image")
-        && block.get("source").and_then(|s| s.get("type")).and_then(|v| v.as_str())
-            == Some("base64")
-    {
-        let data_len = block
-            .get("source")
-            .and_then(|s| s.get("data"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.len())
-            .unwrap_or(0);
-
-        if data_len > MAX_IMAGE_BASE64_CHARS {
-            return Some(data_len);
-        }
-    }
-    None
-}
-
-#[cfg(test)]
-mod adversarial_tests;

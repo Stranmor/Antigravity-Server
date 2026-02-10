@@ -61,31 +61,7 @@ fn test_sanitize_tool_result_blocks() {
 }
 
 #[test]
-fn test_sanitize_removes_base64_image() {
-    let mut blocks = vec![
-        serde_json::json!({
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "data": "a".repeat(2_000_000)
-            }
-        }),
-        serde_json::json!({
-            "type": "text",
-            "text": "some text"
-        }),
-    ];
-
-    sanitize_tool_result_blocks(&mut blocks);
-
-    assert_eq!(blocks.len(), 2);
-    assert_eq!(blocks[0]["type"], "text");
-    assert_eq!(blocks[0]["text"], "some text");
-    assert!(blocks[1]["text"].as_str().unwrap().contains("1 image omitted: 1953KB exceeds limit"));
-}
-
-#[test]
-fn test_sanitize_keeps_small_base64_image() {
+fn test_sanitize_keeps_base64_image() {
     let mut blocks = vec![
         serde_json::json!({
             "type": "image",
@@ -105,31 +81,4 @@ fn test_sanitize_keeps_small_base64_image() {
     assert_eq!(blocks.len(), 2);
     assert_eq!(blocks[0]["type"], "image");
     assert_eq!(blocks[1]["type"], "text");
-}
-
-#[test]
-fn test_is_oversized_base64_image() {
-    let small_image = serde_json::json!({
-        "type": "image",
-        "source": {
-            "type": "base64",
-            "data": "abc123"
-        }
-    });
-    assert!(is_oversized_base64_image(&small_image).is_none());
-
-    let huge_image = serde_json::json!({
-        "type": "image",
-        "source": {
-            "type": "base64",
-            "data": "a".repeat(2_000_000)
-        }
-    });
-    assert_eq!(is_oversized_base64_image(&huge_image), Some(2_000_000));
-
-    let text_block = serde_json::json!({
-        "type": "text",
-        "text": "hello"
-    });
-    assert!(is_oversized_base64_image(&text_block).is_none());
 }

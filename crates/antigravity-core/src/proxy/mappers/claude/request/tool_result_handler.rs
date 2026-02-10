@@ -1,8 +1,6 @@
 use crate::proxy::mappers::tool_result_compressor::{self, MAX_TOOL_RESULT_CHARS};
 use serde_json::{json, Value};
 
-const MAX_IMAGES_PER_TOOL_RESULT: usize = 5;
-
 pub fn build_tool_result_part(
     tool_use_id: &str,
     content: &Value,
@@ -59,20 +57,13 @@ fn extract_content_and_images(compacted: &Value, original: &Value) -> (String, V
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("image/png");
                             if let Some(b64) = data {
-                                if images.len() < MAX_IMAGES_PER_TOOL_RESULT {
-                                    images.push(json!({
-                                        "inlineData": {
-                                            "mimeType": media,
-                                            "data": b64
-                                        }
-                                    }));
-                                    return Some("[image attached below]".to_string());
-                                } else {
-                                    return Some(
-                                        "[image omitted: too many images in tool result]"
-                                            .to_string(),
-                                    );
-                                }
+                                images.push(json!({
+                                    "inlineData": {
+                                        "mimeType": media,
+                                        "data": b64
+                                    }
+                                }));
+                                return Some("[image attached below]".to_string());
                             }
                         }
                         None
