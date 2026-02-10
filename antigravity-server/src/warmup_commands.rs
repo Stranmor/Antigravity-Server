@@ -1,5 +1,6 @@
 use anyhow::Result;
 use colored::Colorize;
+use std::io::Write;
 
 use antigravity_core::modules::account;
 
@@ -34,6 +35,7 @@ pub async fn warmup_all() -> Result<()> {
 
     for acc in enabled {
         print!("Warming up {}... ", acc.email);
+        let _ = std::io::stdout().flush();
         match account::fetch_quota_with_retry(&acc, None).await {
             Ok(result) => {
                 if let Err(e) =

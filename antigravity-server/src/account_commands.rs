@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use colored::Colorize;
 use comfy_table::{presets::UTF8_FULL, Cell, Color, Table};
+use std::io::Write;
 
 use antigravity_core::modules::{account, oauth};
 use antigravity_types::models::TokenData;
@@ -153,6 +154,7 @@ async fn refresh_all_quotas() -> Result<()> {
 
     for acc in enabled {
         print!("Refreshing {}... ", acc.email);
+        let _ = std::io::stdout().flush();
         match account::fetch_quota_with_retry(&acc, None).await {
             Ok(result) => {
                 if let Err(e) =

@@ -80,11 +80,16 @@ pub async fn fetch_quota_with_retry(
     let name =
         if account.name.is_none() || account.name.as_ref().is_some_and(|n| n.trim().is_empty()) {
             logger::log_info(&format!("Account {} missing name, fetching...", account.email));
-            if let Ok(user_info) = oauth::get_user_info(&active_token.access_token).await {
-                user_info.get_display_name()
-            } else {
-                None
+            let fetched =
+                if let Ok(user_info) = oauth::get_user_info(&active_token.access_token).await {
+                    user_info.get_display_name()
+                } else {
+                    None
+                };
+            if fetched.is_some() {
+                persist_name(repo, account, fetched.as_deref(), refreshed_token.as_ref()).await;
             }
+            fetched
         } else {
             None
         };
@@ -164,10 +169,14 @@ async fn handle_unauthorized_retry(
 
     let name =
         if account.name.is_none() || account.name.as_ref().is_some_and(|n| n.trim().is_empty()) {
-            match oauth::get_user_info(&token_res.access_token).await {
+            let fetched = match oauth::get_user_info(&token_res.access_token).await {
                 Ok(user_info) => user_info.get_display_name(),
                 Err(_) => None,
+            };
+            if fetched.is_some() {
+                persist_name(repo, account, fetched.as_deref(), Some(&new_token)).await;
             }
+            fetched
         } else {
             None
         };
@@ -193,6 +202,7 @@ async fn handle_unauthorized_retry(
             if s == StatusCode::FORBIDDEN {
                 let mut q = QuotaData::new();
                 q.is_forbidden = true;
+                persist_quota_data(repo, account, &q, None, Some(&new_token)).await;
                 return Ok(QuotaFetchResult {
                     quota: q,
                     refreshed_token: Some(new_token),
@@ -296,6 +306,30 @@ async fn persist_quota_data(
         }
         if let Err(e) = save_account_async(clone).await {
             tracing::warn!("Failed to save quota for {}: {}", account.email, e);
+        }
+    }
+}
+
+async fn persist_name(
+    repo: Option<&Arc<dyn AccountRepository>>,
+    account: &Account,
+    name: Option<&str>,
+    refreshed_token: Option<&TokenData>,
+) {
+    if let Some(repo) = repo {
+        let mut updated = account.clone();
+        updated.name = name.map(String::from);
+        if let Err(e) = repo.update_account(&updated).await {
+            tracing::warn!("DB name update failed for {}: {}", account.email, e);
+        }
+    } else {
+        let mut clone = account.clone();
+        clone.name = name.map(String::from);
+        if let Some(token) = refreshed_token {
+            clone.token = token.clone();
+        }
+        if let Err(e) = save_account_async(clone).await {
+            tracing::warn!("Failed to save name for {}: {}", account.email, e);
         }
     }
 }
