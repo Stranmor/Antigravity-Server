@@ -234,6 +234,10 @@ vendor/
 | `proxy/handlers/claude/chat.rs` | Double boxing in `collect_to_json_response`: `Box<dyn Error>` error wrapped again by `?` into another `Box<dyn Error>`. Unnecessary allocation. | Low |
 | `proxy/mappers/openai/streaming/openai_stream.rs` | Shared mutable `tool_call_state` across candidates — if `n > 1` (multiple completions), tool call accumulation would cross-contaminate. Currently safe because Gemini only returns `n=1`. | Low |
 | `proxy/handlers/claude/chat.rs` | Error masking in non-streaming (collect_to_json) path: on stream error, returns last buffered JSON or generic error — original error details lost. Acceptable tradeoff vs infinite retries. | Low |
+| `proxy/mappers/openai/streaming/legacy_stream.rs` | Still emits `overloaded_error` on stream errors instead of graceful `finish_reason: "length"`. Affects legacy OpenAI path clients. | Medium |
+| `proxy/mappers/openai/streaming/codex_stream.rs` | Still emits error events on stream errors instead of graceful finish. Affects Codex path clients. | Medium |
+| `proxy/mappers/openai/streaming/openai_stream.rs` | Double `[DONE]` emission: error path emits `[DONE]` + break, then post-loop also emits `[DONE]`. Most SDKs tolerate this. | Low |
+| `proxy/handlers/openai/chat/stream_handler.rs` | Error-to-graceful conversion chunk missing `id`/`object`/`created`/`model` fields — differs from full format in `openai_stream.rs`. | Low |
 
 ---
 
