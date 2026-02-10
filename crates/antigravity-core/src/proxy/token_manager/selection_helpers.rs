@@ -57,9 +57,8 @@ impl TokenManager {
         tracing::info!("Using preferred account: {} (fixed mode)", preferred_token.email);
 
         let mut token = preferred_token.clone();
-        let now = chrono::Utc::now().timestamp();
 
-        if now >= token.timestamp - 300 {
+        if token.needs_refresh() {
             self.try_refresh_token(&mut token).await.ok()?;
         }
 

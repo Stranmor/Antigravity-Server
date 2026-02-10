@@ -215,13 +215,3 @@ impl AppState {
         self.inner.repository.as_ref()
     }
 }
-
-pub fn get_model_quota(account: &Account, model_prefix: &str) -> Option<i32> {
-    let prefix_lower = model_prefix.to_lowercase();
-    account.quota.as_ref().and_then(|q| {
-        q.models
-            .iter()
-            .find(|m| m.name.to_lowercase().contains(&prefix_lower))
-            .map(|m| m.percentage)
-    })
-}

@@ -7,7 +7,7 @@ use tokio::task::JoinSet;
 use antigravity_core::modules::{account, oauth as core_oauth};
 use antigravity_types::models::TokenData;
 
-use crate::state::{get_model_quota, AppState};
+use crate::state::AppState;
 
 #[derive(Serialize)]
 pub struct AccountInfo {
@@ -40,8 +40,16 @@ pub async fn list_accounts(
             disabled: a.disabled,
             proxy_disabled: a.proxy_disabled,
             is_current: current_id.as_ref() == Some(&a.id),
-            gemini_quota: get_model_quota(&a, "gemini"),
-            claude_quota: get_model_quota(&a, "claude"),
+            gemini_quota: a
+                .quota
+                .as_ref()
+                .and_then(|q| q.get_model_quota("gemini"))
+                .map(|m| m.percentage),
+            claude_quota: a
+                .quota
+                .as_ref()
+                .and_then(|q| q.get_model_quota("claude"))
+                .map(|m| m.percentage),
             subscription_tier: a.quota.as_ref().and_then(|q| q.subscription_tier.clone()),
             quota: a.quota.clone(),
         })
@@ -60,8 +68,16 @@ pub async fn get_current_account(
             disabled: a.disabled,
             proxy_disabled: a.proxy_disabled,
             is_current: true,
-            gemini_quota: get_model_quota(&a, "gemini"),
-            claude_quota: get_model_quota(&a, "claude"),
+            gemini_quota: a
+                .quota
+                .as_ref()
+                .and_then(|q| q.get_model_quota("gemini"))
+                .map(|m| m.percentage),
+            claude_quota: a
+                .quota
+                .as_ref()
+                .and_then(|q| q.get_model_quota("claude"))
+                .map(|m| m.percentage),
             subscription_tier: a.quota.as_ref().and_then(|q| q.subscription_tier.clone()),
             quota: a.quota.clone(),
         }))),
@@ -215,8 +231,16 @@ pub async fn add_account_by_token(
                             disabled: acc.disabled,
                             proxy_disabled: acc.proxy_disabled,
                             is_current: false,
-                            gemini_quota: get_model_quota(&acc, "gemini"),
-                            claude_quota: get_model_quota(&acc, "claude"),
+                            gemini_quota: acc
+                                .quota
+                                .as_ref()
+                                .and_then(|q| q.get_model_quota("gemini"))
+                                .map(|m| m.percentage),
+                            claude_quota: acc
+                                .quota
+                                .as_ref()
+                                .and_then(|q| q.get_model_quota("claude"))
+                                .map(|m| m.percentage),
                             subscription_tier: acc
                                 .quota
                                 .as_ref()

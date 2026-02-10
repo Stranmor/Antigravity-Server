@@ -168,7 +168,8 @@ pub fn start_quota_refresh(state: AppState) {
                                 tracing::warn!("[QuotaRefresh] Failed {}: {}", acc.email, e);
                             },
                         }
-                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        tokio::time::sleep(antigravity_core::proxy::retry::THUNDERING_HERD_DELAY)
+                            .await;
                     }
 
                     tracing::info!("[QuotaRefresh] Full refresh: {}/{} accounts", success, total);

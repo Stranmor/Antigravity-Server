@@ -86,10 +86,9 @@ fn process_part(
             const MAX_THINKING_SIZE: usize = 10 * 1024 * 1024; // 10MB
             if ctx.accumulated_thinking.len() < MAX_THINKING_SIZE {
                 let remaining = MAX_THINKING_SIZE.saturating_sub(ctx.accumulated_thinking.len());
-                if text.len() <= remaining {
-                    ctx.accumulated_thinking.push_str(text);
-                } else {
-                    ctx.accumulated_thinking.push_str(&text[..remaining]);
+                let safe_len = utf8_safe_prefix_len(text, remaining);
+                if safe_len > 0 {
+                    ctx.accumulated_thinking.push_str(&text[..safe_len]);
                 }
             }
         } else {
@@ -149,22 +148,13 @@ fn emit_inline_image(img: &Value, output: &mut Vec<Bytes>, ctx: &CandidateContex
     const CHUNK_SIZE: usize = 32 * 1024;
     let prefix = format!("![image](data:{};base64,", mime_type);
 
-    let mk_chunk = |content: &str| -> String {
-        let chunk = json!({
-            "id": ctx.stream_id, "object": "chat.completion.chunk",
-            "created": ctx.created_ts, "model": ctx.model,
-            "choices": [{"index": idx as u32, "delta": {"content": content}, "finish_reason": Value::Null}]
-        });
-        format!("data: {}\n\n", serde_json::to_string(&chunk).unwrap_or_default())
-    };
-
-    output.push(Bytes::from(mk_chunk(&prefix)));
+    push_content_chunk(output, ctx, idx, &prefix, None);
     for chunk in data.as_bytes().chunks(CHUNK_SIZE) {
         if let Ok(chunk_str) = std::str::from_utf8(chunk) {
-            output.push(Bytes::from(mk_chunk(chunk_str)));
+            push_content_chunk(output, ctx, idx, chunk_str, None);
         }
     }
-    output.push(Bytes::from(mk_chunk(")")));
+    push_content_chunk(output, ctx, idx, ")", None);
 
     tracing::info!(
         "[OpenAI-SSE] Sent image in {} chunks ({} bytes total)",
@@ -185,7 +175,9 @@ fn emit_function_call(
     }
 
     let name = func_call.get("name").and_then(|v| v.as_str()).unwrap_or("unknown");
-    let args = func_call.get("args").unwrap_or(&json!({})).to_string();
+    let empty_args = json!({});
+    let args_value = func_call.get("args").filter(|value| !value.is_null()).unwrap_or(&empty_args);
+    let args = args_value.to_string();
     let call_id = generate_call_id(func_call);
 
     let chunk = tool_call_chunk(
@@ -210,40 +202,79 @@ fn emit_content_chunks(
     const MAX_CHUNK_SIZE: usize = 32 * 1024;
 
     if content_out.len() > MAX_CHUNK_SIZE {
-        let content_bytes = content_out.as_bytes();
-        let total_chunks = content_bytes.len().div_ceil(MAX_CHUNK_SIZE);
-
-        for (chunk_idx, chunk) in content_bytes.chunks(MAX_CHUNK_SIZE).enumerate() {
-            let is_last_chunk = chunk_idx == total_chunks - 1;
-            let chunk_str = if is_last_chunk {
-                String::from_utf8_lossy(chunk).to_string()
-            } else {
-                let safe_len = (0..=chunk.len())
-                    .rev()
-                    .find(|&i| std::str::from_utf8(&chunk[..i]).is_ok())
-                    .unwrap_or(0);
-                String::from_utf8_lossy(&chunk[..safe_len]).to_string()
-            };
+        let chunks = chunk_text(content_out, MAX_CHUNK_SIZE);
+        for (chunk_idx, chunk_str) in chunks.iter().enumerate() {
+            let is_last_chunk = chunk_idx + 1 == chunks.len();
             let chunk_finish_reason = if is_last_chunk { finish_reason } else { None };
-            let c = content_chunk(
-                ctx.stream_id,
-                ctx.created_ts,
-                ctx.model,
-                idx as u32,
-                &chunk_str,
-                chunk_finish_reason,
-            );
-            output.push(Bytes::from(sse_line(&c)));
+            push_content_chunk(output, ctx, idx, chunk_str, chunk_finish_reason);
         }
     } else {
-        let c = content_chunk(
-            ctx.stream_id,
-            ctx.created_ts,
-            ctx.model,
-            idx as u32,
-            content_out,
-            finish_reason,
-        );
-        output.push(Bytes::from(sse_line(&c)));
+        push_content_chunk(output, ctx, idx, content_out, finish_reason);
+    }
+}
+
+fn push_content_chunk(
+    output: &mut Vec<Bytes>,
+    ctx: &CandidateContext<'_>,
+    idx: usize,
+    content: &str,
+    finish_reason: Option<&'static str>,
+) {
+    let chunk =
+        content_chunk(ctx.stream_id, ctx.created_ts, ctx.model, idx as u32, content, finish_reason);
+    match serde_json::to_string(&chunk) {
+        Ok(serialized) => output.push(Bytes::from(format!("data: {}\n\n", serialized))),
+        Err(error) => {
+            tracing::warn!("[OpenAI-SSE] Failed to serialize content chunk: {}", error);
+        },
+    }
+}
+
+fn utf8_safe_prefix_len(text: &str, max_len: usize) -> usize {
+    let mut len = max_len.min(text.len());
+    while len > 0 && !text.is_char_boundary(len) {
+        len = len.saturating_sub(1);
+    }
+    len
+}
+
+fn chunk_text(content: &str, max_chunk_size: usize) -> Vec<&str> {
+    let mut chunks = Vec::new();
+    let mut start = 0;
+    while start < content.len() {
+        let mut end = (start + max_chunk_size).min(content.len());
+        while end > start && !content.is_char_boundary(end) {
+            end = end.saturating_sub(1);
+        }
+        if end == start {
+            if let Some((offset, ch)) = content[start..].char_indices().next() {
+                end = start + offset + ch.len_utf8();
+            } else {
+                break;
+            }
+        }
+        chunks.push(&content[start..end]);
+        start = end;
+    }
+    chunks
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{chunk_text, utf8_safe_prefix_len};
+
+    #[test]
+    fn utf8_safe_prefix_len_respects_boundary() {
+        let text = "a😀";
+        assert_eq!(utf8_safe_prefix_len(text, 2), 1);
+        assert_eq!(utf8_safe_prefix_len(text, 5), 5);
+    }
+
+    #[test]
+    fn chunk_text_preserves_content() {
+        let text = "ab😀cd";
+        let chunks = chunk_text(text, 3);
+        assert_eq!(chunks.concat(), text);
+        assert!(chunks.iter().all(|chunk| !chunk.is_empty()));
     }
 }

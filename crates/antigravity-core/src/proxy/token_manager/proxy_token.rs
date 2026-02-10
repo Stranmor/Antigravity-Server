@@ -140,4 +140,16 @@ impl ProxyToken {
             AccountTier::Unknown => 1.25,
         }
     }
+
+    /// Buffer in seconds before expiry to trigger token refresh.
+    const REFRESH_BUFFER_SECS: i64 = 300;
+
+    /// Check if the token needs refreshing (expired or within 300s of expiry).
+    ///
+    /// ProxyToken stores `timestamp` as the absolute expiry time (epoch seconds).
+    /// A token needs refresh when `now >= timestamp - 300`.
+    #[inline]
+    pub fn needs_refresh(&self) -> bool {
+        chrono::Utc::now().timestamp() >= self.timestamp.saturating_sub(Self::REFRESH_BUFFER_SECS)
+    }
 }

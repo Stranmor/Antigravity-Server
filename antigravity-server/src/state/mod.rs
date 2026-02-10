@@ -21,7 +21,6 @@ use antigravity_core::proxy::{
 use antigravity_types::models::ProxyConfig;
 
 // Re-export helper function
-pub use accessors::get_model_quota;
 
 /// Shared application state
 #[derive(Clone)]

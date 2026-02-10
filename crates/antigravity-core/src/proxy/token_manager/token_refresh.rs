@@ -7,7 +7,7 @@ impl TokenManager {
     pub(super) async fn try_refresh_token(&self, token: &mut ProxyToken) -> Result<(), String> {
         let now = chrono::Utc::now().timestamp();
 
-        if now < token.timestamp - 300 {
+        if !token.needs_refresh() {
             return Ok(());
         }
 

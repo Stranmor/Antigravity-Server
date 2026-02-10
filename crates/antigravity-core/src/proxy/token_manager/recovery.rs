@@ -25,7 +25,7 @@ impl TokenManager {
                     "All accounts rate-limited but shortest wait is {}s. Applying 500ms buffer...",
                     wait_sec
                 );
-                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                tokio::time::sleep(crate::proxy::retry::THUNDERING_HERD_DELAY).await;
 
                 for t in tokens_snapshot {
                     if !self.is_candidate_eligible(
@@ -100,7 +100,7 @@ impl TokenManager {
             "All {} accounts at max concurrency. Waiting 500ms for availability...",
             tokens_snapshot.len()
         );
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        tokio::time::sleep(crate::proxy::retry::THUNDERING_HERD_DELAY).await;
 
         for t in tokens_snapshot.iter() {
             if !self.is_candidate_eligible(

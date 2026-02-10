@@ -261,7 +261,7 @@ pub fn start(state: AppState) {
                         },
                     }
 
-                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    tokio::time::sleep(antigravity_core::proxy::retry::THUNDERING_HERD_DELAY).await;
                 }
 
                 {

@@ -21,6 +21,9 @@ pub const ROTATABLE_STATUS_CODES: &[u16] = &[429, 401, 403, 404, 500, 503, 529];
 /// HTTP status codes indicating rate limiting (subset used for mark_rate_limited).
 pub const RATE_LIMIT_CODES: &[u16] = &[429, 529, 503, 500];
 
+/// Delay to prevent thundering herd when all accounts are temporarily limited.
+pub const THUNDERING_HERD_DELAY: Duration = Duration::from_millis(500);
+
 /// Strategy for retrying failed upstream requests.
 #[derive(Debug, Clone)]
 pub enum RetryStrategy {
