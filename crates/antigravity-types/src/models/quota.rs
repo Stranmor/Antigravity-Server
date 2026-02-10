@@ -79,6 +79,9 @@ pub struct QuotaData {
 }
 
 impl QuotaData {
+    /// Threshold for low quota percentage.
+    pub const LOW_QUOTA_THRESHOLD: i32 = 20;
+
     /// Create empty quota data.
     pub fn new() -> Self {
         Self {

@@ -5,12 +5,14 @@
 - Fix production crash: blocking TLS init in async runtime (completed).
 - Enforce image MIME auto-detection from bytes across proxy mappers (completed).
 - Eliminate duplicated retry logic across handlers (completed).
-- Introduce ModelFamily enum and replace model family string checks (in progress).
+- Introduce ModelFamily enum and replace model family string checks (completed).
 
 ## Current Status
+- ✅ COMPLETED [2026-02-10]: Fix quota persistence and dual-write consistency bugs.
 - ✅ COMPLETED [2026-02-10]: Consolidated retry logic across handlers, using unified retry helpers and constants.
 - ✅ COMPLETED [2026-02-10]: Added image MIME detection from base64 magic bytes and wired it across proxy mappers to override declared types when needed.
 - ✅ COMPLETED [2026-02-10]: Removed all image size and count limits from tool result processing. Images of any size and quantity now pass through to Gemini without filtering.
+- ✅ COMPLETED [2026-02-10]: Introduced ModelFamily enum and replaced model family string checks in the specified call sites.
 - ✅ COMPLETED [2026-02-09]: Fixed production crash caused by blocking native-TLS initialization inside tokio async runtime. `UpstreamClient::new()` now accepts pre-built `reqwest::Client`; proxy/WARP client builds wrapped in `spawn_blocking`. Deployed and verified on VPS.
 - ✅ COMPLETED [2026-02-09]: Fixed production outage — all requests failing "All accounts exhausted". Root cause: `upstream_proxy` in `gui_config.json` was `enabled: true` pointing to `http://127.0.0.1:8046` where nothing was listening. Every outgoing request got instant `Connection refused`, all 16 accounts cycled through and marked exhausted. Fix: disabled upstream proxy in config. Additionally promoted transport error logging from `debug` to `error` level for future visibility.
 

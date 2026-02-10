@@ -149,23 +149,18 @@ pub async fn handle_warmup(
 
         let base_request = if is_image {
             json!({
-                "model": req.model,
                 "contents": [{"role": "user", "parts": [{"text": "Say hi"}]}],
                 "generationConfig": {
                     "maxOutputTokens": 10,
-                    "temperature": 0,
-                    "responseModalities": ["TEXT"]
-                },
-                "session_id": session_id
+                    "temperature": 0
+                }
             })
         } else {
             json!({
-                "model": req.model,
                 "contents": [{"role": "user", "parts": [{"text": "Say hi"}]}],
                 "generationConfig": {
                     "temperature": 0
-                },
-                "session_id": session_id
+                }
             })
         };
 
@@ -174,7 +169,7 @@ pub async fn handle_warmup(
 
     // ===== step 3: call UpstreamClient =====
     let model_lower = req.model.to_lowercase();
-    let prefer_non_stream = model_lower.contains("flash-lite") || model_lower.contains("2.5-pro");
+    let prefer_non_stream = model_lower.contains("flash-lite");
 
     let (method, query) = if prefer_non_stream {
         ("generateContent", None)
@@ -227,6 +222,11 @@ pub async fn handle_warmup(
             } else {
                 let status_code = status.as_u16();
                 let error_text = response.text().await.unwrap_or_default();
+                let error_detail = if error_text.is_empty() {
+                    format!("Upstream returned {}", status_code)
+                } else {
+                    format!("Upstream returned {}: {}", status_code, error_text)
+                };
                 tracing::warn!(
                     "[Warmup-API] Upstream error {} for {}/{}: {}",
                     status_code,
@@ -239,7 +239,7 @@ pub async fn handle_warmup(
                     Json(WarmupResponse {
                         success: false,
                         message: format!("Warmup failed: HTTP {}", status_code),
-                        error: Some(format!("Upstream returned {}", status_code)),
+                        error: Some(error_detail),
                     }),
                 )
                     .into_response()

@@ -80,7 +80,9 @@ impl DashboardStats {
                         gemini_total += percent;
                         gemini_count += 1;
                     }
-                    if model.name.contains("image") {
+                    if ModelFamily::from_model_name(&model.name).is_gemini()
+                        && model.name.contains("image")
+                    {
                         gemini_image_total += percent;
                         gemini_image_count += 1;
                     }
@@ -115,7 +117,10 @@ impl DashboardStats {
                 }
 
                 // Low quota check (remaining < 20%)
-                let any_low = quota.models.iter().any(|m| m.percentage < 20_i32);
+                let any_low = quota
+                    .models
+                    .iter()
+                    .any(|m| m.percentage < super::quota::QuotaData::LOW_QUOTA_THRESHOLD);
                 if any_low {
                     stats.low_quota_count += 1;
                 }
@@ -219,10 +224,10 @@ pub struct ProxyRequestLog {
     #[serde(alias = "error_message")]
     pub error: Option<String>,
     /// Request body (truncated)
-    #[serde(skip_serializing)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub request_body: Option<String>,
     /// Response body (truncated)
-    #[serde(skip_serializing)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub response_body: Option<String>,
     /// Input tokens used (non-cached)
     pub input_tokens: Option<u32>,
@@ -286,4 +291,25 @@ pub struct UpdateInfo {
     pub release_url: Option<String>,
     /// Release notes
     pub release_notes: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Account, DashboardStats};
+    use crate::models::{QuotaData, TokenData};
+
+    #[test]
+    fn gemini_image_quota_excludes_non_gemini_models() {
+        let token =
+            TokenData::new("access".to_string(), "refresh".to_string(), 3600, None, None, None);
+        let mut account = Account::new("acc-1".to_string(), "user@example.com".to_string(), token);
+        let mut quota = QuotaData::new();
+        quota.add_model("gemini-image-3".to_string(), 40, "1h".to_string());
+        quota.add_model("claude-image-1".to_string(), 80, "1h".to_string());
+        account.update_quota(quota);
+
+        let stats = DashboardStats::from_accounts(&[account]);
+
+        assert_eq!(stats.avg_gemini_image_quota, 40);
+    }
 }

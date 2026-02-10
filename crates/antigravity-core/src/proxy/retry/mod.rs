@@ -9,7 +9,8 @@ mod profile;
 pub use peek::{peek_first_data_chunk, PeekConfig, PeekResult};
 pub use profile::RetryProfile;
 
-use tokio::time::{sleep, Duration};
+use std::time::Duration;
+use tokio::time::sleep;
 use tracing::{debug, info};
 
 /// Maximum retry attempts before giving up. Capped by pool size at call site.

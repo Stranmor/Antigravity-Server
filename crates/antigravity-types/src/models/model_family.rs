@@ -19,9 +19,10 @@ impl ModelFamily {
     /// MUST use this function instead of ad-hoc string matching.
     pub fn from_model_name(name: &str) -> Self {
         let lower = name.to_lowercase();
+        let is_flash_alias = lower.starts_with("flash");
         if lower.contains("claude") {
             Self::Claude
-        } else if lower.contains("gemini") || lower.contains("flash") {
+        } else if lower.contains("gemini") || is_flash_alias {
             Self::Gemini
         } else {
             Self::Unknown

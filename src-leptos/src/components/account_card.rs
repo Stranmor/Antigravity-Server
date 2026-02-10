@@ -2,6 +2,7 @@
 
 use crate::api_models::Account;
 use crate::formatters::{format_time_remaining, get_time_remaining_color};
+use crate::pages::accounts::filter_types::quota_class;
 use leptos::prelude::*;
 
 #[component]
@@ -223,14 +224,6 @@ pub(crate) fn AccountCard(
                 </button>
             </div>
         </div>
-    }
-}
-
-fn quota_class(percent: i32) -> &'static str {
-    match percent {
-        0..=20 => "quota-fill--critical",
-        21..=50 => "quota-fill--warning",
-        _ => "quota-fill--good",
     }
 }
 
