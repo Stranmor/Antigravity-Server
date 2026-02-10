@@ -1,7 +1,8 @@
 # Antigravity Manager - Architecture Status
 
 ## TARGET GOAL
-- Fix Claude/Vertex tool_use/tool_result pairing after signature stripping (in progress).
+- Fix Claude retry signature handling: narrow signature error detection and avoid tool-loop closure during recovery (completed).
+- Fix Claude/Vertex tool_use/tool_result pairing after signature stripping (completed).
 - Fix quota persistence and dual-write consistency bugs (completed).
 - Fix production crash: blocking TLS init in async runtime (completed).
 - Enforce image MIME auto-detection from bytes across proxy mappers (completed).
@@ -9,7 +10,8 @@
 - Introduce ModelFamily enum and replace model family string checks (completed).
 
 ## Current Status
-- 🔄 IN PROGRESS [2026-02-10]: Fix tool_use/tool_result orphaning in Claude via Vertex AI path.
+- ✅ COMPLETED [2026-02-10]: Fixed Claude retry signature handling. Root cause: `CLAUDE_SIGNATURE_PATTERNS` included bare `"INVALID_ARGUMENT"` which matched ALL 400 errors (including MIME mismatches), triggering wasteful signature recovery + message inflation (5→41 messages). Fix: removed overly broad pattern, removed `close_tool_loop_for_thinking()` from error recovery (already handled during preprocessing). Added 24 tests.
+- ✅ COMPLETED [2026-02-10]: Fixed tool_use/tool_result orphaning in Claude via Vertex AI path. Root cause: signature stripping dropped model messages that became empty after thinking removal, breaking role alternation. Fix: empty model messages now get placeholder text part instead of being dropped. Added diagnostic validation for functionCall/functionResponse pairing.
 - ✅ COMPLETED [2026-02-10]: Fix quota persistence and dual-write consistency bugs.
 - ✅ COMPLETED [2026-02-10]: Consolidated retry logic across handlers, using unified retry helpers and constants.
 - ✅ COMPLETED [2026-02-10]: Added image MIME detection from base64 magic bytes and wired it across proxy mappers to override declared types when needed.
@@ -182,8 +184,11 @@ vendor/
 |------|-------|----------|
 | `proxy/common/json_schema/recursive.rs` | `if/else if/else` for `properties`/`items` is mutually exclusive — if schema has BOTH, `items` won't be recursively cleaned | Medium |
 | `proxy/common/json_schema/recursive.rs` | `else` fallback block treats ALL remaining fields as schemas — data fields like `enum` values or `const` containing object-like structures could be corrupted by normalization | Low |
+| `proxy/common/json_schema/recursive.rs` | Unbounded recursion in schema cleaning can overflow stack on deeply nested input | Medium |
 | `modules/repository.rs` | `update_token_credentials` accepts both `expires_in` and `expiry_timestamp` — redundant, allows conflicting data | Low |
 | `modules/oauth.rs` | Hardcoded OAuth client secret makes rotation difficult | Low |
+| `proxy/mappers/tool_result_compressor/mod.rs` | Regexes are recompiled on each call to HTML cleaning, wasting CPU in hot path | Medium |
+| `antigravity-server/src/api/` | Blocking file I/O in async handlers can stall request processing under load | Medium |
 | `proxy/middleware/monitor.rs` | ~~DoS Risk: parses entire request/response bodies (up to 100MB) into JSON DOM.~~ **Partially mitigated [2026-02-09]**: Actual limit is 2MB, not 100MB. SSE uses mpsc channel (streaming preserved). Remaining: 2MB buffer per connection under high concurrency still causes memory pressure. | Medium |
 | `proxy/middleware/monitor.rs` | ~~Latency: `handle_json_response` buffers full response before forwarding.~~ **Partially mitigated [2026-02-09]**: Actually uses mpsc channel — client receives data as it arrives. Server-side buffering up to 2MB for usage extraction. | Low |
 | `proxy/middleware/monitor.rs` | ~~Request body handling returns `Body::empty()` on buffering failure.~~ **Fixed [2026-02-09]**: Actually returns 502 Bad Gateway on request buffering failure (code was misread). | ~~High~~ Fixed |
