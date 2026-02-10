@@ -17,6 +17,7 @@ use crate::proxy::mappers::signature_store::store_thought_signature;
 pub fn create_legacy_sse_stream(
     mut gemini_stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
     model: String,
+    trace_id: String,
 ) -> Pin<Box<dyn Stream<Item = Result<Bytes, String>> + Send>> {
     let mut buffer = BytesMut::new();
 
@@ -105,7 +106,7 @@ pub fn create_legacy_sse_stream(
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Legacy stream error (graceful finish): {}", e);
+                    tracing::warn!("[{}] Legacy stream error (graceful finish): {}", trace_id, e);
                     crate::proxy::prometheus::record_stream_graceful_finish("openai_legacy");
                     // Emit graceful completion instead of error event to prevent
                     // AI agents from endlessly retrying truncated responses

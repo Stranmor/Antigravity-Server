@@ -58,7 +58,7 @@ pub async fn handle_streaming_response(
     match first_data_chunk {
         Some(bytes) => {
             let stream_rest = claude_stream;
-            let combined_stream = build_combined_stream(bytes, stream_rest);
+            let combined_stream = build_combined_stream(bytes, stream_rest, ctx.trace_id.clone());
 
             if ctx.client_wants_stream {
                 ClaudeStreamResult::Success(build_sse_response(ctx, combined_stream))
@@ -79,19 +79,21 @@ pub async fn handle_streaming_response(
 fn build_combined_stream<S>(
     first_chunk: Bytes,
     stream_rest: S,
+    trace_id: String,
 ) -> Pin<Box<dyn futures::Stream<Item = Result<Bytes, std::io::Error>> + Send>>
 where
     S: futures::Stream<Item = Result<Bytes, String>> + Send + 'static,
 {
     Box::pin(
         futures::stream::once(async move { Ok(first_chunk) }).chain(stream_rest.map(
-            |result| -> Result<Bytes, std::io::Error> {
+            move |result| -> Result<Bytes, std::io::Error> {
                 match result {
                     Ok(b) => Ok(b),
                     Err(e) => {
                         let err_str = e.to_string();
                         tracing::warn!(
-                            "Stream error during transmission (graceful finish): {}",
+                            "[{}] Stream error during transmission (graceful finish): {}",
+                            trace_id,
                             err_str
                         );
                         crate::proxy::prometheus::record_stream_graceful_finish("claude");

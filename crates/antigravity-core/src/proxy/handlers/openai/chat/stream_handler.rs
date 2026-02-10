@@ -31,8 +31,13 @@ pub async fn handle_stream_response<S>(
 where
     S: futures::Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
 {
-    let openai_stream =
-        create_openai_sse_stream(Box::pin(gemini_stream), model, None, Some(session_id));
+    let openai_stream = create_openai_sse_stream(
+        Box::pin(gemini_stream),
+        model,
+        None,
+        Some(session_id),
+        trace_id.to_string(),
+    );
 
     let peek_config = PeekConfig::openai();
     let (first_data_chunk, openai_stream) =
@@ -43,7 +48,7 @@ where
 
     match first_data_chunk {
         Some(bytes) => {
-            let combined_stream = build_combined_stream(bytes, openai_stream);
+            let combined_stream = build_combined_stream(bytes, openai_stream, trace_id.to_string());
 
             if client_wants_stream {
                 OpenAIStreamResult::StreamingResponse(build_sse_response(
@@ -63,13 +68,14 @@ where
 fn build_combined_stream(
     first_bytes: Bytes,
     rest: impl futures::Stream<Item = Result<Bytes, String>> + Send + 'static,
+    trace_id: String,
 ) -> impl futures::Stream<Item = Result<Bytes, String>> + Send + 'static {
     futures::stream::once(async move { Ok(first_bytes) }).chain(rest.map(
-        |result| -> Result<Bytes, String> {
+        move |result| -> Result<Bytes, String> {
             match result {
                 Ok(b) => Ok(b),
                 Err(e) => {
-                    tracing::warn!("Stream error during transmission (graceful finish): {}", e);
+                    tracing::warn!("[{}] Stream error during transmission (graceful finish): {}", trace_id, e);
                     crate::proxy::prometheus::record_stream_graceful_finish("openai_handler");
                     Ok(Bytes::from(
                         "data: {\"id\":\"chatcmpl-error\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"unknown\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n"

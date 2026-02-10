@@ -27,6 +27,7 @@ pub fn create_openai_sse_stream(
     model: String,
     _estimated_tokens: Option<u32>,
     session_id: Option<String>,
+    trace_id: String,
 ) -> Pin<Box<dyn Stream<Item = Result<Bytes, String>> + Send>> {
     let mut buffer = BytesMut::new();
     const MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10MB safety limit for SSE line buffering
@@ -98,7 +99,7 @@ pub fn create_openai_sse_stream(
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("OpenAI stream error (graceful finish): {}", e);
+                    tracing::warn!("[{}] OpenAI stream error (graceful finish): {}", trace_id, e);
                     crate::proxy::prometheus::record_stream_graceful_finish("openai");
                     let finish = serde_json::json!({
                         "id": stream_id,

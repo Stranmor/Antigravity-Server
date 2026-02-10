@@ -22,6 +22,10 @@ pub fn build_generation_config(
 ) -> Value {
     let mut config = json!({});
 
+    // Overhead added to thinking budget to ensure room for text output
+    const THINKING_OVERHEAD: u64 = 32768;
+    const _THINKING_MIN_OVERHEAD: u64 = 8192;
+
     // Thinking config
     if is_thinking_enabled {
         if let Some(thinking) = &claude_req.thinking {
@@ -99,7 +103,7 @@ pub fn build_generation_config(
         if let Some(budget) = thinking_config.get("thinkingBudget").and_then(|t| t.as_u64()) {
             let current = final_max_tokens.unwrap_or(0);
             if current <= budget as i64 {
-                final_max_tokens = Some((budget + 8192) as i64);
+                final_max_tokens = Some((budget + THINKING_OVERHEAD) as i64);
                 tracing::info!(
                     "[Generation-Config] Bumping maxOutputTokens to {} due to thinking budget of {}",
                     final_max_tokens.unwrap_or(0),

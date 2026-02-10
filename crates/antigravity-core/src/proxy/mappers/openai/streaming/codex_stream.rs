@@ -17,6 +17,7 @@ use crate::proxy::mappers::signature_store::store_thought_signature;
 pub fn create_codex_sse_stream(
     mut gemini_stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
     _model: String,
+    trace_id: String,
 ) -> Pin<Box<dyn Stream<Item = Result<Bytes, String>> + Send>> {
     let mut buffer = BytesMut::new();
 
@@ -132,7 +133,7 @@ pub fn create_codex_sse_stream(
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Codex stream error (graceful finish): {}", e);
+                    tracing::warn!("[{}] Codex stream error (graceful finish): {}", trace_id, e);
                     crate::proxy::prometheus::record_stream_graceful_finish("codex");
                     // Signal truncation via finish_reason instead of error event
                     // to prevent AI agents from endlessly retrying
