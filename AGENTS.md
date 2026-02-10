@@ -464,38 +464,59 @@ cat ~/.antigravity_tools/accounts/*.json | jq -r '.token.project_id' | sort | un
 
 ---
 
-## ⚠️ UNDOCUMENTED OUTPUT TOKEN LIMIT [2026-01-19]
+## ⚠️ ~~UNDOCUMENTED OUTPUT TOKEN LIMIT~~ DEBUNKED [2026-02-11]
+
+~~Google Antigravity API has an undocumented output limit of ~4K tokens.~~
+
+**DEBUNKED [2026-02-11]:** Empirical testing proved the API has NO ~4K output cap. The limit was always our own `maxOutputTokens` setting:
+- `max_tokens=4096` (no explicit thinking): **13,527 tokens** output, all 500 lines, `end_turn` ✓
+- `max_tokens=16384`: **16,384 tokens** output, hit OUR limit, not API's
+- `max_tokens=32768`: **32,768 tokens** output, hit OUR limit, not API's
+
+**Root cause:** When thinking was enabled, `maxOutputTokens` was set to `budget + 8192 = 24,192`. Thinking and text share this budget — if thinking used 16K, only ~8K remained for text. **Fixed:** now `budget + 32768 = 48,768`.
+
+---
+
+## ⚠️ GOOGLE VERTEX AI ~55-SECOND STREAM TIMEOUT [2026-02-11]
 
 ### The Problem
 
-Google Antigravity API has an **undocumented output limit of ~4K tokens** (~150-200 lines of code).
+Google Vertex AI cuts HTTP/2 streams after **~55 seconds** if no data has been sent. This happens when the model is "thinking" on large contexts and hasn't started outputting text yet.
 
 **Symptoms:**
-- Stream cuts mid-response without `finish_reason: "max_tokens"`
-- Tool call JSON left incomplete/invalid
-- Client receives garbage, cannot parse response
-- No error message — just silent truncation
+- `error decoding response body` at exactly 54-56 second intervals
+- Agent enters infinite retry loop: request → 55s → error → retry → 55s → error...
+- Messages keep increasing (353 → 355 → 357...) as agent adds retry context
+- Only affects large-context requests (100K+ input tokens) — small requests complete fine
 
-**Empirical evidence:** Max observed output in 24h of logs = 3901 tokens.
+**Evidence [2026-02-11]:**
+```
+[bmej0h] Request at 02:08:29 (353 messages, 103K tokens) → error at 02:09:23 (54s)
+[mb0kno] Request at 02:09:25 (355 messages) → error at 02:10:19 (54s)
+[19eig2] Request at 02:10:22 (357 messages) → error at 02:11:15 (53s)
+```
+
+Meanwhile, small requests (500-1500 input tokens) complete successfully with 2-10 second latency.
 
 ### What This Means
 
-| Operation | Risk |
-|-----------|------|
-| Edit tool (small diffs) | ✅ Safe |
-| Write tool (<100 lines) | ✅ Safe |
-| Write tool (>150 lines) | ❌ Will be truncated |
-| README generation | ❌ High risk |
-| Full file creation | ❌ High risk |
+| Scenario | Risk |
+|----------|------|
+| Small requests (<10K tokens) | ✅ Safe — completes in <10s |
+| Medium requests (10-50K tokens) | ⚠️ Usually safe — thinking <30s |
+| Large requests (100K+ tokens) | ❌ High risk — thinking >55s → cutoff |
 
-### Workaround
+### Current Mitigation
 
-For large files, use incremental approach:
-1. Write skeleton with TODO markers
-2. Fill each section with separate Edit calls
-3. Each operation <100 lines
+Proxy converts stream errors to graceful `max_tokens` / `finish_reason: "length"` instead of `overloaded_error` — prevents some infinite retries but client still gets empty response.
 
-**Status:** No fix implemented. Using system prompt workaround (see global AGENTS.md).
+### Potential Future Fixes
+
+1. **Reduce thinking budget for large contexts** — empirically test if lower budget reduces time-to-first-token
+2. **Proxy-level auto-continue** — detect retry loop pattern and trim context on re-send
+3. **Server-side keepalive** — not possible, Google controls the server
+
+**Status:** Investigated, root cause confirmed as Google server-side limit. No proxy-level fix possible for the core issue.
 
 ---
 
