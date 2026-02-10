@@ -316,7 +316,7 @@ mod tests {
     }
 
     #[test]
-    fn test_emit_force_stop_truncation_emits_error_event() {
+    fn test_emit_force_stop_truncation_emits_graceful_max_tokens() {
         let mut state = StreamingState::new();
 
         state.start_block(BlockType::Text, json!({ "type": "text", "text": "" }));
@@ -325,10 +325,10 @@ mod tests {
         let all_text: String =
             chunks.iter().map(|b| String::from_utf8(b.to_vec()).unwrap_or_default()).collect();
 
-        assert!(all_text.contains("event: error"));
-        assert!(all_text.contains("stream_truncated"));
+        assert!(!all_text.contains("event: error"));
+        assert!(!all_text.contains("stream_truncated"));
         assert!(all_text.contains("message_stop"));
-        assert!(!all_text.contains("max_tokens"));
+        assert!(all_text.contains("max_tokens"));
     }
 
     #[test]

@@ -96,19 +96,19 @@ pub fn create_openai_sse_stream(
                     }
                 }
                 Err(e) => {
-                    use crate::proxy::mappers::error_classifier::classify_stream_error;
-                    let (error_type, user_message, i18n_key) = classify_stream_error(&e);
-
-                    tracing::error!(
-                        error_type = %error_type,
-                        user_message = %user_message,
-                        i18n_key = %i18n_key,
-                        raw_error = %e,
-                        "OpenAI stream error occurred"
-                    );
-
-                    let err = error_chunk(&stream_id, created_ts, &model, error_type, user_message, i18n_key);
-                    yield Ok(Bytes::from(sse_line(&err)));
+                    tracing::warn!("OpenAI stream error (graceful finish): {}", e);
+                    let finish = serde_json::json!({
+                        "id": stream_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_ts,
+                        "model": model,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {},
+                            "finish_reason": "length"
+                        }]
+                    });
+                    yield Ok(Bytes::from(sse_line(&finish)));
                     yield Ok(Bytes::from("data: [DONE]\n\n"));
                     break;
                 }

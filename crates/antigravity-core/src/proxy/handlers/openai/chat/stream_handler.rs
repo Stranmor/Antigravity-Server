@@ -69,20 +69,10 @@ fn build_combined_stream(
             match result {
                 Ok(b) => Ok(b),
                 Err(e) => {
-                    let user_message = if e.contains("decoding") || e.contains("hyper") {
-                        "Upstream server closed connection (overload). Please retry your request."
-                    } else {
-                        "Stream interrupted by upstream. Please retry your request."
-                    };
-                    tracing::warn!(
-                        "Stream error during transmission: {} (user msg: {})",
-                        e,
-                        user_message
-                    );
-                    Ok(Bytes::from(format!(
-                        "data: {{\"error\":{{\"message\":\"{}\",\"type\":\"server_error\",\"code\":\"overloaded\",\"param\":null}}}}\n\ndata: [DONE]\n\n",
-                        user_message
-                    )))
+                    tracing::warn!("Stream error during transmission (graceful finish): {}", e);
+                    Ok(Bytes::from(
+                        "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n"
+                    ))
                 }
             }
         },

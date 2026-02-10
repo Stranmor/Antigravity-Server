@@ -60,30 +60,9 @@ impl StreamingState {
                 prev_block_type
             );
             crate::proxy::prometheus::record_truncation();
-
-            chunks.push(self.emit(
-                "error",
-                json!({
-                    "type": "error",
-                    "error": {
-                        "type": "overloaded_error",
-                        "code": "stream_truncated",
-                        "message": "Upstream closed connection mid-stream. Response was truncated. Please retry your request."
-                    }
-                }),
-            ));
-
-            if !self.message_stop_sent {
-                chunks.push(Bytes::from(
-                    "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
-                ));
-                self.message_stop_sent = true;
-            }
-
-            return chunks;
         }
 
-        let stop_reason = self.determine_stop_reason(finish_reason);
+        let stop_reason = self.determine_stop_reason(finish_reason, stream_truncated);
 
         let usage = usage_metadata
             .map(|u| to_claude_usage(u, self.scaling_enabled, self.context_limit))
@@ -121,8 +100,14 @@ impl StreamingState {
         chunks
     }
 
-    fn determine_stop_reason(&self, finish_reason: Option<&str>) -> &'static str {
-        if self.used_tool {
+    fn determine_stop_reason(
+        &self,
+        finish_reason: Option<&str>,
+        stream_truncated: bool,
+    ) -> &'static str {
+        if stream_truncated {
+            "max_tokens"
+        } else if self.used_tool {
             "tool_use"
         } else if finish_reason == Some("MAX_TOKENS") {
             "max_tokens"

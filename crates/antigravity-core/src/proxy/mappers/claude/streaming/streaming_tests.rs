@@ -69,7 +69,7 @@ mod tests {
     }
 
     #[test]
-    fn test_truncation_detection_inside_text_block() {
+    fn test_truncation_emits_graceful_max_tokens_in_text_block() {
         let mut state = StreamingState::new();
         state.message_start_sent = true;
         state.block_type = BlockType::Text;
@@ -81,14 +81,16 @@ mod tests {
             .collect::<Vec<_>>()
             .join("");
 
-        assert!(output.contains("event: error"));
-        assert!(output.contains(r#""code":"stream_truncated""#));
+        // Should NOT emit error event — graceful finish instead
+        assert!(!output.contains("event: error"));
+        assert!(!output.contains(r#""code":"stream_truncated""#));
+        // Should emit max_tokens stop_reason (graceful finish)
+        assert!(output.contains(r#""stop_reason":"max_tokens""#));
         assert!(output.contains("message_stop"));
-        assert!(!output.contains(r#""stop_reason":"max_tokens""#));
     }
 
     #[test]
-    fn test_truncation_detection_inside_function_block() {
+    fn test_truncation_emits_graceful_max_tokens_in_function_block() {
         let mut state = StreamingState::new();
         state.message_start_sent = true;
         state.block_type = BlockType::Function;
@@ -100,10 +102,12 @@ mod tests {
             .collect::<Vec<_>>()
             .join("");
 
-        assert!(output.contains("event: error"));
-        assert!(output.contains(r#""code":"stream_truncated""#));
+        // Should NOT emit error event — graceful finish instead
+        assert!(!output.contains("event: error"));
+        assert!(!output.contains(r#""code":"stream_truncated""#));
+        // Should emit max_tokens stop_reason (graceful finish)
+        assert!(output.contains(r#""stop_reason":"max_tokens""#));
         assert!(output.contains("message_stop"));
-        assert!(!output.contains(r#""stop_reason":"max_tokens""#));
     }
 
     #[test]
@@ -136,5 +140,58 @@ mod tests {
             .join("");
 
         assert!(output.contains(r#""stop_reason":"max_tokens""#));
+    }
+
+    #[test]
+    fn test_truncation_overrides_tool_use_stop_reason() {
+        let mut state = StreamingState::new();
+        state.message_start_sent = true;
+        state.block_type = BlockType::Function;
+        state.mark_tool_used();
+
+        let chunks = state.emit_finish(None, None);
+        let output = chunks
+            .iter()
+            .map(|b| String::from_utf8(b.to_vec()).unwrap())
+            .collect::<Vec<_>>()
+            .join("");
+
+        assert!(output.contains(r#""stop_reason":"max_tokens""#));
+        assert!(!output.contains(r#""stop_reason":"tool_use""#));
+    }
+
+    #[test]
+    fn test_normal_tool_use_stop_reason_without_truncation() {
+        let mut state = StreamingState::new();
+        state.message_start_sent = true;
+        state.block_type = BlockType::None;
+        state.mark_tool_used();
+
+        let chunks = state.emit_finish(Some("STOP"), None);
+        let output = chunks
+            .iter()
+            .map(|b| String::from_utf8(b.to_vec()).unwrap())
+            .collect::<Vec<_>>()
+            .join("");
+
+        assert!(output.contains(r#""stop_reason":"tool_use""#));
+    }
+
+    #[test]
+    fn test_truncation_in_thinking_block_emits_max_tokens() {
+        let mut state = StreamingState::new();
+        state.message_start_sent = true;
+        state.block_type = BlockType::Thinking;
+
+        let chunks = state.emit_finish(None, None);
+        let output = chunks
+            .iter()
+            .map(|b| String::from_utf8(b.to_vec()).unwrap())
+            .collect::<Vec<_>>()
+            .join("");
+
+        assert!(!output.contains("event: error"));
+        assert!(output.contains(r#""stop_reason":"max_tokens""#));
+        assert!(output.contains("message_stop"));
     }
 }

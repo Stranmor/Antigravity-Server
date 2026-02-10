@@ -90,21 +90,13 @@ where
                     Ok(b) => Ok(b),
                     Err(e) => {
                         let err_str = e.to_string();
-                        let user_message =
-                            if err_str.contains("decoding") || err_str.contains("hyper") {
-                                "Upstream server closed connection (overload). Please retry your request."
-                            } else {
-                                "Stream interrupted by upstream. Please retry your request."
-                            };
                         tracing::warn!(
-                            "Stream error during transmission: {} (user msg: {})",
-                            err_str,
-                            user_message
+                            "Stream error during transmission (graceful finish): {}",
+                            err_str
                         );
-                        Ok(Bytes::from(format!(
-                            "event: error\ndata: {{\"type\":\"error\",\"error\":{{\"type\":\"overloaded_error\",\"code\":\"stream_interrupted\",\"message\":\"{}\"}}}}\n\nevent: message_stop\ndata: {{\"type\":\"message_stop\"}}\n\n",
-                            user_message
-                        )))
+                        Ok(Bytes::from(
+                            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+                        ))
                     }
                 }
             },

@@ -18,6 +18,8 @@
 - ✅ COMPLETED [2026-02-10]: Added image MIME detection from base64 magic bytes and wired it across proxy mappers to override declared types when needed.
 - ✅ COMPLETED [2026-02-10]: Removed all image size and count limits from tool result processing. Images of any size and quantity now pass through to Gemini without filtering.
 - ✅ COMPLETED [2026-02-10]: Introduced ModelFamily enum and replaced model family string checks in the specified call sites.
+- ✅ COMPLETED [2026-02-10]: Graceful stream truncation: when Gemini silently truncates output (no finish_reason while inside a content block) or mid-stream network errors occur, the proxy now emits a **normal completion** (`stop_reason: "max_tokens"` for Claude / `finish_reason: "length"` for OpenAI) instead of `overloaded_error`. This prevents AI agents from endlessly retrying requests that will always be truncated. Fallback plan: if agents still retry on `max_tokens`, add `[Response truncated by proxy]` text marker.
+- ✅ COMPLETED [2026-02-10]: Added sliding window image retention: strips images from user messages older than 5 turns to prevent context overflow in long agentic sessions. Wired into all 3 request paths (Claude, OpenAI, Gemini native). Also fixed monitor middleware to capture error response bodies and removed diagnostic logging. Deployed locally + VPS.
 - ✅ COMPLETED [2026-02-09]: Fixed production crash caused by blocking native-TLS initialization inside tokio async runtime. `UpstreamClient::new()` now accepts pre-built `reqwest::Client`; proxy/WARP client builds wrapped in `spawn_blocking`. Deployed and verified on VPS.
 - ✅ COMPLETED [2026-02-09]: Fixed production outage — all requests failing "All accounts exhausted". Root cause: `upstream_proxy` in `gui_config.json` was `enabled: true` pointing to `http://127.0.0.1:8046` where nothing was listening. Every outgoing request got instant `Connection refused`, all 16 accounts cycled through and marked exhausted. Fix: disabled upstream proxy in config. Additionally promoted transport error logging from `debug` to `error` level for future visibility.
 
@@ -227,6 +229,7 @@ vendor/
 | `upstream/client/mod.rs` | `get_client()` silently falls back to direct connection on proxy build failure — traffic leak risk when proxy is intentionally configured. | Medium |
 | `upstream/client/mod.rs` | Single-slot client cache (`proxied_client`, `warp_client`) thrashes if alternating proxy URLs. | Low |
 | `antigravity-vps-cli/src/main.rs` | CLI argument parsing flattens arguments with `join(" ")`, breaking quoted/space-containing args. | Medium |
+| `deploy.sh` / `flake.nix` | **Nix closure deploy causes SIGBUS on VPS** [2026-02-10]: Binary built via `nix build .#antigravity-server` crashes immediately with SIGBUS (signal 7) on VPS despite both machines being x86_64 AMD Zen4. `ldd` also crashes on the binary (exit 135). Root cause unclear — possibly Nix closure linking incompatibility. **Workaround:** Deploy via `scp target/release/antigravity-server` (cargo-built binary works fine). `./deploy.sh deploy` is currently BROKEN for VPS. | High |
 
 ---
 
