@@ -291,6 +291,7 @@ pub fn transform_claude_request_in(
             mapped_model
         );
         super::signature_stripping::strip_non_claude_thought_signatures(&mut body);
+        super::signature_stripping::validate_tool_pairing_after_strip(&mut body);
     }
 
     tracing::debug!("[DEBUG-593] Final deep clean complete, request ready to send");

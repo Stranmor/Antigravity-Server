@@ -15,7 +15,8 @@
 //! assistant turn (which doesn't have prior thinking blocks — it's being generated).
 //! This preserves all non-thinking content (text, tool_use, tool_result).
 
-use serde_json::Value;
+use serde_json::{json, Value};
+use std::collections::HashSet;
 
 pub fn strip_non_claude_thought_signatures(value: &mut Value) {
     // Walk into contents array
@@ -72,9 +73,173 @@ pub fn strip_non_claude_thought_signatures(value: &mut Value) {
             }
         }
 
-        // Remove any content entries that now have empty parts arrays
+        for content in contents.iter_mut() {
+            let is_empty = content
+                .get("parts")
+                .and_then(|p| p.as_array())
+                .map(|arr| arr.is_empty())
+                .unwrap_or(false);
+            if is_empty {
+                let role = content.get("role").and_then(|r| r.as_str()).unwrap_or("");
+                if role == "model" {
+                    tracing::debug!(
+                        "[Claude-Vertex] Model message became empty after thinking removal. Inserting placeholder."
+                    );
+                    if let Some(parts) = content.get_mut("parts").and_then(|p| p.as_array_mut()) {
+                        parts.push(json!({"text": "..."}));
+                    }
+                }
+            }
+        }
+
+        // Only drop genuinely empty user messages (model messages preserve role alternation)
         contents.retain(|c| {
+            let role = c.get("role").and_then(|r| r.as_str()).unwrap_or("");
+            if role == "model" {
+                return true;
+            }
             c.get("parts").and_then(|p| p.as_array()).is_none_or(|arr| !arr.is_empty())
         });
+    }
+}
+
+/// Validate that functionCall/functionResponse pairing is intact after signature stripping.
+/// Logs warnings for any orphaned parts but does NOT remove them.
+pub fn validate_tool_pairing_after_strip(value: &mut Value) {
+    if let Some(contents) = value.pointer("/request/contents").and_then(|c| c.as_array()) {
+        let len = contents.len();
+        for i in 0..len {
+            let role = contents[i].get("role").and_then(|r| r.as_str()).unwrap_or("");
+            if role != "model" {
+                continue;
+            }
+
+            let fc_ids: Vec<String> = contents[i]
+                .get("parts")
+                .and_then(|p| p.as_array())
+                .map(|parts| {
+                    parts
+                        .iter()
+                        .filter_map(|part| {
+                            part.get("functionCall")
+                                .and_then(|fc| fc.get("id"))
+                                .and_then(|id| id.as_str())
+                                .map(|id| id.to_string())
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            if fc_ids.is_empty() {
+                continue;
+            }
+
+            let next_is_user_with_responses = if i + 1 < len {
+                let next_role = contents[i + 1].get("role").and_then(|r| r.as_str()).unwrap_or("");
+                if next_role == "user" {
+                    let fr_ids: HashSet<String> = contents[i + 1]
+                        .get("parts")
+                        .and_then(|p| p.as_array())
+                        .map(|parts| {
+                            parts
+                                .iter()
+                                .filter_map(|part| {
+                                    part.get("functionResponse")
+                                        .and_then(|fr| fr.get("id"))
+                                        .and_then(|id| id.as_str())
+                                        .map(|id| id.to_string())
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    fc_ids.iter().all(|id| fr_ids.contains(id))
+                } else {
+                    false
+                }
+            } else {
+                true
+            };
+
+            if !next_is_user_with_responses && i + 1 < len {
+                tracing::warn!(
+                    "[Claude-Vertex] TOOL PAIRING VIOLATION at contents[{}]: functionCall IDs {:?} have no matching functionResponse in next message",
+                    i,
+                    fc_ids
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn preserves_model_message_after_thought_stripping() {
+        let mut value = json!({
+            "request": {
+                "contents": [
+                    {
+                        "role": "model",
+                        "parts": [
+                            {"thought": true, "text": "thinking"}
+                        ]
+                    },
+                    {
+                        "role": "user",
+                        "parts": [
+                            {"text": "hi"}
+                        ]
+                    }
+                ]
+            }
+        });
+
+        strip_non_claude_thought_signatures(&mut value);
+
+        let contents = value
+            .pointer("/request/contents")
+            .and_then(|c| c.as_array())
+            .map(|c| c.len())
+            .unwrap_or(0);
+        assert_eq!(contents, 2);
+
+        let parts = value.pointer("/request/contents/0/parts").and_then(|p| p.as_array());
+        if let Some(parts) = parts {
+            assert_eq!(parts.len(), 1);
+            let text = parts[0].get("text").and_then(|t| t.as_str()).unwrap_or("");
+            assert_eq!(text, "...");
+        } else {
+            panic!("expected model parts array to exist");
+        }
+    }
+
+    #[test]
+    fn validation_does_not_mutate_contents() {
+        let mut value = json!({
+            "request": {
+                "contents": [
+                    {
+                        "role": "model",
+                        "parts": [
+                            {"functionCall": {"id": "call-1"}}
+                        ]
+                    },
+                    {
+                        "role": "user",
+                        "parts": [
+                            {"text": "reply"}
+                        ]
+                    }
+                ]
+            }
+        });
+        let before = value.clone();
+
+        validate_tool_pairing_after_strip(&mut value);
+
+        assert_eq!(value, before);
     }
 }
