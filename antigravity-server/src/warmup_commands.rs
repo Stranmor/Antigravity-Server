@@ -30,6 +30,7 @@ pub async fn warmup_all() -> Result<()> {
 
     let total = enabled.len();
     let mut success = 0;
+    let mut failed = 0;
 
     for acc in enabled {
         print!("Warming up {}... ", acc.email);
@@ -38,15 +39,20 @@ pub async fn warmup_all() -> Result<()> {
                 if let Err(e) =
                     account::update_account_quota_async(acc.id.clone(), result.quota).await
                 {
-                    eprintln!("Failed to persist quota for {}: {}", acc.email, e);
+                    eprintln!("{} (persist: {})", "✗".red(), e);
+                    failed += 1;
+                } else {
+                    println!("{}", "✓".green());
+                    success += 1;
                 }
-                println!("{}", "✓".green());
-                success += 1;
             },
-            Err(e) => println!("{} ({})", "✗".red(), e),
+            Err(e) => {
+                println!("{} ({})", "✗".red(), e);
+                failed += 1;
+            },
         }
     }
 
-    println!("\n{}/{} accounts warmed up", success, total);
+    println!("\n{}/{} accounts warmed up ({} failed)", success, total, failed);
     Ok(())
 }

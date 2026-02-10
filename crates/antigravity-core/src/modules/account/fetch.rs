@@ -92,7 +92,14 @@ pub async fn fetch_quota_with_retry(
     let result = quota::fetch_quota(&active_token.access_token, &account.email).await;
 
     if let Ok((ref quota_data, ref project_id)) = result {
-        persist_quota_data(repo, account, quota_data, project_id.as_deref()).await;
+        persist_quota_data(
+            repo,
+            account,
+            quota_data,
+            project_id.as_deref(),
+            refreshed_token.as_ref(),
+        )
+        .await;
 
         return Ok(QuotaFetchResult {
             quota: quota_data.clone(),
@@ -168,7 +175,8 @@ async fn handle_unauthorized_retry(
     let retry_result = quota::fetch_quota(&new_token.access_token, &account.email).await;
 
     if let Ok((ref quota_data, ref project_id)) = retry_result {
-        persist_quota_data(repo, account, quota_data, project_id.as_deref()).await;
+        persist_quota_data(repo, account, quota_data, project_id.as_deref(), Some(&new_token))
+            .await;
 
         return Ok(QuotaFetchResult {
             quota: quota_data.clone(),
@@ -221,15 +229,15 @@ async fn persist_disabled(
         if let Err(e) = repo.set_account_disabled(&account.id, reason, now).await {
             tracing::warn!("DB disable failed for {}: {}", account.email, e);
         }
-    }
-
-    // JSON fallback: clone with only disabled fields changed
-    let mut clone = account.clone();
-    clone.disabled = true;
-    clone.disabled_at = Some(now.timestamp());
-    clone.disabled_reason = Some(reason.to_string());
-    if let Err(e) = save_account_async(clone).await {
-        tracing::warn!("Failed to save disabled account {}: {}", account.email, e);
+    } else {
+        // JSON fallback only when no repo configured
+        let mut clone = account.clone();
+        clone.disabled = true;
+        clone.disabled_at = Some(now.timestamp());
+        clone.disabled_reason = Some(reason.to_string());
+        if let Err(e) = save_account_async(clone).await {
+            tracing::warn!("Failed to save disabled account {}: {}", account.email, e);
+        }
     }
 }
 
@@ -246,22 +254,25 @@ async fn persist_token_refresh(
         {
             tracing::warn!("DB token update failed for {}: {}", account.email, e);
         }
-    }
-
-    // JSON fallback: clone with updated token
-    let mut clone = account.clone();
-    clone.token = new_token.clone();
-    if let Err(e) = save_account_async(clone).await {
-        tracing::warn!("Failed to save refreshed token for {}: {}", account.email, e);
+    } else {
+        let mut clone = account.clone();
+        clone.token = new_token.clone();
+        if let Err(e) = save_account_async(clone).await {
+            tracing::warn!("Failed to save refreshed token for {}: {}", account.email, e);
+        }
     }
 }
 
 /// Persist quota data and optional project_id atomically via repo, or fall back to JSON.
+///
+/// `refreshed_token` prevents stale-data writes: when a token refresh preceded this call,
+/// the JSON fallback must use the new token, not the original `account.token`.
 async fn persist_quota_data(
     repo: Option<&Arc<dyn AccountRepository>>,
     account: &Account,
     quota: &QuotaData,
     project_id: Option<&str>,
+    refreshed_token: Option<&TokenData>,
 ) {
     if let Some(repo) = repo {
         if let Err(e) = repo.update_quota(&account.id, quota.clone(), None).await {
@@ -274,15 +285,17 @@ async fn persist_quota_data(
                 }
             }
         }
-    }
-
-    // JSON fallback: clone with updated quota + project_id
-    let mut clone = account.clone();
-    clone.update_quota(quota.clone());
-    if let Some(pid) = project_id {
-        clone.token.project_id = Some(pid.to_string());
-    }
-    if let Err(e) = save_account_async(clone).await {
-        tracing::warn!("Failed to save quota for {}: {}", account.email, e);
+    } else {
+        let mut clone = account.clone();
+        if let Some(token) = refreshed_token {
+            clone.token = token.clone();
+        }
+        clone.update_quota(quota.clone());
+        if let Some(pid) = project_id {
+            clone.token.project_id = Some(pid.to_string());
+        }
+        if let Err(e) = save_account_async(clone).await {
+            tracing::warn!("Failed to save quota for {}: {}", account.email, e);
+        }
     }
 }

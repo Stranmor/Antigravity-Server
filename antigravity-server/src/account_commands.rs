@@ -146,24 +146,24 @@ pub async fn refresh_quota(identifier: &str) -> Result<()> {
 
 async fn refresh_all_quotas() -> Result<()> {
     let accounts = account::list_accounts().map_err(|e| anyhow::anyhow!(e))?;
-    let total = accounts.len();
+    let enabled: Vec<_> = accounts.into_iter().filter(|a| !a.disabled).collect();
+    let total = enabled.len();
     let mut success = 0;
     let mut failed = 0;
 
-    for acc in accounts {
-        if acc.disabled {
-            continue;
-        }
+    for acc in enabled {
         print!("Refreshing {}... ", acc.email);
         match account::fetch_quota_with_retry(&acc, None).await {
             Ok(result) => {
                 if let Err(e) =
                     account::update_account_quota_async(acc.id.clone(), result.quota).await
                 {
-                    eprintln!("Failed to persist quota for {}: {}", acc.email, e);
+                    eprintln!("{} (persist: {})", "✗".red(), e);
+                    failed += 1;
+                } else {
+                    println!("{}", "✓".green());
+                    success += 1;
                 }
-                println!("{}", "✓".green());
-                success += 1;
             },
             Err(e) => {
                 println!("{} ({})", "✗".red(), e);
