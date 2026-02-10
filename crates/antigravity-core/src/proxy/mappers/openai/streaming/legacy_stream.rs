@@ -33,7 +33,6 @@ pub fn create_legacy_sse_stream(
 
     let stream = async_stream::stream! {
         let mut final_usage: Option<OpenAIUsage> = None;
-        let mut done_emitted = false;
         while let Some(item) = gemini_stream.next().await {
             match item {
                 Ok(bytes) => {
@@ -124,8 +123,6 @@ pub fn create_legacy_sse_stream(
                     });
                     let sse_out = format!("data: {}\n\n", serde_json::to_string(&finish_chunk).unwrap_or_default());
                     yield Ok(Bytes::from(sse_out));
-                    done_emitted = true;
-                    yield Ok(Bytes::from("data: [DONE]\n\n"));
                     break;
                 }
             }
@@ -145,9 +142,7 @@ pub fn create_legacy_sse_stream(
         }
 
         tracing::debug!("Stream finished. Yielding [DONE]");
-        if !done_emitted {
-            yield Ok::<Bytes, String>(Bytes::from("data: [DONE]\n\n"));
-        }
+        yield Ok::<Bytes, String>(Bytes::from("data: [DONE]\n\n"));
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     };
 
