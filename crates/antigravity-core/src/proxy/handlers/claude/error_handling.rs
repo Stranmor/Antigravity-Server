@@ -13,9 +13,9 @@ use tokio::time::Duration;
 
 use super::error_recovery::handle_thinking_signature_error;
 use super::request_validation::prompt_too_long_error;
-use super::retry_logic::{
-    apply_retry_strategy, determine_retry_strategy, is_signature_error, should_rotate_account,
-    RetryStrategy,
+use crate::proxy::retry::{
+    apply_retry_strategy, determine_retry_strategy, is_rate_limit_code, is_signature_error,
+    should_rotate_account, RetryProfile, RetryStrategy,
 };
 
 pub enum ClaudeErrorAction {
@@ -57,11 +57,7 @@ pub async fn handle_upstream_error(
         }
     }
 
-    if ctx.status_code == 429
-        || ctx.status_code == 529
-        || ctx.status_code == 503
-        || ctx.status_code == 500
-    {
+    if is_rate_limit_code(ctx.status_code) {
         token_manager
             .mark_rate_limited_async(
                 ctx.email,
@@ -80,7 +76,10 @@ pub async fn handle_upstream_error(
         }
     }
 
-    if ctx.status_code == 400 && !*retried_without_thinking && is_signature_error(&ctx.error_text) {
+    if ctx.status_code == 400
+        && !*retried_without_thinking
+        && is_signature_error(&ctx.error_text, &RetryProfile::claude())
+    {
         handle_thinking_signature_error(request_for_body, Some(ctx.session_id_str), ctx.trace_id);
         *retried_without_thinking = true;
 
@@ -96,8 +95,12 @@ pub async fn handle_upstream_error(
         }
     }
 
-    let strategy =
-        determine_retry_strategy(ctx.status_code, &ctx.error_text, *retried_without_thinking);
+    let strategy = determine_retry_strategy(
+        ctx.status_code,
+        &ctx.error_text,
+        *retried_without_thinking,
+        &RetryProfile::claude(),
+    );
 
     if apply_retry_strategy(strategy, ctx.attempt, ctx.status_code, ctx.trace_id).await {
         if should_rotate_account(ctx.status_code) {

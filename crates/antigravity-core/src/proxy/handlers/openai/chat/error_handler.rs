@@ -73,7 +73,7 @@ pub async fn handle_rate_limit_errors(
     attempt: usize,
     max_attempts: usize,
 ) -> OpenAIErrorAction {
-    if status_code == 429 || status_code == 529 || status_code == 503 || status_code == 500 {
+    if crate::proxy::retry::is_rate_limit_code(status_code) {
         token_manager
             .mark_rate_limited_async(email, status_code, retry_after, error_text, Some(final_model))
             .await;

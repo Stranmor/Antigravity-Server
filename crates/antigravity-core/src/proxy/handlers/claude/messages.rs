@@ -17,11 +17,11 @@ use super::preprocessing::{extract_meaningful_message, log_request_debug, log_re
 use super::request_preparation::prepare_request;
 use super::request_validation::{all_retries_exhausted_error, generate_trace_id, parse_request};
 use super::response_handler::{handle_nonstreaming_success, ResponseContext};
-use super::retry_logic::MAX_RETRY_ATTEMPTS;
 use super::streaming::{handle_streaming_response, ClaudeStreamResult, StreamingContext};
 use super::token_selection::acquire_token;
 use super::upstream_call::prepare_upstream_call;
 use super::warmup::{create_warmup_response, is_warmup_request};
+use crate::proxy::retry::MAX_RETRY_ATTEMPTS;
 use crate::proxy::session_manager::SessionManager;
 
 pub async fn handle_messages(

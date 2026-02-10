@@ -203,7 +203,7 @@ pub async fn handle_generate(
         let error_text = response.text().await.unwrap_or_else(|_| format!("HTTP {}", code));
         last_error = UpstreamError::HttpResponse { status_code: code, body: error_text.clone() };
 
-        if matches!(code, 429 | 529 | 503 | 500 | 403 | 401) {
+        if crate::proxy::retry::is_rate_limit_code(code) || code == 401 || code == 403 {
             token_manager.mark_rate_limited(&email, code, retry_after.as_deref(), &error_text);
 
             if code == 403

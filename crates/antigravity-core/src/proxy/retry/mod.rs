@@ -15,6 +15,12 @@ use tracing::{debug, info};
 /// Maximum retry attempts before giving up. Capped by pool size at call site.
 pub const MAX_RETRY_ATTEMPTS: usize = 64;
 
+/// HTTP status codes that warrant rotating to a different account.
+pub const ROTATABLE_STATUS_CODES: &[u16] = &[429, 401, 403, 404, 500, 503, 529];
+
+/// HTTP status codes indicating rate limiting (subset used for mark_rate_limited).
+pub const RATE_LIMIT_CODES: &[u16] = &[429, 529, 503, 500];
+
 /// Strategy for retrying failed upstream requests.
 #[derive(Debug, Clone)]
 pub enum RetryStrategy {
@@ -135,5 +141,10 @@ pub async fn apply_retry_strategy(
 ///
 /// Includes 503/529 (the bug fix: OpenAI handler previously missed these).
 pub fn should_rotate_account(status_code: u16) -> bool {
-    matches!(status_code, 429 | 401 | 403 | 404 | 500 | 503 | 529)
+    ROTATABLE_STATUS_CODES.contains(&status_code)
+}
+
+/// Checks if the status code indicates a rate-limiting condition.
+pub fn is_rate_limit_code(status_code: u16) -> bool {
+    RATE_LIMIT_CODES.contains(&status_code)
 }
