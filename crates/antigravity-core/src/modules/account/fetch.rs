@@ -156,9 +156,11 @@ async fn handle_unauthorized_retry(
         },
     };
 
+    let refresh_token =
+        token_res.refresh_token.unwrap_or_else(|| account.token.refresh_token.clone());
     let new_token = TokenData::new(
         token_res.access_token.clone(),
-        account.token.refresh_token.clone(),
+        refresh_token,
         token_res.expires_in,
         account.token.email.clone(),
         account.token.project_id.clone(),
@@ -259,8 +261,14 @@ async fn persist_token_refresh(
 ) {
     if let Some(repo) = repo {
         let expiry = chrono::Utc::now() + chrono::Duration::seconds(new_token.expires_in);
-        if let Err(e) =
-            repo.update_token_credentials(&account.id, &new_token.access_token, None, expiry).await
+        let refresh = if new_token.refresh_token != account.token.refresh_token {
+            Some(new_token.refresh_token.as_str())
+        } else {
+            None
+        };
+        if let Err(e) = repo
+            .update_token_credentials(&account.id, &new_token.access_token, refresh, expiry)
+            .await
         {
             tracing::warn!("DB token update failed for {}: {}", account.email, e);
         }
