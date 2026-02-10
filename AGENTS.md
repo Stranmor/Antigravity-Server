@@ -193,6 +193,7 @@ vendor/
 | `proxy/providers/zai_anthropic.rs` | DoS Risk: `deep_remove_cache_control` logs at `info` for every field, vulnerable to log flooding. | Medium |
 | `proxy/providers/zai_anthropic.rs` | Inefficient: `copy_passthrough_headers` performs unnecessary string allocations in hot path. | Low |
 | `modules/proxy_db.rs` | Data Loss: `save_log` hardcodes `request_body`/`response_body` to `None`. | Medium |
+| `modules/proxy_db.rs` | Blocking SQLite I/O via `rusqlite` runs on async runtime threads (thread_local connection), risking executor starvation under load. | High |
 | `server_utils.rs` | Portability: `set_reuse_port(true)` lacks `#[cfg(unix)]` guard. | Low |
 | `repository.rs` | Inconsistent time types (DateTime vs i64) and redundant arguments in `update_token_credentials`. | Low |
 | `state/mod.rs` | ~~`build_proxy_router` ignores `UpstreamProxyConfig` from `proxy_config` — passes default instead of actual config.~~ **Fixed [2026-02-09]**: Investigation showed `build_proxy_router` does pass its argument correctly. The real issue was `UpstreamClient` creating a separate `Arc<RwLock<>>` — now shares the same reference as `AppState.upstream_proxy`. | ~~High~~ Fixed |
@@ -219,6 +220,7 @@ vendor/
 | `proxy/server.rs` | `/v1/api/event_logging` and `/v1/api/event_logging/batch` are stubs returning 200 OK without processing data. | Low |
 | `upstream/client/mod.rs` | `get_client()` silently falls back to direct connection on proxy build failure — traffic leak risk when proxy is intentionally configured. | Medium |
 | `upstream/client/mod.rs` | Single-slot client cache (`proxied_client`, `warp_client`) thrashes if alternating proxy URLs. | Low |
+| `antigravity-vps-cli/src/main.rs` | CLI argument parsing flattens arguments with `join(" ")`, breaking quoted/space-containing args. | Medium |
 
 ---
 
