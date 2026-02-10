@@ -230,6 +230,10 @@ vendor/
 | `upstream/client/mod.rs` | Single-slot client cache (`proxied_client`, `warp_client`) thrashes if alternating proxy URLs. | Low |
 | `antigravity-vps-cli/src/main.rs` | CLI argument parsing flattens arguments with `join(" ")`, breaking quoted/space-containing args. | Medium |
 | `deploy.sh` / `flake.nix` | **Nix closure deploy causes SIGBUS on VPS** [2026-02-10]: Binary built via `nix build .#antigravity-server` crashes immediately with SIGBUS (signal 7) on VPS despite both machines being x86_64 AMD Zen4. `ldd` also crashes on the binary (exit 135). Root cause unclear — possibly Nix closure linking incompatibility. **Workaround:** Deploy via `scp target/release/antigravity-server` (cargo-built binary works fine). `./deploy.sh deploy` is currently BROKEN for VPS. | High |
+| `proxy/handlers/claude/streaming.rs` | Unreachable `None` branch in `handle_streaming_response` match — `poll_next` on non-empty stream should always return `Some`. Dead code. | Low |
+| `proxy/handlers/claude/chat.rs` | Double boxing in `collect_to_json_response`: `Box<dyn Error>` error wrapped again by `?` into another `Box<dyn Error>`. Unnecessary allocation. | Low |
+| `proxy/mappers/openai/streaming/openai_stream.rs` | Shared mutable `tool_call_state` across candidates — if `n > 1` (multiple completions), tool call accumulation would cross-contaminate. Currently safe because Gemini only returns `n=1`. | Low |
+| `proxy/handlers/claude/chat.rs` | Error masking in non-streaming (collect_to_json) path: on stream error, returns last buffered JSON or generic error — original error details lost. Acceptable tradeoff vs infinite retries. | Low |
 
 ---
 

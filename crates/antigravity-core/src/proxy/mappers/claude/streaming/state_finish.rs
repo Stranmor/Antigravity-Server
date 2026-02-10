@@ -107,10 +107,10 @@ impl StreamingState {
     ) -> &'static str {
         if stream_truncated {
             "max_tokens"
-        } else if self.used_tool {
-            "tool_use"
         } else if finish_reason == Some("MAX_TOKENS") {
             "max_tokens"
+        } else if self.used_tool {
+            "tool_use"
         } else {
             "end_turn"
         }

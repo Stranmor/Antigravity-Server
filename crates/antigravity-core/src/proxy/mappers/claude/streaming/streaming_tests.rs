@@ -178,6 +178,24 @@ mod tests {
     }
 
     #[test]
+    fn test_max_tokens_takes_priority_over_tool_use() {
+        let mut state = StreamingState::new();
+        state.message_start_sent = true;
+        state.block_type = BlockType::None;
+        state.mark_tool_used();
+
+        let chunks = state.emit_finish(Some("MAX_TOKENS"), None);
+        let output = chunks
+            .iter()
+            .map(|b| String::from_utf8(b.to_vec()).unwrap())
+            .collect::<Vec<_>>()
+            .join("");
+
+        assert!(output.contains(r#""stop_reason":"max_tokens""#));
+        assert!(!output.contains(r#""stop_reason":"tool_use""#));
+    }
+
+    #[test]
     fn test_truncation_in_thinking_block_emits_max_tokens() {
         let mut state = StreamingState::new();
         state.message_start_sent = true;
