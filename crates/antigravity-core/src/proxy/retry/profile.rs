@@ -1,4 +1,5 @@
 /// Protocol-specific retry backoff configuration.
+#[derive(Debug, Clone, Copy)]
 pub struct RetryProfile {
     pub backoff_429_base_ms: u64,
     pub backoff_429_max_ms: u64,
@@ -54,18 +55,6 @@ impl RetryProfile {
             backoff_500_base_ms: 500,
             fixed_401_403_delay_ms: 100,
             signature_patterns: CLAUDE_SIGNATURE_PATTERNS,
-        }
-    }
-
-    pub const fn gemini() -> Self {
-        Self {
-            backoff_429_base_ms: 5000,
-            backoff_429_max_ms: 30_000,
-            backoff_503_base_ms: 10_000,
-            backoff_503_max_ms: 60_000,
-            backoff_500_base_ms: 3000,
-            fixed_401_403_delay_ms: 200,
-            signature_patterns: OPENAI_SIGNATURE_PATTERNS,
         }
     }
 }
