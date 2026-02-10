@@ -103,10 +103,12 @@ fn process_part(
     }
 
     if let Some(img) = part.get("inlineData") {
+        flush_text_outputs(output, ctx, idx, content_out, thought_out);
         emit_inline_image(img, output, ctx, idx);
     }
 
     if let Some(func_call) = part.get("functionCall") {
+        flush_text_outputs(output, ctx, idx, content_out, thought_out);
         emit_function_call(func_call, output, ctx, idx);
     }
 }
@@ -222,11 +224,26 @@ fn push_content_chunk(
 ) {
     let chunk =
         content_chunk(ctx.stream_id, ctx.created_ts, ctx.model, idx as u32, content, finish_reason);
-    match serde_json::to_string(&chunk) {
-        Ok(serialized) => output.push(Bytes::from(format!("data: {}\n\n", serialized))),
-        Err(error) => {
-            tracing::warn!("[OpenAI-SSE] Failed to serialize content chunk: {}", error);
-        },
+    output.push(Bytes::from(sse_line(&chunk)));
+}
+
+fn flush_text_outputs(
+    output: &mut Vec<Bytes>,
+    ctx: &CandidateContext<'_>,
+    idx: usize,
+    content_out: &mut String,
+    thought_out: &mut String,
+) {
+    if !thought_out.is_empty() {
+        let chunk =
+            reasoning_chunk(ctx.stream_id, ctx.created_ts, ctx.model, idx as u32, thought_out);
+        output.push(Bytes::from(sse_line(&chunk)));
+        thought_out.clear();
+    }
+    if !content_out.is_empty() {
+        let text = content_out.clone();
+        content_out.clear();
+        emit_content_chunks(output, ctx, idx, &text, None);
     }
 }
 
@@ -261,7 +278,8 @@ fn chunk_text(content: &str, max_chunk_size: usize) -> Vec<&str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{chunk_text, utf8_safe_prefix_len};
+    use super::{chunk_text, process_candidate, utf8_safe_prefix_len, CandidateContext};
+    use serde_json::json;
 
     #[test]
     fn utf8_safe_prefix_len_respects_boundary() {
@@ -276,5 +294,38 @@ mod tests {
         let chunks = chunk_text(text, 3);
         assert_eq!(chunks.concat(), text);
         assert!(chunks.iter().all(|chunk| !chunk.is_empty()));
+    }
+
+    #[test]
+    fn inline_image_emits_after_text_prefix() {
+        let candidate = json!({
+            "content": {
+                "parts": [
+                    {"text": "Hello"},
+                    {"inlineData": {"mimeType": "image/png", "data": "QUJD"}},
+                    {"text": "World"}
+                ]
+            }
+        });
+        let mut accumulated_thinking = String::new();
+        let mut emitted_tool_calls = std::collections::HashSet::new();
+        let mut ctx = CandidateContext {
+            stream_id: "test",
+            created_ts: 0,
+            model: "gemini-3-pro",
+            session_id: &None,
+            accumulated_thinking: &mut accumulated_thinking,
+            emitted_tool_calls: &mut emitted_tool_calls,
+        };
+
+        let output = process_candidate(&candidate, 0, &mut ctx);
+        let joined = output.iter().map(|b| String::from_utf8_lossy(b)).collect::<String>();
+
+        let hello_pos = joined.find("Hello").expect("missing Hello");
+        let image_pos = joined.find("![image]").expect("missing image marker");
+        let world_pos = joined.find("World").expect("missing World");
+
+        assert!(hello_pos < image_pos);
+        assert!(image_pos < world_pos);
     }
 }

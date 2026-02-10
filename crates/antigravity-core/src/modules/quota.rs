@@ -55,8 +55,11 @@ fn create_client() -> reqwest::Client {
 const CLOUD_CODE_BASE_URL: &str = "https://cloudcode-pa.googleapis.com";
 
 /// Get project ID and subscription type
-async fn fetch_project_id(access_token: &str, email: &str) -> (Option<String>, Option<String>) {
-    let client = create_client();
+async fn fetch_project_id(
+    client: &reqwest::Client,
+    access_token: &str,
+    email: &str,
+) -> (Option<String>, Option<String>) {
     let meta = json!({"metadata": {"ideType": "ANTIGRAVITY"}});
 
     let res = client
@@ -71,23 +74,31 @@ async fn fetch_project_id(access_token: &str, email: &str) -> (Option<String>, O
     match res {
         Ok(res) => {
             if res.status().is_success() {
-                if let Ok(data) = res.json::<LoadProjectResponse>().await {
-                    let project_id = data.project_id.clone();
+                match res.json::<LoadProjectResponse>().await {
+                    Ok(data) => {
+                        let project_id = data.project_id.clone();
 
-                    // Core logic: prefer subscription ID from paid_tier, which better reflects actual account entitlements than current_tier
-                    let subscription_tier = data
-                        .paid_tier
-                        .and_then(|t| t.id)
-                        .or_else(|| data.current_tier.and_then(|t| t.id));
+                        // Core logic: prefer subscription ID from paid_tier, which better reflects actual account entitlements than current_tier
+                        let subscription_tier = data
+                            .paid_tier
+                            .and_then(|t| t.id)
+                            .or_else(|| data.current_tier.and_then(|t| t.id));
 
-                    if let Some(ref tier) = subscription_tier {
-                        crate::modules::logger::log_info(&format!(
-                            "📊 [{}] Subscription identified: {}",
-                            email, tier
+                        if let Some(ref tier) = subscription_tier {
+                            crate::modules::logger::log_info(&format!(
+                                "📊 [{}] Subscription identified: {}",
+                                email, tier
+                            ));
+                        }
+
+                        return (project_id, subscription_tier);
+                    },
+                    Err(e) => {
+                        crate::modules::logger::log_warn(&format!(
+                            "⚠️  [{}] loadCodeAssist parse error: {}",
+                            email, e
                         ));
-                    }
-
-                    return (project_id, subscription_tier);
+                    },
                 }
             } else {
                 crate::modules::logger::log_warn(&format!(
@@ -125,11 +136,11 @@ pub async fn fetch_quota_inner(
     // crate::modules::logger::log_info(&format!("[{}] Starting external quota query...", email));
 
     // 1. Get Project ID and subscription type
-    let (project_id, subscription_tier) = fetch_project_id(access_token, email).await;
+    let client = create_client();
+    let (project_id, subscription_tier) = fetch_project_id(&client, access_token, email).await;
 
     let final_project_id = project_id.as_deref().unwrap_or("bamboo-precept-lgxtn");
 
-    let client = create_client();
     let payload = json!({
         "project": final_project_id
     });

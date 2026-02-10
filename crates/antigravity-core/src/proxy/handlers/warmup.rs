@@ -147,22 +147,17 @@ pub async fn handle_warmup(
             &uuid::Uuid::new_v4().to_string()[..8]
         );
 
-        let base_request = if is_image {
-            json!({
-                "contents": [{"role": "user", "parts": [{"text": "Say hi"}]}],
-                "generationConfig": {
-                    "maxOutputTokens": 10,
-                    "temperature": 0
-                }
-            })
-        } else {
-            json!({
-                "contents": [{"role": "user", "parts": [{"text": "Say hi"}]}],
-                "generationConfig": {
-                    "temperature": 0
-                }
-            })
-        };
+        let mut base_request = json!({
+            "contents": [{"role": "user", "parts": [{"text": "Say hi"}]}],
+            "generationConfig": {
+                "temperature": 0
+            }
+        });
+        if is_image {
+            if let Some(gen_config) = base_request.get_mut("generationConfig") {
+                gen_config["maxOutputTokens"] = json!(10);
+            }
+        }
 
         wrap_request(&base_request, &project_id, &req.model, Some(&session_id))
     };
@@ -172,15 +167,15 @@ pub async fn handle_warmup(
     let prefer_non_stream = model_lower.contains("flash-lite");
 
     let (method, query) = if prefer_non_stream {
-        ("generateContent", None)
+        (format!("models/{}:generateContent", req.model), None)
     } else {
-        ("streamGenerateContent", Some("alt=sse"))
+        (format!("models/{}:streamGenerateContent", req.model), Some("alt=sse"))
     };
 
     let mut result = state
         .upstream
         .call_v1_internal_with_warp(
-            method,
+            &method,
             &access_token,
             body.clone(),
             query,
@@ -194,7 +189,7 @@ pub async fn handle_warmup(
         result = state
             .upstream
             .call_v1_internal_with_warp(
-                "generateContent",
+                &format!("models/{}:generateContent", req.model),
                 &access_token,
                 body,
                 None,
