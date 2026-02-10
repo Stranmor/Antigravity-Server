@@ -4,8 +4,11 @@
 - Fix quota persistence and dual-write consistency bugs (completed).
 - Fix production crash: blocking TLS init in async runtime (completed).
 - Enforce image MIME auto-detection from bytes across proxy mappers (completed).
+- Eliminate duplicated retry logic across handlers (completed).
+- Introduce ModelFamily enum and replace model family string checks (in progress).
 
 ## Current Status
+- ✅ COMPLETED [2026-02-10]: Consolidated retry logic across handlers, using unified retry helpers and constants.
 - ✅ COMPLETED [2026-02-10]: Added image MIME detection from base64 magic bytes and wired it across proxy mappers to override declared types when needed.
 - ✅ COMPLETED [2026-02-10]: Removed all image size and count limits from tool result processing. Images of any size and quantity now pass through to Gemini without filtering.
 - ✅ COMPLETED [2026-02-09]: Fixed production crash caused by blocking native-TLS initialization inside tokio async runtime. `UpstreamClient::new()` now accepts pre-built `reqwest::Client`; proxy/WARP client builds wrapped in `spawn_blocking`. Deployed and verified on VPS.
@@ -181,6 +184,8 @@ vendor/
 | `proxy/middleware/monitor.rs` | ~~Latency: `handle_json_response` buffers full response before forwarding.~~ **Partially mitigated [2026-02-09]**: Actually uses mpsc channel — client receives data as it arrives. Server-side buffering up to 2MB for usage extraction. | Low |
 | `proxy/middleware/monitor.rs` | ~~Request body handling returns `Body::empty()` on buffering failure.~~ **Fixed [2026-02-09]**: Actually returns 502 Bad Gateway on request buffering failure (code was misread). | ~~High~~ Fixed |
 | `proxy/middleware/monitor.rs` | Inefficient: attempts to parse all `text/*` as JSON. | Low |
+| `proxy/mappers/claude/request/tool_result_handler.rs` | Invalid Part schema: `thoughtSignature` injected alongside `functionResponse`; mixing `functionResponse` and `inlineData` in a single message content list violates Gemini Part union expectations. | High |
+| `proxy/mappers/openai/request/content_parts.rs` | Blocking file reads, missing percent-decoding for `file://` paths, and unbounded memory for large videos when base64-encoding. | High |
 | `proxy/providers/zai_anthropic.rs` | DoS Risk: `deep_remove_cache_control` logs at `info` for every field, vulnerable to log flooding. | Medium |
 | `proxy/providers/zai_anthropic.rs` | Inefficient: `copy_passthrough_headers` performs unnecessary string allocations in hot path. | Low |
 | `modules/proxy_db.rs` | Data Loss: `save_log` hardcodes `request_body`/`response_body` to `None`. | Medium |

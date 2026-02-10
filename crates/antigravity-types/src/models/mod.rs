@@ -5,6 +5,7 @@
 pub mod account;
 pub mod config;
 pub mod device;
+pub mod model_family;
 pub mod quota;
 pub mod stats;
 pub mod sync;
@@ -18,6 +19,7 @@ pub use config::{
     ZaiConfig, ZaiDispatchMode, ZaiMcpConfig, ZaiModelDefaults,
 };
 pub use device::{DeviceProfile, DeviceProfileVersion, DeviceProfiles};
+pub use model_family::ModelFamily;
 pub use quota::{ModelQuota, QuotaData};
 pub use stats::{
     DashboardStats, ProxyRequestLog, ProxyStats, ProxyStatus, RefreshStats, TokenUsageStats,

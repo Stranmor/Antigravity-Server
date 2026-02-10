@@ -88,7 +88,7 @@ pub async fn handle_warmup(
         };
 
     // ===== step 2: based onmodeltypebuildrequestbody =====
-    let is_claude = req.model.to_lowercase().contains("claude");
+    let is_claude = antigravity_types::ModelFamily::from_model_name(&req.model).is_claude();
     let is_image = req.model.to_lowercase().contains("image");
 
     let body: Value = if is_claude {

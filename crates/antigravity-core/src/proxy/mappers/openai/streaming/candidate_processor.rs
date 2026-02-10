@@ -116,14 +116,14 @@ fn cache_signature(sig: &str, ctx: &mut CandidateContext<'_>) {
     if ctx.accumulated_thinking.is_empty() {
         return;
     }
-    let model_family =
-        if ctx.model.contains("claude") { "claude".to_string() } else { "gemini".to_string() };
+    let model_family = antigravity_types::ModelFamily::from_model_name(ctx.model);
     SignatureCache::global().cache_content_signature(
         ctx.accumulated_thinking,
         sig.to_string(),
-        model_family.clone(),
+        model_family.as_str().to_string(),
     );
-    SignatureCache::global().cache_thinking_family(sig.to_string(), model_family);
+    SignatureCache::global()
+        .cache_thinking_family(sig.to_string(), model_family.as_str().to_string());
     if let Some(ref sid) = ctx.session_id {
         SignatureCache::global().cache_session_signature(sid, sig.to_string());
         tracing::debug!(

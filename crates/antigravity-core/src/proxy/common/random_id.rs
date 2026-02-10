@@ -12,9 +12,5 @@ pub fn generate_random_id() -> String {
 /// based onmodelnameinferfeaturetype
 // note：thisfunctionalreadydeprecated，pleaseuse instead mappers::request_config::resolve_request_config
 pub fn _deprecated_infer_quota_group(model: &str) -> String {
-    if model.to_lowercase().starts_with("claude") {
-        "claude".to_string()
-    } else {
-        "gemini".to_string()
-    }
+    antigravity_types::ModelFamily::from_model_name(model).as_str().to_string()
 }

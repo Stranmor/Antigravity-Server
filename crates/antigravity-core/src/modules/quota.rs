@@ -194,7 +194,9 @@ pub async fn fetch_quota_inner(
                         let reset_time = quota_info.reset_time.unwrap_or_default();
 
                         // Only save models we care about
-                        if name.contains("gemini") || name.contains("claude") {
+                        if antigravity_types::ModelFamily::from_model_name(&name)
+                            != antigravity_types::ModelFamily::Unknown
+                        {
                             quota_data.add_model(name, percentage, reset_time);
                         }
                     }

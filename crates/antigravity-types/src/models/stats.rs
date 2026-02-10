@@ -1,5 +1,6 @@
 //! Statistics and monitoring models.
 
+use super::model_family::ModelFamily;
 use super::Account;
 use serde::{Deserialize, Serialize};
 
@@ -75,7 +76,7 @@ impl DashboardStats {
                 for model in &quota.models {
                     let percent = model.percentage;
 
-                    if model.name.contains("gemini") || model.name.contains("flash") {
+                    if ModelFamily::from_model_name(&model.name).is_gemini() {
                         gemini_total += percent;
                         gemini_count += 1;
                     }
@@ -83,7 +84,7 @@ impl DashboardStats {
                         gemini_image_total += percent;
                         gemini_image_count += 1;
                     }
-                    if model.name.contains("claude") {
+                    if ModelFamily::from_model_name(&model.name).is_claude() {
                         claude_total += percent;
                         claude_count += 1;
                     }
