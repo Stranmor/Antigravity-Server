@@ -1,6 +1,7 @@
 # Antigravity Manager - Architecture Status
 
 ## TARGET GOAL
+- Fix Claude/Vertex tool_use/tool_result pairing after signature stripping (in progress).
 - Fix quota persistence and dual-write consistency bugs (completed).
 - Fix production crash: blocking TLS init in async runtime (completed).
 - Enforce image MIME auto-detection from bytes across proxy mappers (completed).
@@ -8,6 +9,7 @@
 - Introduce ModelFamily enum and replace model family string checks (completed).
 
 ## Current Status
+- 🔄 IN PROGRESS [2026-02-10]: Fix tool_use/tool_result orphaning in Claude via Vertex AI path.
 - ✅ COMPLETED [2026-02-10]: Fix quota persistence and dual-write consistency bugs.
 - ✅ COMPLETED [2026-02-10]: Consolidated retry logic across handlers, using unified retry helpers and constants.
 - ✅ COMPLETED [2026-02-10]: Added image MIME detection from base64 magic bytes and wired it across proxy mappers to override declared types when needed.
