@@ -106,6 +106,7 @@ pub fn create_legacy_sse_stream(
                 }
                 Err(e) => {
                     tracing::warn!("Legacy stream error (graceful finish): {}", e);
+                    crate::proxy::prometheus::record_stream_graceful_finish("openai_legacy");
                     // Emit graceful completion instead of error event to prevent
                     // AI agents from endlessly retrying truncated responses
                     let finish_chunk = json!({

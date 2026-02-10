@@ -133,6 +133,7 @@ pub fn create_codex_sse_stream(
                 }
                 Err(e) => {
                     tracing::warn!("Codex stream error (graceful finish): {}", e);
+                    crate::proxy::prometheus::record_stream_graceful_finish("codex");
                     // Signal truncation via finish_reason instead of error event
                     // to prevent AI agents from endlessly retrying
                     last_finish_reason = "length".to_string();

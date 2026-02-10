@@ -70,8 +70,9 @@ fn build_combined_stream(
                 Ok(b) => Ok(b),
                 Err(e) => {
                     tracing::warn!("Stream error during transmission (graceful finish): {}", e);
+                    crate::proxy::prometheus::record_stream_graceful_finish("openai_handler");
                     Ok(Bytes::from(
-                        "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n"
+                        "data: {\"id\":\"chatcmpl-error\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"unknown\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n"
                     ))
                 }
             }

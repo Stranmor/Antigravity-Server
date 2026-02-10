@@ -13,6 +13,7 @@
 //! - `antigravity_truncations_total` - Counter of output truncations
 //! - `antigravity_peek_retries_total{reason}` - Counter of peek phase retries
 //! - `antigravity_peek_heartbeats_total` - Counter of heartbeats during peek
+//! - `antigravity_stream_graceful_finish_total{path}` - Counter of stream errors converted to graceful completions
 
 // Prometheus metrics: counter/gauge operations and file size calculations.
 // All values are bounded by system limits (file sizes, counters).
@@ -112,6 +113,10 @@ pub fn init_metrics() -> PrometheusHandle {
         describe_counter!(
             "antigravity_peek_heartbeats_total",
             "Total heartbeats skipped during peek phase"
+        );
+        describe_counter!(
+            "antigravity_stream_graceful_finish_total",
+            "Stream errors converted to graceful finish_reason:length completions"
         );
 
         crate::proxy::signature_metrics::init_signature_metrics();
@@ -219,6 +224,11 @@ pub(crate) fn record_peek_retry(reason: &str) {
 
 pub(crate) fn record_peek_heartbeat() {
     counter!("antigravity_peek_heartbeats_total").increment(1);
+}
+
+pub(crate) fn record_stream_graceful_finish(path: &str) {
+    let labels = [("path", path.to_string())];
+    counter!("antigravity_stream_graceful_finish_total", &labels).increment(1);
 }
 
 /// Render all metrics in Prometheus text format.

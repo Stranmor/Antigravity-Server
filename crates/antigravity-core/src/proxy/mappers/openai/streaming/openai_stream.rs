@@ -37,6 +37,7 @@ pub fn create_openai_sse_stream(
         let mut emitted_tool_calls = std::collections::HashSet::new();
         let mut final_usage: Option<OpenAIUsage> = None;
         let mut accumulated_thinking = String::new();
+        let mut done_emitted = false;
         while let Some(item) = gemini_stream.next().await {
             match item {
                 Ok(bytes) => {
@@ -47,6 +48,7 @@ pub fn create_openai_sse_stream(
                         tracing::error!("[OpenAI-SSE] Buffer exceeded {}MB limit, aborting stream", MAX_BUFFER_SIZE / 1024 / 1024);
                         let err = error_chunk(&stream_id, created_ts, &model, "buffer_overflow", "Response too large", "error.buffer_overflow");
                         yield Ok(Bytes::from(sse_line(&err)));
+                        done_emitted = true;
                         yield Ok(Bytes::from("data: [DONE]\n\n"));
                         break;
                     }
@@ -97,6 +99,7 @@ pub fn create_openai_sse_stream(
                 }
                 Err(e) => {
                     tracing::warn!("OpenAI stream error (graceful finish): {}", e);
+                    crate::proxy::prometheus::record_stream_graceful_finish("openai");
                     let finish = serde_json::json!({
                         "id": stream_id,
                         "object": "chat.completion.chunk",
@@ -109,6 +112,7 @@ pub fn create_openai_sse_stream(
                         }]
                     });
                     yield Ok(Bytes::from(sse_line(&finish)));
+                    done_emitted = true;
                     yield Ok(Bytes::from("data: [DONE]\n\n"));
                     break;
                 }
@@ -120,7 +124,9 @@ pub fn create_openai_sse_stream(
             yield Ok::<Bytes, String>(Bytes::from(sse_line(&u)));
         }
 
-        yield Ok::<Bytes, String>(Bytes::from("data: [DONE]\n\n"));
+        if !done_emitted {
+            yield Ok::<Bytes, String>(Bytes::from("data: [DONE]\n\n"));
+        }
     };
 
     Box::pin(stream)
