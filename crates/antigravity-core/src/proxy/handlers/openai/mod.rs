@@ -13,7 +13,7 @@ pub use models::handle_list_models;
 // Shared imports for submodules
 use crate::proxy::retry::{
     apply_retry_strategy, determine_retry_strategy, peek_first_data_chunk, PeekConfig, PeekResult,
-    RetryProfile,
+    RetryProfile, MAX_RETRY_ATTEMPTS,
 };
 use axum::{extract::Json, extract::State, http::StatusCode, response::IntoResponse};
 use bytes::Bytes;
@@ -25,5 +25,3 @@ use crate::proxy::mappers::openai::{
 };
 use crate::proxy::server::AppState;
 use crate::proxy::session_manager::SessionManager;
-
-const MAX_RETRY_ATTEMPTS: usize = 64; // Capped by pool_size - tries ALL accounts with quota

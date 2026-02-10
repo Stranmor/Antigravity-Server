@@ -175,6 +175,11 @@ pub fn build_contents(
                                 }
                             }));
                             saw_non_thinking = true;
+                        } else {
+                            tracing::warn!(
+                                "[Claude-Request] Dropped image: unsupported source_type={}",
+                                source.source_type
+                            );
                         }
                     },
                     ContentBlock::Document { source, .. } => {

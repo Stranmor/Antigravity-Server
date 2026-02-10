@@ -225,13 +225,24 @@ pub fn merge_consecutive_messages(messages: &mut Vec<Message>) {
     *messages = merged;
 }
 
-/// [FIX #709] Reorder serialized Gemini parts to ensure thinking blocks are first
+/// [FIX #709] Reorder serialized Gemini parts to ensure correct ordering.
+/// Order: thinking → functionResponse → text → other (inlineData) → functionCall
+///
+/// [FIX #1740] functionResponse parts MUST come before inlineData parts.
+/// When multiple tool_results contain images, the parts array becomes:
+///   [functionResponse(A), inlineData(A), functionResponse(B), inlineData(B), ...]
+/// Claude Vertex API converts this back to Claude format where inlineData between
+/// functionResponse parts breaks the tool_use/tool_result pairing chain.
+/// By grouping all functionResponse first, we get:
+///   [functionResponse(A), functionResponse(B), ..., inlineData(A), inlineData(B), ...]
+/// which satisfies Claude's requirement that all tool_results come before other content.
 pub fn reorder_gemini_parts(parts: &mut Vec<Value>) {
     if parts.len() <= 1 {
         return;
     }
 
     let mut thinking_parts = Vec::new();
+    let mut function_response_parts = Vec::new();
     let mut text_parts = Vec::new();
     let mut tool_parts = Vec::new();
     let mut other_parts = Vec::new();
@@ -241,6 +252,8 @@ pub fn reorder_gemini_parts(parts: &mut Vec<Value>) {
             thinking_parts.push(part);
         } else if part.get("functionCall").is_some() {
             tool_parts.push(part);
+        } else if part.get("functionResponse").is_some() {
+            function_response_parts.push(part);
         } else if let Some(text) = part.get("text").and_then(|t| t.as_str()) {
             // Filter empty text parts that might have been created during merging
             if !text.trim().is_empty() && text != "(no content)" {
@@ -252,6 +265,7 @@ pub fn reorder_gemini_parts(parts: &mut Vec<Value>) {
     }
 
     parts.extend(thinking_parts);
+    parts.extend(function_response_parts);
     parts.extend(text_parts);
     parts.extend(other_parts);
     parts.extend(tool_parts);

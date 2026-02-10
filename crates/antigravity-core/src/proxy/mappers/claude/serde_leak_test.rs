@@ -1,5 +1,5 @@
-use serde_json::json;
 use crate::proxy::mappers::claude::models::ClaudeRequest;
+use serde_json::json;
 
 #[test]
 fn test_claude_request_deserialization_leak() {
@@ -21,12 +21,17 @@ fn test_claude_request_deserialization_leak() {
         ]
     });
 
-    let request: ClaudeRequest = serde_json::from_value(incoming_json).expect("Deserialization failed");
+    let request: ClaudeRequest =
+        serde_json::from_value(incoming_json).expect("Deserialization failed");
 
     // check反sequence化after value
-    if let crate::proxy::mappers::claude::models::MessageContent::Array(blocks) = &request.messages[0].content {
-        if let crate::proxy::mappers::claude::models::ContentBlock::Thinking { cache_control, .. } = &blocks[0] {
-            println!("Debug: cache_control after deserialization: {:?}", cache_control);
+    if let crate::proxy::mappers::claude::models::MessageContent::Array(blocks) =
+        &request.messages[0].content
+    {
+        if let crate::proxy::mappers::claude::models::ContentBlock::Thinking {
+            cache_control, ..
+        } = &blocks[0]
+        {
             assert!(cache_control.is_none(), "cache_control should be None if incoming was null");
         }
     }

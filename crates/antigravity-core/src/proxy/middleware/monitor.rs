@@ -169,9 +169,23 @@ async fn handle_sse_response(
             }
         }
 
-        log.response_body = None;
-
         let full_tail = String::from_utf8_lossy(&last_few_bytes);
+
+        if log.status >= 400 {
+            let tail_str = full_tail.to_string();
+            let truncated = if tail_str.len() > 16_384 {
+                format!("{}...[truncated]", &tail_str[..16_384])
+            } else {
+                tail_str
+            };
+            if log.error.is_none() {
+                log.error = Some(truncated.clone());
+            }
+            log.response_body = Some(truncated);
+        } else {
+            log.response_body = None;
+        }
+
         for line in full_tail.lines().rev() {
             if line.starts_with("data: ")
                 && (line.contains("\"usage\"") || line.contains("\"usageMetadata\""))
@@ -184,10 +198,6 @@ async fn handle_sse_response(
                     }
                 }
             }
-        }
-
-        if log.status >= 400 && log.error.is_none() {
-            log.error = Some("Stream Error or Failed".to_string());
         }
         log.duration = start.elapsed().as_millis() as u64;
         monitor.log_request(log).await;
@@ -257,9 +267,22 @@ async fn handle_json_response(
         }
 
         if log.status >= 400 {
-            log.error = Some("Upstream error response received".to_string());
+            if !failed_to_buffer && !buffer.is_empty() {
+                let body_str = String::from_utf8_lossy(&buffer);
+                // Truncate to 16KB to avoid bloating SQLite
+                let truncated = if body_str.len() > 16_384 {
+                    format!("{}...[truncated]", &body_str[..16_384])
+                } else {
+                    body_str.into_owned()
+                };
+                log.error = Some(truncated.clone());
+                log.response_body = Some(truncated);
+            } else {
+                log.error = Some("Upstream error response received".to_string());
+            }
+        } else {
+            log.response_body = None;
         }
-        log.response_body = None;
         monitor.log_request(log).await;
     });
 

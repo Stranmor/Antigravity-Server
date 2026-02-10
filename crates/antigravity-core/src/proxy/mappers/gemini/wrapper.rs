@@ -20,6 +20,10 @@ pub fn wrap_request(
     // Deep cleanup [undefined] strings (commonly injected by Cherry Studio and other clients)
     crate::proxy::mappers::request_config::deep_clean_undefined(&mut inner_request);
 
+    if let Some(contents) = inner_request.get_mut("contents") {
+        crate::proxy::mappers::claude::request::image_retention::strip_old_images(contents);
+    }
+
     // [FIX #765] Inject thought_signature into functionCall parts
     // Google requires thoughtSignature on ALL functionCall parts — use dummy as fallback
     if let Some(contents) = inner_request.get_mut("contents").and_then(|c| c.as_array_mut()) {

@@ -22,7 +22,7 @@ use std::collections::HashSet;
 use streaming::{build_stream_response, extract_signature, peek_first_chunk};
 use tracing::{debug, error, info, warn};
 
-const MAX_RETRY_ATTEMPTS: usize = 64;
+use crate::proxy::retry::MAX_RETRY_ATTEMPTS;
 
 pub async fn handle_generate(
     State(state): State<AppState>,

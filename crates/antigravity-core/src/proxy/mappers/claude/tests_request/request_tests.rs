@@ -36,7 +36,6 @@ fn test_ephemeral_injection_debug() {
 
     // Now test serialization
     let serialized = serde_json::to_value(&req).unwrap();
-    println!("Serialized: {}", serialized);
     assert!(serialized["messages"][0]["content"][0].get("cache_control").is_none());
 }
 

@@ -191,7 +191,7 @@ pub fn transform_claude_request_in(
         build_generation_config(claude_req, has_web_search_tool, is_thinking_enabled);
 
     // 2. Contents (Messages)
-    let contents = build_google_contents(
+    let mut contents = build_google_contents(
         &claude_req.messages,
         claude_req,
         &mut tool_id_to_name,
@@ -202,6 +202,9 @@ pub fn transform_claude_request_in(
         is_retry,
         &tool_name_to_schema,
     )?;
+
+    // Strip images from old user messages to prevent token accumulation
+    super::image_retention::strip_old_images(&mut contents);
 
     // 3. Tools
     let tools = build_tools(&claude_req.tools, has_web_search_tool)?;
@@ -291,33 +294,7 @@ pub fn transform_claude_request_in(
             mapped_model
         );
         super::signature_stripping::strip_non_claude_thought_signatures(&mut body);
-        super::signature_stripping::validate_tool_pairing_after_strip(&mut body);
-    }
-
-    tracing::debug!("[DEBUG-593] Final deep clean complete, request ready to send");
-
-    // Debug: dump thinking blocks to find what's being sent
-    if mapped_model.starts_with("claude-") {
-        if let Some(contents) =
-            body.get("request").and_then(|r| r.get("contents")).and_then(|c| c.as_array())
-        {
-            for (ci, content) in contents.iter().enumerate() {
-                if let Some(parts) = content.get("parts").and_then(|p| p.as_array()) {
-                    for (pi, part) in parts.iter().enumerate() {
-                        if part.get("thought").is_some() {
-                            let text = part.get("text").and_then(|t| t.as_str()).unwrap_or("");
-                            let sig = part.get("thoughtSignature").and_then(|s| s.as_str());
-                            tracing::info!(
-                                "[Claude-Vertex-DEBUG] contents[{}].parts[{}]: thought=true, text_len={}, text_preview='{}', sig={}",
-                                ci, pi, text.len(),
-                                &text[..text.len().min(50)],
-                                sig.map(|s| format!("len={}", s.len())).unwrap_or_else(|| "NONE".to_string())
-                            );
-                        }
-                    }
-                }
-            }
-        }
+        super::signature_stripping::repair_tool_pairing_after_strip(&mut body);
     }
 
     Ok(body)

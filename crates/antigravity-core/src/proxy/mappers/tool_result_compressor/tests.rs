@@ -34,7 +34,6 @@ Format: JSON array with schema
 Please read the file locally."#;
 
     let result = compact_tool_result_text(text, 500);
-    println!("Result: {}", result);
     assert!(result.contains("150000 characters") || result.contains("150,000 characters"));
     assert!(result.contains("/tmp/output.txt"));
     assert!(result.contains("[tool_result omitted") || result.len() <= 500);

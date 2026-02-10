@@ -14,11 +14,6 @@
     reason = "Token scaling algorithm: bounded u32 values, intentional f64 math for smooth curves"
 )]
 
-// Already removed unused Value import
-
-// Note: uppercase_schema_types function already removed (for converting JSON Schema type names to uppercase)
-// e.g.: "string" -> "STRING", "integer" -> "INTEGER"
-
 /// Get context token limit based on model name
 pub fn get_context_limit_for_model(model: &str) -> u32 {
     if model.contains("pro") {
@@ -106,9 +101,6 @@ pub fn to_claude_usage(
 #[cfg(test)]
 mod tests {
     use super::*;
-    // Removed unused serde_json::json
-
-    // Already removed expired test for uppercase_schema_types
 
     #[test]
     fn test_to_claude_usage() {

@@ -246,7 +246,7 @@ pub async fn handle_messages(
             status_code,
             body: error_text.clone(),
         };
-        debug!("[{}] Upstream Error Response: {}", trace_id, error_text);
+        tracing::error!("[{}] Upstream Error Response ({}): {}", trace_id, status_code, error_text);
 
         let err_ctx = ErrorContext {
             status,

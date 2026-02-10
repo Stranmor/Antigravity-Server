@@ -1,6 +1,7 @@
 mod content_builder;
 mod generation_config;
 mod google_content;
+pub mod image_retention;
 mod message_cleaning;
 mod model_compat;
 mod monolith;

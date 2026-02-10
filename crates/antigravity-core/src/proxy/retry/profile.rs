@@ -31,6 +31,8 @@ const CLAUDE_SIGNATURE_PATTERNS: &[&str] = &[
     "Found 'text'",
     "must be `thinking`",
     "must be 'thinking'",
+    "tool_use` ids were found without `tool_result",
+    "without `tool_result` blocks",
 ];
 
 impl RetryProfile {

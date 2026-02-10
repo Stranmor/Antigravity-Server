@@ -63,7 +63,7 @@ pub fn build_google_content(
         pending_tool_use_ids.clear();
     }
 
-    let parts = build_contents(
+    let mut parts = build_contents(
         &msg.content,
         msg.role == "assistant",
         claude_req,
@@ -84,6 +84,11 @@ pub fn build_google_content(
     if parts.is_empty() {
         return Ok(json!(null));
     }
+
+    // [FIX #1740] Reorder parts to ensure functionResponse comes before inlineData.
+    // This prevents Claude Vertex API from seeing inlineData between functionResponse
+    // parts, which breaks tool_use/tool_result pairing.
+    reorder_gemini_parts(&mut parts);
 
     Ok(json!({
         "role": role,
