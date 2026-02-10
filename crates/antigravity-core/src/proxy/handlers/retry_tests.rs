@@ -175,13 +175,17 @@ fn claude_profile_has_more_signature_patterns() {
     let claude = RetryProfile::claude();
     let openai = RetryProfile::openai();
     assert!(claude.signature_patterns.len() > openai.signature_patterns.len());
-    assert_eq!(claude.signature_patterns.len(), 14);
+    assert_eq!(claude.signature_patterns.len(), 13);
 }
 
 #[test]
 fn is_signature_error_claude_patterns() {
     let p = RetryProfile::claude();
-    assert!(is_signature_error("INVALID_ARGUMENT in request", &p));
+    assert!(!is_signature_error(
+        "Image does not match the declared MIME type: INVALID_ARGUMENT",
+        &p
+    ));
+    assert!(is_signature_error("Invalid `signature` in thinking block", &p));
     assert!(is_signature_error("failed to deserialise body", &p));
     assert!(is_signature_error("Found `text` instead of thinking", &p));
     assert!(is_signature_error("must be `thinking` type", &p));

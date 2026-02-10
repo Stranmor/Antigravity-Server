@@ -23,7 +23,6 @@ const CLAUDE_SIGNATURE_PATTERNS: &[&str] = &[
     "thinking.thinking",
     "thinking.signature: Field required",
     "thinking.thinking: Field required",
-    "INVALID_ARGUMENT",
     "Corrupted thought signature",
     "failed to deserialise",
     "thinking block",

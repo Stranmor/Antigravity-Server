@@ -2,7 +2,7 @@
 
 use crate::proxy::mappers::claude::models::{ContentBlock, MessageContent};
 use crate::proxy::mappers::claude::request::DUMMY_SIGNATURE;
-use crate::proxy::mappers::claude::{close_tool_loop_for_thinking, ClaudeRequest};
+use crate::proxy::mappers::claude::ClaudeRequest;
 
 pub fn handle_thinking_signature_error(
     request: &mut ClaudeRequest,
@@ -76,8 +76,6 @@ pub fn handle_thinking_signature_error(
         fixed_thinking,
         fixed_tool_use
     );
-
-    close_tool_loop_for_thinking(&mut request.messages);
 
     // IMPORTANT: Do NOT downgrade the model. Thinking must stay enabled.
 }
