@@ -83,11 +83,7 @@ fn extract_content_and_images(compacted: &Value, original: &Value) -> (String, V
                 .collect();
 
             if text_parts.is_empty() && !arr.is_empty() {
-                if images.is_empty() {
-                    compacted.to_string()
-                } else {
-                    "[image content attached]".to_string()
-                }
+                compacted.to_string()
             } else {
                 text_parts.join("\n")
             }
