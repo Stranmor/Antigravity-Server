@@ -1,7 +1,5 @@
-use crate::proxy::mappers::tool_result_compressor;
+use crate::proxy::mappers::tool_result_compressor::{self, MAX_TOOL_RESULT_CHARS};
 use serde_json::{json, Value};
-
-const MAX_TOOL_RESULT_CHARS: usize = 200_000;
 
 pub fn build_tool_result_part(
     tool_use_id: &str,
@@ -72,7 +70,11 @@ fn extract_content_and_images(compacted: &Value, original: &Value) -> (String, V
                 .collect();
 
             if text_parts.is_empty() && !arr.is_empty() {
-                compacted.to_string()
+                if images.is_empty() {
+                    compacted.to_string()
+                } else {
+                    "[image content attached]".to_string()
+                }
             } else {
                 text_parts.join("\n")
             }

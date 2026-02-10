@@ -167,7 +167,8 @@ fn deep_clean_html(html: &str) -> String {
 pub fn sanitize_tool_result_blocks(blocks: &mut Vec<Value>) {
     let mut used_chars = 0;
     let mut cleaned_blocks = Vec::new();
-    let mut removed_image_size = None;
+    let mut removed_image_count: usize = 0;
+    let mut removed_image_total_size: usize = 0;
 
     if !blocks.is_empty() {
         info!(
@@ -179,7 +180,8 @@ pub fn sanitize_tool_result_blocks(blocks: &mut Vec<Value>) {
 
     for block in blocks.iter() {
         if let Some(size) = is_oversized_base64_image(block) {
-            removed_image_size = Some(size);
+            removed_image_count += 1;
+            removed_image_total_size += size;
             debug!(
                 "[ToolCompressor] Removed oversized base64 image block ({} chars, threshold: {})",
                 size, MAX_IMAGE_BASE64_CHARS
@@ -227,10 +229,19 @@ pub fn sanitize_tool_result_blocks(blocks: &mut Vec<Value>) {
         }
     }
 
-    if let Some(size) = removed_image_size {
+    if removed_image_count > 0 {
+        let msg = if removed_image_count == 1 {
+            format!("[1 image omitted: {}KB exceeds limit]", removed_image_total_size / 1024)
+        } else {
+            format!(
+                "[{} images omitted: {}KB total exceeds limit]",
+                removed_image_count,
+                removed_image_total_size / 1024
+            )
+        };
         cleaned_blocks.push(serde_json::json!({
             "type": "text",
-            "text": format!("[image omitted: {}KB exceeds limit; use the file path in the previous text block]", size / 1024)
+            "text": msg
         }));
     }
 

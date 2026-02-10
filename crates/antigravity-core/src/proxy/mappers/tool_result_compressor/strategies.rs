@@ -100,9 +100,10 @@ pub fn compact_browser_snapshot(text: &str, max_chars: usize) -> Option<String> 
     let head_len = head_len.clamp(500, 10_000);
     let tail_len = budget.saturating_sub(head_len).min(3_000);
 
-    let head = &text[..head_len.min(text.len())];
-    let tail = if tail_len > 0 && text.len() > head_len {
-        let start = text.len().saturating_sub(tail_len);
+    let safe_head_end = text.floor_char_boundary(head_len.min(text.len()));
+    let head = &text[..safe_head_end];
+    let tail = if tail_len > 0 && text.len() > safe_head_end {
+        let start = text.ceil_char_boundary(text.len().saturating_sub(tail_len));
         &text[start..]
     } else {
         ""
