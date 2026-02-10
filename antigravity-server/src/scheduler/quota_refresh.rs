@@ -99,12 +99,11 @@ pub fn start_quota_refresh(state: AppState) {
                     needs_immediate.len()
                 );
                 for acc in &needs_immediate {
-                    let mut acc_clone = (*acc).clone();
-                    match account::fetch_quota_with_retry(&mut acc_clone).await {
-                        Ok(_) => {
-                            if let Some(quota) = acc_clone.quota.clone() {
-                                persist_quota(&state, &acc_clone.id, &acc_clone.email, quota).await;
-                            }
+                    let acc_clone = (*acc).clone();
+                    match account::fetch_quota_with_retry(&acc_clone, state.repository()).await {
+                        Ok(result) => {
+                            persist_quota(&state, &acc_clone.id, &acc_clone.email, result.quota)
+                                .await;
                             already_refreshed.insert(acc_clone.id.clone());
                             tracing::debug!(
                                 "[QuotaRefresh] Immediate refresh: {}",
@@ -156,12 +155,10 @@ pub fn start_quota_refresh(state: AppState) {
 
                     let mut success = 0;
 
-                    for mut acc in accounts_to_refresh {
-                        match account::fetch_quota_with_retry(&mut acc).await {
-                            Ok(_) => {
-                                if let Some(quota) = acc.quota.clone() {
-                                    persist_quota(&state, &acc.id, &acc.email, quota).await;
-                                }
+                    for acc in accounts_to_refresh {
+                        match account::fetch_quota_with_retry(&acc, state.repository()).await {
+                            Ok(result) => {
+                                persist_quota(&state, &acc.id, &acc.email, result.quota).await;
                                 success += 1;
                             },
                             Err(e) => {

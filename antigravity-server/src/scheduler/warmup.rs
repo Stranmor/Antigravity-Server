@@ -190,66 +190,61 @@ pub fn start(state: AppState) {
                 // Convert HashSet to Vec for deterministic iteration
                 let emails_to_warmup: Vec<_> = accounts_to_warmup.into_iter().collect();
                 for email in &emails_to_warmup {
-                    let mut acc = match accounts.iter().find(|a| &a.email == email).cloned() {
+                    let acc = match accounts.iter().find(|a| &a.email == email).cloned() {
                         Some(a) => a,
                         None => continue,
                     };
 
                     tracing::info!("[Warmup] Refreshing {}", email);
 
-                    match account::fetch_quota_with_retry(&mut acc).await {
-                        Ok(_) => {
-                            if let Some(quota) = acc.quota.clone() {
-                                let protected_models = match account::update_account_quota_async(
-                                    acc.id.clone(),
-                                    quota.clone(),
-                                )
-                                .await
-                                {
-                                    Ok(updated) => {
-                                        Some(updated.protected_models.iter().cloned().collect())
-                                    },
-                                    Err(e) => {
-                                        tracing::warn!(
-                                            "[Warmup] Failed to update quota for {}: {}",
-                                            email,
-                                            e
-                                        );
-                                        None
-                                    },
-                                };
-                                if let Some(repo) = state.repository() {
-                                    match repo.get_account_by_email(&acc.email).await {
-                                        Ok(Some(pg_account)) => {
-                                            if let Err(e) = repo
-                                                .update_quota(
-                                                    &pg_account.id,
-                                                    quota,
-                                                    protected_models,
-                                                )
-                                                .await
-                                            {
-                                                tracing::warn!(
-                                                    "[Warmup] DB quota update failed for {}: {}",
-                                                    email,
-                                                    e
-                                                );
-                                            }
-                                        },
-                                        Ok(None) => {
+                    match account::fetch_quota_with_retry(&acc, state.repository()).await {
+                        Ok(result) => {
+                            let quota = result.quota;
+                            let protected_models = match account::update_account_quota_async(
+                                acc.id.clone(),
+                                quota.clone(),
+                            )
+                            .await
+                            {
+                                Ok(updated) => {
+                                    Some(updated.protected_models.iter().cloned().collect())
+                                },
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "[Warmup] Failed to update quota for {}: {}",
+                                        email,
+                                        e
+                                    );
+                                    None
+                                },
+                            };
+                            if let Some(repo) = state.repository() {
+                                match repo.get_account_by_email(&acc.email).await {
+                                    Ok(Some(pg_account)) => {
+                                        if let Err(e) = repo
+                                            .update_quota(&pg_account.id, quota, protected_models)
+                                            .await
+                                        {
                                             tracing::warn!(
-                                                "[Warmup] PG account lookup failed for {}",
-                                                email
-                                            );
-                                        },
-                                        Err(e) => {
-                                            tracing::warn!(
-                                                "[Warmup] PG account lookup error for {}: {}",
+                                                "[Warmup] DB quota update failed for {}: {}",
                                                 email,
                                                 e
                                             );
-                                        },
-                                    }
+                                        }
+                                    },
+                                    Ok(None) => {
+                                        tracing::warn!(
+                                            "[Warmup] PG account lookup failed for {}",
+                                            email
+                                        );
+                                    },
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            "[Warmup] PG account lookup error for {}: {}",
+                                            email,
+                                            e
+                                        );
+                                    },
                                 }
                             }
                             success += 1;

@@ -129,13 +129,15 @@ pub async fn refresh_quota(identifier: &str) -> Result<()> {
         return refresh_all_quotas().await;
     }
     let accounts = account::list_accounts().map_err(|e| anyhow::anyhow!(e))?;
-    let mut acc = accounts
+    let acc = accounts
         .into_iter()
         .find(|a| a.email == identifier || a.id == identifier)
         .context("Account not found")?;
     println!("{}", format!("Refreshing quota for {}...", acc.email).cyan());
-    account::fetch_quota_with_retry(&mut acc).await.map_err(|e| anyhow::anyhow!(e.to_string()))?;
-    account::update_account_quota_async(acc.id.clone(), acc.quota.clone().unwrap_or_default())
+    let result = account::fetch_quota_with_retry(&acc, None)
+        .await
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    account::update_account_quota_async(acc.id.clone(), result.quota)
         .await
         .map_err(|e| anyhow::anyhow!(e))?;
     println!("{} Quota refreshed for {}", "✓".green(), acc.email.green());
@@ -148,18 +150,17 @@ async fn refresh_all_quotas() -> Result<()> {
     let mut success = 0;
     let mut failed = 0;
 
-    for mut acc in accounts {
+    for acc in accounts {
         if acc.disabled {
             continue;
         }
         print!("Refreshing {}... ", acc.email);
-        match account::fetch_quota_with_retry(&mut acc).await {
-            Ok(_) => {
-                if let Some(quota) = acc.quota.clone() {
-                    if let Err(e) = account::update_account_quota_async(acc.id.clone(), quota).await
-                    {
-                        eprintln!("Failed to persist quota for {}: {}", acc.email, e);
-                    }
+        match account::fetch_quota_with_retry(&acc, None).await {
+            Ok(result) => {
+                if let Err(e) =
+                    account::update_account_quota_async(acc.id.clone(), result.quota).await
+                {
+                    eprintln!("Failed to persist quota for {}: {}", acc.email, e);
                 }
                 println!("{}", "✓".green());
                 success += 1;

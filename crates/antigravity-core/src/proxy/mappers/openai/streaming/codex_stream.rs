@@ -132,28 +132,10 @@ pub fn create_codex_sse_stream(
                     }
                 }
                 Err(e) => {
-                    use crate::proxy::mappers::error_classifier::classify_stream_error;
-                    let (error_type, user_message, i18n_key) = classify_stream_error(&e);
-
-                    tracing::error!(
-                        error_type = %error_type,
-                        user_message = %user_message,
-                        i18n_key = %i18n_key,
-                        raw_error = %e,
-                        "Codex stream error occurred"
-                    );
-
-                    // Send friendly error event (containing i18n_key for frontend translation)
-                    let error_ev = json!({
-                        "type": "error",
-                        "error": {
-                            "type": error_type,
-                            "message": user_message,
-                            "code": "stream_error",
-                            "i18n_key": i18n_key
-                        }
-                    });
-                    yield Ok(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&error_ev).unwrap_or_default())));
+                    tracing::warn!("Codex stream error (graceful finish): {}", e);
+                    // Signal truncation via finish_reason instead of error event
+                    // to prevent AI agents from endlessly retrying
+                    last_finish_reason = "length".to_string();
                     break;
                 }
             }

@@ -5,20 +5,20 @@ use antigravity_core::modules::account;
 
 pub async fn warmup_account(email: &str) -> Result<()> {
     let accounts = account::list_accounts().map_err(|e| anyhow::anyhow!(e))?;
-    let mut acc = accounts
+    let acc = accounts
         .into_iter()
         .find(|a| a.email == email || a.id == email)
         .ok_or_else(|| anyhow::anyhow!("Account not found"))?;
 
     println!("{}", format!("Warming up {}...", acc.email).cyan());
 
-    account::fetch_quota_with_retry(&mut acc).await.map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let result = account::fetch_quota_with_retry(&acc, None)
+        .await
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
-    if let Some(quota) = acc.quota.clone() {
-        account::update_account_quota_async(acc.id.clone(), quota)
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
-    }
+    account::update_account_quota_async(acc.id.clone(), result.quota)
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
     println!("{} Account {} warmed up", "✓".green(), acc.email.green());
     Ok(())
 }
@@ -31,15 +31,14 @@ pub async fn warmup_all() -> Result<()> {
     let total = enabled.len();
     let mut success = 0;
 
-    for mut acc in enabled {
+    for acc in enabled {
         print!("Warming up {}... ", acc.email);
-        match account::fetch_quota_with_retry(&mut acc).await {
-            Ok(_) => {
-                if let Some(quota) = acc.quota.clone() {
-                    if let Err(e) = account::update_account_quota_async(acc.id.clone(), quota).await
-                    {
-                        eprintln!("Failed to persist quota for {}: {}", acc.email, e);
-                    }
+        match account::fetch_quota_with_retry(&acc, None).await {
+            Ok(result) => {
+                if let Err(e) =
+                    account::update_account_quota_async(acc.id.clone(), result.quota).await
+                {
+                    eprintln!("Failed to persist quota for {}: {}", acc.email, e);
                 }
                 println!("{}", "✓".green());
                 success += 1;

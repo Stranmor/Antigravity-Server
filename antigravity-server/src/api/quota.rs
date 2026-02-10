@@ -25,27 +25,11 @@ pub async fn refresh_account_quota(
     State(state): State<AppState>,
     Json(payload): Json<RefreshQuotaRequest>,
 ) -> Result<Json<QuotaResponse>, (StatusCode, String)> {
-    let mut acc =
-        account::load_account(&payload.account_id).map_err(|e| (StatusCode::NOT_FOUND, e))?;
+    let acc = account::load_account(&payload.account_id).map_err(|e| (StatusCode::NOT_FOUND, e))?;
 
-    let pg_account_id = if let Some(repo) = state.repository() {
-        match repo.get_account_by_email(&acc.email).await {
-            Ok(Some(pg_account)) => Some(pg_account.id),
-            Ok(None) => {
-                tracing::warn!("PG account lookup failed for {}", acc.email);
-                None
-            },
-            Err(e) => {
-                tracing::warn!("PG account lookup error for {}: {}", acc.email, e);
-                None
-            },
-        }
-    } else {
-        None
-    };
-
-    match account::fetch_quota_with_retry(&mut acc).await {
-        Ok(quota) => {
+    match account::fetch_quota_with_retry(&acc, state.repository()).await {
+        Ok(result) => {
+            let quota = result.quota;
             let updated_account = match account::update_account_quota_async(
                 payload.account_id.clone(),
                 quota.clone(),
@@ -55,20 +39,26 @@ pub async fn refresh_account_quota(
                 Ok(updated) => Some(updated),
                 Err(e) => {
                     tracing::warn!("Failed to update quota protection: {}", e);
-                    if let Err(e) = account::save_account(&acc) {
-                        tracing::warn!("Failed to save account fallback: {}", e);
-                    }
                     None
                 },
             };
             let protected_models =
                 updated_account.map(|updated| updated.protected_models.iter().cloned().collect());
-            if let (Some(repo), Some(pg_account_id)) = (state.repository(), pg_account_id.as_ref())
-            {
-                if let Err(e) =
-                    repo.update_quota(pg_account_id, quota.clone(), protected_models).await
-                {
-                    tracing::warn!("DB quota update failed for {}: {}", acc.email, e);
+            if let Some(repo) = state.repository() {
+                match repo.get_account_by_email(&acc.email).await {
+                    Ok(Some(pg_account)) => {
+                        if let Err(e) =
+                            repo.update_quota(&pg_account.id, quota.clone(), protected_models).await
+                        {
+                            tracing::warn!("DB quota update failed for {}: {}", acc.email, e);
+                        }
+                    },
+                    Ok(None) => {
+                        tracing::warn!("PG account lookup failed for {}", acc.email);
+                    },
+                    Err(e) => {
+                        tracing::warn!("PG account lookup error for {}: {}", acc.email, e);
+                    },
                 }
             }
             if let Err(e) = state.reload_accounts().await {
@@ -92,8 +82,9 @@ pub async fn refresh_all_quotas(
     > = JoinSet::new();
 
     let semaphore = Arc::new(Semaphore::new(10));
+    let repo = state.repository().cloned();
 
-    for mut acc in accounts {
+    for acc in accounts {
         if acc.disabled {
             continue;
         }
@@ -104,13 +95,14 @@ pub async fn refresh_all_quotas(
             semaphore.clone().acquire_owned().await.map_err(|e| {
                 (StatusCode::INTERNAL_SERVER_ERROR, format!("Semaphore error: {}", e))
             })?;
+        let repo_clone = repo.clone();
 
         join_set.spawn(async move {
             let _permit = permit;
-            let quota = account::fetch_quota_with_retry(&mut acc)
+            let result = account::fetch_quota_with_retry(&acc, repo_clone.as_ref())
                 .await
-                .map_err(|e| format!("{}: {}", acc.email, e))?;
-            Ok((account_id, email, quota))
+                .map_err(|e| format!("{}: {}", email, e))?;
+            Ok((account_id, email, result.quota))
         });
     }
 
@@ -246,47 +238,34 @@ pub async fn warmup_account(
     State(state): State<AppState>,
     Json(payload): Json<WarmupAccountRequest>,
 ) -> Result<Json<WarmupResponse>, (StatusCode, String)> {
-    let mut acc =
-        account::load_account(&payload.account_id).map_err(|e| (StatusCode::NOT_FOUND, e))?;
+    let acc = account::load_account(&payload.account_id).map_err(|e| (StatusCode::NOT_FOUND, e))?;
 
-    let pg_account_id = if let Some(repo) = state.repository() {
-        match repo.get_account_by_email(&acc.email).await {
-            Ok(Some(pg_account)) => Some(pg_account.id),
-            Ok(None) => {
-                tracing::warn!("PG account lookup failed for {}", acc.email);
-                None
-            },
-            Err(e) => {
-                tracing::warn!("PG account lookup error for {}: {}", acc.email, e);
-                None
-            },
-        }
-    } else {
-        None
-    };
-
-    match account::fetch_quota_with_retry(&mut acc).await {
-        Ok(_) => {
-            if let Some(quota) = acc.quota.clone() {
-                let protected_models = match account::update_account_quota_async(
-                    acc.id.clone(),
-                    quota.clone(),
-                )
-                .await
-                {
+    match account::fetch_quota_with_retry(&acc, state.repository()).await {
+        Ok(result) => {
+            let quota = result.quota;
+            let protected_models =
+                match account::update_account_quota_async(acc.id.clone(), quota.clone()).await {
                     Ok(updated) => Some(updated.protected_models.iter().cloned().collect()),
                     Err(e) => {
                         tracing::warn!("Failed to update quota for {}: {}", acc.email, e);
                         None
                     },
                 };
-                if let (Some(repo), Some(pg_account_id)) =
-                    (state.repository(), pg_account_id.as_ref())
-                {
-                    if let Err(e) = repo.update_quota(pg_account_id, quota, protected_models).await
-                    {
-                        tracing::warn!("DB quota update failed for {}: {}", acc.email, e);
-                    }
+            if let Some(repo) = state.repository() {
+                match repo.get_account_by_email(&acc.email).await {
+                    Ok(Some(pg_account)) => {
+                        if let Err(e) =
+                            repo.update_quota(&pg_account.id, quota, protected_models).await
+                        {
+                            tracing::warn!("DB quota update failed for {}: {}", acc.email, e);
+                        }
+                    },
+                    Ok(None) => {
+                        tracing::warn!("PG account lookup failed for {}", acc.email);
+                    },
+                    Err(e) => {
+                        tracing::warn!("PG account lookup error for {}: {}", acc.email, e);
+                    },
                 }
             }
             if let Err(e) = state.reload_accounts().await {
@@ -317,8 +296,9 @@ pub async fn warmup_all_accounts(
 
     let mut join_set: JoinSet<Result<WarmupResult, String>> = JoinSet::new();
     let semaphore = Arc::new(Semaphore::new(10));
+    let repo = state.repository().cloned();
 
-    for mut acc in accounts {
+    for acc in accounts {
         if acc.disabled || acc.proxy_disabled {
             continue;
         }
@@ -329,14 +309,15 @@ pub async fn warmup_all_accounts(
             semaphore.clone().acquire_owned().await.map_err(|e| {
                 (StatusCode::INTERNAL_SERVER_ERROR, format!("Semaphore error: {}", e))
             })?;
+        let repo_clone = repo.clone();
 
         join_set.spawn(async move {
             let _permit = permit;
-            account::fetch_quota_with_retry(&mut acc)
+            let result = account::fetch_quota_with_retry(&acc, repo_clone.as_ref())
                 .await
                 .map_err(|e| format!("{}: {}", email, e))?;
 
-            Ok(WarmupResult { account_id, email, quota: acc.quota })
+            Ok(WarmupResult { account_id, email, quota: Some(result.quota) })
         });
     }
 

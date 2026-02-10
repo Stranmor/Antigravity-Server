@@ -105,32 +105,22 @@ pub fn create_legacy_sse_stream(
                     }
                 }
                 Err(e) => {
-                    use crate::proxy::mappers::error_classifier::classify_stream_error;
-                    let (error_type, user_message, i18n_key) = classify_stream_error(&e);
-
-                    tracing::error!(
-                        error_type = %error_type,
-                        user_message = %user_message,
-                        i18n_key = %i18n_key,
-                        raw_error = %e,
-                        "Legacy stream error occurred"
-                    );
-
-                    let error_chunk = json!({
+                    tracing::warn!("Legacy stream error (graceful finish): {}", e);
+                    // Emit graceful completion instead of error event to prevent
+                    // AI agents from endlessly retrying truncated responses
+                    let finish_chunk = json!({
                         "id": &stream_id,
                         "object": "text_completion",
                         "created": created_ts,
                         "model": &model,
-                        "choices": [],
-                        "error": {
-                            "type": error_type,
-                            "message": user_message,
-                            "code": "stream_error",
-                            "i18n_key": i18n_key
-                        }
+                        "choices": [{
+                            "text": "",
+                            "index": 0,
+                            "logprobs": null,
+                            "finish_reason": "length"
+                        }]
                     });
-
-                    let sse_out = format!("data: {}\n\n", serde_json::to_string(&error_chunk).unwrap_or_default());
+                    let sse_out = format!("data: {}\n\n", serde_json::to_string(&finish_chunk).unwrap_or_default());
                     yield Ok(Bytes::from(sse_out));
                     yield Ok(Bytes::from("data: [DONE]\n\n"));
                     break;
