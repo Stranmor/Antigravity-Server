@@ -40,6 +40,13 @@ pub fn strip_old_images(contents: &mut Value) {
     }
 }
 
+fn is_image_mime(part: &Value, key: &str) -> bool {
+    part.get(key)
+        .and_then(|d| d.get("mimeType"))
+        .and_then(|m| m.as_str())
+        .is_some_and(|m| m.starts_with("image/"))
+}
+
 fn replace_inline_data_in_parts(msg: &mut Value) -> usize {
     let parts = match msg.get_mut("parts").and_then(|p| p.as_array_mut()) {
         Some(p) => p,
@@ -49,7 +56,7 @@ fn replace_inline_data_in_parts(msg: &mut Value) -> usize {
     let mut replaced: usize = 0;
     let mut i: usize = 0;
     while i < parts.len() {
-        if parts[i].get("inlineData").is_some() || parts[i].get("fileData").is_some() {
+        if is_image_mime(&parts[i], "inlineData") || is_image_mime(&parts[i], "fileData") {
             parts[i] = serde_json::json!({"text": IMAGE_PLACEHOLDER});
             replaced = replaced.saturating_add(1);
         }
@@ -311,6 +318,42 @@ mod tests {
                 idx
             );
         }
+    }
+
+    #[test]
+    fn preserves_non_image_inline_data() {
+        let mut contents = json!([
+            {"role": "user", "parts": [
+                {"inlineData": {"mimeType": "application/pdf", "data": "pdf_bytes"}},
+                {"inlineData": {"mimeType": "image/png", "data": "img_bytes"}},
+                {"inlineData": {"mimeType": "audio/wav", "data": "audio_bytes"}}
+            ]},
+            {"role": "model", "parts": [{"text": "r1"}]},
+            {"role": "user", "parts": [{"text": "2"}]},
+            {"role": "model", "parts": [{"text": "r2"}]},
+            {"role": "user", "parts": [{"text": "3"}]},
+            {"role": "model", "parts": [{"text": "r3"}]},
+            {"role": "user", "parts": [{"text": "4"}]},
+            {"role": "model", "parts": [{"text": "r4"}]},
+            {"role": "user", "parts": [{"text": "5"}]},
+            {"role": "model", "parts": [{"text": "r5"}]},
+            {"role": "user", "parts": [{"text": "6"}]},
+        ]);
+        strip_old_images(&mut contents);
+
+        assert!(
+            contents[0]["parts"][0].get("inlineData").is_some(),
+            "PDF inlineData should be preserved"
+        );
+        assert_eq!(
+            contents[0]["parts"][1]["text"].as_str().unwrap(),
+            IMAGE_PLACEHOLDER,
+            "Image inlineData should be stripped"
+        );
+        assert!(
+            contents[0]["parts"][2].get("inlineData").is_some(),
+            "Audio inlineData should be preserved"
+        );
     }
 
     #[test]
