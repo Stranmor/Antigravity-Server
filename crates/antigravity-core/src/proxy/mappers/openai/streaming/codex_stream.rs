@@ -46,10 +46,12 @@ pub fn create_codex_sse_stream(
         let mut full_content = String::new();
         let mut emitted_tool_calls = std::collections::HashSet::new();
         let mut last_finish_reason = "stop".to_string();
+        let mut bytes_from_stream: usize = 0;
 
         while let Some(item) = gemini_stream.next().await {
             match item {
                 Ok(bytes) => {
+                    bytes_from_stream += bytes.len();
                     buffer.extend_from_slice(&bytes);
                     while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
                         let line_raw = buffer.split_to(pos + 1);
@@ -133,11 +135,19 @@ pub fn create_codex_sse_stream(
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("[{}] Codex stream error (graceful finish): {}", trace_id, e);
+                    tracing::warn!("[{}] Codex stream error (graceful finish, {} bytes received): {}", trace_id, bytes_from_stream, e);
                     crate::proxy::prometheus::record_stream_graceful_finish("codex");
-                    // Signal truncation via finish_reason instead of error event
-                    // to prevent AI agents from endlessly retrying
-                    last_finish_reason = "length".to_string();
+
+                    if bytes_from_stream == 0 {
+                        let timeout_ev = json!({
+                            "type": "response.output_text.delta",
+                            "delta": "[This request timed out — the model was still processing when the upstream server closed the connection (~55s limit). This typically happens with very large contexts (100K+ tokens). Try reducing conversation history or splitting the task.]"
+                        });
+                        yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&timeout_ev).unwrap_or_default())));
+                        last_finish_reason = "stop".to_string();
+                    } else {
+                        last_finish_reason = "length".to_string();
+                    }
                     break;
                 }
             }

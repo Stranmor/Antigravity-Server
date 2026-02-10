@@ -39,9 +39,11 @@ pub fn create_openai_sse_stream(
         let mut final_usage: Option<OpenAIUsage> = None;
         let mut accumulated_thinking = String::new();
         let mut done_emitted = false;
+        let mut bytes_from_stream: usize = 0;
         while let Some(item) = gemini_stream.next().await {
             match item {
                 Ok(bytes) => {
+                    bytes_from_stream += bytes.len();
                     debug!("[OpenAI-SSE] Received chunk: {} bytes", bytes.len());
                     buffer.extend_from_slice(&bytes);
 
@@ -99,20 +101,48 @@ pub fn create_openai_sse_stream(
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("[{}] OpenAI stream error (graceful finish): {}", trace_id, e);
+                    tracing::warn!("[{}] OpenAI stream error (graceful finish, {} bytes received): {}", trace_id, bytes_from_stream, e);
                     crate::proxy::prometheus::record_stream_graceful_finish("openai");
-                    let finish = serde_json::json!({
-                        "id": stream_id,
-                        "object": "chat.completion.chunk",
-                        "created": created_ts,
-                        "model": model,
-                        "choices": [{
-                            "index": 0,
-                            "delta": {},
-                            "finish_reason": "length"
-                        }]
-                    });
-                    yield Ok(Bytes::from(sse_line(&finish)));
+
+                    if bytes_from_stream == 0 {
+                        let timeout_text = serde_json::json!({
+                            "id": stream_id,
+                            "object": "chat.completion.chunk",
+                            "created": created_ts,
+                            "model": model,
+                            "choices": [{
+                                "index": 0,
+                                "delta": {"content": "[This request timed out — the model was still processing when the upstream server closed the connection (~55s limit). This typically happens with very large contexts (100K+ tokens). Try reducing conversation history or splitting the task.]"},
+                                "finish_reason": null
+                            }]
+                        });
+                        yield Ok(Bytes::from(sse_line(&timeout_text)));
+                        let finish = serde_json::json!({
+                            "id": stream_id,
+                            "object": "chat.completion.chunk",
+                            "created": created_ts,
+                            "model": model,
+                            "choices": [{
+                                "index": 0,
+                                "delta": {},
+                                "finish_reason": "stop"
+                            }]
+                        });
+                        yield Ok(Bytes::from(sse_line(&finish)));
+                    } else {
+                        let finish = serde_json::json!({
+                            "id": stream_id,
+                            "object": "chat.completion.chunk",
+                            "created": created_ts,
+                            "model": model,
+                            "choices": [{
+                                "index": 0,
+                                "delta": {},
+                                "finish_reason": "length"
+                            }]
+                        });
+                        yield Ok(Bytes::from(sse_line(&finish)));
+                    }
                     done_emitted = true;
                     yield Ok(Bytes::from("data: [DONE]\n\n"));
                     break;

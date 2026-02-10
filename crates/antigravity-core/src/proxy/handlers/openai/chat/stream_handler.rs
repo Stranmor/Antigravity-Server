@@ -70,16 +70,27 @@ fn build_combined_stream(
     rest: impl futures::Stream<Item = Result<Bytes, String>> + Send + 'static,
     trace_id: String,
 ) -> impl futures::Stream<Item = Result<Bytes, String>> + Send + 'static {
+    let mut bytes_from_rest: usize = 0;
     futures::stream::once(async move { Ok(first_bytes) }).chain(rest.map(
         move |result| -> Result<Bytes, String> {
             match result {
-                Ok(b) => Ok(b),
+                Ok(b) => {
+                    bytes_from_rest += b.len();
+                    Ok(b)
+                },
                 Err(e) => {
-                    tracing::warn!("[{}] Stream error during transmission (graceful finish): {}", trace_id, e);
+                    tracing::warn!("[{}] Stream error during transmission (graceful finish, {} bytes received): {}", trace_id, bytes_from_rest, e);
                     crate::proxy::prometheus::record_stream_graceful_finish("openai_handler");
-                    Ok(Bytes::from(
-                        "data: {\"id\":\"chatcmpl-error\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"unknown\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n"
-                    ))
+
+                    if bytes_from_rest == 0 {
+                        Ok(Bytes::from(
+                            "data: {\"id\":\"chatcmpl-timeout\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"unknown\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"[This request timed out — the model was still processing when the upstream server closed the connection (~55s limit). This typically happens with very large contexts (100K+ tokens). Try reducing conversation history or splitting the task.]\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-timeout\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"unknown\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+                        ))
+                    } else {
+                        Ok(Bytes::from(
+                            "data: {\"id\":\"chatcmpl-error\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"unknown\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n"
+                        ))
+                    }
                 }
             }
         },

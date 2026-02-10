@@ -84,22 +84,37 @@ fn build_combined_stream<S>(
 where
     S: futures::Stream<Item = Result<Bytes, String>> + Send + 'static,
 {
+    let mut bytes_from_rest: usize = 0;
     Box::pin(
         futures::stream::once(async move { Ok(first_chunk) }).chain(stream_rest.map(
             move |result| -> Result<Bytes, std::io::Error> {
                 match result {
-                    Ok(b) => Ok(b),
+                    Ok(b) => {
+                        bytes_from_rest += b.len();
+                        Ok(b)
+                    },
                     Err(e) => {
                         let err_str = e.to_string();
                         tracing::warn!(
-                            "[{}] Stream error during transmission (graceful finish): {}",
+                            "[{}] Stream error during transmission (graceful finish, {} bytes received): {}",
                             trace_id,
+                            bytes_from_rest,
                             err_str
                         );
                         crate::proxy::prometheus::record_stream_graceful_finish("claude");
-                        Ok(Bytes::from(
-                            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
-                        ))
+
+                        if bytes_from_rest == 0 {
+                            // No content received — this is a timeout, not truncation.
+                            // Send end_turn with explanatory text so agents don't retry.
+                            Ok(Bytes::from(
+                                "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[This request timed out — the model was still processing when the upstream server closed the connection (~55s limit). This typically happens with very large contexts (100K+ tokens). Try reducing conversation history or splitting the task.]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+                            ))
+                        } else {
+                            // Some content was received — real truncation
+                            Ok(Bytes::from(
+                                "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+                            ))
+                        }
                     }
                 }
             },
