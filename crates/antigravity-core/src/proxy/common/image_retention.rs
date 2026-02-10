@@ -3,7 +3,16 @@ use serde_json::Value;
 const DEFAULT_IMAGE_RETENTION_TURNS: usize = 5;
 const IMAGE_PLACEHOLDER: &str = "[Image was provided in this message]";
 
+fn get_retention_turns() -> usize {
+    std::env::var("ANTIGRAVITY_IMAGE_RETENTION_TURNS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_IMAGE_RETENTION_TURNS)
+}
+
 pub fn strip_old_images(contents: &mut Value) {
+    let retention_turns = get_retention_turns();
+
     let contents_arr = match contents.as_array_mut() {
         Some(arr) => arr,
         None => return,
@@ -17,11 +26,11 @@ pub fn strip_old_images(contents: &mut Value) {
         .collect();
 
     let total_user = user_indices.len();
-    if total_user <= DEFAULT_IMAGE_RETENTION_TURNS {
+    if total_user <= retention_turns {
         return;
     }
 
-    let cutoff = total_user.saturating_sub(DEFAULT_IMAGE_RETENTION_TURNS);
+    let cutoff = total_user.saturating_sub(retention_turns);
     let indices_to_strip: Vec<usize> = user_indices.into_iter().take(cutoff).collect();
 
     let mut stripped_count: usize = 0;
@@ -35,7 +44,7 @@ pub fn strip_old_images(contents: &mut Value) {
         tracing::info!(
             "[Image-Retention] Stripped {} images from old user messages (keeping last {} turns)",
             stripped_count,
-            DEFAULT_IMAGE_RETENTION_TURNS
+            retention_turns
         );
     }
 }
@@ -286,7 +295,6 @@ mod tests {
         ]);
         strip_old_images(&mut contents);
 
-        // First user message: functionResponse preserved, inlineData stripped
         assert!(
             contents[0]["parts"][0].get("functionResponse").is_some(),
             "functionResponse should be preserved in first user message"
@@ -297,7 +305,6 @@ mod tests {
             "inlineData in first user message should be replaced with placeholder"
         );
 
-        // Second user message: functionResponse preserved, inlineData stripped
         assert!(
             contents[2]["parts"][0].get("functionResponse").is_some(),
             "functionResponse should be preserved in second user message"
@@ -308,7 +315,6 @@ mod tests {
             "inlineData in second user message should be replaced with placeholder"
         );
 
-        // Recent user messages untouched
         let expected_texts = ["msg3", "msg4", "msg5", "msg6", "msg7"];
         for (idx, expected) in [4, 6, 8, 10, 12].iter().zip(expected_texts.iter()) {
             assert_eq!(

@@ -204,7 +204,7 @@ pub fn transform_claude_request_in(
     )?;
 
     // Strip images from old user messages to prevent token accumulation
-    super::image_retention::strip_old_images(&mut contents);
+    crate::proxy::common::image_retention::strip_old_images(&mut contents);
 
     // 3. Tools
     let tools = build_tools(&claude_req.tools, has_web_search_tool)?;

@@ -1,5 +1,6 @@
 pub mod circuit_breaker;
 pub mod client_builder;
+pub mod image_retention;
 pub mod json_schema;
 pub mod media_detect;
 pub mod model_mapping;

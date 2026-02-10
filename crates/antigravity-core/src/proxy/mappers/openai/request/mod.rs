@@ -189,7 +189,7 @@ pub fn transform_openai_request(
     });
 
     if let Some(contents) = inner_request.get_mut("contents") {
-        crate::proxy::mappers::claude::request::image_retention::strip_old_images(contents);
+        crate::proxy::common::image_retention::strip_old_images(contents);
     }
 
     // Deep cleanup [undefined] strings (commonly injected by Cherry Studio and other clients)

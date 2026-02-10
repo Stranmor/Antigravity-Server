@@ -21,7 +21,7 @@ pub fn wrap_request(
     crate::proxy::mappers::request_config::deep_clean_undefined(&mut inner_request);
 
     if let Some(contents) = inner_request.get_mut("contents") {
-        crate::proxy::mappers::claude::request::image_retention::strip_old_images(contents);
+        crate::proxy::common::image_retention::strip_old_images(contents);
     }
 
     // [FIX #765] Inject thought_signature into functionCall parts
