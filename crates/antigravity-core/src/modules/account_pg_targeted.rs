@@ -91,6 +91,37 @@ pub(crate) async fn update_project_id_impl(
     tx.commit().await.map_err(map_sqlx_err)
 }
 
+pub(crate) async fn update_name_impl(
+    pool: &PgPool,
+    account_id: &str,
+    name: &str,
+) -> RepoResult<()> {
+    let uuid = Uuid::parse_str(account_id).map_err(|e| RepositoryError::NotFound(e.to_string()))?;
+
+    let mut tx = pool.begin().await.map_err(map_sqlx_err)?;
+
+    let result = sqlx::query("UPDATE accounts SET name = $2 WHERE id = $1")
+        .bind(uuid)
+        .bind(name)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_sqlx_err)?;
+
+    if result.rows_affected() == 0 {
+        return Err(RepositoryError::NotFound(account_id.to_string()));
+    }
+
+    log_event_internal_impl(
+        &mut tx,
+        account_id.to_string(),
+        AccountEventType::Updated,
+        serde_json::json!({"name": name}),
+    )
+    .await?;
+
+    tx.commit().await.map_err(map_sqlx_err)
+}
+
 pub(crate) async fn set_account_disabled_impl(
     pool: &PgPool,
     account_id: &str,

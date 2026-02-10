@@ -13,7 +13,8 @@ use crate::modules::account_pg_query::{
     get_account_by_email_impl, get_account_impl, list_accounts_impl,
 };
 use crate::modules::account_pg_targeted::{
-    set_account_disabled_impl, update_project_id_impl, update_token_credentials_impl,
+    set_account_disabled_impl, update_name_impl, update_project_id_impl,
+    update_token_credentials_impl,
 };
 use crate::modules::repository::{
     AccountEvent, AccountHealth, AccountRepository, RepoResult, RepositoryError, RequestLog,
@@ -150,6 +151,10 @@ impl AccountRepository for PostgresAccountRepository {
 
     async fn update_project_id(&self, account_id: &str, project_id: &str) -> RepoResult<()> {
         update_project_id_impl(&self.pool, account_id, project_id).await
+    }
+
+    async fn update_name(&self, account_id: &str, name: &str) -> RepoResult<()> {
+        update_name_impl(&self.pool, account_id, name).await
     }
 
     async fn set_account_disabled(

@@ -192,6 +192,9 @@ pub trait AccountRepository: Send + Sync {
     /// Update only the project_id on a token (atomic, no read-modify-write).
     async fn update_project_id(&self, account_id: &str, project_id: &str) -> RepoResult<()>;
 
+    /// Update only the account display name (atomic, no read-modify-write).
+    async fn update_name(&self, account_id: &str, name: &str) -> RepoResult<()>;
+
     /// Disable an account (atomic, no read-modify-write).
     async fn set_account_disabled(
         &self,

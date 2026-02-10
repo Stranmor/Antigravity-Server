@@ -13,7 +13,6 @@ use crate::modules::logger;
 use crate::modules::repository::AccountRepository;
 
 use super::async_wrappers::save_account_async;
-use super::crud::upsert_account;
 
 /// Result of a quota fetch — contains fetched data without mutating the source account.
 #[derive(Debug, Clone)]
@@ -30,16 +29,6 @@ pub struct QuotaFetchResult {
     pub disabled: bool,
     /// Reason for disabling, if applicable.
     pub disabled_reason: Option<String>,
-}
-
-pub async fn upsert_account_async(
-    email: String,
-    name: Option<String>,
-    token: TokenData,
-) -> Result<Account, String> {
-    tokio::task::spawn_blocking(move || upsert_account(email, name, token))
-        .await
-        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Fetch quota for an account, retrying on 401 with token refresh.
@@ -103,6 +92,7 @@ pub async fn fetch_quota_with_retry(
             quota_data,
             project_id.as_deref(),
             refreshed_token.as_ref(),
+            name.as_deref(),
         )
         .await;
 
@@ -186,8 +176,15 @@ async fn handle_unauthorized_retry(
     let retry_result = quota::fetch_quota(&new_token.access_token, &account.email).await;
 
     if let Ok((ref quota_data, ref project_id)) = retry_result {
-        persist_quota_data(repo, account, quota_data, project_id.as_deref(), Some(&new_token))
-            .await;
+        persist_quota_data(
+            repo,
+            account,
+            quota_data,
+            project_id.as_deref(),
+            Some(&new_token),
+            name.as_deref(),
+        )
+        .await;
 
         return Ok(QuotaFetchResult {
             quota: quota_data.clone(),
@@ -204,7 +201,8 @@ async fn handle_unauthorized_retry(
             if s == StatusCode::FORBIDDEN {
                 let mut q = QuotaData::new();
                 q.is_forbidden = true;
-                persist_quota_data(repo, account, &q, None, Some(&new_token)).await;
+                persist_quota_data(repo, account, &q, None, Some(&new_token), name.as_deref())
+                    .await;
                 return Ok(QuotaFetchResult {
                     quota: q,
                     refreshed_token: Some(new_token),
@@ -285,12 +283,14 @@ async fn persist_token_refresh(
 ///
 /// `refreshed_token` prevents stale-data writes: when a token refresh preceded this call,
 /// the JSON fallback must use the new token, not the original `account.token`.
+/// `fetched_name` prevents the JSON fallback from overwriting a name saved by `persist_name`.
 async fn persist_quota_data(
     repo: Option<&Arc<dyn AccountRepository>>,
     account: &Account,
     quota: &QuotaData,
     project_id: Option<&str>,
     refreshed_token: Option<&TokenData>,
+    fetched_name: Option<&str>,
 ) {
     if let Some(repo) = repo {
         if let Err(e) = repo.update_quota(&account.id, quota.clone(), None).await {
@@ -308,6 +308,9 @@ async fn persist_quota_data(
         if let Some(token) = refreshed_token {
             clone.token = token.clone();
         }
+        if let Some(n) = fetched_name {
+            clone.name = Some(n.to_string());
+        }
         clone.update_quota(quota.clone());
         if let Some(pid) = project_id {
             clone.token.project_id = Some(pid.to_string());
@@ -324,18 +327,14 @@ async fn persist_name(
     name: Option<&str>,
     refreshed_token: Option<&TokenData>,
 ) {
+    let Some(name_str) = name else { return };
     if let Some(repo) = repo {
-        let mut updated = account.clone();
-        updated.name = name.map(String::from);
-        if let Some(token) = refreshed_token {
-            updated.token = token.clone();
-        }
-        if let Err(e) = repo.update_account(&updated).await {
+        if let Err(e) = repo.update_name(&account.id, name_str).await {
             tracing::warn!("DB name update failed for {}: {}", account.email, e);
         }
     } else {
         let mut clone = account.clone();
-        clone.name = name.map(String::from);
+        clone.name = Some(name_str.to_string());
         if let Some(token) = refreshed_token {
             clone.token = token.clone();
         }
