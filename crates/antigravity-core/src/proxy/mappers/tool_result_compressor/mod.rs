@@ -91,10 +91,15 @@ pub fn truncate_text_safe(text: &str, max_chars: usize) -> String {
     }
 
     // Try to find a safe truncation point (not between < and >)
-    let mut split_pos = max_chars;
+    // Floor to a valid UTF-8 char boundary to avoid panic on multi-byte chars
+    let mut split_pos = if text.is_char_boundary(max_chars) {
+        max_chars
+    } else {
+        text.floor_char_boundary(max_chars)
+    };
 
     // Look back for unclosed tag start
-    let sub = &text[..max_chars];
+    let sub = &text[..split_pos];
     if let Some(last_open) = sub.rfind('<') {
         if let Some(last_close) = sub.rfind('>') {
             if last_open > last_close {
