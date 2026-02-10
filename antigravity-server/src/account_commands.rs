@@ -147,7 +147,8 @@ pub async fn refresh_quota(identifier: &str) -> Result<()> {
 
 async fn refresh_all_quotas() -> Result<()> {
     let accounts = account::list_accounts().map_err(|e| anyhow::anyhow!(e))?;
-    let enabled: Vec<_> = accounts.into_iter().filter(|a| !a.disabled).collect();
+    let enabled: Vec<_> =
+        accounts.into_iter().filter(|a| !a.disabled && !a.proxy_disabled).collect();
     let total = enabled.len();
     let mut success = 0;
     let mut failed = 0;

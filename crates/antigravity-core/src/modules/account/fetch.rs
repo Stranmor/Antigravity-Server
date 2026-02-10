@@ -319,6 +319,9 @@ async fn persist_name(
     if let Some(repo) = repo {
         let mut updated = account.clone();
         updated.name = name.map(String::from);
+        if let Some(token) = refreshed_token {
+            updated.token = token.clone();
+        }
         if let Err(e) = repo.update_account(&updated).await {
             tracing::warn!("DB name update failed for {}: {}", account.email, e);
         }
