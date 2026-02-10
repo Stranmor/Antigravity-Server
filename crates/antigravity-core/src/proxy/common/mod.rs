@@ -1,6 +1,7 @@
 pub mod circuit_breaker;
 pub mod client_builder;
 pub mod json_schema;
+pub mod media_detect;
 pub mod model_family;
 pub mod model_mapping;
 pub mod model_mapping_ext;

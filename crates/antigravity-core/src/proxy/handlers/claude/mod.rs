@@ -13,7 +13,6 @@ mod preprocessing;
 mod request_preparation;
 mod request_validation;
 mod response_handler;
-mod retry_logic;
 mod streaming;
 mod token_selection;
 mod upstream_call;

@@ -1,3 +1,4 @@
+use crate::proxy::common::media_detect::detect_image_mime;
 use crate::proxy::mappers::tool_result_compressor::{self, MAX_TOOL_RESULT_CHARS};
 use serde_json::{json, Value};
 
@@ -57,9 +58,10 @@ fn extract_content_and_images(compacted: &Value, original: &Value) -> (String, V
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("image/png");
                             if let Some(b64) = data {
+                                let detected = detect_image_mime(b64, media);
                                 images.push(json!({
                                     "inlineData": {
-                                        "mimeType": media,
+                                        "mimeType": detected,
                                         "data": b64
                                     }
                                 }));

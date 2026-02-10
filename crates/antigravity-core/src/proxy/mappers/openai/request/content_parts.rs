@@ -1,4 +1,5 @@
 use super::super::models::*;
+use crate::proxy::common::media_detect::detect_image_mime;
 use serde_json::{json, Value};
 
 pub fn transform_content_block(block: &OpenAIContentBlock) -> Option<Value> {
@@ -32,8 +33,9 @@ fn transform_image_url(image_url: &OpenAIImageUrl) -> Option<Value> {
             let mime_part = &image_url.url[5..pos];
             let mime_type = mime_part.split(';').next().unwrap_or("image/jpeg");
             let data = &image_url.url[pos + 1..];
+            let detected = detect_image_mime(data, mime_type);
             return Some(json!({
-                "inlineData": { "mimeType": mime_type, "data": data }
+                "inlineData": { "mimeType": detected, "data": data }
             }));
         }
         None
@@ -75,6 +77,7 @@ fn transform_local_image(url: &str) -> Option<Value> {
         } else {
             "image/jpeg"
         };
+        let detected = detect_image_mime(&b64, mime_type);
 
         tracing::debug!(
             "[OpenAI-Request] Successfully loaded image: {} ({} bytes)",
@@ -82,7 +85,7 @@ fn transform_local_image(url: &str) -> Option<Value> {
             file_bytes.len()
         );
         Some(json!({
-            "inlineData": { "mimeType": mime_type, "data": b64 }
+            "inlineData": { "mimeType": detected, "data": b64 }
         }))
     } else {
         tracing::debug!("[OpenAI-Request] Failed to read local image: {}", file_path);

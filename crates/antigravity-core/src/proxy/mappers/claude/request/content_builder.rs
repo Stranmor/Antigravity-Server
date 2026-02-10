@@ -4,6 +4,7 @@ use super::signature_validator::{
     validate_thinking_signature, SignatureAction, DUMMY_SIGNATURE,
 };
 use super::tool_result_handler::{build_tool_result_part, inject_missing_tool_results};
+use crate::proxy::common::media_detect::detect_image_mime;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
@@ -166,9 +167,10 @@ pub fn build_contents(
                     },
                     ContentBlock::Image { source, .. } => {
                         if source.source_type == "base64" {
+                            let detected = detect_image_mime(&source.data, &source.media_type);
                             parts.push(json!({
                                 "inlineData": {
-                                    "mimeType": source.media_type,
+                                    "mimeType": detected,
                                     "data": source.data
                                 }
                             }));
@@ -177,9 +179,10 @@ pub fn build_contents(
                     },
                     ContentBlock::Document { source, .. } => {
                         if source.source_type == "base64" {
+                            let detected = detect_image_mime(&source.data, &source.media_type);
                             parts.push(json!({
                                 "inlineData": {
-                                    "mimeType": source.media_type,
+                                    "mimeType": detected,
                                     "data": source.data
                                 }
                             }));
