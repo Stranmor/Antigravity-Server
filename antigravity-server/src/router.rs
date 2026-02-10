@@ -33,11 +33,15 @@ pub async fn build_router(state: AppState) -> Router {
         .append_index_html_on_directories(true)
         .fallback(ServeFile::new(&index_path));
 
+    // Resolve AppState first so we get Router<()>, then merge proxy_router
+    // (also Router<()>). SPA fallback lives at the TOP level so unmatched
+    // paths (/, /monitor, /settings) serve index.html WITHOUT going through
+    // the proxy auth/monitor middleware stack.
     protected_api
         .merge(public_routes)
-        .nest_service("/", proxy_router)
-        .fallback_service(spa_service)
         .with_state(state)
+        .merge(proxy_router)
+        .fallback_service(spa_service)
         .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
         .layer(TraceLayer::new_for_http())
         .layer(cors_layer())
