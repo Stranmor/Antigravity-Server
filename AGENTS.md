@@ -238,6 +238,8 @@ vendor/
 | `proxy/mappers/openai/streaming/codex_stream.rs` | ~~Still emits error events on stream errors instead of graceful finish.~~ **Fixed [2026-02-10]**: Now sets `last_finish_reason = "length"` and breaks to `response.completed` event. | ~~Medium~~ Fixed |
 | `proxy/mappers/openai/streaming/openai_stream.rs` | ~~Double `[DONE]` emission: error path emits `[DONE]` + break, then post-loop also emits `[DONE]`.~~ **Fixed [2026-02-10]**: Added `done_emitted` flag; post-loop `[DONE]` guarded by `if !done_emitted`. | ~~Low~~ Fixed |
 | `proxy/handlers/openai/chat/stream_handler.rs` | ~~Error-to-graceful conversion chunk missing `id`/`object`/`created`/`model` fields.~~ **Fixed [2026-02-10]**: Graceful fallback chunk now includes `id`, `object`, `created`, `model` fields. | ~~Low~~ Fixed |
+| `proxy/handlers/openai/chat/stream_handler.rs` | `build_combined_stream` graceful finish applies to both streaming and non-streaming paths — `collect_to_json` may interpret mid-stream failures as partial success instead of triggering retry. Should gate graceful handling on `client_wants_stream`. | Medium |
+| `proxy/mappers/openai/streaming/codex_stream.rs` | Smart quote replacement (`'"'`/`'"'` → `'"'`) blindly modifies generated content — corrupts intentional smart quotes in code. `emitted_tool_calls` dedup suppresses valid repeated calls. `usageMetadata` extracted but discarded (`let _ = ...`). | Medium |
 
 ---
 

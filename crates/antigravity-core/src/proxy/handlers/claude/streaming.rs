@@ -94,6 +94,7 @@ where
                             "Stream error during transmission (graceful finish): {}",
                             err_str
                         );
+                        crate::proxy::prometheus::record_stream_graceful_finish("claude");
                         Ok(Bytes::from(
                             "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
                         ))
