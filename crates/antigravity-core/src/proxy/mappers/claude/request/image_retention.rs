@@ -158,4 +158,157 @@ mod tests {
         strip_old_images(&mut contents);
         assert!(contents.is_null());
     }
+
+    #[test]
+    fn boundary_exactly_five_user_turns_no_strip() {
+        let mut contents = json!([
+            {"role": "user", "parts": [{"inlineData": {"mimeType": "image/png", "data": "img1"}}]},
+            {"role": "model", "parts": [{"text": "r1"}]},
+            {"role": "user", "parts": [{"inlineData": {"mimeType": "image/png", "data": "img2"}}]},
+            {"role": "model", "parts": [{"text": "r2"}]},
+            {"role": "user", "parts": [{"inlineData": {"mimeType": "image/png", "data": "img3"}}]},
+            {"role": "model", "parts": [{"text": "r3"}]},
+            {"role": "user", "parts": [{"inlineData": {"mimeType": "image/png", "data": "img4"}}]},
+            {"role": "model", "parts": [{"text": "r4"}]},
+            {"role": "user", "parts": [{"inlineData": {"mimeType": "image/png", "data": "img5"}}]},
+        ]);
+        strip_old_images(&mut contents);
+
+        for idx in [0, 2, 4, 6, 8] {
+            assert!(
+                contents[idx]["parts"][0].get("inlineData").is_some(),
+                "User message at index {} should retain inlineData",
+                idx
+            );
+        }
+    }
+
+    #[test]
+    fn boundary_six_user_turns_strips_one() {
+        let mut contents = json!([
+            {"role": "user", "parts": [{"inlineData": {"mimeType": "image/png", "data": "img1"}}]},
+            {"role": "model", "parts": [{"text": "r1"}]},
+            {"role": "user", "parts": [{"inlineData": {"mimeType": "image/png", "data": "img2"}}]},
+            {"role": "model", "parts": [{"text": "r2"}]},
+            {"role": "user", "parts": [{"inlineData": {"mimeType": "image/png", "data": "img3"}}]},
+            {"role": "model", "parts": [{"text": "r3"}]},
+            {"role": "user", "parts": [{"inlineData": {"mimeType": "image/png", "data": "img4"}}]},
+            {"role": "model", "parts": [{"text": "r4"}]},
+            {"role": "user", "parts": [{"inlineData": {"mimeType": "image/png", "data": "img5"}}]},
+            {"role": "model", "parts": [{"text": "r5"}]},
+            {"role": "user", "parts": [{"inlineData": {"mimeType": "image/png", "data": "img6"}}]},
+        ]);
+        strip_old_images(&mut contents);
+
+        assert_eq!(
+            contents[0]["parts"][0]["text"].as_str().unwrap(),
+            IMAGE_PLACEHOLDER,
+            "First user message image should be stripped"
+        );
+
+        for idx in [2, 4, 6, 8, 10] {
+            assert!(
+                contents[idx]["parts"][0].get("inlineData").is_some(),
+                "User message at index {} should retain inlineData",
+                idx
+            );
+        }
+    }
+
+    #[test]
+    fn no_images_is_noop() {
+        let mut contents = json!([
+            {"role": "user", "parts": [{"text": "msg1"}]},
+            {"role": "model", "parts": [{"text": "r1"}]},
+            {"role": "user", "parts": [{"text": "msg2"}]},
+            {"role": "model", "parts": [{"text": "r2"}]},
+            {"role": "user", "parts": [{"text": "msg3"}]},
+            {"role": "model", "parts": [{"text": "r3"}]},
+            {"role": "user", "parts": [{"text": "msg4"}]},
+            {"role": "model", "parts": [{"text": "r4"}]},
+            {"role": "user", "parts": [{"text": "msg5"}]},
+            {"role": "model", "parts": [{"text": "r5"}]},
+            {"role": "user", "parts": [{"text": "msg6"}]},
+            {"role": "model", "parts": [{"text": "r6"}]},
+            {"role": "user", "parts": [{"text": "msg7"}]},
+        ]);
+        let original = contents.clone();
+        strip_old_images(&mut contents);
+
+        for (i, expected_text) in [
+            (0, "msg1"),
+            (2, "msg2"),
+            (4, "msg3"),
+            (6, "msg4"),
+            (8, "msg5"),
+            (10, "msg6"),
+            (12, "msg7"),
+        ] {
+            assert_eq!(
+                contents[i]["parts"][0]["text"].as_str().unwrap(),
+                expected_text,
+                "User message at index {} should be unchanged",
+                i
+            );
+        }
+        assert_eq!(contents, original);
+    }
+
+    #[test]
+    fn strips_images_from_tool_result_user_messages() {
+        let mut contents = json!([
+            {"role": "user", "parts": [
+                {"functionResponse": {"name": "screenshot", "response": {"result": "ok"}, "id": "tool_1"}},
+                {"inlineData": {"mimeType": "image/png", "data": "screenshot_data_1"}}
+            ]},
+            {"role": "model", "parts": [{"text": "r1"}]},
+            {"role": "user", "parts": [
+                {"functionResponse": {"name": "screenshot", "response": {"result": "ok"}, "id": "tool_2"}},
+                {"inlineData": {"mimeType": "image/png", "data": "screenshot_data_2"}}
+            ]},
+            {"role": "model", "parts": [{"text": "r2"}]},
+            {"role": "user", "parts": [{"text": "msg3"}]},
+            {"role": "model", "parts": [{"text": "r3"}]},
+            {"role": "user", "parts": [{"text": "msg4"}]},
+            {"role": "model", "parts": [{"text": "r4"}]},
+            {"role": "user", "parts": [{"text": "msg5"}]},
+            {"role": "model", "parts": [{"text": "r5"}]},
+            {"role": "user", "parts": [{"text": "msg6"}]},
+            {"role": "model", "parts": [{"text": "r6"}]},
+            {"role": "user", "parts": [{"text": "msg7"}]},
+        ]);
+        strip_old_images(&mut contents);
+
+        // First user message: functionResponse preserved, inlineData stripped
+        assert!(
+            contents[0]["parts"][0].get("functionResponse").is_some(),
+            "functionResponse should be preserved in first user message"
+        );
+        assert_eq!(
+            contents[0]["parts"][1]["text"].as_str().unwrap(),
+            IMAGE_PLACEHOLDER,
+            "inlineData in first user message should be replaced with placeholder"
+        );
+
+        // Second user message: functionResponse preserved, inlineData stripped
+        assert!(
+            contents[2]["parts"][0].get("functionResponse").is_some(),
+            "functionResponse should be preserved in second user message"
+        );
+        assert_eq!(
+            contents[2]["parts"][1]["text"].as_str().unwrap(),
+            IMAGE_PLACEHOLDER,
+            "inlineData in second user message should be replaced with placeholder"
+        );
+
+        // Recent user messages untouched
+        for idx in [4, 6, 8, 10, 12] {
+            assert_eq!(
+                contents[idx]["parts"][0]["text"].as_str().unwrap(),
+                contents[idx]["parts"][0]["text"].as_str().unwrap(),
+                "Recent user message at index {} should be unchanged",
+                idx
+            );
+        }
+    }
 }
