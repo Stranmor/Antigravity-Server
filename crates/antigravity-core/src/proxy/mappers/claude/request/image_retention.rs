@@ -49,7 +49,7 @@ fn replace_inline_data_in_parts(msg: &mut Value) -> usize {
     let mut replaced: usize = 0;
     let mut i: usize = 0;
     while i < parts.len() {
-        if parts[i].get("inlineData").is_some() {
+        if parts[i].get("inlineData").is_some() || parts[i].get("fileData").is_some() {
             parts[i] = serde_json::json!({"text": IMAGE_PLACEHOLDER});
             replaced = replaced.saturating_add(1);
         }
@@ -302,13 +302,46 @@ mod tests {
         );
 
         // Recent user messages untouched
-        for idx in [4, 6, 8, 10, 12] {
+        let expected_texts = ["msg3", "msg4", "msg5", "msg6", "msg7"];
+        for (idx, expected) in [4, 6, 8, 10, 12].iter().zip(expected_texts.iter()) {
             assert_eq!(
-                contents[idx]["parts"][0]["text"].as_str().unwrap(),
-                contents[idx]["parts"][0]["text"].as_str().unwrap(),
-                "Recent user message at index {} should be unchanged",
+                contents[*idx]["parts"][0]["text"].as_str().unwrap(),
+                *expected,
+                "User message at index {} should be unchanged",
                 idx
             );
         }
+    }
+
+    #[test]
+    fn strips_file_data_parts() {
+        let mut contents = json!([
+            {"role": "user", "parts": [
+                {"fileData": {"fileUri": "https://example.com/old.png", "mimeType": "image/png"}},
+                {"text": "Look at this"}
+            ]},
+            {"role": "model", "parts": [{"text": "r1"}]},
+            {"role": "user", "parts": [{"text": "2"}]},
+            {"role": "model", "parts": [{"text": "r2"}]},
+            {"role": "user", "parts": [{"text": "3"}]},
+            {"role": "model", "parts": [{"text": "r3"}]},
+            {"role": "user", "parts": [{"text": "4"}]},
+            {"role": "model", "parts": [{"text": "r4"}]},
+            {"role": "user", "parts": [{"text": "5"}]},
+            {"role": "model", "parts": [{"text": "r5"}]},
+            {"role": "user", "parts": [{"text": "6"}]},
+        ]);
+        strip_old_images(&mut contents);
+
+        assert_eq!(
+            contents[0]["parts"][0]["text"].as_str().unwrap(),
+            IMAGE_PLACEHOLDER,
+            "fileData should be replaced with placeholder"
+        );
+        assert_eq!(
+            contents[0]["parts"][1]["text"].as_str().unwrap(),
+            "Look at this",
+            "text part should be preserved"
+        );
     }
 }
