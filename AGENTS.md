@@ -540,9 +540,11 @@ Vertex AI enforces a **hard 200,000 token limit** on Claude prompt input.
 
 **Single entry point:** `./deploy.sh <command>`
 
+> ⚠️ **`./deploy.sh deploy` (VPS) is currently BROKEN** — Nix closure binary causes SIGBUS on VPS. Use manual `scp target/release/antigravity-server vps-production:/opt/antigravity/` + `systemctl restart` instead. See Known Issues for details. Local deploy (`deploy-local`) works fine.
+
 | Command | Description |
 |---------|-------------|
-| `./deploy.sh deploy` | Build Nix closure → copy to VPS → restart service |
+| `./deploy.sh deploy` | ⚠️ BROKEN — Build Nix closure → copy to VPS → restart service |
 | `./deploy.sh rollback` | Restore previous version from `.previous` backup |
 | `./deploy.sh status` | Show service status, health, current/previous binary |
 | `./deploy.sh deploy-local` | Zero-downtime local deploy (socket activation) |
