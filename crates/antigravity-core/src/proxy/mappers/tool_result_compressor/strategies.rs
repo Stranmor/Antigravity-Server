@@ -3,6 +3,8 @@
 //! - Browser snapshot compression (head+tail preservation)
 //! - Saved output notice compression (extract key info)
 
+use std::sync::OnceLock;
+
 use regex::Regex;
 use tracing::debug;
 
@@ -11,6 +13,15 @@ use super::{truncate_text_safe, SNAPSHOT_HEAD_RATIO, SNAPSHOT_MAX_CHARS};
 /// Browser snapshot detection threshold
 pub const SNAPSHOT_DETECTION_THRESHOLD: usize = 20_000;
 
+fn saved_output_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(
+            r"(?i)result\s*\(\s*(?P<count>[\d,]+)\s*characters\s*\)\s*exceeds\s+maximum\s+allowed\s+tokens\.\s*Output\s+(?:has\s+been\s+)?saved\s+to\s+(?P<path>[^\r\n]+)"
+        ).expect("static regex")
+    })
+}
+
 /// Compress "output saved to file" type notices
 ///
 /// Detects pattern: "result (N characters) exceeds maximum allowed tokens. Output saved to <path>"
@@ -18,10 +29,7 @@ pub const SNAPSHOT_DETECTION_THRESHOLD: usize = 20_000;
 ///
 /// Reference: anthropicGeminiBridgeService.js:278-310
 pub fn compact_saved_output_notice(text: &str, max_chars: usize) -> Option<String> {
-    // Regex match: result (N characters) exceeds maximum allowed tokens. Output saved to <path>
-    let re = Regex::new(
-        r"(?i)result\s*\(\s*(?P<count>[\d,]+)\s*characters\s*\)\s*exceeds\s+maximum\s+allowed\s+tokens\.\s*Output\s+(?:has\s+been\s+)?saved\s+to\s+(?P<path>[^\r\n]+)"
-    ).ok()?;
+    let re = saved_output_regex();
 
     let caps = re.captures(text)?;
     let count = caps.name("count")?.as_str();

@@ -73,7 +73,13 @@ impl AppState {
             Some(&proxy_config.upstream_proxy),
             300,
         )
-        .unwrap_or_else(|_| reqwest::Client::new());
+        .unwrap_or_else(|_| {
+            reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .timeout(std::time::Duration::from_secs(300))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new())
+        });
 
         health_monitor.start_recovery_task();
 

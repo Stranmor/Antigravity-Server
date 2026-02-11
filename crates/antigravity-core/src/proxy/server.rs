@@ -194,7 +194,11 @@ impl AxumServer {
             self.config.adaptive_limits,
             self.config.health_monitor,
             self.config.circuit_breaker,
-            reqwest::Client::new(),
+            reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .timeout(std::time::Duration::from_secs(300))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
         );
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;

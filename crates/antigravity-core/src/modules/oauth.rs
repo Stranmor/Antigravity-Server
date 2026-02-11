@@ -1,9 +1,18 @@
 use serde::{Deserialize, Serialize};
 
 // Google OAuth configuration
-const CLIENT_ID: &str = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
-const CLIENT_SECRET: &str = "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";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
+
+fn oauth_client_id() -> Result<String, String> {
+    std::env::var("OAUTH_CLIENT_ID")
+        .map_err(|_| "OAUTH_CLIENT_ID environment variable not set".to_string())
+}
+
+fn oauth_client_secret() -> Result<String, String> {
+    std::env::var("OAUTH_CLIENT_SECRET")
+        .map_err(|_| "OAUTH_CLIENT_SECRET environment variable not set".to_string())
+}
+
 const USERINFO_URL: &str = "https://www.googleapis.com/oauth2/v2/userinfo";
 
 const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -66,8 +75,9 @@ pub fn get_auth_url_with_state(redirect_uri: &str, state: &str) -> Result<String
     ]
     .join(" ");
 
+    let client_id = oauth_client_id()?;
     let mut params: Vec<(&str, &str)> = vec![
-        ("client_id", CLIENT_ID),
+        ("client_id", &client_id),
         ("redirect_uri", redirect_uri),
         ("response_type", "code"),
         ("scope", &scopes),
@@ -89,9 +99,11 @@ pub fn get_auth_url_with_state(redirect_uri: &str, state: &str) -> Result<String
 pub async fn exchange_code(code: &str, redirect_uri: &str) -> Result<TokenResponse, String> {
     let client = crate::utils::http::create_client(15);
 
+    let client_id = oauth_client_id()?;
+    let client_secret = oauth_client_secret()?;
     let params = [
-        ("client_id", CLIENT_ID),
-        ("client_secret", CLIENT_SECRET),
+        ("client_id", client_id.as_str()),
+        ("client_secret", client_secret.as_str()),
         ("code", code),
         ("redirect_uri", redirect_uri),
         ("grant_type", "authorization_code"),
@@ -110,12 +122,10 @@ pub async fn exchange_code(code: &str, redirect_uri: &str) -> Result<TokenRespon
             .await
             .map_err(|e| format!("Token parse failed: {}", e))?;
 
-        // Add detailed log
-        crate::modules::logger::log_info(&format!(
-            "Token exchange successful! access_token: {}..., refresh_token: {}",
-            &token_res.access_token.chars().take(20).collect::<String>(),
-            if token_res.refresh_token.is_some() { "✓" } else { "✗ missing" }
-        ));
+        tracing::info!(
+            "Token exchange successful, refresh_token: {}",
+            if token_res.refresh_token.is_some() { "present" } else { "missing" }
+        );
 
         // If refresh_token is missing, log warning
         if token_res.refresh_token.is_none() {
@@ -138,9 +148,11 @@ pub async fn exchange_code(code: &str, redirect_uri: &str) -> Result<TokenRespon
 pub async fn refresh_access_token(refresh_token: &str) -> Result<TokenResponse, String> {
     let client = crate::utils::http::create_client(15);
 
+    let client_id = oauth_client_id()?;
+    let client_secret = oauth_client_secret()?;
     let params = [
-        ("client_id", CLIENT_ID),
-        ("client_secret", CLIENT_SECRET),
+        ("client_id", client_id.as_str()),
+        ("client_secret", client_secret.as_str()),
         ("refresh_token", refresh_token),
         ("grant_type", "refresh_token"),
     ];

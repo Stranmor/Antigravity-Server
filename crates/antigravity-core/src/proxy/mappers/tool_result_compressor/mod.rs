@@ -10,9 +10,33 @@ mod strategies;
 #[cfg(test)]
 mod tests;
 
+use std::sync::OnceLock;
+
 use regex::Regex;
 use serde_json::Value;
 use tracing::{debug, info};
+
+fn style_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?is)<style\b[^>]*>.*?</style>").expect("static regex"))
+}
+
+fn script_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?is)<script\b[^>]*>.*?</script>").expect("static regex"))
+}
+
+fn base64_data_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r#"(?i)data:[^;/]+/[^;]+;base64,[A-Za-z0-9+/=]+"#).expect("static regex")
+    })
+}
+
+fn blank_lines_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\n\s*\n").expect("static regex"))
+}
 
 pub use strategies::{
     compact_browser_snapshot, compact_saved_output_notice, SNAPSHOT_DETECTION_THRESHOLD,
@@ -131,24 +155,16 @@ fn deep_clean_html(html: &str) -> String {
     let mut result = html.to_string();
 
     // 1. Remove <style>...</style> and contents
-    if let Ok(re) = Regex::new(r"(?is)<style\b[^>]*>.*?</style>") {
-        result = re.replace_all(&result, "[style omitted]").to_string();
-    }
+    result = style_regex().replace_all(&result, "[style omitted]").to_string();
 
     // 2. Remove <script>...</script> and contents
-    if let Ok(re) = Regex::new(r"(?is)<script\b[^>]*>.*?</script>") {
-        result = re.replace_all(&result, "[script omitted]").to_string();
-    }
+    result = script_regex().replace_all(&result, "[script omitted]").to_string();
 
     // 3. Remove inline Base64 data (e.g., src="data:image/png;base64,...")
-    if let Ok(re) = Regex::new(r#"(?i)data:[^;/]+/[^;]+;base64,[A-Za-z0-9+/=]+"#) {
-        result = re.replace_all(&result, "[base64 omitted]").to_string();
-    }
+    result = base64_data_regex().replace_all(&result, "[base64 omitted]").to_string();
 
     // 4. Remove redundant whitespace
-    if let Ok(re) = Regex::new(r"\n\s*\n") {
-        result = re.replace_all(&result, "\n").to_string();
-    }
+    result = blank_lines_regex().replace_all(&result, "\n").to_string();
 
     result
 }
