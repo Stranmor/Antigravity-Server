@@ -171,7 +171,7 @@ vendor/
 | Duplicate type definitions | ~20 | **0** |
 | `#[allow(warnings)]` | 11 modules | **0** |
 | Clippy warnings suppressed | ~58 | **0** |
-| Unit tests | - | **344** |
+| Unit tests | - | **380** |
 | Integration tests | - | **1** |
 | Clippy status | ⚠️ | **✅ -D warnings** |
 | Release build | - | **11MB** |
@@ -191,7 +191,7 @@ vendor/
 |------|-------|----------|
 | `proxy/common/json_schema/recursive.rs` | `if/else if/else` for `properties`/`items` is mutually exclusive — if schema has BOTH, `items` won't be recursively cleaned | Medium |
 | `proxy/common/json_schema/recursive.rs` | `else` fallback block treats ALL remaining fields as schemas — data fields like `enum` values or `const` containing object-like structures could be corrupted by normalization | Low |
-| `proxy/common/json_schema/recursive.rs` | Unbounded recursion in schema cleaning can overflow stack on deeply nested input | Medium |
+| `proxy/common/json_schema/recursive.rs` | ~~Unbounded recursion in schema cleaning can overflow stack on deeply nested input~~ **Fixed [2026-02-11]**: Added `MAX_RECURSION_DEPTH = 64` with bounded recursion. | ~~Medium~~ Fixed |
 | `modules/repository.rs` | `update_token_credentials` accepts both `expires_in` and `expiry_timestamp` — redundant, allows conflicting data | Low |
 | `modules/oauth.rs` | Hardcoded OAuth client secret makes rotation difficult | Low |
 | `proxy/mappers/tool_result_compressor/mod.rs` | Regexes are recompiled on each call to HTML cleaning, wasting CPU in hot path | Medium |
@@ -201,11 +201,11 @@ vendor/
 | `proxy/middleware/monitor.rs` | ~~Request body handling returns `Body::empty()` on buffering failure.~~ **Fixed [2026-02-09]**: Actually returns 502 Bad Gateway on request buffering failure (code was misread). | ~~High~~ Fixed |
 | `proxy/middleware/monitor.rs` | Inefficient: attempts to parse all `text/*` as JSON. | Low |
 | `proxy/mappers/claude/request/tool_result_handler.rs` | ~~Invalid Part schema: mixing `functionResponse` and `inlineData` in interleaved order breaks Claude Vertex tool pairing.~~ **Fixed [2026-02-10]** [FIX #1740]: `reorder_gemini_parts()` now groups `functionResponse` before `inlineData`; called for every message in `build_google_content()`. Remaining: `thoughtSignature` injected alongside `functionResponse` may still violate Gemini Part union expectations. | ~~High~~ Low |
-| `proxy/mappers/openai/request/content_parts.rs` | Blocking file reads, missing percent-decoding for `file://` paths, and unbounded memory for large videos when base64-encoding. | High |
+| `proxy/mappers/openai/request/content_parts.rs` | ~~Blocking file reads, missing percent-decoding for `file://` paths, and unbounded memory for large videos when base64-encoding.~~ **Fixed [2026-02-11]**: Async file I/O via `spawn_blocking`, percent-decoding added, 100MB size limit with error. | ~~High~~ Fixed |
 | `proxy/providers/zai_anthropic.rs` | DoS Risk: `deep_remove_cache_control` logs at `info` for every field, vulnerable to log flooding. | Medium |
 | `proxy/providers/zai_anthropic.rs` | Inefficient: `copy_passthrough_headers` performs unnecessary string allocations in hot path. | Low |
-| `modules/proxy_db.rs` | Data Loss: `save_log` hardcodes `request_body`/`response_body` to `None`. | Medium |
-| `modules/proxy_db.rs` | Blocking SQLite I/O via `rusqlite` runs on async runtime threads (thread_local connection), risking executor starvation under load. | High |
+| `modules/proxy_db.rs` | ~~Data Loss: `save_log` hardcodes `request_body`/`response_body` to `None`.~~ **Reassessed [2026-02-12]**: `save_log` correctly persists whatever `ProxyRequestLog` contains. `save_log` has zero callers — logging infrastructure is unused/dead code. | ~~Medium~~ Low |
+| `modules/proxy_db.rs` | ~~Blocking SQLite I/O via `rusqlite` runs on async runtime threads (thread_local connection), risking executor starvation under load.~~ **Fixed [2026-02-09]**: All public functions wrapped in `spawn_blocking`. | ~~High~~ Fixed |
 | `server_utils.rs` | Portability: `set_reuse_port(true)` lacks `#[cfg(unix)]` guard. | Low |
 | `repository.rs` | Inconsistent time types (DateTime vs i64) and redundant arguments in `update_token_credentials`. | Low |
 | `state/mod.rs` | ~~`build_proxy_router` ignores `UpstreamProxyConfig` from `proxy_config` — passes default instead of actual config.~~ **Fixed [2026-02-09]**: Investigation showed `build_proxy_router` does pass its argument correctly. The real issue was `UpstreamClient` creating a separate `Arc<RwLock<>>` — now shares the same reference as `AppState.upstream_proxy`. | ~~High~~ Fixed |
@@ -228,11 +228,11 @@ vendor/
 | `state/accessors.rs` | `load_config()` performs sync file I/O inside async context. | Medium |
 | `state/accessors.rs` | `generate_oauth_state` clears ALL pending states when limit hit (aggressive eviction). | Low |
 | `proxy/server.rs` | `UpstreamClient` initialized with `None` for circuit_breaker — circuit breaking disabled for upstream. | Medium |
-| `proxy/server.rs` | `provider_rr` and `zai_vision_mcp_state` recreated on each `build_proxy_router_with_shared_state` call — state lost on hot-reload. | Medium |
+| `proxy/server.rs` | ~~`provider_rr` and `zai_vision_mcp_state` recreated on each `build_proxy_router_with_shared_state` call — state lost on hot-reload.~~ **Fixed [2026-02-12]**: Moved `provider_rr`, `zai_vision_mcp`, `upstream_client` into persistent `AppStateInner`. | ~~Medium~~ Fixed |
 | `proxy/server.rs` | `/v1/api/event_logging` and `/v1/api/event_logging/batch` are stubs returning 200 OK without processing data. | Low |
-| `upstream/client/mod.rs` | `get_client()` silently falls back to direct connection on proxy build failure — traffic leak risk when proxy is intentionally configured. | Medium |
+| `upstream/client/mod.rs` | ~~`get_client()` silently falls back to direct connection on proxy build failure — traffic leak risk when proxy is intentionally configured.~~ **Fixed [2026-02-12]**: `get_client()` returns `Result`, all silent fallbacks replaced with error propagation. | ~~Medium~~ Fixed |
 | `upstream/client/mod.rs` | Single-slot client cache (`proxied_client`, `warp_client`) thrashes if alternating proxy URLs. | Low |
-| `antigravity-vps-cli/src/main.rs` | CLI argument parsing flattens arguments with `join(" ")`, breaking quoted/space-containing args. | Medium |
+| `antigravity-vps-cli/src/main.rs` | ~~CLI argument parsing flattens arguments with `join(" ")`, breaking quoted/space-containing args.~~ **Fixed [2026-02-12]**: Added `shell_escape()` function with proper single-quote wrapping. | ~~Medium~~ Fixed |
 | `deploy.sh` / `flake.nix` | **Nix closure deploy causes SIGBUS on VPS** [2026-02-10]: Binary built via `nix build .#antigravity-server` crashes immediately with SIGBUS (signal 7) on VPS despite both machines being x86_64 AMD Zen4. `ldd` also crashes on the binary (exit 135). Root cause unclear — possibly Nix closure linking incompatibility. **Workaround:** Deploy via `scp target/release/antigravity-server` (cargo-built binary works fine). `./deploy.sh deploy` is currently BROKEN for VPS. | High |
 | `proxy/handlers/claude/streaming.rs` | Unreachable `None` branch in `handle_streaming_response` match — `poll_next` on non-empty stream should always return `Some`. Dead code. | Low |
 | `proxy/handlers/claude/chat.rs` | Double boxing in `collect_to_json_response`: `Box<dyn Error>` error wrapped again by `?` into another `Box<dyn Error>`. Unnecessary allocation. | Low |
@@ -243,15 +243,15 @@ vendor/
 | `proxy/mappers/openai/streaming/openai_stream.rs` | ~~Double `[DONE]` emission: error path emits `[DONE]` + break, then post-loop also emits `[DONE]`.~~ **Fixed [2026-02-10]**: Added `done_emitted` flag; post-loop `[DONE]` guarded by `if !done_emitted`. | ~~Low~~ Fixed |
 | `proxy/handlers/openai/chat/stream_handler.rs` | ~~Error-to-graceful conversion chunk missing `id`/`object`/`created`/`model` fields.~~ **Fixed [2026-02-10]**: Graceful fallback chunk now includes `id`, `object`, `created`, `model` fields. | ~~Low~~ Fixed |
 | `proxy/handlers/openai/chat/stream_handler.rs` | `build_combined_stream` graceful finish applies to both streaming and non-streaming paths — `collect_to_json` may interpret mid-stream failures as partial success instead of triggering retry. Should gate graceful handling on `client_wants_stream`. | Medium |
-| `proxy/mappers/openai/streaming/codex_stream.rs` | Smart quote replacement (`'"'`/`'"'` → `'"'`) blindly modifies generated content — corrupts intentional smart quotes in code. `emitted_tool_calls` dedup suppresses valid repeated calls. `usageMetadata` extracted but discarded (`let _ = ...`). | Medium |
+| `proxy/mappers/openai/streaming/codex_stream.rs` | ~~Smart quote replacement corrupts Unicode output. All-time tool call dedup suppresses valid repeated calls. `usageMetadata` extracted but discarded.~~ **Fixed [2026-02-12]**: Removed smart quote replacement, switched to consecutive-only dedup, usage now stored and emitted in `response.completed`. | ~~Medium~~ Fixed |
 | `proxy/handlers/claude/messages.rs` | Grace retry unconditionally increments `attempt` even on transient "grace" retries, consuming budget. Network errors not added to `attempted_accounts` (can re-select same failing account). Transport errors mapped to `TokenAcquisition` instead of `ConnectionError`. | Medium |
 | `proxy/handlers/claude/streaming.rs` | Error handler injects `content_block_start` at hardcoded `index: 0` — duplicate index violates Claude API spec. `record_stream_graceful_finish` called on error path (misleading metrics). Non-streaming error injection ineffective (discarded by `collect_stream_to_json`). | Medium |
 | `proxy/handlers/audio.rs` | Hardcoded `gemini-2.5-flash` model (should be configurable). Malformed error strings (`parsetablefailed`, `readfilefailed`). Mixed Chinese/English punctuation. | Low |
-| `proxy/common/client_builder.rs` | Returns `Result<_, String>` instead of typed error. Silent 5s timeout minimum clamp. Empty proxy URL with `enabled: true` silently skips proxy (traffic leak risk). | Medium |
+| `proxy/common/client_builder.rs` | Returns `Result<_, String>` instead of typed error. ~~Silent 5s timeout minimum clamp. Empty proxy URL with `enabled: true` silently skips proxy (traffic leak risk).~~ **Partially fixed [2026-02-12]**: Timeout clamping now logs `warn!`. Empty URL + enabled = explicit `Err`. | ~~Medium~~ Low |
 | `proxy/middleware/monitor.rs` | `handle_json_response` has unused `_start` parameter; `log.duration` only captures TTFB, not total streaming duration. | Low |
 | `proxy/retry/mod.rs` | `determine_retry_strategy` depends on `upstream::retry::parse_retry_delay` (layering violation). `apply_retry_strategy` logs misleading `attempt/MAX_RETRY_ATTEMPTS` when caller uses lower limit. | Low |
 | `proxy/retry/success_bookkeeping.rs` | `&Arc<TokenManager>` argument — double indirection, should be `&TokenManager`. | Low |
-| `proxy/mappers/claude/request/generation_config.rs` | `claude_req.stop_sequences` silently ignored — hardcoded `stopSequences` discards client-provided values. | Medium |
+| `proxy/mappers/claude/request/generation_config.rs` | ~~`claude_req.stop_sequences` silently ignored — hardcoded `stopSequences` discards client-provided values.~~ **Fixed [2026-02-11]**: Client stop_sequences now merged with defaults and deduped. | ~~Medium~~ Fixed |
 
 ---
 

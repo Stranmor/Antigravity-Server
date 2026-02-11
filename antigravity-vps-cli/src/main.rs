@@ -15,6 +15,28 @@ mod ssh_client;
 )]
 use ssh_client::{SshClientFactory, SshSession};
 
+/// Shell-escapes a single argument for safe remote execution.
+fn shell_escape(s: &str) -> String {
+    if s.is_empty() {
+        return "''".to_string();
+    }
+    // If string contains no special characters, return as-is
+    if s.bytes().all(|b| {
+        b.is_ascii_alphanumeric()
+            || b == b'-'
+            || b == b'_'
+            || b == b'.'
+            || b == b'/'
+            || b == b':'
+            || b == b'='
+            || b == b','
+    }) {
+        return s.to_string();
+    }
+    // Wrap in single quotes, escaping existing single quotes
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 /// Parses a host string in format "user@host" into (user, host) tuple.
 fn parse_host(host: &str) -> Result<(&str, &str)> {
     host.split_once('@').ok_or_else(|| anyhow::anyhow!("Host must be in format user@host"))
@@ -73,7 +95,7 @@ async fn main() -> Result<()> {
             info!("Connecting to {user}@{remote_host}");
             let session = ssh_client_factory.connect(user, remote_host.to_string()).await?;
 
-            let cmd_str = command.join(" ");
+            let cmd_str = command.iter().map(|arg| shell_escape(arg)).collect::<Vec<_>>().join(" ");
             info!("Executing command {cmd_str:?} on host {remote_host}");
             let output = session.exec_command(&cmd_str).await?;
             println!("{output}");
