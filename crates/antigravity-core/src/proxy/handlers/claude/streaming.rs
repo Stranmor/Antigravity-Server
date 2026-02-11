@@ -97,10 +97,10 @@ where
                         );
                         crate::proxy::prometheus::record_stream_graceful_finish("claude");
 
-                        // Always send end_turn with explanatory text so agents don't retry.
-                        // Stream errors are typically Google's ~55s timeout during thinking.
+                        // Send max_tokens so agents see "response truncated" and continue working.
+                        // end_turn caused agents to treat timeout text as final answer and stop.
                         Ok(Bytes::from(
-                            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[This request timed out — the model was still processing when the upstream server closed the connection (~55s limit). This typically happens with very large contexts (100K+ tokens). Try reducing conversation history or splitting the task.]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+                            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
                         ))
                     }
                 }

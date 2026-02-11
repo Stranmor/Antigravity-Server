@@ -138,10 +138,10 @@ pub fn create_codex_sse_stream(
 
                     let timeout_ev = json!({
                         "type": "response.output_text.delta",
-                        "delta": "[This request timed out — the model was still processing when the upstream server closed the connection (~55s limit). This typically happens with very large contexts (100K+ tokens). Try reducing conversation history or splitting the task.]"
+                        "delta": "[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]"
                     });
                     yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&timeout_ev).unwrap_or_default())));
-                    last_finish_reason = "stop".to_string();
+                    last_finish_reason = "length".to_string();
                     break;
                 }
             }

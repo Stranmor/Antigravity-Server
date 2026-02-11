@@ -109,7 +109,7 @@ pub fn create_openai_sse_stream(
                         "model": model,
                         "choices": [{
                             "index": 0,
-                            "delta": {"content": "[This request timed out — the model was still processing when the upstream server closed the connection (~55s limit). This typically happens with very large contexts (100K+ tokens). Try reducing conversation history or splitting the task.]"},
+                            "delta": {"content": "[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]"},
                             "finish_reason": null
                         }]
                     });
@@ -122,7 +122,7 @@ pub fn create_openai_sse_stream(
                         "choices": [{
                             "index": 0,
                             "delta": {},
-                            "finish_reason": "stop"
+                            "finish_reason": "length"
                         }]
                     });
                     yield Ok(Bytes::from(sse_line(&finish)));

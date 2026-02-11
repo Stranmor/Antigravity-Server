@@ -79,7 +79,7 @@ fn build_combined_stream(
                     crate::proxy::prometheus::record_stream_graceful_finish("openai_handler");
 
                     Ok(Bytes::from(
-                        "data: {\"id\":\"chatcmpl-timeout\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"unknown\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"[This request timed out — the model was still processing when the upstream server closed the connection (~55s limit). This typically happens with very large contexts (100K+ tokens). Try reducing conversation history or splitting the task.]\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-timeout\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"unknown\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+                        "data: {\"id\":\"chatcmpl-timeout\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"unknown\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-timeout\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"unknown\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n"
                     ))
                 }
             }

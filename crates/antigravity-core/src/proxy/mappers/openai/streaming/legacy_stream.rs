@@ -115,10 +115,10 @@ pub fn create_legacy_sse_stream(
                         "created": created_ts,
                         "model": &model,
                         "choices": [{
-                            "text": "[This request timed out — the model was still processing when the upstream server closed the connection (~55s limit). This typically happens with very large contexts (100K+ tokens). Try reducing conversation history or splitting the task.]",
+                            "text": "[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]",
                             "index": 0,
                             "logprobs": null,
-                            "finish_reason": "stop"
+                            "finish_reason": "length"
                         }]
                     });
                     let sse_out = format!("data: {}\n\n", serde_json::to_string(&timeout_chunk).unwrap_or_default());
