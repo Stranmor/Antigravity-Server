@@ -5,7 +5,11 @@ mod streaming;
 
 pub use models::{handle_count_tokens, handle_get_model, handle_list_models};
 
-use crate::proxy::common::{sanitize_exhaustion_error, sanitize_upstream_error, UpstreamError};
+use crate::proxy::common::header_constants::{X_ACCOUNT_EMAIL, X_FORCE_ACCOUNT, X_MAPPED_MODEL};
+use crate::proxy::common::{sanitize_upstream_error, UpstreamError};
+use crate::proxy::retry::{
+    build_exhaustion_response, extract_error_info, record_request_success, MAX_RETRY_ATTEMPTS,
+};
 use crate::proxy::{
     mappers::gemini::{unwrap_response, wrap_request},
     server::AppState,
@@ -22,8 +26,6 @@ use std::collections::HashSet;
 use streaming::{build_stream_response, extract_signature, peek_first_chunk};
 use tracing::{debug, error, info, warn};
 
-use crate::proxy::retry::MAX_RETRY_ATTEMPTS;
-
 pub async fn handle_generate(
     State(state): State<AppState>,
     Path(model_action): Path<String>,
@@ -31,7 +33,7 @@ pub async fn handle_generate(
     Json(body): Json<Value>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let force_account =
-        headers.get("X-Force-Account").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+        headers.get(X_FORCE_ACCOUNT).and_then(|v| v.to_str().ok()).map(|s| s.to_string());
 
     let (model_name, method) = match model_action.rsplit_once(':') {
         Some((m, action)) => (m.to_string(), action.to_string()),
@@ -155,9 +157,7 @@ pub async fn handle_generate(
 
         let status = response.status();
         if status.is_success() {
-            token_manager.mark_account_success(&email);
-            token_manager.clear_session_failures(&session_id);
-            state.adaptive_limits.record_success(&email);
+            record_request_success(&token_manager, &state, &email, &session_id);
 
             if is_stream {
                 let mut response_stream = response.bytes_stream();
@@ -192,20 +192,17 @@ pub async fn handle_generate(
             let unwrapped = unwrap_response(&resp);
             return Ok((
                 StatusCode::OK,
-                [("X-Account-Email", email.as_str()), ("X-Mapped-Model", mapped_model.as_str())],
+                [(X_ACCOUNT_EMAIL, email.as_str()), (X_MAPPED_MODEL, mapped_model.as_str())],
                 Json(unwrapped),
             )
                 .into_response());
         }
 
-        let code = status.as_u16();
-        let retry_after = response
-            .headers()
-            .get("Retry-After")
-            .and_then(|h| h.to_str().ok())
-            .map(|s| s.to_string());
-        let error_text = response.text().await.unwrap_or_else(|_| format!("HTTP {}", code));
-        last_error = UpstreamError::HttpResponse { status_code: code, body: error_text.clone() };
+        let (err_info, upstream_err) = extract_error_info(response).await;
+        let code = err_info.status_code;
+        let retry_after = err_info.retry_after;
+        let error_text = err_info.error_text;
+        last_error = upstream_err;
 
         if crate::proxy::retry::is_rate_limit_code(code) || code == 401 || code == 403 {
             token_manager.mark_rate_limited(&email, code, retry_after.as_deref(), &error_text);
@@ -264,17 +261,11 @@ pub async fn handle_generate(
         }
         return Ok((
             status,
-            [("X-Account-Email", email.as_str())],
+            [(X_ACCOUNT_EMAIL, email.as_str())],
             sanitize_upstream_error(code, &error_text),
         )
             .into_response());
     }
 
-    let msg = format!("All accounts exhausted. Last: {}", sanitize_exhaustion_error(&last_error));
-    match last_email {
-        Some(email) => {
-            Ok((StatusCode::TOO_MANY_REQUESTS, [("X-Account-Email", email)], msg).into_response())
-        },
-        None => Ok((StatusCode::TOO_MANY_REQUESTS, msg).into_response()),
-    }
+    Ok(build_exhaustion_response(&last_error, last_email.as_deref()))
 }

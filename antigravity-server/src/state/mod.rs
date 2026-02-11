@@ -77,6 +77,9 @@ impl AppState {
             reqwest::Client::builder()
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .timeout(std::time::Duration::from_secs(300))
+                .http2_keep_alive_interval(std::time::Duration::from_secs(25))
+                .http2_keep_alive_timeout(std::time::Duration::from_secs(10))
+                .http2_keep_alive_while_idle(true)
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new())
         });

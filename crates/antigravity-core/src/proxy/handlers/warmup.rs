@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tracing::{info, warn};
 
+use crate::proxy::common::header_constants::{X_ACCOUNT_EMAIL, X_MAPPED_MODEL};
 use crate::proxy::mappers::gemini::wrapper::wrap_request;
 use crate::proxy::server::AppState;
 
@@ -242,10 +243,10 @@ pub async fn handle_warmup(
 
             // addresponseheader，letmonitormiddlewarecaptureaccountinfo
             if let Ok(email_val) = axum::http::HeaderValue::from_str(&req.email) {
-                response.headers_mut().insert("X-Account-Email", email_val);
+                response.headers_mut().insert(X_ACCOUNT_EMAIL, email_val);
             }
             if let Ok(model_val) = axum::http::HeaderValue::from_str(&req.model) {
-                response.headers_mut().insert("X-Mapped-Model", model_val);
+                response.headers_mut().insert(X_MAPPED_MODEL, model_val);
             }
 
             response
@@ -268,10 +269,10 @@ pub async fn handle_warmup(
 
             // even iffailedalsoaddresponseheader，formonitor
             if let Ok(email_val) = axum::http::HeaderValue::from_str(&req.email) {
-                response.headers_mut().insert("X-Account-Email", email_val);
+                response.headers_mut().insert(X_ACCOUNT_EMAIL, email_val);
             }
             if let Ok(model_val) = axum::http::HeaderValue::from_str(&req.model) {
-                response.headers_mut().insert("X-Mapped-Model", model_val);
+                response.headers_mut().insert(X_MAPPED_MODEL, model_val);
             }
 
             response

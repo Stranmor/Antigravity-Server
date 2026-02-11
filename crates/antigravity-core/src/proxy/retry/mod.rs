@@ -3,11 +3,17 @@
 //! Provides protocol-specific backoff profiles (OpenAI, Claude, Gemini)
 //! with a single `determine_retry_strategy()` entry point.
 
+mod error_extraction;
+mod exhaustion_response;
 mod peek;
 mod profile;
+mod success_bookkeeping;
 
+pub use error_extraction::{extract_error_info, ErrorInfo};
+pub use exhaustion_response::build_exhaustion_response;
 pub use peek::{peek_first_data_chunk, PeekConfig, PeekResult};
 pub use profile::RetryProfile;
+pub use success_bookkeeping::record_request_success;
 
 use std::time::Duration;
 use tokio::time::sleep;

@@ -1,3 +1,4 @@
+use crate::proxy::common::header_constants::X_FORCE_ACCOUNT;
 use crate::proxy::mappers::claude::{
     clean_cache_control_from_messages, close_tool_loop_for_thinking,
     filter_invalid_thinking_blocks_with_family, merge_consecutive_messages, ClaudeRequest,
@@ -21,7 +22,7 @@ use super::streaming::{handle_streaming_response, ClaudeStreamResult, StreamingC
 use super::token_selection::acquire_token;
 use super::upstream_call::prepare_upstream_call;
 use super::warmup::{create_warmup_response, is_warmup_request};
-use crate::proxy::retry::MAX_RETRY_ATTEMPTS;
+use crate::proxy::retry::{extract_error_info, record_request_success, MAX_RETRY_ATTEMPTS};
 use crate::proxy::session_manager::SessionManager;
 
 pub async fn handle_messages(
@@ -30,7 +31,7 @@ pub async fn handle_messages(
     Json(body): Json<Value>,
 ) -> Response {
     let force_account =
-        headers.get("X-Force-Account").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+        headers.get(X_FORCE_ACCOUNT).and_then(|v| v.to_str().ok()).map(|s| s.to_string());
 
     tracing::debug!("handle_messages called. Body JSON len: {}", body.to_string().len());
 
@@ -184,9 +185,7 @@ pub async fn handle_messages(
 
         // success
         if status.is_success() {
-            token_manager.mark_account_success(&email);
-            token_manager.clear_session_failures(&session_id_str);
-            state.adaptive_limits.record_success(&email);
+            record_request_success(&token_manager, &state, &email, &session_id_str);
 
             let context_limit =
                 crate::proxy::mappers::claude::token_scaling::get_context_limit_for_model(
@@ -234,25 +233,20 @@ pub async fn handle_messages(
             }
         }
 
-        let status_code = status.as_u16();
-        let retry_after = response
-            .headers()
-            .get("Retry-After")
-            .and_then(|h| h.to_str().ok())
-            .map(|s| s.to_string());
-
-        let error_text = response.text().await.unwrap_or_else(|_| format!("HTTP {}", status));
-        last_error = crate::proxy::common::UpstreamError::HttpResponse {
-            status_code,
-            body: error_text.clone(),
-        };
-        tracing::error!("[{}] Upstream Error Response ({}): {}", trace_id, status_code, error_text);
+        let (err_info, upstream_err) = extract_error_info(response).await;
+        last_error = upstream_err;
+        tracing::error!(
+            "[{}] Upstream Error Response ({}): {}",
+            trace_id,
+            err_info.status_code,
+            err_info.error_text
+        );
 
         let err_ctx = ErrorContext {
             status,
-            status_code,
-            error_text,
-            retry_after,
+            status_code: err_info.status_code,
+            error_text: err_info.error_text,
+            retry_after: err_info.retry_after,
             email: &email,
             session_id_str: &session_id_str,
             model: &request_with_mapped.model,

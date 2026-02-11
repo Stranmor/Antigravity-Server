@@ -1,5 +1,6 @@
 // Streaming response builder for completions handler
 
+use crate::proxy::common::header_constants::{X_ACCOUNT_EMAIL, X_MAPPED_MODEL};
 use axum::body::Body;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -44,8 +45,8 @@ pub fn build_streaming_response(
         .header("Content-Type", "text/event-stream")
         .header("Cache-Control", "no-cache")
         .header("Connection", "keep-alive")
-        .header("X-Account-Email", email)
-        .header("X-Mapped-Model", mapped_model)
+        .header(X_ACCOUNT_EMAIL, email)
+        .header(X_MAPPED_MODEL, mapped_model)
         .body(body)
         .unwrap_or_else(|e| {
             tracing::error!("Failed to build SSE response: {}", e);

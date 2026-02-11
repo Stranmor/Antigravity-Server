@@ -8,6 +8,7 @@ use futures::StreamExt;
 use serde_json::Value;
 use tracing::{debug, error, warn};
 
+use crate::proxy::common::header_constants::{X_ACCOUNT_EMAIL, X_MAPPED_MODEL};
 use crate::proxy::mappers::gemini::unwrap_response;
 
 /// Peek first SSE chunk with retry logic (Issue #859)
@@ -173,8 +174,8 @@ where
         .status(StatusCode::OK)
         .header("Content-Type", "text/event-stream")
         .header("Cache-Control", "no-cache")
-        .header("X-Account-Email", email)
-        .header("X-Mapped-Model", mapped_model)
+        .header(X_ACCOUNT_EMAIL, email)
+        .header(X_MAPPED_MODEL, mapped_model)
         .body(body)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Response build error: {}", e)))?;
 

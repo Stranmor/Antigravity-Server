@@ -6,6 +6,9 @@ mod upstream_request;
 
 use super::responses_format::{convert_responses_to_chat, is_responses_format};
 use super::MAX_RETRY_ATTEMPTS;
+use crate::proxy::common::header_constants::{
+    X_ACCOUNT_EMAIL, X_FORCE_ACCOUNT, X_MAPPED_MODEL, X_MAPPING_REASON,
+};
 use axum::http::HeaderMap;
 use axum::{
     extract::{Json, State},
@@ -15,9 +18,10 @@ use axum::{
 use serde_json::Value;
 use tracing::{debug, error, info, warn};
 
-use crate::proxy::common::{sanitize_exhaustion_error, sanitize_upstream_error, UpstreamError};
+use crate::proxy::common::{sanitize_upstream_error, UpstreamError};
 use crate::proxy::handlers::openai::completions::request_parser::ensure_non_empty_messages;
 use crate::proxy::mappers::openai::{transform_openai_request, OpenAIRequest};
+use crate::proxy::retry::{build_exhaustion_response, extract_error_info, record_request_success};
 use crate::proxy::server::AppState;
 use crate::proxy::session_manager::SessionManager;
 
@@ -35,7 +39,7 @@ pub async fn handle_chat_completions(
     Json(mut body): Json<Value>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let force_account =
-        headers.get("X-Force-Account").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+        headers.get(X_FORCE_ACCOUNT).and_then(|v| v.to_str().ok()).map(|s| s.to_string());
 
     if is_responses_format(&body) {
         convert_responses_to_chat(&mut body);
@@ -160,9 +164,7 @@ pub async fn handle_chat_completions(
 
         let status = response.status();
         if status.is_success() {
-            token_manager.mark_account_success(&email);
-            state.adaptive_limits.record_success(&email);
-            token_manager.clear_session_failures(&session_id);
+            record_request_success(&token_manager, &state, &email, &session_id);
 
             let gemini_stream = response.bytes_stream();
             match handle_stream_response(
@@ -182,9 +184,9 @@ pub async fn handle_chat_completions(
                     return Ok((
                         st,
                         [
-                            ("X-Account-Email", em.as_str()),
-                            ("X-Mapped-Model", model.as_str()),
-                            ("X-Mapping-Reason", rsn.as_str()),
+                            (X_ACCOUNT_EMAIL, em.as_str()),
+                            (X_MAPPED_MODEL, model.as_str()),
+                            (X_MAPPING_REASON, rsn.as_str()),
                         ],
                         Json(json),
                     )
@@ -208,14 +210,11 @@ pub async fn handle_chat_completions(
             }
         }
 
-        let status_code = status.as_u16();
-        let retry_after = response
-            .headers()
-            .get("Retry-After")
-            .and_then(|h| h.to_str().ok())
-            .map(|s| s.to_string());
-        let error_text = response.text().await.unwrap_or_else(|_| format!("HTTP {}", status_code));
-        last_error = UpstreamError::HttpResponse { status_code, body: error_text.clone() };
+        let (err_info, upstream_err) = extract_error_info(response).await;
+        let status_code = err_info.status_code;
+        let error_text = err_info.error_text;
+        let retry_after = err_info.retry_after;
+        last_error = upstream_err;
 
         error!("[OpenAI-Upstream] Error Response {}: {}", status_code, error_text);
 
@@ -266,7 +265,7 @@ pub async fn handle_chat_completions(
                 }
             },
             OpenAIErrorAction::ReturnError(code, email, text) => {
-                return Ok((code, [("X-Account-Email", email)], text).into_response());
+                return Ok((code, [(X_ACCOUNT_EMAIL, email)], text).into_response());
             },
         }
 
@@ -301,30 +300,11 @@ pub async fn handle_chat_completions(
         );
         return Ok((
             status,
-            [("X-Account-Email", email.as_str())],
+            [(X_ACCOUNT_EMAIL, email.as_str())],
             sanitize_upstream_error(status_code, &error_text),
         )
             .into_response());
     }
 
-    if let Some(email) = last_email {
-        Ok((
-            StatusCode::TOO_MANY_REQUESTS,
-            [("X-Account-Email", email)],
-            format!(
-                "All accounts exhausted. Last error: {}",
-                sanitize_exhaustion_error(&last_error)
-            ),
-        )
-            .into_response())
-    } else {
-        Ok((
-            StatusCode::TOO_MANY_REQUESTS,
-            format!(
-                "All accounts exhausted. Last error: {}",
-                sanitize_exhaustion_error(&last_error)
-            ),
-        )
-            .into_response())
-    }
+    Ok(build_exhaustion_response(&last_error, last_email.as_deref()))
 }

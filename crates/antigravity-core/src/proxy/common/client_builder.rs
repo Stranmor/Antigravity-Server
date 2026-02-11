@@ -8,7 +8,10 @@ pub fn build_http_client(
 ) -> Result<reqwest::Client, String> {
     let mut builder = reqwest::Client::builder()
         .timeout(Duration::from_secs(timeout_secs.max(5)))
-        .tcp_nodelay(true);
+        .tcp_nodelay(true)
+        .http2_keep_alive_interval(Duration::from_secs(25))
+        .http2_keep_alive_timeout(Duration::from_secs(10))
+        .http2_keep_alive_while_idle(true);
 
     if let Some(config) = upstream_proxy {
         if config.enabled && !config.url.is_empty() {

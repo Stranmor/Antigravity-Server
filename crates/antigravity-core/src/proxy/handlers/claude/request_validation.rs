@@ -1,5 +1,6 @@
 //! Request parsing and validation for Claude messages handler
 
+use crate::proxy::common::header_constants::X_ACCOUNT_EMAIL;
 use crate::proxy::common::{sanitize_exhaustion_error, UpstreamError};
 use crate::proxy::mappers::claude::ClaudeRequest;
 use axum::{
@@ -64,7 +65,7 @@ pub fn no_accounts_error(message: String) -> Response {
 pub fn prompt_too_long_error(email: &str) -> Response {
     (
         StatusCode::BAD_REQUEST,
-        [("X-Account-Email", email)],
+        [(X_ACCOUNT_EMAIL, email)],
         Json(json!({
             "id": "err_prompt_too_long",
             "type": "error",
@@ -93,7 +94,7 @@ pub fn all_retries_exhausted_error(
     });
 
     if let Some(email) = last_email {
-        (StatusCode::TOO_MANY_REQUESTS, [("X-Account-Email", email)], Json(error_json))
+        (StatusCode::TOO_MANY_REQUESTS, [(X_ACCOUNT_EMAIL, email)], Json(error_json))
             .into_response()
     } else {
         (StatusCode::TOO_MANY_REQUESTS, Json(error_json)).into_response()

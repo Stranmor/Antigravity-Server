@@ -9,6 +9,7 @@
 )]
 
 use super::monitor_usage::extract_usage_from_json;
+use crate::proxy::common::header_constants::{X_ACCOUNT_EMAIL, X_MAPPED_MODEL, X_MAPPING_REASON};
 use crate::proxy::monitor::ProxyRequestLog;
 use crate::proxy::server::AppState;
 use axum::{
@@ -90,17 +91,14 @@ pub async fn monitor_middleware(
 
     let account_email = response
         .headers()
-        .get("X-Account-Email")
+        .get(X_ACCOUNT_EMAIL)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
-    let mapped_model = response
-        .headers()
-        .get("X-Mapped-Model")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
+    let mapped_model =
+        response.headers().get(X_MAPPED_MODEL).and_then(|v| v.to_str().ok()).map(|s| s.to_string());
     let mapping_reason = response
         .headers()
-        .get("X-Mapping-Reason")
+        .get(X_MAPPING_REASON)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 

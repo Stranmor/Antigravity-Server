@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 use tracing::{debug, info};
 use uuid::Uuid;
 
+use crate::proxy::common::header_constants::X_ACCOUNT_EMAIL;
 use crate::proxy::{audio::AudioProcessor, server::AppState};
 
 /// handleaudiotranscriptionrequest (OpenAI Whisper API compatible)
@@ -170,7 +171,7 @@ pub async fn handle_audio_transcription(
     // 10. returnstandardformatresponse
     Ok((
         StatusCode::OK,
-        [("X-Account-Email", email.as_str())],
+        [(X_ACCOUNT_EMAIL, email.as_str())],
         Json(json!({
             "text": text
         })),

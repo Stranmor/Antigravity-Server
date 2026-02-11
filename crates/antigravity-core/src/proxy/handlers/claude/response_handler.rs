@@ -1,5 +1,6 @@
 //! Response handling for streaming and non-streaming Claude responses
 
+use crate::proxy::common::header_constants::{X_ACCOUNT_EMAIL, X_MAPPED_MODEL, X_MAPPING_REASON};
 use crate::proxy::mappers::claude::{models::GeminiResponse, transform_response, ClaudeRequest};
 use axum::{
     http::StatusCode,
@@ -82,9 +83,9 @@ pub async fn handle_nonstreaming_success(
     (
         StatusCode::OK,
         [
-            ("X-Account-Email", ctx.email.as_str()),
-            ("X-Mapped-Model", ctx.mapped_model.as_str()),
-            ("X-Mapping-Reason", ctx.reason.as_str()),
+            (X_ACCOUNT_EMAIL, ctx.email.as_str()),
+            (X_MAPPED_MODEL, ctx.mapped_model.as_str()),
+            (X_MAPPING_REASON, ctx.reason.as_str()),
         ],
         Json(claude_response),
     )

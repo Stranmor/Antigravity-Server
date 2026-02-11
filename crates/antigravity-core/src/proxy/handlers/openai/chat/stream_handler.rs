@@ -1,5 +1,6 @@
 //! OpenAI chat streaming handler.
 
+use crate::proxy::common::header_constants::{X_ACCOUNT_EMAIL, X_MAPPED_MODEL, X_MAPPING_REASON};
 use crate::proxy::mappers::openai::OpenAIResponse;
 use axum::body::Body;
 use axum::http::StatusCode;
@@ -99,9 +100,9 @@ fn build_sse_response(
         .header("Content-Type", "text/event-stream")
         .header("Cache-Control", "no-cache")
         .header("Connection", "keep-alive")
-        .header("X-Account-Email", &email)
-        .header("X-Mapped-Model", &mapped_model)
-        .header("X-Mapping-Reason", &reason)
+        .header(X_ACCOUNT_EMAIL, &email)
+        .header(X_MAPPED_MODEL, &mapped_model)
+        .header(X_MAPPING_REASON, &reason)
         .body(body)
         .unwrap_or_else(|e| {
             tracing::error!("Failed to build SSE response: {}", e);

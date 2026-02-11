@@ -9,6 +9,7 @@ use bytes::Bytes;
 use futures::StreamExt;
 use std::pin::Pin;
 
+use crate::proxy::common::header_constants::{X_ACCOUNT_EMAIL, X_MAPPED_MODEL, X_MAPPING_REASON};
 use crate::proxy::mappers::claude::create_claude_sse_stream;
 use crate::proxy::retry::{peek_first_data_chunk, PeekConfig, PeekResult};
 
@@ -123,9 +124,9 @@ where
         .header(header::CONTENT_TYPE, "text/event-stream")
         .header(header::CACHE_CONTROL, "no-cache")
         .header(header::CONNECTION, "keep-alive")
-        .header("X-Account-Email", &ctx.email)
-        .header("X-Mapped-Model", &ctx.mapped_model)
-        .header("X-Mapping-Reason", &ctx.reason)
+        .header(X_ACCOUNT_EMAIL, &ctx.email)
+        .header(X_MAPPED_MODEL, &ctx.mapped_model)
+        .header(X_MAPPING_REASON, &ctx.reason)
         .body(Body::from_stream(stream))
         .unwrap_or_else(|e| {
             tracing::error!("Failed to build SSE response: {}", e);
@@ -145,9 +146,9 @@ where
             Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, "application/json")
-                .header("X-Account-Email", &ctx.email)
-                .header("X-Mapped-Model", &ctx.mapped_model)
-                .header("X-Mapping-Reason", &ctx.reason)
+                .header(X_ACCOUNT_EMAIL, &ctx.email)
+                .header(X_MAPPED_MODEL, &ctx.mapped_model)
+                .header(X_MAPPING_REASON, &ctx.reason)
                 .body(Body::from(match serde_json::to_string(&full_response) {
                     Ok(json) => json,
                     Err(e) => {

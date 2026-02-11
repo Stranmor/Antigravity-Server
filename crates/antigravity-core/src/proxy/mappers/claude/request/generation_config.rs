@@ -13,6 +13,7 @@
 )]
 
 use super::super::models::ClaudeRequest;
+use crate::proxy::common::thinking_constants::{THINKING_BUDGET, THINKING_OVERHEAD};
 use serde_json::{json, Value};
 
 pub fn build_generation_config(
@@ -21,10 +22,6 @@ pub fn build_generation_config(
     is_thinking_enabled: bool,
 ) -> Value {
     let mut config = json!({});
-
-    // Overhead added to thinking budget to ensure room for text output
-    const THINKING_OVERHEAD: u64 = 32768;
-    const _THINKING_MIN_OVERHEAD: u64 = 8192;
 
     // Thinking config
     if is_thinking_enabled {
@@ -50,7 +47,7 @@ pub fn build_generation_config(
             // with thinkingBudget to ensure upstream actually enables thinking mode.
             // [FIX 2026-02-08] thinkingBudget is REQUIRED by cloudcode-pa API when
             // includeThoughts=true. Without it, API returns 400 INVALID_ARGUMENT.
-            let default_budget: u64 = 16000;
+            let default_budget = THINKING_BUDGET;
             tracing::info!(
                 "[Generation-Config] Auto-injecting thinkingConfig for model: {} (budget: {})",
                 claude_req.model,

@@ -7,6 +7,9 @@
 )]
 
 use super::super::models::OpenAIRequest;
+use crate::proxy::common::thinking_constants::{
+    THINKING_BUDGET, THINKING_MIN_OVERHEAD, THINKING_OVERHEAD,
+};
 use serde_json::{json, Value};
 
 pub fn build_generation_config(
@@ -14,10 +17,6 @@ pub fn build_generation_config(
     actual_include_thinking: bool,
     mapped_model: &str,
 ) -> Value {
-    const THINKING_BUDGET: u32 = 16000;
-    const THINKING_OVERHEAD: u32 = 32768;
-    const THINKING_MIN_OVERHEAD: u32 = 8192;
-
     // [FIX 2026-02-08] Sanitize topP: Gemini API rejects 0.0 as invalid argument.
     // Replace 0.0 with the Gemini default (0.95).
     let top_p = match request.top_p {
