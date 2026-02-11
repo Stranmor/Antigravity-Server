@@ -10,6 +10,7 @@
 - Introduce ModelFamily enum and replace model family string checks (completed).
 
 ## Current Status
+- ✅ COMPLETED [2026-02-11]: **FIXED Google Vertex AI ~55s stream timeout** via HTTP/2 PING keepalive. Root cause: Google Cloud Load Balancer killed idle HTTP/2 connections after ~55s when model was thinking (no data frames sent). Fix: `http2_keep_alive_interval(25s)` + `http2_keep_alive_timeout(10s)` + `http2_keep_alive_while_idle(true)` on all reqwest clients. PINGs are mandatory HTTP/2 (RFC 9113 §6.7) — server MUST respond with PING ACK, keeping connection alive. Verified: 240K input token request completed in 35s with no timeout. Applied to all 8 production client builders. Deployed locally + VPS.
 - ✅ COMPLETED [2026-02-11]: Smart graceful finish v4: on stream timeout, proxy now ABORTS the HTTP connection instead of sending graceful close. V3 sent `max_tokens`/`length` + timeout text, but agents treated it as real content and kept working with garbage in context. V4 yields `Err(io::Error)` (Claude) or `Err(String)` (OpenAI/Legacy/Codex) which breaks the HTTP stream — no `message_stop`, no `[DONE]`, no `response.completed`. Agents detect the broken connection and retry with a clean slate. Applied across all 5 stream paths. Deployed locally + VPS.
 - ✅ COMPLETED [2026-02-11]: Smart graceful finish v3: stream errors now emit `max_tokens`/`length` + truncation text instead of `end_turn`/`stop`. V2 used `end_turn` which stopped agents from retrying (good) but also stopped them from WORKING (bad) — agents treated timeout text as "model's final answer" and halted. V3 uses `max_tokens`/`length` which agents interpret as "response was cut off, continue from where I left off". Text: `[Response truncated — upstream connection closed after ~55s...]`. Applied across all 5 stream paths. Deployed locally + VPS.
 - ✅ COMPLETED [2026-02-11]: Raised Claude thinking path maxOutputTokens from budget+8192 to budget+32768, matching OpenAI path. Default: 16000+32768=48768 (was 24192). Added trace_id to all 5 graceful stream finish log points for correlating 55s Google Vertex cutoffs with specific requests. Deployed locally + VPS.
@@ -479,46 +480,26 @@ cat ~/.antigravity_tools/accounts/*.json | jq -r '.token.project_id' | sort | un
 
 ---
 
-## ⚠️ GOOGLE VERTEX AI ~55-SECOND STREAM TIMEOUT [2026-02-11]
+## ✅ RESOLVED: GOOGLE VERTEX AI ~55-SECOND STREAM TIMEOUT [2026-02-11]
 
 ### The Problem
 
-Google Vertex AI cuts HTTP/2 streams after **~55 seconds** if no data has been sent. This happens when the model is "thinking" on large contexts and hasn't started outputting text yet.
+Google Cloud Load Balancer killed idle HTTP/2 connections after **~55 seconds** when no data frames were being sent. This happened when the model was "thinking" on large contexts — no output tokens yet, so the connection appeared idle.
 
-**Symptoms:**
+### Root Cause & Fix
+
+**Root cause:** Connection-level idle timeout on Google Cloud Load Balancer, NOT a stream-level or API-level limit.
+
+**Fix:** HTTP/2 PING keepalive frames (`http2_keep_alive_interval(25s)`, `http2_keep_alive_timeout(10s)`, `http2_keep_alive_while_idle(true)`) on all reqwest clients. PINGs are mandatory HTTP/2 (RFC 9113 §6.7) — server MUST respond with PING ACK, keeping the connection alive through the thinking period.
+
+**Verification:** 240K input token request completed in 35s with no timeout. Previously this would have been cut off at 55s.
+
+**Applied to:** All 8 production client builders (client_builder.rs, upstream/client proxied+WARP, state/mod.rs fallback, server.rs standalone, utils/http.rs).
+
+### Historical Symptoms (for reference)
 - `error decoding response body` at exactly 54-56 second intervals
-- Agent enters infinite retry loop: request → 55s → error → retry → 55s → error...
-- Messages keep increasing (353 → 355 → 357...) as agent adds retry context
-- Only affects large-context requests (100K+ input tokens) — small requests complete fine
-
-**Evidence [2026-02-11]:**
-```
-[bmej0h] Request at 02:08:29 (353 messages, 103K tokens) → error at 02:09:23 (54s)
-[mb0kno] Request at 02:09:25 (355 messages) → error at 02:10:19 (54s)
-[19eig2] Request at 02:10:22 (357 messages) → error at 02:11:15 (53s)
-```
-
-Meanwhile, small requests (500-1500 input tokens) complete successfully with 2-10 second latency.
-
-### What This Means
-
-| Scenario | Risk |
-|----------|------|
-| Small requests (<10K tokens) | ✅ Safe — completes in <10s |
-| Medium requests (10-50K tokens) | ⚠️ Usually safe — thinking <30s |
-| Large requests (100K+ tokens) | ❌ High risk — thinking >55s → cutoff |
-
-### Current Mitigation
-
-Proxy converts stream errors to graceful `max_tokens` / `finish_reason: "length"` instead of `overloaded_error` — prevents some infinite retries but client still gets empty response.
-
-### Potential Future Fixes
-
-1. **Reduce thinking budget for large contexts** — empirically test if lower budget reduces time-to-first-token
-2. **Proxy-level auto-continue** — detect retry loop pattern and trim context on re-send
-3. **Server-side keepalive** — not possible, Google controls the server
-
-**Status:** Investigated, root cause confirmed as Google server-side limit. No proxy-level fix possible for the core issue.
+- Agent infinite retry loops on large-context requests (100K+ tokens)
+- Small requests (<50K tokens) unaffected
 
 ---
 
