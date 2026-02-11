@@ -8,6 +8,7 @@ use tokio::time::interval;
 use crate::state::AppState;
 use antigravity_core::modules::{account, config};
 
+use super::quota_refresh::persist_quota;
 use super::state::{SchedulerState, DEFAULT_WARMUP_MODELS, LOW_QUOTA_THRESHOLD};
 
 /// Start the smart warmup scheduler as a background tokio task
@@ -85,18 +86,31 @@ pub fn start(state: AppState) {
                 warmup_config.models.clone()
             };
 
-            let accounts = match tokio::task::spawn_blocking(account::list_accounts).await {
-                Ok(res) => match res {
-                    Ok(a) => a,
+            let accounts = if let Some(repo) = state.repository() {
+                match repo.list_accounts().await {
+                    Ok(accs) => accs,
                     Err(e) => {
-                        tracing::warn!("[Scheduler] Failed to list accounts: {}", e);
+                        tracing::warn!("[Scheduler] Failed to list accounts from DB: {}", e);
                         continue;
                     },
-                },
-                Err(e) => {
-                    tracing::error!("[Scheduler] spawn_blocking panic for list_accounts: {}", e);
-                    continue;
-                },
+                }
+            } else {
+                match tokio::task::spawn_blocking(account::list_accounts).await {
+                    Ok(res) => match res {
+                        Ok(a) => a,
+                        Err(e) => {
+                            tracing::warn!("[Scheduler] Failed to list accounts: {}", e);
+                            continue;
+                        },
+                    },
+                    Err(e) => {
+                        tracing::error!(
+                            "[Scheduler] spawn_blocking panic for list_accounts: {}",
+                            e
+                        );
+                        continue;
+                    },
+                }
             };
 
             if accounts.is_empty() {
@@ -200,53 +214,7 @@ pub fn start(state: AppState) {
                     match account::fetch_quota_with_retry(&acc, state.repository()).await {
                         Ok(result) => {
                             let quota = result.quota;
-                            let protected_models = match account::update_account_quota_async(
-                                acc.id.clone(),
-                                quota.clone(),
-                            )
-                            .await
-                            {
-                                Ok(updated) => {
-                                    Some(updated.protected_models.iter().cloned().collect())
-                                },
-                                Err(e) => {
-                                    tracing::warn!(
-                                        "[Warmup] Failed to update quota for {}: {}",
-                                        email,
-                                        e
-                                    );
-                                    None
-                                },
-                            };
-                            if let Some(repo) = state.repository() {
-                                match repo.get_account_by_email(&acc.email).await {
-                                    Ok(Some(pg_account)) => {
-                                        if let Err(e) = repo
-                                            .update_quota(&pg_account.id, quota, protected_models)
-                                            .await
-                                        {
-                                            tracing::warn!(
-                                                "[Warmup] DB quota update failed for {}: {}",
-                                                email,
-                                                e
-                                            );
-                                        }
-                                    },
-                                    Ok(None) => {
-                                        tracing::warn!(
-                                            "[Warmup] PG account lookup failed for {}",
-                                            email
-                                        );
-                                    },
-                                    Err(e) => {
-                                        tracing::warn!(
-                                            "[Warmup] PG account lookup error for {}: {}",
-                                            email,
-                                            e
-                                        );
-                                    },
-                                }
-                            }
+                            persist_quota(&state, &acc.id, &acc.email, quota).await;
                             success += 1;
                             let mut scheduler = scheduler_state.lock().await;
                             scheduler.record_warmup(email, now);

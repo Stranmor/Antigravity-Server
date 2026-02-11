@@ -7,30 +7,34 @@ use crate::state::AppState;
 use antigravity_core::modules::{account, config};
 use antigravity_types::models::QuotaData;
 
-/// Persist quota to both JSON and PostgreSQL (if available).
-async fn persist_quota(state: &AppState, account_id: &str, email: &str, quota: QuotaData) {
-    let protected_models =
-        match account::update_account_quota_async(account_id.to_owned(), quota.clone()).await {
-            Ok(updated) => Some(updated.protected_models.iter().cloned().collect()),
-            Err(e) => {
-                tracing::warn!("[QuotaRefresh] Failed to update JSON quota for {account_id}: {e}");
-                return;
-            },
-        };
+/// Persist quota to PostgreSQL (primary) and JSON (best-effort fallback).
+pub async fn persist_quota(state: &AppState, account_id: &str, email: &str, quota: QuotaData) {
+    // When PG is available, it's the source of truth — update PG first.
+    // JSON update is best-effort (PG UUIDs don't match JSON filenames).
     if let Some(repo) = state.repository() {
         match repo.get_account_by_email(email).await {
             Ok(Some(pg_account)) => {
-                if let Err(e) = repo.update_quota(&pg_account.id, quota, protected_models).await {
+                // Use protected_models from PG account directly
+                let protected_models: Option<Vec<String>> =
+                    Some(pg_account.protected_models.iter().cloned().collect());
+                if let Err(e) =
+                    repo.update_quota(&pg_account.id, quota.clone(), protected_models).await
+                {
                     tracing::warn!("[QuotaRefresh] Failed to update DB quota for {email}: {e}");
                 }
             },
             Ok(None) => {
-                tracing::warn!("[QuotaRefresh] PG account lookup failed for {email}");
+                tracing::warn!("[QuotaRefresh] PG account not found for {email}");
             },
             Err(e) => {
                 tracing::warn!("[QuotaRefresh] PG account lookup error for {email}: {e}");
             },
         }
+    }
+
+    // Best-effort JSON update — will fail silently for PG-only accounts
+    if let Err(e) = account::update_account_quota_async(account_id.to_owned(), quota).await {
+        tracing::debug!("[QuotaRefresh] JSON quota update skipped for {account_id}: {e}");
     }
 }
 
@@ -68,18 +72,31 @@ pub fn start_quota_refresh(state: AppState) {
                 if app_config.refresh_interval < 5 { 15 } else { app_config.refresh_interval };
             let interval_secs = i64::from(interval_minutes) * 60_i64;
 
-            let accounts = match tokio::task::spawn_blocking(account::list_accounts).await {
-                Ok(res) => match res {
+            let accounts = if let Some(repo) = state.repository() {
+                match repo.list_accounts().await {
                     Ok(accs) => accs,
                     Err(e) => {
-                        tracing::warn!("[QuotaRefresh] Failed to list accounts: {}", e);
+                        tracing::warn!("[QuotaRefresh] Failed to list accounts from DB: {}", e);
                         continue;
                     },
-                },
-                Err(e) => {
-                    tracing::error!("[QuotaRefresh] spawn_blocking panic for list_accounts: {}", e);
-                    continue;
-                },
+                }
+            } else {
+                match tokio::task::spawn_blocking(account::list_accounts).await {
+                    Ok(res) => match res {
+                        Ok(accs) => accs,
+                        Err(e) => {
+                            tracing::warn!("[QuotaRefresh] Failed to list accounts: {}", e);
+                            continue;
+                        },
+                    },
+                    Err(e) => {
+                        tracing::error!(
+                            "[QuotaRefresh] spawn_blocking panic for list_accounts: {}",
+                            e
+                        );
+                        continue;
+                    },
+                }
             };
             let enabled_accounts: Vec<_> =
                 accounts.into_iter().filter(|a| !a.disabled && !a.proxy_disabled).collect();
