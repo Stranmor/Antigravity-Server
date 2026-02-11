@@ -49,8 +49,7 @@ pub fn wrap_request(
         }
     }
 
-    // [Adaptive thinking mode] Convert thinkingBudget:-1 to thinkingLevel for Gemini 3,
-    // or keep -1 for non-Gemini-3. Set maxOutputTokens ceiling.
+    // [Adaptive thinking mode] Convert thinkingBudget to thinkingLevel for Gemini 3.
     let tb_config = get_thinking_budget_config();
     if matches!(tb_config.mode, ThinkingBudgetMode::Adaptive) {
         if let Some(gen_config) = inner_request.get_mut("generationConfig") {
@@ -74,11 +73,21 @@ pub fn wrap_request(
                         level,
                         final_model_name
                     );
+                } else {
+                    // Non-Gemini-3: cloudcode-pa API rejects thinkingBudget:-1,
+                    // ensure we have a valid positive budget
+                    if let Some(budget_val) = thinking_config.get("thinkingBudget") {
+                        if budget_val.as_i64().is_some_and(|v| v < 0) {
+                            let fallback_budget = 16000_u64;
+                            thinking_config["thinkingBudget"] = json!(fallback_budget);
+                            tracing::info!(
+                                "[Gemini-Wrap] Replaced invalid thinkingBudget with {} for model {}",
+                                fallback_budget,
+                                final_model_name
+                            );
+                        }
+                    }
                 }
-                // For non-Gemini-3: thinkingBudget:-1 passes through as-is
-
-                // Adaptive always uses large maxOutputTokens ceiling
-                gen_config["maxOutputTokens"] = json!(131072_i64);
             }
         }
     }
@@ -106,9 +115,12 @@ pub fn wrap_request(
         }
     }
 
-    // [FIX] Removed forced maxOutputTokens (64000) as it exceeds limits for Gemini 1.5 Flash/Pro standard models (8192).
-    // This caused upstream to return empty/invalid responses, leading to 'NoneType' object has no attribute 'strip' in Python clients.
-    // relying on upstream defaults or user provided values is safer.
+    // [Adaptive mode] Set maxOutputTokens for adaptive thinking
+    if matches!(tb_config.mode, ThinkingBudgetMode::Adaptive) {
+        if let Some(gen_config) = inner_request.get_mut("generationConfig") {
+            gen_config["maxOutputTokens"] = json!(131072_u64);
+        }
+    }
 
     // Extract tools list for network detection (Gemini style may be nested)
     let tools_val: Option<Vec<Value>> =

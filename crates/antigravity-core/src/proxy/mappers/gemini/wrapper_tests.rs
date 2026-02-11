@@ -169,7 +169,7 @@ mod adaptive_tests {
     }
 
     #[test]
-    fn test_adaptive_gemini2_keeps_budget_minus_one() {
+    fn test_adaptive_gemini2_replaces_negative_budget() {
         let _guard = THINKING_CONFIG_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         update_thinking_budget_config(ThinkingBudgetConfig {
             mode: ThinkingBudgetMode::Adaptive,
@@ -187,7 +187,7 @@ mod adaptive_tests {
         });
         let result = wrap_request(&body, "proj", "gemini-2.5-pro", None);
         let tc = &result["request"]["generationConfig"]["thinkingConfig"];
-        assert_eq!(tc["thinkingBudget"], -1);
+        assert_eq!(tc["thinkingBudget"], 16000);
         assert!(tc.get("thinkingLevel").is_none() || tc["thinkingLevel"].is_null());
         assert_eq!(result["request"]["generationConfig"]["maxOutputTokens"], 131072);
     }

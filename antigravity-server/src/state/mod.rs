@@ -8,7 +8,7 @@ mod config_sync;
 use anyhow::Result;
 use axum::Router;
 use dashmap::DashMap;
-use std::sync::atomic::AtomicU16;
+use std::sync::atomic::{AtomicU16, AtomicUsize};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
@@ -45,6 +45,9 @@ pub struct AppStateInner {
     pub bound_port: AtomicU16,
     pub http_client: reqwest::Client,
     pub repository: Option<Arc<dyn AccountRepository>>,
+    pub provider_rr: Arc<AtomicUsize>,
+    pub zai_vision_mcp: Arc<antigravity_core::proxy::zai_vision_mcp::ZaiVisionMcpState>,
+    pub upstream_client: Arc<antigravity_core::proxy::upstream::client::UpstreamClient>,
 }
 
 impl AppState {
@@ -91,6 +94,16 @@ impl AppState {
 
         tracing::info!("AIMD rate limiting system initialized");
 
+        let provider_rr = Arc::new(AtomicUsize::new(0));
+        let zai_vision_mcp =
+            Arc::new(antigravity_core::proxy::zai_vision_mcp::ZaiVisionMcpState::new());
+        let upstream_client =
+            Arc::new(antigravity_core::proxy::upstream::client::UpstreamClient::new(
+                http_client.clone(),
+                Arc::clone(&upstream_proxy),
+                None,
+            ));
+
         Ok(Self {
             inner: Arc::new(AppStateInner {
                 token_manager,
@@ -109,6 +122,9 @@ impl AppState {
                 bound_port: AtomicU16::new(0),
                 http_client,
                 repository,
+                provider_rr,
+                zai_vision_mcp,
+                upstream_client,
             }),
         })
     }
@@ -126,6 +142,9 @@ impl AppState {
             self.inner.health_monitor.clone(),
             self.inner.circuit_breaker.clone(),
             self.inner.http_client.clone(),
+            self.inner.provider_rr.clone(),
+            self.inner.zai_vision_mcp.clone(),
+            self.inner.upstream_client.clone(),
         )
     }
 }

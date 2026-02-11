@@ -33,7 +33,7 @@ pub fn build_generation_config(
 
                 let budget: u64 = if let Some(client_budget) = thinking.budget_tokens {
                     match tb_config.mode {
-                        ThinkingBudgetMode::Auto => {
+                        ThinkingBudgetMode::Auto | ThinkingBudgetMode::Adaptive => {
                             let mut b = client_budget;
                             let is_flash_model =
                                 has_web_search || claude_req.model.to_lowercase().contains("flash");
@@ -44,32 +44,30 @@ pub fn build_generation_config(
                         },
                         ThinkingBudgetMode::Passthrough => u64::from(client_budget),
                         ThinkingBudgetMode::Custom => u64::from(tb_config.custom_value),
-                        ThinkingBudgetMode::Adaptive => 0,
                     }
                 } else {
                     match tb_config.mode {
                         ThinkingBudgetMode::Custom => u64::from(tb_config.custom_value),
-                        ThinkingBudgetMode::Adaptive => 0,
                         _ => THINKING_BUDGET,
                     }
                 };
 
-                if matches!(tb_config.mode, ThinkingBudgetMode::Adaptive) {
-                    thinking_config["thinkingBudget"] = json!(-1_i64);
-                } else if budget > 0 {
+                if budget > 0 {
                     thinking_config["thinkingBudget"] = json!(budget);
                 }
 
                 config["thinkingConfig"] = thinking_config;
             }
         } else if matches!(tb_config.mode, ThinkingBudgetMode::Adaptive) {
+            let default_budget = THINKING_BUDGET;
             tracing::info!(
-                "[Generation-Config] Auto-injecting adaptive thinkingConfig for model: {}",
+                "[Generation-Config] Auto-injecting thinkingConfig for model: {} (budget: {}, adaptive fallback)",
                 claude_req.model,
+                default_budget,
             );
             config["thinkingConfig"] = json!({
                 "includeThoughts": true,
-                "thinkingBudget": -1_i64
+                "thinkingBudget": default_budget
             });
         } else {
             let default_budget = match tb_config.mode {
@@ -116,9 +114,7 @@ pub fn build_generation_config(
 
     let mut final_max_tokens: Option<i64> = claude_req.max_tokens.map(|t| t as i64);
 
-    if matches!(tb_config.mode, ThinkingBudgetMode::Adaptive) {
-        final_max_tokens = Some(131072);
-    } else if let Some(thinking_config) = config.get("thinkingConfig") {
+    if let Some(thinking_config) = config.get("thinkingConfig") {
         if let Some(budget) = thinking_config.get("thinkingBudget").and_then(|t| t.as_u64()) {
             let current = final_max_tokens.unwrap_or(0);
             if current <= budget as i64 {

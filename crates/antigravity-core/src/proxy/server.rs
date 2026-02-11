@@ -48,24 +48,20 @@ pub fn build_proxy_router_with_shared_state(
     health_monitor: Arc<crate::proxy::HealthMonitor>,
     circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
     http_client: reqwest::Client,
+    provider_rr: Arc<AtomicUsize>,
+    zai_vision_mcp: Arc<crate::proxy::zai_vision_mcp::ZaiVisionMcpState>,
+    upstream_client: Arc<crate::proxy::upstream::client::UpstreamClient>,
 ) -> Router<()> {
-    let provider_rr = Arc::new(AtomicUsize::new(0));
-    let zai_vision_mcp_state = Arc::new(crate::proxy::zai_vision_mcp::ZaiVisionMcpState::new());
-
     let state = AppState {
         token_manager,
         custom_mapping: Arc::clone(&custom_mapping),
         request_timeout: 300,
-        http_client: http_client.clone(),
+        http_client,
         upstream_proxy: Arc::clone(&upstream_proxy),
-        upstream: Arc::new(crate::proxy::upstream::client::UpstreamClient::new(
-            http_client,
-            Arc::clone(&upstream_proxy),
-            None,
-        )),
+        upstream: upstream_client,
         zai,
         provider_rr,
-        zai_vision_mcp: zai_vision_mcp_state,
+        zai_vision_mcp,
         monitor,
         experimental,
         adaptive_limits,
@@ -182,11 +178,29 @@ impl AxumServer {
         let security_config = Arc::new(RwLock::new(self.config.security_config));
         let zai = Arc::new(RwLock::new(self.config.zai));
         let experimental = Arc::new(RwLock::new(self.config.experimental));
+        let upstream_proxy = Arc::new(RwLock::new(self.config.upstream_proxy.clone()));
+
+        let http_client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(300))
+            .http2_keep_alive_interval(std::time::Duration::from_secs(25))
+            .http2_keep_alive_timeout(std::time::Duration::from_secs(10))
+            .http2_keep_alive_while_idle(true)
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        let provider_rr = Arc::new(AtomicUsize::new(0));
+        let zai_vision_mcp = Arc::new(crate::proxy::zai_vision_mcp::ZaiVisionMcpState::new());
+        let upstream_client = Arc::new(crate::proxy::upstream::client::UpstreamClient::new(
+            http_client.clone(),
+            Arc::clone(&upstream_proxy),
+            None,
+        ));
 
         let app = build_proxy_router_with_shared_state(
             self.config.token_manager,
             custom_mapping,
-            Arc::new(RwLock::new(self.config.upstream_proxy.clone())),
+            upstream_proxy,
             security_config,
             zai,
             self.config.monitor,
@@ -194,14 +208,10 @@ impl AxumServer {
             self.config.adaptive_limits,
             self.config.health_monitor,
             self.config.circuit_breaker,
-            reqwest::Client::builder()
-                .connect_timeout(std::time::Duration::from_secs(10))
-                .timeout(std::time::Duration::from_secs(300))
-                .http2_keep_alive_interval(std::time::Duration::from_secs(25))
-                .http2_keep_alive_timeout(std::time::Duration::from_secs(10))
-                .http2_keep_alive_while_idle(true)
-                .build()
-                .unwrap_or_else(|_| reqwest::Client::new()),
+            http_client,
+            provider_rr,
+            zai_vision_mcp,
+            upstream_client,
         );
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;

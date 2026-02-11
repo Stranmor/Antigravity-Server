@@ -43,15 +43,18 @@ pub fn build_generation_config(
         let tb_config = get_thinking_budget_config();
 
         if matches!(tb_config.mode, ThinkingBudgetMode::Adaptive) {
-            // Adaptive: dynamic budget sentinel + large maxOutputTokens
+            // Adaptive: use default budget (cloudcode-pa API rejects thinkingBudget:-1)
+            let budget = THINKING_BUDGET;
             gen_config["thinkingConfig"] = json!({
                 "includeThoughts": true,
-                "thinkingBudget": -1_i64
+                "thinkingBudget": budget
             });
-            gen_config["maxOutputTokens"] = json!(131072_i64);
+            gen_config["maxOutputTokens"] = json!(budget + THINKING_OVERHEAD);
             tracing::debug!(
-                "[OpenAI-Request] Adaptive thinkingConfig for model {}: thinkingBudget=-1, maxOutputTokens=131072",
+                "[OpenAI-Request] Adaptive thinkingConfig for model {}: thinkingBudget={}, maxOutputTokens={}",
                 mapped_model,
+                budget,
+                budget + THINKING_OVERHEAD,
             );
         } else {
             let budget = match tb_config.mode {
@@ -174,8 +177,8 @@ mod tests {
         });
         let req = make_openai_req(None);
         let config = build_generation_config(&req, true, "gemini-3-pro");
-        assert_eq!(config["thinkingConfig"]["thinkingBudget"], -1);
-        assert_eq!(config["maxOutputTokens"], 131072);
+        assert_eq!(config["thinkingConfig"]["thinkingBudget"], 16000);
+        assert_eq!(config["maxOutputTokens"], 48768); // 16000 + 32768
     }
 
     #[test]

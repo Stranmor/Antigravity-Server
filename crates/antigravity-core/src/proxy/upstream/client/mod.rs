@@ -69,70 +69,57 @@ impl UpstreamClient {
         }
     }
 
-    async fn get_client(&self) -> Client {
+    async fn get_client(&self) -> Result<Client, String> {
         let config = self.proxy_config.read().await;
-        if config.enabled && !config.url.is_empty() {
-            {
-                let client_guard = self.proxied_client.read().await;
-                if let Some((cached_url, client)) = client_guard.as_ref() {
-                    if cached_url == &config.url {
-                        return client.clone();
-                    }
-                }
-            }
+        if !config.enabled {
+            return Ok(self.http_client.clone());
+        }
+        if config.url.is_empty() {
+            return Err("Upstream proxy enabled but URL is empty".to_string());
+        }
 
-            let mut client_guard = self.proxied_client.write().await;
+        {
+            let client_guard = self.proxied_client.read().await;
             if let Some((cached_url, client)) = client_guard.as_ref() {
                 if cached_url == &config.url {
-                    return client.clone();
+                    return Ok(client.clone());
                 }
             }
-
-            let proxy = match reqwest::Proxy::all(&config.url) {
-                Ok(p) => p,
-                Err(e) => {
-                    tracing::error!(
-                        "Invalid proxy URL '{}': {}. Falling back to direct.",
-                        config.url,
-                        e
-                    );
-                    return self.http_client.clone();
-                },
-            };
-
-            let fallback = self.http_client.clone();
-            let new_client = tokio::task::spawn_blocking(move || {
-                Client::builder()
-                    .connect_timeout(Duration::from_secs(20))
-                    .pool_max_idle_per_host(16)
-                    .pool_idle_timeout(Duration::from_secs(90))
-                    .tcp_keepalive(Duration::from_secs(60))
-                    .http2_keep_alive_interval(Duration::from_secs(25))
-                    .http2_keep_alive_timeout(Duration::from_secs(10))
-                    .http2_keep_alive_while_idle(true)
-                    .timeout(Duration::from_secs(600))
-                    .user_agent(DEFAULT_USER_AGENT)
-                    .proxy(proxy)
-                    .build()
-                    .unwrap_or_else(|e| {
-                        tracing::error!(
-                            "Failed to build proxied client: {}. Falling back to direct.",
-                            e
-                        );
-                        fallback
-                    })
-            })
-            .await
-            .unwrap_or_else(|e| {
-                tracing::error!("spawn_blocking panicked building proxied client: {}", e);
-                self.http_client.clone()
-            });
-
-            *client_guard = Some((config.url.clone(), new_client.clone()));
-            new_client
-        } else {
-            self.http_client.clone()
         }
+
+        let mut client_guard = self.proxied_client.write().await;
+        if let Some((cached_url, client)) = client_guard.as_ref() {
+            if cached_url == &config.url {
+                return Ok(client.clone());
+            }
+        }
+
+        let proxy = reqwest::Proxy::all(&config.url)
+            .map_err(|e| format!("Invalid proxy URL '{}': {}", config.url, e))?;
+
+        let proxy_url = config.url.clone();
+        drop(config);
+
+        let new_client = tokio::task::spawn_blocking(move || {
+            Client::builder()
+                .connect_timeout(Duration::from_secs(20))
+                .pool_max_idle_per_host(16)
+                .pool_idle_timeout(Duration::from_secs(90))
+                .tcp_keepalive(Duration::from_secs(60))
+                .http2_keep_alive_interval(Duration::from_secs(25))
+                .http2_keep_alive_timeout(Duration::from_secs(10))
+                .http2_keep_alive_while_idle(true)
+                .timeout(Duration::from_secs(600))
+                .user_agent(DEFAULT_USER_AGENT)
+                .proxy(proxy)
+                .build()
+                .map_err(|e| format!("Failed to build proxied client: {}", e))
+        })
+        .await
+        .map_err(|e| format!("spawn_blocking panicked building proxied client: {}", e))??;
+
+        *client_guard = Some((proxy_url, new_client.clone()));
+        Ok(new_client)
     }
 
     async fn get_warp_client(&self, proxy_url: &str) -> Result<Client, String> {
@@ -201,7 +188,7 @@ impl UpstreamClient {
         let client = if let Some(proxy_url) = warp_proxy_url {
             self.get_warp_client(proxy_url).await?
         } else {
-            self.get_client().await
+            self.get_client().await?
         };
 
         let headers = request_executor::build_headers(access_token, extra_headers)?;
@@ -226,7 +213,7 @@ impl UpstreamClient {
         extra_headers: HashMap<String, String>,
     ) -> Result<reqwest::Response, String> {
         let headers = request_executor::build_headers(access_token, extra_headers)?;
-        let client = self.get_client().await;
+        let client = self.get_client().await?;
         request_executor::execute_with_fallback(
             &client,
             method,

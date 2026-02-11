@@ -6,6 +6,14 @@ pub fn build_http_client(
     upstream_proxy: Option<&UpstreamProxyConfig>,
     timeout_secs: u64,
 ) -> Result<reqwest::Client, String> {
+    if timeout_secs < 5 {
+        tracing::warn!(
+            requested = timeout_secs,
+            clamped_to = 5,
+            "HTTP client timeout clamped to minimum 5 seconds"
+        );
+    }
+
     let mut builder = reqwest::Client::builder()
         .timeout(Duration::from_secs(timeout_secs.max(5)))
         .tcp_nodelay(true)
@@ -14,7 +22,10 @@ pub fn build_http_client(
         .http2_keep_alive_while_idle(true);
 
     if let Some(config) = upstream_proxy {
-        if config.enabled && !config.url.is_empty() {
+        if config.enabled {
+            if config.url.is_empty() {
+                return Err("Upstream proxy enabled but URL is empty".to_string());
+            }
             let proxy = reqwest::Proxy::all(&config.url)
                 .map_err(|e| format!("Invalid upstream proxy url: {}", e))?;
             builder = builder.proxy(proxy);
@@ -44,10 +55,11 @@ mod tests {
     }
 
     #[test]
-    fn test_proxy_empty_url() {
+    fn test_proxy_empty_url_returns_error() {
         let cfg = UpstreamProxyConfig { enabled: true, url: String::new(), ..Default::default() };
         let result = build_http_client(Some(&cfg), 30);
-        assert!(result.is_ok());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty"));
     }
 
     #[test]
