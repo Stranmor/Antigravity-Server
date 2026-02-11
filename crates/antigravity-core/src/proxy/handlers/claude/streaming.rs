@@ -84,31 +84,34 @@ fn build_combined_stream<S>(
 where
     S: futures::Stream<Item = Result<Bytes, String>> + Send + 'static,
 {
-    Box::pin(
-        futures::stream::once(async move { Ok(first_chunk) }).chain(stream_rest.map(
-            move |result| -> Result<Bytes, std::io::Error> {
-                match result {
-                    Ok(b) => Ok(b),
-                    Err(e) => {
-                        tracing::warn!(
-                            "[{}] Stream error — aborting connection (v4): {}",
-                            trace_id,
-                            e
-                        );
-                        crate::proxy::prometheus::record_stream_graceful_finish("claude");
+    Box::pin(async_stream::stream! {
+        yield Ok(first_chunk);
 
-                        // v4: Emit timeout text, then ABORT the stream (no message_delta, no message_stop).
-                        // The broken HTTP connection forces the agent to retry instead of treating
-                        // the timeout text as a final answer (v3 problem).
-                        Err(std::io::Error::new(
-                            std::io::ErrorKind::ConnectionAborted,
-                            "[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]",
-                        ))
-                    }
+        let mut stream_rest = std::pin::pin!(stream_rest);
+        while let Some(result) = stream_rest.next().await {
+            match result {
+                Ok(b) => yield Ok(b),
+                Err(e) => {
+                    tracing::warn!(
+                        "[{}] Stream error — aborting connection (v4): {}",
+                        trace_id,
+                        e
+                    );
+                    crate::proxy::prometheus::record_stream_graceful_finish("claude");
+
+                    yield Ok(Bytes::from(
+                        "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+                    ));
+                    // v4: abort after text — no message_delta, no message_stop
+                    yield Err(std::io::Error::new(
+                        std::io::ErrorKind::ConnectionAborted,
+                        "stream timeout abort",
+                    ));
+                    break;
                 }
-            },
-        )),
-    )
+            }
+        }
+    })
 }
 
 fn build_sse_response<S>(ctx: &StreamingContext, stream: S) -> Response

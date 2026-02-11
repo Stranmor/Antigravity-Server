@@ -102,9 +102,21 @@ pub fn create_openai_sse_stream(
                     tracing::warn!("[{}] OpenAI stream error — aborting connection (v4): {}", trace_id, e);
                     crate::proxy::prometheus::record_stream_graceful_finish("openai");
 
-                    // v4: abort stream — no finish_reason, no [DONE]
+                    let timeout_text = serde_json::json!({
+                        "id": stream_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_ts,
+                        "model": model,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"content": "[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]"},
+                            "finish_reason": null
+                        }]
+                    });
+                    yield Ok(Bytes::from(sse_line(&timeout_text)));
+                    // v4: abort after text — no finish_reason, no [DONE]
                     done_emitted = true;
-                    yield Err("[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]".to_string());
+                    yield Err("stream timeout abort".to_string());
                     break;
                 }
             }

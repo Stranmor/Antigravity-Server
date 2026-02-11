@@ -137,9 +137,14 @@ pub fn create_codex_sse_stream(
                     tracing::warn!("[{}] Codex stream error — aborting connection (v4): {}", trace_id, e);
                     crate::proxy::prometheus::record_stream_graceful_finish("codex");
 
-                    // v4: abort stream — no response.completed
+                    let timeout_ev = json!({
+                        "type": "response.output_text.delta",
+                        "delta": "[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]"
+                    });
+                    yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&timeout_ev).unwrap_or_default())));
+                    // v4: abort after text — no response.completed
                     stream_aborted = true;
-                    yield Err("[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]".to_string());
+                    yield Err("stream timeout abort".to_string());
                     break;
                 }
             }

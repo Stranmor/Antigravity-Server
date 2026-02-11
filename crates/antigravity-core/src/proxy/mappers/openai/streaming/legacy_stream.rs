@@ -110,9 +110,23 @@ pub fn create_legacy_sse_stream(
                     tracing::warn!("[{}] Legacy stream error — aborting connection (v4): {}", trace_id, e);
                     crate::proxy::prometheus::record_stream_graceful_finish("openai_legacy");
 
-                    // v4: abort stream — no [DONE]
+                    let timeout_chunk = json!({
+                        "id": &stream_id,
+                        "object": "text_completion",
+                        "created": created_ts,
+                        "model": &model,
+                        "choices": [{
+                            "text": "[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]",
+                            "index": 0,
+                            "logprobs": null,
+                            "finish_reason": null
+                        }]
+                    });
+                    let sse_out = format!("data: {}\n\n", serde_json::to_string(&timeout_chunk).unwrap_or_default());
+                    yield Ok(Bytes::from(sse_out));
+                    // v4: abort after text — no [DONE]
                     stream_aborted = true;
-                    yield Err("[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]".to_string());
+                    yield Err("stream timeout abort".to_string());
                     break;
                 }
             }
