@@ -118,6 +118,10 @@ pub fn init_metrics() -> PrometheusHandle {
             "antigravity_stream_graceful_finish_total",
             "Stream errors converted to graceful finish_reason:length completions"
         );
+        describe_counter!(
+            "antigravity_stream_abort_total",
+            "Stream errors that aborted the connection instead of graceful finish"
+        );
 
         crate::proxy::signature_metrics::init_signature_metrics();
 
@@ -229,6 +233,11 @@ pub(crate) fn record_peek_heartbeat() {
 pub(crate) fn record_stream_graceful_finish(path: &str) {
     let labels = [("path", path.to_string())];
     counter!("antigravity_stream_graceful_finish_total", &labels).increment(1);
+}
+
+pub(crate) fn record_stream_abort(path: &str) {
+    let labels = [("path", path.to_string())];
+    counter!("antigravity_stream_abort_total", &labels).increment(1);
 }
 
 /// Render all metrics in Prometheus text format.

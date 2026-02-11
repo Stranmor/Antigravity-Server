@@ -59,7 +59,12 @@ pub async fn handle_streaming_response(
     match first_data_chunk {
         Some(bytes) => {
             let stream_rest = claude_stream;
-            let combined_stream = build_combined_stream(bytes, stream_rest, ctx.trace_id.clone());
+            let combined_stream = build_combined_stream(
+                bytes,
+                stream_rest,
+                ctx.trace_id.clone(),
+                ctx.client_wants_stream,
+            );
 
             if ctx.client_wants_stream {
                 ClaudeStreamResult::Success(build_sse_response(ctx, combined_stream))
@@ -81,38 +86,82 @@ fn build_combined_stream<S>(
     first_chunk: Bytes,
     stream_rest: S,
     trace_id: String,
+    client_wants_stream: bool,
 ) -> Pin<Box<dyn futures::Stream<Item = Result<Bytes, std::io::Error>> + Send>>
 where
     S: futures::Stream<Item = Result<Bytes, String>> + Send + 'static,
 {
     Box::pin(async_stream::stream! {
+        let mut next_block_index: usize = 0;
+
+        update_block_index(&first_chunk, &mut next_block_index);
         yield Ok(first_chunk);
 
         let mut stream_rest = std::pin::pin!(stream_rest);
         while let Some(result) = stream_rest.next().await {
             match result {
-                Ok(b) => yield Ok(b),
+                Ok(b) => {
+                    update_block_index(&b, &mut next_block_index);
+                    yield Ok(b);
+                },
                 Err(e) => {
                     tracing::warn!(
                         "[{}] Stream error — aborting connection (v4): {}",
                         trace_id,
                         e
                     );
-                    crate::proxy::prometheus::record_stream_graceful_finish("claude");
+                    crate::proxy::prometheus::record_stream_abort("claude");
 
-                    yield Ok(Bytes::from(
-                        "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
-                    ));
+                    // Only inject SSE error block for streaming clients.
+                    // Non-streaming (JSON) path discards SSE — collect_stream_to_json
+                    // handles the subsequent Err and returns HTTP 500.
+                    if client_wants_stream {
+                        let idx = next_block_index;
+                        yield Ok(Bytes::from(format!(
+                            "\n\nevent: content_block_start\ndata: {{\"type\":\"content_block_start\",\"index\":{idx},\"content_block\":{{\"type\":\"text\",\"text\":\"\"}}}}\n\nevent: content_block_delta\ndata: {{\"type\":\"content_block_delta\",\"index\":{idx},\"delta\":{{\"type\":\"text_delta\",\"text\":\"[Response truncated — upstream connection closed unexpectedly. The model may still have been processing. Try reducing context size or splitting the task.]\"}}}}\n\nevent: content_block_stop\ndata: {{\"type\":\"content_block_stop\",\"index\":{idx}}}\n\n"
+                        )));
+                    }
                     // v4: abort after text — no message_delta, no message_stop
                     yield Err(std::io::Error::new(
                         std::io::ErrorKind::ConnectionAborted,
-                        "stream timeout abort",
+                        "stream abort",
                     ));
                     break;
                 }
             }
         }
     })
+}
+
+/// Extract `"index":N` from a `content_block_start` SSE event line.
+fn extract_index_from_sse(data: &str) -> Option<usize> {
+    if !data.contains("content_block_start") {
+        return None;
+    }
+    let idx_marker = "\"index\":";
+    let start = data.find(idx_marker)?;
+    let after = &data[start.checked_add(idx_marker.len())?..];
+    let trimmed = after.trim_start();
+    let end = trimmed.find(|c: char| !c.is_ascii_digit()).unwrap_or(trimmed.len());
+    if end == 0 {
+        return None;
+    }
+    trimmed[..end].parse::<usize>().ok()
+}
+
+/// Scan a chunk for `content_block_start` events and advance `next_block_index`
+/// past the highest seen index.
+fn update_block_index(chunk: &[u8], next_block_index: &mut usize) {
+    let text = String::from_utf8_lossy(chunk);
+    for line in text.lines() {
+        if let Some(idx) = extract_index_from_sse(line) {
+            if let Some(next) = idx.checked_add(1) {
+                if next > *next_block_index {
+                    *next_block_index = next;
+                }
+            }
+        }
+    }
 }
 
 fn build_sse_response<S>(ctx: &StreamingContext, stream: S) -> Response
@@ -168,5 +217,85 @@ where
         },
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Stream collection error: {}", e))
             .into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_index_from_content_block_start() {
+        let line = r#"data: {"type":"content_block_start","index":3,"content_block":{"type":"text","text":""}}"#;
+        assert_eq!(extract_index_from_sse(line), Some(3));
+    }
+
+    #[test]
+    fn extract_index_zero() {
+        let line = r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#;
+        assert_eq!(extract_index_from_sse(line), Some(0));
+    }
+
+    #[test]
+    fn extract_index_ignores_non_block_start() {
+        let line = r#"data: {"type":"content_block_delta","index":5,"delta":{"type":"text_delta","text":"hi"}}"#;
+        assert_eq!(extract_index_from_sse(line), None);
+    }
+
+    #[test]
+    fn extract_index_ignores_event_line() {
+        assert_eq!(extract_index_from_sse("event: content_block_delta"), None);
+    }
+
+    #[test]
+    fn extract_index_large_number() {
+        let line = r#"data: {"type":"content_block_start","index":42,"content_block":{"type":"text","text":""}}"#;
+        assert_eq!(extract_index_from_sse(line), Some(42));
+    }
+
+    #[test]
+    fn extract_index_with_whitespace_after_colon() {
+        let line = r#"data: {"type": "content_block_start", "index": 7, "content_block": {"type": "text"}}"#;
+        assert_eq!(extract_index_from_sse(line), Some(7));
+    }
+
+    #[test]
+    fn update_block_index_single_event() {
+        let chunk = b"data: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n";
+        let mut idx = 0usize;
+        update_block_index(chunk, &mut idx);
+        assert_eq!(idx, 3);
+    }
+
+    #[test]
+    fn update_block_index_multiple_events() {
+        let chunk = b"data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n";
+        let mut idx = 0usize;
+        update_block_index(chunk, &mut idx);
+        assert_eq!(idx, 2);
+    }
+
+    #[test]
+    fn update_block_index_no_block_start() {
+        let chunk = b"data: {\"type\":\"content_block_delta\",\"index\":5,\"delta\":{\"type\":\"text_delta\",\"text\":\"hello\"}}\n";
+        let mut idx = 0usize;
+        update_block_index(chunk, &mut idx);
+        assert_eq!(idx, 0);
+    }
+
+    #[test]
+    fn update_block_index_keeps_maximum() {
+        let mut idx = 10usize;
+        let chunk = b"data: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n";
+        update_block_index(chunk, &mut idx);
+        assert_eq!(idx, 10);
+    }
+
+    #[test]
+    fn update_block_index_invalid_utf8() {
+        let chunk: &[u8] = &[0xFF, 0xFE, 0xFD];
+        let mut idx = 0usize;
+        update_block_index(chunk, &mut idx);
+        assert_eq!(idx, 0);
     }
 }

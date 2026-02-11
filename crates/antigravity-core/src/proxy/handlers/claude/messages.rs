@@ -173,7 +173,8 @@ pub async fn handle_messages(
         {
             Ok(r) => r,
             Err(e) => {
-                last_error = crate::proxy::common::UpstreamError::TokenAcquisition(e.clone());
+                last_error = crate::proxy::common::UpstreamError::ConnectionError(e.clone());
+                attempted_accounts.insert(email.clone());
                 debug!("Request failed on attempt {}/{}: {}", attempt + 1, max_attempts, e);
                 attempt += 1;
                 grace_retry_used = false;
@@ -214,6 +215,7 @@ pub async fn handle_messages(
                     ClaudeStreamResult::Success(resp) => return resp,
                     ClaudeStreamResult::Retry(err) => {
                         last_error = crate::proxy::common::UpstreamError::ConnectionError(err);
+                        attempted_accounts.insert(email.clone());
                         attempt += 1;
                         grace_retry_used = false;
                         continue;
@@ -254,6 +256,7 @@ pub async fn handle_messages(
             attempt,
         };
 
+        let grace_before = grace_retry_used;
         match handle_upstream_error(
             &state,
             token_manager.clone(),
@@ -266,7 +269,12 @@ pub async fn handle_messages(
         .await
         {
             ClaudeErrorAction::Retry => {
-                attempt += 1;
+                // Grace retry (429 RATE_LIMIT_EXCEEDED with 1s wait) should not
+                // consume attempt budget — it retries on the same account after a
+                // short delay and the issue is usually transient.
+                if grace_before || !grace_retry_used {
+                    attempt += 1;
+                }
                 continue;
             },
             ClaudeErrorAction::Return(resp) => return resp,
