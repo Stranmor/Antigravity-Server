@@ -99,6 +99,11 @@ async fn run_server(port: u16) -> Result<()> {
     };
     let initial_proxy_config = initial_app_config.proxy;
 
+    // Initialize global thinking budget config from persisted config
+    antigravity_core::proxy::common::thinking_config::update_thinking_budget_config(
+        initial_proxy_config.thinking_budget.clone(),
+    );
+
     let token_manager = Arc::new(antigravity_core::proxy::TokenManager::new(data_dir.clone()));
 
     let repository: Option<Arc<dyn AccountRepository>> = match std::env::var("DATABASE_URL") {

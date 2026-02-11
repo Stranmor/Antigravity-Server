@@ -305,3 +305,24 @@ fn test_union_merge_works_for_non_object_types() {
     assert_eq!(schema["items"]["type"], "string");
     assert!(schema.get("anyOf").is_none());
 }
+
+#[test]
+fn test_deeply_nested_schema_does_not_overflow() {
+    // Build a schema nested 100 levels deep (exceeds MAX_RECURSION_DEPTH of 64).
+    // Should return early without stack overflow.
+    let mut schema = json!({"type": "string"});
+    for _ in 0..100 {
+        schema = json!({
+            "type": "object",
+            "properties": {
+                "nested": schema
+            }
+        });
+    }
+
+    // Must not panic or overflow the stack
+    clean_json_schema(&mut schema);
+
+    // Top-level should still be cleaned
+    assert_eq!(schema["type"], "object");
+}

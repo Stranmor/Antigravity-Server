@@ -13,6 +13,7 @@ fn create_test_request() -> ClaudeRequest {
         top_p: None,
         top_k: None,
         thinking: None,
+        stop_sequences: None,
         metadata: None,
         output_config: None,
     }

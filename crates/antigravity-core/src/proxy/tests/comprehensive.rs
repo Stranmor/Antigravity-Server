@@ -33,6 +33,7 @@ mod tests {
                 type_: "enabled".to_string(),
                 budget_tokens: Some(1024),
             }),
+            stop_sequences: None,
             metadata: None,
             output_config: None,
         };

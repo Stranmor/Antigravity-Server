@@ -120,6 +120,10 @@ impl AppState {
         let proxy_config = app_config.proxy;
         tracing::info!("Hot reloading proxy configuration...");
 
+        antigravity_core::proxy::common::thinking_config::update_thinking_budget_config(
+            proxy_config.thinking_budget.clone(),
+        );
+
         // Acquire ALL write guards atomically (alphabetical lock order to prevent deadlocks)
         let mut mapping = self.inner.custom_mapping.write().await;
         let mut experimental = self.inner.experimental_config.write().await;

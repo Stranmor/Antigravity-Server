@@ -1,6 +1,10 @@
 use super::super::models::*;
 use crate::proxy::common::media_detect::detect_image_mime;
+use percent_encoding::percent_decode_str;
 use serde_json::{json, Value};
+
+/// Maximum file size for local file reads (100 MB).
+const MAX_LOCAL_FILE_SIZE: u64 = 100 * 1024 * 1024;
 
 pub fn transform_content_block(block: &OpenAIContentBlock) -> Option<Value> {
     match block {
@@ -49,20 +53,14 @@ fn transform_image_url(image_url: &OpenAIImageUrl) -> Option<Value> {
 }
 
 fn transform_local_image(url: &str) -> Option<Value> {
-    let file_path = if url.starts_with("file://") {
-        #[cfg(target_os = "windows")]
-        {
-            url.trim_start_matches("file:///").replace('/', "\\")
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            url.trim_start_matches("file://").to_string()
-        }
-    } else {
-        url.to_string()
-    };
+    let file_path = decode_file_url(url);
 
     tracing::debug!("[OpenAI-Request] Reading local image: {}", file_path);
+
+    if let Err(e) = check_file_size(&file_path) {
+        tracing::warn!("[OpenAI-Request] {}", e);
+        return None;
+    }
 
     if let Ok(file_bytes) = std::fs::read(&file_path) {
         use base64::Engine as _;
@@ -114,20 +112,14 @@ fn transform_video_url(video_url: &VideoUrlContent) -> Option<Value> {
 }
 
 fn transform_local_video(url: &str) -> Option<Value> {
-    let file_path = if url.starts_with("file://") {
-        #[cfg(target_os = "windows")]
-        {
-            url.trim_start_matches("file:///").replace('/', "\\")
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            url.trim_start_matches("file://").to_string()
-        }
-    } else {
-        url.to_string()
-    };
+    let file_path = decode_file_url(url);
 
     tracing::debug!("[OpenAI-Request] Reading local video: {}", file_path);
+
+    if let Err(e) = check_file_size(&file_path) {
+        tracing::warn!("[OpenAI-Request] {}", e);
+        return None;
+    }
 
     if let Ok(file_bytes) = std::fs::read(&file_path) {
         use base64::Engine as _;
@@ -156,5 +148,39 @@ fn transform_local_video(url: &str) -> Option<Value> {
     } else {
         tracing::debug!("[OpenAI-Request] Failed to read local video: {}", file_path);
         None
+    }
+}
+
+fn decode_file_url(url: &str) -> String {
+    let raw_path = if url.starts_with("file://") {
+        #[cfg(target_os = "windows")]
+        {
+            url.trim_start_matches("file:///").replace('/', "\\")
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            url.trim_start_matches("file://").to_string()
+        }
+    } else {
+        url.to_string()
+    };
+    percent_decode_str(&raw_path).decode_utf8_lossy().into_owned()
+}
+
+fn check_file_size(path: &str) -> Result<(), String> {
+    match std::fs::metadata(path) {
+        Ok(meta) => {
+            if meta.len() > MAX_LOCAL_FILE_SIZE {
+                Err(format!(
+                    "File too large: {} ({} bytes, limit {} bytes)",
+                    path,
+                    meta.len(),
+                    MAX_LOCAL_FILE_SIZE
+                ))
+            } else {
+                Ok(())
+            }
+        },
+        Err(e) => Err(format!("Cannot stat file {}: {}", path, e)),
     }
 }

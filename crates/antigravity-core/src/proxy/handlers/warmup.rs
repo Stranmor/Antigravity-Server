@@ -118,6 +118,7 @@ pub async fn handle_warmup(
                 user_id: Some(session_id),
             }),
             thinking: None,
+            stop_sequences: None,
             output_config: None,
         };
 

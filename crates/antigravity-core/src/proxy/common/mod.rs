@@ -10,6 +10,7 @@ pub mod random_id;
 pub mod sanitize_error;
 pub mod schema_cache;
 pub mod sse_parser;
+pub mod thinking_config;
 pub mod thinking_constants;
 pub mod tool_adapter;
 pub mod tool_adapters;

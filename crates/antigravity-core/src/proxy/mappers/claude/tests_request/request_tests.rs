@@ -55,6 +55,7 @@ fn test_simple_request() {
         top_p: None,
         top_k: None,
         thinking: None,
+        stop_sequences: None,
         metadata: None,
         output_config: None,
     };
@@ -150,6 +151,7 @@ fn test_complex_tool_result() {
         top_p: None,
         top_k: None,
         thinking: None,
+        stop_sequences: None,
         metadata: None,
         output_config: None,
     };
@@ -216,6 +218,7 @@ fn test_cache_control_cleanup() {
         top_p: None,
         top_k: None,
         thinking: None,
+        stop_sequences: None,
         metadata: None,
         output_config: None,
     };
@@ -281,6 +284,7 @@ fn test_thinking_stays_enabled_with_tool_use_history() {
         top_p: None,
         top_k: None,
         thinking: Some(ThinkingConfig { type_: "enabled".to_string(), budget_tokens: Some(1024) }),
+        stop_sequences: None,
         metadata: None,
         output_config: None,
     };
@@ -329,6 +333,7 @@ fn test_thinking_block_not_prepend_when_disabled() {
         top_p: None,
         top_k: None,
         thinking: None, // not yetenable thinking
+        stop_sequences: None,
         metadata: None,
         output_config: None,
     };
@@ -374,6 +379,7 @@ fn test_thinking_block_empty_content_fix() {
         top_p: None,
         top_k: None,
         thinking: Some(ThinkingConfig { type_: "enabled".to_string(), budget_tokens: Some(1024) }),
+        stop_sequences: None,
         metadata: None,
         output_config: None,
     };
@@ -414,6 +420,7 @@ fn test_redacted_thinking_degradation() {
         top_p: None,
         top_k: None,
         thinking: None,
+        stop_sequences: None,
         metadata: None,
         output_config: None,
     };

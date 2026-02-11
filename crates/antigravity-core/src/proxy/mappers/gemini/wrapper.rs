@@ -1,6 +1,9 @@
 // Gemini v1internal wrap/unwrap
 use serde_json::{json, Value};
 
+use crate::proxy::common::thinking_config::get_thinking_budget_config;
+use antigravity_types::models::ThinkingBudgetMode;
+
 /// wraprequestbodyas v1internal format
 pub fn wrap_request(
     body: &Value,
@@ -46,20 +49,56 @@ pub fn wrap_request(
         }
     }
 
+    // [Adaptive thinking mode] Convert thinkingBudget:-1 to thinkingLevel for Gemini 3,
+    // or keep -1 for non-Gemini-3. Set maxOutputTokens ceiling.
+    let tb_config = get_thinking_budget_config();
+    if matches!(tb_config.mode, ThinkingBudgetMode::Adaptive) {
+        if let Some(gen_config) = inner_request.get_mut("generationConfig") {
+            if let Some(thinking_config) = gen_config.get_mut("thinkingConfig") {
+                let is_gemini_3 = final_model_name.to_lowercase().contains("gemini-3");
+                if is_gemini_3 {
+                    // Gemini 3: use thinkingLevel instead of thinkingBudget
+                    let effort = tb_config.effort.as_deref().unwrap_or("high");
+                    let level = match effort.to_lowercase().as_str() {
+                        "low" => "LOW",
+                        "medium" => "MEDIUM",
+                        _ => "HIGH", // high, max, or default
+                    };
+                    thinking_config["thinkingLevel"] = json!(level);
+                    // Remove thinkingBudget — mutually exclusive with thinkingLevel
+                    if let Some(obj) = thinking_config.as_object_mut() {
+                        drop(obj.remove("thinkingBudget"));
+                    }
+                    tracing::info!(
+                        "[Gemini-Wrap] Adaptive mode: set thinkingLevel={} for model {}",
+                        level,
+                        final_model_name
+                    );
+                }
+                // For non-Gemini-3: thinkingBudget:-1 passes through as-is
+
+                // Adaptive always uses large maxOutputTokens ceiling
+                gen_config["maxOutputTokens"] = json!(131072_i64);
+            }
+        }
+    }
+
     // [FIX Issue #1355] Gemini Flash thinking budget capping
-    // Force cap thinking_budget to 24576 for Flash models to prevent 400 Bad Request
+    // Skip if thinkingLevel is set (Adaptive mode on Gemini 3 — no thinkingBudget to cap)
     if final_model_name.to_lowercase().contains("flash") {
         if let Some(gen_config) = inner_request.get_mut("generationConfig") {
             if let Some(thinking_config) = gen_config.get_mut("thinkingConfig") {
-                if let Some(budget_val) = thinking_config.get("thinkingBudget") {
-                    if let Some(budget) = budget_val.as_u64() {
-                        if budget > 24576 {
-                            thinking_config["thinkingBudget"] = json!(24576);
-                            tracing::info!(
-                                "[Gemini-Wrap] Capped thinking_budget from {} to 24576 for model {}",
-                                budget,
-                                final_model_name
-                            );
+                if thinking_config.get("thinkingLevel").is_none() {
+                    if let Some(budget_val) = thinking_config.get("thinkingBudget") {
+                        if let Some(budget) = budget_val.as_u64() {
+                            if budget > 24576 {
+                                thinking_config["thinkingBudget"] = json!(24576);
+                                tracing::info!(
+                                    "[Gemini-Wrap] Capped thinking_budget from {} to 24576 for model {}",
+                                    budget,
+                                    final_model_name
+                                );
+                            }
                         }
                     }
                 }

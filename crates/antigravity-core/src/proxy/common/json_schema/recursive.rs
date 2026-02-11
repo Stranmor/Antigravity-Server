@@ -10,6 +10,20 @@ use super::union::extract_best_schema_from_union;
 ///
 /// Returns `true` if the schema is effectively nullable (contains null type).
 pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
+    clean_json_schema_recursive_bounded(value, 0)
+}
+
+const MAX_RECURSION_DEPTH: usize = 64;
+
+fn clean_json_schema_recursive_bounded(value: &mut Value, depth: usize) -> bool {
+    if depth > MAX_RECURSION_DEPTH {
+        tracing::warn!(
+            "[JSON-Schema] Recursion depth {} exceeded limit {}, returning value unchanged",
+            depth,
+            MAX_RECURSION_DEPTH
+        );
+        return false;
+    }
     let mut is_effectively_nullable = false;
 
     match value {
@@ -19,7 +33,7 @@ pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
             if let Some(Value::Object(props)) = map.get_mut("properties") {
                 let mut nullable_keys = HashSet::new();
                 for (k, v) in props {
-                    if clean_json_schema_recursive(v) {
+                    if clean_json_schema_recursive_bounded(v, depth + 1) {
                         let _ = nullable_keys.insert(k.clone());
                     }
                 }
@@ -35,24 +49,24 @@ pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
                     }
                 }
             } else if let Some(items) = map.get_mut("items") {
-                let _ = clean_json_schema_recursive(items);
+                let _ = clean_json_schema_recursive_bounded(items, depth + 1);
             } else {
                 let union_keys: HashSet<&str> = HashSet::from(["anyOf", "oneOf", "allOf"]);
                 for (k, v) in map.iter_mut() {
                     if !union_keys.contains(k.as_str()) {
-                        let _ = clean_json_schema_recursive(v);
+                        let _ = clean_json_schema_recursive_bounded(v, depth + 1);
                     }
                 }
             }
 
             if let Some(Value::Array(any_of)) = map.get_mut("anyOf") {
                 for branch in any_of.iter_mut() {
-                    let _ = clean_json_schema_recursive(branch);
+                    let _ = clean_json_schema_recursive_bounded(branch, depth + 1);
                 }
             }
             if let Some(Value::Array(one_of)) = map.get_mut("oneOf") {
                 for branch in one_of.iter_mut() {
-                    let _ = clean_json_schema_recursive(branch);
+                    let _ = clean_json_schema_recursive_bounded(branch, depth + 1);
                 }
             }
 
@@ -253,7 +267,7 @@ pub(super) fn clean_json_schema_recursive(value: &mut Value) -> bool {
         },
         Value::Array(arr) => {
             for item in arr.iter_mut() {
-                let _ = clean_json_schema_recursive(item);
+                let _ = clean_json_schema_recursive_bounded(item, depth + 1);
             }
         },
         // Intentionally ignored: only Object/Array need recursive schema cleaning

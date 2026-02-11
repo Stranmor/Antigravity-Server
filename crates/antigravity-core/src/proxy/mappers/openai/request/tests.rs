@@ -1,6 +1,10 @@
 //! Tests for OpenAI → Gemini request transformation
 
 use super::*;
+use crate::proxy::common::thinking_config::{
+    update_thinking_budget_config, THINKING_CONFIG_TEST_LOCK,
+};
+use antigravity_types::models::{ThinkingBudgetConfig, ThinkingBudgetMode};
 
 #[test]
 fn test_transform_openai_request_multimodal() {
@@ -135,6 +139,11 @@ fn test_tool_response_compression() {
 /// 4. responseMimeType and thinkingConfig combination must be valid
 #[test]
 fn test_gemini_3_pro_high_json_mode_with_thinking() {
+    let _guard = THINKING_CONFIG_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    update_thinking_budget_config(ThinkingBudgetConfig {
+        mode: ThinkingBudgetMode::Auto,
+        ..Default::default()
+    });
     let req = OpenAIRequest {
         model: "gemini-3-pro-high".to_string(),
         messages: vec![OpenAIMessage {

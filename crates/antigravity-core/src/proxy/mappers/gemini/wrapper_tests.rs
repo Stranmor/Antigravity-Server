@@ -110,3 +110,129 @@ mod tests {
         assert_eq!(parts.len(), 1);
     }
 }
+
+#[cfg(test)]
+mod adaptive_tests {
+    use super::super::wrap_request;
+    use crate::proxy::common::thinking_config::{
+        update_thinking_budget_config, THINKING_CONFIG_TEST_LOCK,
+    };
+    use antigravity_types::models::{ThinkingBudgetConfig, ThinkingBudgetMode};
+    use serde_json::json;
+
+    #[test]
+    fn test_adaptive_gemini3_replaces_budget_with_level() {
+        let _guard = THINKING_CONFIG_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        update_thinking_budget_config(ThinkingBudgetConfig {
+            mode: ThinkingBudgetMode::Adaptive,
+            effort: None,
+            ..Default::default()
+        });
+        let body = json!({
+            "model": "gemini-3-pro",
+            "contents": [{"role": "user", "parts": [{"text": "Hi"}]}],
+            "generationConfig": {
+                "thinkingConfig": {
+                    "includeThoughts": true,
+                    "thinkingBudget": -1
+                }
+            }
+        });
+        let result = wrap_request(&body, "proj", "gemini-3-pro", None);
+        let tc = &result["request"]["generationConfig"]["thinkingConfig"];
+        assert_eq!(tc["thinkingLevel"], "HIGH");
+        assert!(tc.get("thinkingBudget").is_none() || tc["thinkingBudget"].is_null());
+        assert_eq!(result["request"]["generationConfig"]["maxOutputTokens"], 131072);
+    }
+
+    #[test]
+    fn test_adaptive_gemini3_low_effort() {
+        let _guard = THINKING_CONFIG_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        update_thinking_budget_config(ThinkingBudgetConfig {
+            mode: ThinkingBudgetMode::Adaptive,
+            effort: Some("low".to_string()),
+            ..Default::default()
+        });
+        let body = json!({
+            "model": "gemini-3-pro",
+            "contents": [{"role": "user", "parts": [{"text": "Hi"}]}],
+            "generationConfig": {
+                "thinkingConfig": {
+                    "includeThoughts": true,
+                    "thinkingBudget": -1
+                }
+            }
+        });
+        let result = wrap_request(&body, "proj", "gemini-3-pro", None);
+        let tc = &result["request"]["generationConfig"]["thinkingConfig"];
+        assert_eq!(tc["thinkingLevel"], "LOW");
+    }
+
+    #[test]
+    fn test_adaptive_gemini2_keeps_budget_minus_one() {
+        let _guard = THINKING_CONFIG_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        update_thinking_budget_config(ThinkingBudgetConfig {
+            mode: ThinkingBudgetMode::Adaptive,
+            ..Default::default()
+        });
+        let body = json!({
+            "model": "gemini-2.5-pro",
+            "contents": [{"role": "user", "parts": [{"text": "Hi"}]}],
+            "generationConfig": {
+                "thinkingConfig": {
+                    "includeThoughts": true,
+                    "thinkingBudget": -1
+                }
+            }
+        });
+        let result = wrap_request(&body, "proj", "gemini-2.5-pro", None);
+        let tc = &result["request"]["generationConfig"]["thinkingConfig"];
+        assert_eq!(tc["thinkingBudget"], -1);
+        assert!(tc.get("thinkingLevel").is_none() || tc["thinkingLevel"].is_null());
+        assert_eq!(result["request"]["generationConfig"]["maxOutputTokens"], 131072);
+    }
+
+    #[test]
+    fn test_non_adaptive_flash_cap_preserved() {
+        let _guard = THINKING_CONFIG_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        update_thinking_budget_config(ThinkingBudgetConfig {
+            mode: ThinkingBudgetMode::Auto,
+            ..Default::default()
+        });
+        let body = json!({
+            "model": "gemini-3-flash",
+            "contents": [{"role": "user", "parts": [{"text": "Hi"}]}],
+            "generationConfig": {
+                "thinkingConfig": {
+                    "includeThoughts": true,
+                    "thinkingBudget": 30000
+                }
+            }
+        });
+        let result = wrap_request(&body, "proj", "gemini-3-flash", None);
+        let tc = &result["request"]["generationConfig"]["thinkingConfig"];
+        assert_eq!(tc["thinkingBudget"], 24576);
+    }
+
+    #[test]
+    fn test_adaptive_sets_max_output_131072() {
+        let _guard = THINKING_CONFIG_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        update_thinking_budget_config(ThinkingBudgetConfig {
+            mode: ThinkingBudgetMode::Adaptive,
+            ..Default::default()
+        });
+        let body = json!({
+            "model": "gemini-3-pro",
+            "contents": [{"role": "user", "parts": [{"text": "Hi"}]}],
+            "generationConfig": {
+                "thinkingConfig": {
+                    "includeThoughts": true,
+                    "thinkingBudget": -1
+                },
+                "maxOutputTokens": 48768
+            }
+        });
+        let result = wrap_request(&body, "proj", "gemini-3-pro", None);
+        assert_eq!(result["request"]["generationConfig"]["maxOutputTokens"], 131072);
+    }
+}

@@ -84,6 +84,10 @@ pub fn openai_to_claude_request(req: &OpenAIRequest) -> ClaudeRequest {
         top_p: req.top_p,
         top_k: None,
         thinking,
+        stop_sequences: req.stop.as_ref().and_then(|v| {
+            v.as_array()
+                .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+        }),
         metadata: None,
         output_config: None,
     }

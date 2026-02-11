@@ -39,6 +39,9 @@ pub struct ClaudeRequest {
     /// Extended thinking configuration.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<ThinkingConfig>,
+    /// Client-provided stop sequences.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_sequences: Option<Vec<String>>,
     /// Request metadata.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Metadata>,

@@ -6,6 +6,7 @@ use validator::Validate;
 
 use super::enums::ProxyAuthMode;
 use super::session::{ExperimentalConfig, StickySessionConfig, UpstreamProxyConfig};
+use super::thinking::ThinkingBudgetConfig;
 use super::zai::ZaiConfig;
 
 /// Full proxy configuration.
@@ -57,6 +58,9 @@ pub struct ProxyConfig {
     #[serde(default)]
     #[validate(nested)]
     pub experimental: ExperimentalConfig,
+    /// Thinking budget configuration (Auto/Passthrough/Custom/Adaptive)
+    #[serde(default)]
+    pub thinking_budget: ThinkingBudgetConfig,
     /// Fixed account mode: use this account for all requests
     /// None = round-robin, Some(account_id) = always use this account
     #[serde(default)]
@@ -79,6 +83,7 @@ impl Default for ProxyConfig {
             zai: ZaiConfig::default(),
             scheduling: StickySessionConfig::default(),
             experimental: ExperimentalConfig::default(),
+            thinking_budget: ThinkingBudgetConfig::default(),
             preferred_account_id: None,
         }
     }

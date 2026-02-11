@@ -45,6 +45,7 @@ dashmap = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
 bytes = { workspace = true }
+percent-encoding = "2"
 
 # System info (for process detection)
 sysinfo = "0.31"

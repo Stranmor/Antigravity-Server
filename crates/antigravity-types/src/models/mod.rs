@@ -15,8 +15,9 @@ pub mod token;
 pub use account::{Account, AccountIndex, AccountSummary};
 pub use config::{
     AppConfig, ExperimentalConfig, Protocol, ProxyAuthMode, ProxyConfig, QuotaProtectionConfig,
-    SchedulingMode, SmartWarmupConfig, StickySessionConfig, UpstreamProxyConfig, UpstreamProxyMode,
-    ZaiConfig, ZaiDispatchMode, ZaiMcpConfig, ZaiModelDefaults,
+    SchedulingMode, SmartWarmupConfig, StickySessionConfig, ThinkingBudgetConfig,
+    ThinkingBudgetMode, UpstreamProxyConfig, UpstreamProxyMode, ZaiConfig, ZaiDispatchMode,
+    ZaiMcpConfig, ZaiModelDefaults,
 };
 pub use device::{DeviceProfile, DeviceProfileVersion, DeviceProfiles};
 pub use model_family::ModelFamily;
