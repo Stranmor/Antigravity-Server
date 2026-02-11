@@ -45,27 +45,24 @@ impl AppState {
     }
 
     pub async fn switch_account(&self, account_id: &str) -> Result<(), String> {
-        // Write JSON first (primary) — if this fails, we don't touch repo
-        account::switch_account(account_id).await?;
-        // Then update repo — hard-fail because get_current_account reads repo-first
+        // Write DB first — if this fails, file is untouched (no split-brain)
         if let Some(repo) = self.repository() {
             repo.set_current_account_id(account_id)
                 .await
                 .map_err(|e| format!("Failed to set current account in DB: {e}"))?;
         }
+        // Then update file
+        account::switch_account(account_id).await?;
         Ok(())
     }
 
-    pub async fn get_account_count(&self) -> usize {
+    pub async fn get_account_count(&self) -> Result<usize, String> {
         let accounts = if let Some(repo) = self.repository() {
-            repo.list_accounts().await.ok()
+            repo.list_accounts().await.map_err(|e| e.to_string())?
         } else {
-            account::list_accounts().ok()
+            account::list_accounts()?
         };
-        match accounts {
-            Some(accs) => accs.iter().filter(|a| !a.disabled).count(),
-            None => 0,
-        }
+        Ok(accounts.iter().filter(|a| !a.disabled).count())
     }
 
     pub async fn get_proxy_bind_address(&self) -> String {
@@ -97,45 +94,42 @@ impl AppState {
 
     #[allow(
         clippy::significant_drop_tightening,
-        reason = "Each config section is updated in separate scope for clarity"
+        reason = "All config guards acquired atomically to prevent torn reads"
     )]
     pub async fn hot_reload_proxy_config(&self) {
-        match antigravity_core::modules::config::load_config() {
-            Ok(app_config) => {
-                let proxy_config = app_config.proxy;
-                tracing::info!("Hot reloading proxy configuration...");
+        let app_config =
+            match tokio::task::spawn_blocking(antigravity_core::modules::config::load_config).await
+            {
+                Ok(Ok(config)) => config,
+                Ok(Err(e)) => {
+                    tracing::error!("Failed to hot reload proxy configuration: {}", e);
+                    return;
+                },
+                Err(e) => {
+                    tracing::error!("spawn_blocking panicked during config load: {}", e);
+                    return;
+                },
+            };
 
-                {
-                    let mut mapping = self.inner.custom_mapping.write().await;
-                    *mapping = proxy_config.custom_mapping.clone();
-                    tracing::debug!("Updated custom_mapping with {} entries", mapping.len());
-                }
-                {
-                    let mut security = self.inner.security_config.write().await;
-                    *security = ProxySecurityConfig::from_proxy_config(&proxy_config);
-                }
-                {
-                    let mut zai = self.inner.zai_config.write().await;
-                    *zai = proxy_config.zai.clone();
-                }
-                {
-                    let mut experimental = self.inner.experimental_config.write().await;
-                    *experimental = proxy_config.experimental;
-                }
-                {
-                    let mut upstream = self.inner.upstream_proxy.write().await;
-                    *upstream = proxy_config.upstream_proxy.clone();
-                }
+        let proxy_config = app_config.proxy;
+        tracing::info!("Hot reloading proxy configuration...");
 
-                let mut inner_proxy_config = self.inner.proxy_config.write().await;
-                *inner_proxy_config = proxy_config;
+        // Acquire ALL write guards atomically (alphabetical lock order to prevent deadlocks)
+        let mut mapping = self.inner.custom_mapping.write().await;
+        let mut experimental = self.inner.experimental_config.write().await;
+        let mut inner_proxy_config = self.inner.proxy_config.write().await;
+        let mut security = self.inner.security_config.write().await;
+        let mut upstream = self.inner.upstream_proxy.write().await;
+        let mut zai = self.inner.zai_config.write().await;
 
-                tracing::info!("Proxy configuration hot reloaded successfully.");
-            },
-            Err(e) => {
-                tracing::error!("Failed to hot reload proxy configuration: {}", e);
-            },
-        }
+        *mapping = proxy_config.custom_mapping.clone();
+        *experimental = proxy_config.experimental;
+        *security = ProxySecurityConfig::from_proxy_config(&proxy_config);
+        *upstream = proxy_config.upstream_proxy.clone();
+        *zai = proxy_config.zai.clone();
+        *inner_proxy_config = proxy_config;
+
+        tracing::info!("Proxy configuration hot reloaded successfully.");
     }
 
     pub async fn reload_accounts(&self) -> Result<usize, String> {

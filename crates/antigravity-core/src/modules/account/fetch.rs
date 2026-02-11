@@ -5,7 +5,9 @@
 
 use std::sync::Arc;
 
+use dashmap::DashMap;
 use reqwest::StatusCode;
+use std::sync::LazyLock;
 
 use crate::error::{AppError, AppResult};
 use crate::models::{Account, QuotaData, TokenData};
@@ -13,6 +15,9 @@ use crate::modules::logger;
 use crate::modules::repository::AccountRepository;
 
 use super::async_wrappers::save_account_async;
+
+static JSON_WRITE_LOCKS: LazyLock<DashMap<String, Arc<tokio::sync::Mutex<()>>>> =
+    LazyLock::new(DashMap::new);
 
 /// Result of a quota fetch — contains fetched data without mutating the source account.
 #[derive(Debug, Clone)]
@@ -240,7 +245,11 @@ async fn persist_disabled(
             tracing::warn!("DB disable failed for {}: {}", account.email, e);
         }
     } else {
-        // JSON fallback only when no repo configured
+        let lock = JSON_WRITE_LOCKS
+            .entry(account.id.clone())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone();
+        let _guard = lock.lock().await;
         let mut clone = account.clone();
         clone.disabled = true;
         clone.disabled_at = Some(now.timestamp());
@@ -271,6 +280,11 @@ async fn persist_token_refresh(
             tracing::warn!("DB token update failed for {}: {}", account.email, e);
         }
     } else {
+        let lock = JSON_WRITE_LOCKS
+            .entry(account.id.clone())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone();
+        let _guard = lock.lock().await;
         let mut clone = account.clone();
         clone.token = new_token.clone();
         if let Err(e) = save_account_async(clone).await {
@@ -304,6 +318,11 @@ async fn persist_quota_data(
             }
         }
     } else {
+        let lock = JSON_WRITE_LOCKS
+            .entry(account.id.clone())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone();
+        let _guard = lock.lock().await;
         let mut clone = account.clone();
         if let Some(token) = refreshed_token {
             clone.token = token.clone();
@@ -333,6 +352,11 @@ async fn persist_name(
             tracing::warn!("DB name update failed for {}: {}", account.email, e);
         }
     } else {
+        let lock = JSON_WRITE_LOCKS
+            .entry(account.id.clone())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone();
+        let _guard = lock.lock().await;
         let mut clone = account.clone();
         clone.name = Some(name_str.to_string());
         if let Some(token) = refreshed_token {

@@ -4,6 +4,7 @@
 
 use super::TokenManager;
 use std::sync::atomic::Ordering;
+use std::time::Instant;
 
 // Session failure counters are heuristic — Relaxed ordering is sufficient.
 
@@ -47,7 +48,7 @@ impl TokenManager {
 
     /// Unbind session from its current account due to failures.
     pub(crate) fn unbind_session_on_failures(&self, session_id: &str) -> Option<String> {
-        if let Some((_, bound_id)) = self.session_accounts.remove(session_id) {
+        if let Some((_, (bound_id, _ts))) = self.session_accounts.remove(session_id) {
             let failures = self.get_session_failures(session_id);
             self.clear_session_failures(session_id);
             tracing::warn!(
@@ -70,9 +71,10 @@ impl TokenManager {
         enable_session_affinity: bool,
     ) {
         if enable_session_affinity {
-            let current_binding = self.session_accounts.get(session_id).map(|v| v.clone());
+            let current_binding = self.session_accounts.get(session_id).map(|v| v.0.clone());
             if current_binding.as_ref() != Some(&email.to_string()) {
-                self.session_accounts.insert(session_id.to_string(), email.to_string());
+                self.session_accounts
+                    .insert(session_id.to_string(), (email.to_string(), Instant::now()));
                 if let Some(ref old) = current_binding {
                     tracing::info!(
                         "Sticky Session: Rebound session {} from {} to {} (cache continuity)",
@@ -81,12 +83,16 @@ impl TokenManager {
                         email
                     );
                 }
+            } else {
+                // Touch LRU timestamp on re-use
+                self.session_accounts
+                    .insert(session_id.to_string(), (email.to_string(), Instant::now()));
             }
         }
     }
 
     /// Get account bound to session.
     pub(crate) fn get_session_account(&self, session_id: &str) -> Option<String> {
-        self.session_accounts.get(session_id).map(|v| v.clone())
+        self.session_accounts.get(session_id).map(|v| v.0.clone())
     }
 }

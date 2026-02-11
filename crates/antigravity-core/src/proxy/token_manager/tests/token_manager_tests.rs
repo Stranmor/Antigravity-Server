@@ -203,8 +203,12 @@ fn test_active_request_guard_try_new_respects_limit() {
 fn test_session_bindings() {
     let manager = create_test_manager();
 
-    manager.session_accounts.insert("session_1".to_string(), "account_a".to_string());
-    manager.session_accounts.insert("session_2".to_string(), "account_b".to_string());
+    manager
+        .session_accounts
+        .insert("session_1".to_string(), ("account_a".to_string(), std::time::Instant::now()));
+    manager
+        .session_accounts
+        .insert("session_2".to_string(), ("account_b".to_string(), std::time::Instant::now()));
 
     assert_eq!(manager.session_accounts.len(), 2);
 

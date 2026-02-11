@@ -100,7 +100,7 @@ impl QuotaData {
     /// Get quota for a specific model by name prefix.
     pub fn get_model_quota(&self, prefix: &str) -> Option<&ModelQuota> {
         let prefix_lower = prefix.to_lowercase();
-        self.models.iter().find(|m| m.name.to_lowercase().contains(&prefix_lower))
+        self.models.iter().find(|m| m.name.to_lowercase().starts_with(&prefix_lower))
     }
 
     /// Check if any model is below the given threshold percentage.
@@ -170,5 +170,33 @@ mod tests {
 
         assert!(!quota.needs_refresh());
         assert_eq!(quota.min_reset_seconds(), Some(2 * 3600 + 15 * 60));
+    }
+
+    #[test]
+    fn test_get_model_quota_starts_with() {
+        let mut quota = QuotaData::new();
+        quota.add_model("gemini-pro".to_string(), 80, "2h".to_string());
+        quota.add_model("claude-sonnet".to_string(), 60, "3h".to_string());
+
+        assert_eq!(
+            quota.get_model_quota("gemini").map(|m| &m.name),
+            Some(&"gemini-pro".to_string())
+        );
+        assert_eq!(
+            quota.get_model_quota("claude").map(|m| &m.name),
+            Some(&"claude-sonnet".to_string())
+        );
+        // "mini" should NOT match "gemini" (starts_with vs contains)
+        assert!(quota.get_model_quota("mini").is_none());
+    }
+
+    #[test]
+    fn test_get_model_quota_case_insensitive() {
+        let mut quota = QuotaData::new();
+        quota.add_model("Gemini-Pro".to_string(), 90, "1h".to_string());
+
+        assert!(quota.get_model_quota("gemini").is_some());
+        assert!(quota.get_model_quota("GEMINI").is_some());
+        assert!(quota.get_model_quota("Gemini").is_some());
     }
 }

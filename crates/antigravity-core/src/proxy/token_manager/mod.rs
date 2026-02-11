@@ -7,6 +7,7 @@ use dashmap::DashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 mod candidate_filter;
 mod file_utils;
@@ -30,7 +31,7 @@ pub struct TokenManager {
     pub(crate) data_dir: PathBuf,
     pub(crate) rate_limit_tracker: Arc<RateLimitTracker>,
     pub(crate) routing_config: Arc<tokio::sync::RwLock<SmartRoutingConfig>>,
-    pub(crate) session_accounts: Arc<DashMap<String, String>>,
+    pub(crate) session_accounts: Arc<DashMap<String, (String, Instant)>>,
     pub(crate) adaptive_limits: Arc<tokio::sync::RwLock<Option<Arc<AdaptiveLimitManager>>>>,
     pub(crate) preferred_account_id: Arc<tokio::sync::RwLock<Option<String>>>,
     pub(crate) health_monitor: Arc<tokio::sync::RwLock<Option<Arc<HealthMonitor>>>>,
@@ -135,20 +136,22 @@ impl TokenManager {
                     session_failures.retain(|_, v| v.load(Ordering::Relaxed) > 0);
                 }
 
-                // Clean stale session bindings (keep max 10000)
+                // Evict oldest sessions by LRU timestamp when over 10k
                 let session_count = session_accounts.len();
                 if session_count > 10_000 {
                     let to_remove = session_count - 5_000;
-                    let keys_to_remove: Vec<String> = session_accounts
+                    let mut entries: Vec<(String, Instant)> = session_accounts
                         .iter()
-                        .take(to_remove)
-                        .map(|entry| entry.key().clone())
+                        .map(|entry| (entry.key().clone(), entry.value().1))
                         .collect();
+                    entries.sort_by_key(|(_key, ts)| *ts);
+                    let keys_to_remove: Vec<String> =
+                        entries.into_iter().take(to_remove).map(|(k, _)| k).collect();
                     for key in &keys_to_remove {
                         session_accounts.remove(key);
                     }
                     tracing::info!(
-                        "Session cleanup: removed {} stale session bindings ({} -> {})",
+                        "Session cleanup: removed {} oldest session bindings ({} -> {})",
                         keys_to_remove.len(),
                         session_count,
                         session_accounts.len()
@@ -159,7 +162,7 @@ impl TokenManager {
                 // Clean file locks for accounts no longer in memory
                 file_locks.retain(|k, _| active_ids.contains(k));
                 // Clean active requests with zero count
-                active_requests.retain(|_, v| v.load(Ordering::Relaxed) > 0);
+                active_requests.retain(|_, v| v.load(Ordering::Acquire) > 0);
             }
         });
         tracing::info!("Rate limit auto-cleanup task started (interval: 60s)");

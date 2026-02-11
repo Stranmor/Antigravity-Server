@@ -116,7 +116,7 @@ async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
     Json(StatusResponse {
         version: env!("CARGO_PKG_VERSION").to_string(),
         proxy_running: true,
-        accounts_count: state.get_account_count().await,
+        accounts_count: state.get_account_count().await.unwrap_or(0),
         current_account: current.map(|a| a.email),
     })
 }
