@@ -34,6 +34,7 @@ pub fn create_legacy_sse_stream(
 
     let stream = async_stream::stream! {
         let mut final_usage: Option<OpenAIUsage> = None;
+        let mut stream_aborted = false;
         while let Some(item) = gemini_stream.next().await {
             match item {
                 Ok(bytes) => {
@@ -106,44 +107,35 @@ pub fn create_legacy_sse_stream(
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("[{}] Legacy stream error (graceful finish): {}", trace_id, e);
+                    tracing::warn!("[{}] Legacy stream error — aborting connection (v4): {}", trace_id, e);
                     crate::proxy::prometheus::record_stream_graceful_finish("openai_legacy");
 
-                    let timeout_chunk = json!({
-                        "id": &stream_id,
-                        "object": "text_completion",
-                        "created": created_ts,
-                        "model": &model,
-                        "choices": [{
-                            "text": "[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]",
-                            "index": 0,
-                            "logprobs": null,
-                            "finish_reason": "length"
-                        }]
-                    });
-                    let sse_out = format!("data: {}\n\n", serde_json::to_string(&timeout_chunk).unwrap_or_default());
-                    yield Ok(Bytes::from(sse_out));
+                    // v4: abort stream — no [DONE]
+                    stream_aborted = true;
+                    yield Err("[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]".to_string());
                     break;
                 }
             }
         }
 
-        if let Some(usage) = final_usage {
-            let usage_chunk = json!({
-                "id": &stream_id,
-                "object": "text_completion",
-                "created": created_ts,
-                "model": &model,
-                "choices": [],
-                "usage": usage
-            });
-            let sse_out = format!("data: {}\n\n", serde_json::to_string(&usage_chunk).unwrap_or_default());
-            yield Ok::<Bytes, String>(Bytes::from(sse_out));
-        }
+        if !stream_aborted {
+            if let Some(usage) = final_usage {
+                let usage_chunk = json!({
+                    "id": &stream_id,
+                    "object": "text_completion",
+                    "created": created_ts,
+                    "model": &model,
+                    "choices": [],
+                    "usage": usage
+                });
+                let sse_out = format!("data: {}\n\n", serde_json::to_string(&usage_chunk).unwrap_or_default());
+                yield Ok::<Bytes, String>(Bytes::from(sse_out));
+            }
 
-        tracing::debug!("Stream finished. Yielding [DONE]");
-        yield Ok::<Bytes, String>(Bytes::from("data: [DONE]\n\n"));
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            tracing::debug!("Stream finished. Yielding [DONE]");
+            yield Ok::<Bytes, String>(Bytes::from("data: [DONE]\n\n"));
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
     };
 
     Box::pin(stream)

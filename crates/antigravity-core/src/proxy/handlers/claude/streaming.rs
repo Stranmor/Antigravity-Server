@@ -91,16 +91,18 @@ where
                     Ok(b) => Ok(b),
                     Err(e) => {
                         tracing::warn!(
-                            "[{}] Stream error during transmission (graceful finish): {}",
+                            "[{}] Stream error — aborting connection (v4): {}",
                             trace_id,
                             e
                         );
                         crate::proxy::prometheus::record_stream_graceful_finish("claude");
 
-                        // Send max_tokens so agents see "response truncated" and continue working.
-                        // end_turn caused agents to treat timeout text as final answer and stop.
-                        Ok(Bytes::from(
-                            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+                        // v4: Emit timeout text, then ABORT the stream (no message_delta, no message_stop).
+                        // The broken HTTP connection forces the agent to retry instead of treating
+                        // the timeout text as a final answer (v3 problem).
+                        Err(std::io::Error::new(
+                            std::io::ErrorKind::ConnectionAborted,
+                            "[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]",
                         ))
                     }
                 }

@@ -75,13 +75,14 @@ fn build_combined_stream(
             match result {
                 Ok(b) => Ok(b),
                 Err(e) => {
-                    tracing::warn!("[{}] Stream error during transmission (graceful finish): {}", trace_id, e);
+                    tracing::warn!(
+                        "[{}] Stream error propagated to client (v4 abort): {}",
+                        trace_id,
+                        e
+                    );
                     crate::proxy::prometheus::record_stream_graceful_finish("openai_handler");
-
-                    Ok(Bytes::from(
-                        "data: {\"id\":\"chatcmpl-timeout\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"unknown\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-timeout\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"unknown\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n"
-                    ))
-                }
+                    Err(e)
+                },
             }
         },
     ))

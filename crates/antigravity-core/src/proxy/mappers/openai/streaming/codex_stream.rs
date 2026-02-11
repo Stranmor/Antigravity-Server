@@ -46,6 +46,7 @@ pub fn create_codex_sse_stream(
         let mut full_content = String::new();
         let mut emitted_tool_calls = std::collections::HashSet::new();
         let mut last_finish_reason = "stop".to_string();
+        let mut stream_aborted = false;
 
         while let Some(item) = gemini_stream.next().await {
             match item {
@@ -133,62 +134,61 @@ pub fn create_codex_sse_stream(
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("[{}] Codex stream error (graceful finish): {}", trace_id, e);
+                    tracing::warn!("[{}] Codex stream error — aborting connection (v4): {}", trace_id, e);
                     crate::proxy::prometheus::record_stream_graceful_finish("codex");
 
-                    let timeout_ev = json!({
-                        "type": "response.output_text.delta",
-                        "delta": "[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]"
-                    });
-                    yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&timeout_ev).unwrap_or_default())));
-                    last_finish_reason = "length".to_string();
+                    // v4: abort stream — no response.completed
+                    stream_aborted = true;
+                    yield Err("[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]".to_string());
                     break;
                 }
             }
         }
 
-        // 3. Emit response.output_item.done
-        let item_done_ev = json!({
-            "type": "response.output_item.done",
-            "item": {
-                "type": "message",
-                "role": "assistant",
-                "content": [
-                    {
-                        "type": "output_text",
-                        "text": full_content
-                    }
-                ]
-            }
-        });
-        yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&item_done_ev).unwrap_or_default())));
+        if !stream_aborted {
+            // 3. Emit response.output_item.done
+            let item_done_ev = json!({
+                "type": "response.output_item.done",
+                "item": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": full_content
+                        }
+                    ]
+                }
+            });
+            yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&item_done_ev).unwrap_or_default())));
 
-        // SSOP: Check full_content for embedded JSON command signatures if no tools were emitted natively
-        if emitted_tool_calls.is_empty() {
-            let ssop_result = detect_and_emit_ssop_events(&full_content);
-            for event_bytes in ssop_result.events {
-                yield Ok::<Bytes, String>(event_bytes);
-            }
-        }
-
-        // 4. Emit response.completed
-        let completed_ev = json!({
-            "type": "response.completed",
-            "response": {
-                "id": &response_id,
-                "object": "response",
-                "status": "completed",
-                "finish_reason": last_finish_reason,
-                "usage": {
-                    "input_tokens": 0,
-                    "input_tokens_details": { "cached_tokens": 0 },
-                    "output_tokens": 0,
-                    "output_tokens_details": { "reasoning_tokens": 0 },
-                    "total_tokens": 0
+            // SSOP: Check full_content for embedded JSON command signatures if no tools were emitted natively
+            if emitted_tool_calls.is_empty() {
+                let ssop_result = detect_and_emit_ssop_events(&full_content);
+                for event_bytes in ssop_result.events {
+                    yield Ok::<Bytes, String>(event_bytes);
                 }
             }
-        });
-        yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&completed_ev).unwrap_or_default())));
+
+            // 4. Emit response.completed
+            let completed_ev = json!({
+                "type": "response.completed",
+                "response": {
+                    "id": &response_id,
+                    "object": "response",
+                    "status": "completed",
+                    "finish_reason": last_finish_reason,
+                    "usage": {
+                        "input_tokens": 0,
+                        "input_tokens_details": { "cached_tokens": 0 },
+                        "output_tokens": 0,
+                        "output_tokens_details": { "reasoning_tokens": 0 },
+                        "total_tokens": 0
+                    }
+                }
+            });
+            yield Ok::<Bytes, String>(Bytes::from(format!("data: {}\n\n", serde_json::to_string(&completed_ev).unwrap_or_default())));
+        }
     };
 
     Box::pin(stream)

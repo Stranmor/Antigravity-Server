@@ -99,35 +99,12 @@ pub fn create_openai_sse_stream(
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("[{}] OpenAI stream error (graceful finish): {}", trace_id, e);
+                    tracing::warn!("[{}] OpenAI stream error — aborting connection (v4): {}", trace_id, e);
                     crate::proxy::prometheus::record_stream_graceful_finish("openai");
 
-                    let timeout_text = serde_json::json!({
-                        "id": stream_id,
-                        "object": "chat.completion.chunk",
-                        "created": created_ts,
-                        "model": model,
-                        "choices": [{
-                            "index": 0,
-                            "delta": {"content": "[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]"},
-                            "finish_reason": null
-                        }]
-                    });
-                    yield Ok(Bytes::from(sse_line(&timeout_text)));
-                    let finish = serde_json::json!({
-                        "id": stream_id,
-                        "object": "chat.completion.chunk",
-                        "created": created_ts,
-                        "model": model,
-                        "choices": [{
-                            "index": 0,
-                            "delta": {},
-                            "finish_reason": "length"
-                        }]
-                    });
-                    yield Ok(Bytes::from(sse_line(&finish)));
+                    // v4: abort stream — no finish_reason, no [DONE]
                     done_emitted = true;
-                    yield Ok(Bytes::from("data: [DONE]\n\n"));
+                    yield Err("[Response truncated — upstream connection closed after ~55s. The model was still processing your request. Try reducing context size or splitting the task.]".to_string());
                     break;
                 }
             }
