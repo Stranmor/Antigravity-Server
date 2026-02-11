@@ -171,7 +171,7 @@ vendor/
 | Duplicate type definitions | ~20 | **0** |
 | `#[allow(warnings)]` | 11 modules | **0** |
 | Clippy warnings suppressed | ~58 | **0** |
-| Unit tests | - | **346** |
+| Unit tests | - | **344** |
 | Integration tests | - | **1** |
 | Clippy status | ⚠️ | **✅ -D warnings** |
 | Release build | - | **11MB** |
@@ -244,6 +244,14 @@ vendor/
 | `proxy/handlers/openai/chat/stream_handler.rs` | ~~Error-to-graceful conversion chunk missing `id`/`object`/`created`/`model` fields.~~ **Fixed [2026-02-10]**: Graceful fallback chunk now includes `id`, `object`, `created`, `model` fields. | ~~Low~~ Fixed |
 | `proxy/handlers/openai/chat/stream_handler.rs` | `build_combined_stream` graceful finish applies to both streaming and non-streaming paths — `collect_to_json` may interpret mid-stream failures as partial success instead of triggering retry. Should gate graceful handling on `client_wants_stream`. | Medium |
 | `proxy/mappers/openai/streaming/codex_stream.rs` | Smart quote replacement (`'"'`/`'"'` → `'"'`) blindly modifies generated content — corrupts intentional smart quotes in code. `emitted_tool_calls` dedup suppresses valid repeated calls. `usageMetadata` extracted but discarded (`let _ = ...`). | Medium |
+| `proxy/handlers/claude/messages.rs` | Grace retry unconditionally increments `attempt` even on transient "grace" retries, consuming budget. Network errors not added to `attempted_accounts` (can re-select same failing account). Transport errors mapped to `TokenAcquisition` instead of `ConnectionError`. | Medium |
+| `proxy/handlers/claude/streaming.rs` | Error handler injects `content_block_start` at hardcoded `index: 0` — duplicate index violates Claude API spec. `record_stream_graceful_finish` called on error path (misleading metrics). Non-streaming error injection ineffective (discarded by `collect_stream_to_json`). | Medium |
+| `proxy/handlers/audio.rs` | Hardcoded `gemini-2.5-flash` model (should be configurable). Malformed error strings (`parsetablefailed`, `readfilefailed`). Mixed Chinese/English punctuation. | Low |
+| `proxy/common/client_builder.rs` | Returns `Result<_, String>` instead of typed error. Silent 5s timeout minimum clamp. Empty proxy URL with `enabled: true` silently skips proxy (traffic leak risk). | Medium |
+| `proxy/middleware/monitor.rs` | `handle_json_response` has unused `_start` parameter; `log.duration` only captures TTFB, not total streaming duration. | Low |
+| `proxy/retry/mod.rs` | `determine_retry_strategy` depends on `upstream::retry::parse_retry_delay` (layering violation). `apply_retry_strategy` logs misleading `attempt/MAX_RETRY_ATTEMPTS` when caller uses lower limit. | Low |
+| `proxy/retry/success_bookkeeping.rs` | `&Arc<TokenManager>` argument — double indirection, should be `&TokenManager`. | Low |
+| `proxy/mappers/claude/request/generation_config.rs` | `claude_req.stop_sequences` silently ignored — hardcoded `stopSequences` discards client-provided values. | Medium |
 
 ---
 
