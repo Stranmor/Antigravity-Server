@@ -80,7 +80,6 @@ fn build_combined_stream(
                         trace_id,
                         e
                     );
-                    crate::proxy::prometheus::record_stream_graceful_finish("openai_handler");
                     Err(e)
                 },
             }
