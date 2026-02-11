@@ -155,6 +155,10 @@ pub async fn handle_generate(
 
         let status = response.status();
         if status.is_success() {
+            token_manager.mark_account_success(&email);
+            token_manager.clear_session_failures(&session_id);
+            state.adaptive_limits.record_success(&email);
+
             if is_stream {
                 let mut response_stream = response.bytes_stream();
 
