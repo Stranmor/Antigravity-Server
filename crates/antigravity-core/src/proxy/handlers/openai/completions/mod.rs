@@ -4,7 +4,9 @@ mod response_mapper;
 mod streaming_handler;
 
 use super::*;
-use crate::proxy::common::{sanitize_exhaustion_error, sanitize_upstream_error, UpstreamError};
+use crate::proxy::common::header_constants::X_ACCOUNT_EMAIL;
+use crate::proxy::common::{sanitize_upstream_error, UpstreamError};
+use crate::proxy::retry::{build_exhaustion_response, extract_error_info, record_request_success};
 use crate::proxy::SignatureCache;
 use request_parser::{ensure_non_empty_messages, normalize_request_body};
 
@@ -19,7 +21,7 @@ pub async fn handle_completions(
     ensure_non_empty_messages(&mut openai_req);
 
     let upstream = state.upstream.clone();
-    let token_manager = state.token_manager;
+    let token_manager = state.token_manager.clone();
     let pool_size = token_manager.len();
     let max_attempts = MAX_RETRY_ATTEMPTS.min(pool_size).max(1);
 
@@ -108,9 +110,7 @@ pub async fn handle_completions(
 
         let status = response.status();
         if status.is_success() {
-            token_manager.mark_account_success(&email);
-            token_manager.clear_session_failures(&session_id_str);
-            state.adaptive_limits.record_success(&email);
+            record_request_success(&token_manager, &state, &email, &session_id_str);
 
             if list_response {
                 let gemini_stream = response.bytes_stream();
@@ -183,14 +183,11 @@ pub async fn handle_completions(
         }
 
         // Handle errors and retry
-        let status_code = status.as_u16();
-        let retry_after = response
-            .headers()
-            .get("Retry-After")
-            .and_then(|h| h.to_str().ok())
-            .map(|s| s.to_string());
-        let error_text = response.text().await.unwrap_or_else(|_| format!("HTTP {}", status_code));
-        last_error = UpstreamError::HttpResponse { status_code, body: error_text.clone() };
+        let (err_info, upstream_err) = extract_error_info(response).await;
+        let status_code = err_info.status_code;
+        let retry_after = err_info.retry_after;
+        let error_text = err_info.error_text;
+        last_error = upstream_err;
 
         tracing::error!("[Codex-Upstream] Error Response {}: {}", status_code, error_text);
 
@@ -239,31 +236,12 @@ pub async fn handle_completions(
         } else {
             return Ok((
                 status,
-                [("X-Account-Email", email.as_str())],
+                [(X_ACCOUNT_EMAIL, email.as_str())],
                 sanitize_upstream_error(status_code, &error_text),
             )
                 .into_response());
         }
     }
 
-    if let Some(email) = last_email {
-        Ok((
-            StatusCode::TOO_MANY_REQUESTS,
-            [("X-Account-Email", email)],
-            format!(
-                "All accounts exhausted. Last error: {}",
-                sanitize_exhaustion_error(&last_error)
-            ),
-        )
-            .into_response())
-    } else {
-        Ok((
-            StatusCode::TOO_MANY_REQUESTS,
-            format!(
-                "All accounts exhausted. Last error: {}",
-                sanitize_exhaustion_error(&last_error)
-            ),
-        )
-            .into_response())
-    }
+    Ok(build_exhaustion_response(&last_error, last_email.as_deref()))
 }

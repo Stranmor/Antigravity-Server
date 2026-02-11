@@ -23,7 +23,12 @@ pub fn create_client_with_proxy(
     timeout_secs: u64,
     proxy_config: Option<UpstreamProxyConfig>,
 ) -> Client {
-    let mut builder = Client::builder().timeout(std::time::Duration::from_secs(timeout_secs));
+    let mut builder = Client::builder()
+        .timeout(std::time::Duration::from_secs(timeout_secs))
+        .tcp_nodelay(true)
+        .http2_keep_alive_interval(std::time::Duration::from_secs(25))
+        .http2_keep_alive_timeout(std::time::Duration::from_secs(10))
+        .http2_keep_alive_while_idle(true);
 
     if let Some(config) = proxy_config {
         if config.enabled && !config.url.is_empty() {
