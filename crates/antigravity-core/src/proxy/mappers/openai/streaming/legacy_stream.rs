@@ -34,11 +34,9 @@ pub fn create_legacy_sse_stream(
 
     let stream = async_stream::stream! {
         let mut final_usage: Option<OpenAIUsage> = None;
-        let mut bytes_from_stream: usize = 0;
         while let Some(item) = gemini_stream.next().await {
             match item {
                 Ok(bytes) => {
-                    bytes_from_stream += bytes.len();
                     buffer.extend_from_slice(&bytes);
                     while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
                         let line_raw = buffer.split_to(pos + 1);
@@ -108,40 +106,23 @@ pub fn create_legacy_sse_stream(
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("[{}] Legacy stream error (graceful finish, {} bytes received): {}", trace_id, bytes_from_stream, e);
+                    tracing::warn!("[{}] Legacy stream error (graceful finish): {}", trace_id, e);
                     crate::proxy::prometheus::record_stream_graceful_finish("openai_legacy");
 
-                    if bytes_from_stream == 0 {
-                        let timeout_chunk = json!({
-                            "id": &stream_id,
-                            "object": "text_completion",
-                            "created": created_ts,
-                            "model": &model,
-                            "choices": [{
-                                "text": "[This request timed out — the model was still processing when the upstream server closed the connection (~55s limit). This typically happens with very large contexts (100K+ tokens). Try reducing conversation history or splitting the task.]",
-                                "index": 0,
-                                "logprobs": null,
-                                "finish_reason": "stop"
-                            }]
-                        });
-                        let sse_out = format!("data: {}\n\n", serde_json::to_string(&timeout_chunk).unwrap_or_default());
-                        yield Ok(Bytes::from(sse_out));
-                    } else {
-                        let finish_chunk = json!({
-                            "id": &stream_id,
-                            "object": "text_completion",
-                            "created": created_ts,
-                            "model": &model,
-                            "choices": [{
-                                "text": "",
-                                "index": 0,
-                                "logprobs": null,
-                                "finish_reason": "length"
-                            }]
-                        });
-                        let sse_out = format!("data: {}\n\n", serde_json::to_string(&finish_chunk).unwrap_or_default());
-                        yield Ok(Bytes::from(sse_out));
-                    }
+                    let timeout_chunk = json!({
+                        "id": &stream_id,
+                        "object": "text_completion",
+                        "created": created_ts,
+                        "model": &model,
+                        "choices": [{
+                            "text": "[This request timed out — the model was still processing when the upstream server closed the connection (~55s limit). This typically happens with very large contexts (100K+ tokens). Try reducing conversation history or splitting the task.]",
+                            "index": 0,
+                            "logprobs": null,
+                            "finish_reason": "stop"
+                        }]
+                    });
+                    let sse_out = format!("data: {}\n\n", serde_json::to_string(&timeout_chunk).unwrap_or_default());
+                    yield Ok(Bytes::from(sse_out));
                     break;
                 }
             }
