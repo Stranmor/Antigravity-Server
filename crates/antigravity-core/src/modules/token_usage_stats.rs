@@ -9,7 +9,7 @@
 use antigravity_types::models::TokenUsageStats;
 use rusqlite::Connection;
 
-pub fn get_token_usage_stats() -> Result<TokenUsageStats, String> {
+fn get_token_usage_stats_sync() -> Result<TokenUsageStats, String> {
     let db_path = super::proxy_db::get_proxy_db_path()?;
     let conn = Connection::open(db_path).map_err(|err| err.to_string())?;
 
@@ -137,4 +137,10 @@ pub fn get_token_usage_stats() -> Result<TokenUsageStats, String> {
         cached_last_24h,
         cache_hit_rate,
     })
+}
+
+pub async fn get_token_usage_stats() -> Result<TokenUsageStats, String> {
+    tokio::task::spawn_blocking(get_token_usage_stats_sync)
+        .await
+        .map_err(|e| format!("spawn_blocking panicked: {e}"))?
 }

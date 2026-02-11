@@ -25,7 +25,11 @@ pub async fn refresh_account_quota(
     State(state): State<AppState>,
     Json(payload): Json<RefreshQuotaRequest>,
 ) -> Result<Json<QuotaResponse>, (StatusCode, String)> {
-    let acc = account::load_account(&payload.account_id).map_err(|e| (StatusCode::NOT_FOUND, e))?;
+    let account_id = payload.account_id.clone();
+    let acc = tokio::task::spawn_blocking(move || account::load_account(&account_id))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
+        .map_err(|e| (StatusCode::NOT_FOUND, e))?;
 
     match account::fetch_quota_with_retry(&acc, state.repository()).await {
         Ok(result) => {
@@ -74,7 +78,10 @@ pub async fn refresh_account_quota(
 pub async fn refresh_all_quotas(
     State(state): State<AppState>,
 ) -> Result<Json<antigravity_types::models::RefreshStats>, (StatusCode, String)> {
-    let accounts = account::list_accounts().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let accounts = tokio::task::spawn_blocking(account::list_accounts)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     let total = accounts.len();
     let mut join_set: JoinSet<

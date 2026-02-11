@@ -11,9 +11,10 @@ use crate::state::AppState;
 pub async fn get_config(
     State(_state): State<AppState>,
 ) -> Result<Json<AppConfig>, (StatusCode, String)> {
-    match core_config::load_config() {
-        Ok(config) => Ok(Json(config)),
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
+    match tokio::task::spawn_blocking(core_config::load_config).await {
+        Ok(Ok(config)) => Ok(Json(config)),
+        Ok(Err(e)) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}"))),
     }
 }
 
@@ -21,12 +22,13 @@ pub async fn save_config(
     State(state): State<AppState>,
     Json(payload): Json<AppConfig>,
 ) -> Result<Json<bool>, (StatusCode, String)> {
-    match core_config::save_config(&payload) {
-        Ok(()) => {
+    match tokio::task::spawn_blocking(move || core_config::save_config(&payload)).await {
+        Ok(Ok(())) => {
             state.hot_reload_proxy_config().await;
             Ok(Json(true))
         },
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
+        Ok(Err(e)) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}"))),
     }
 }
 

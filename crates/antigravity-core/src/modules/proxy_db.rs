@@ -51,8 +51,9 @@ fn add_column_if_missing(conn: &Connection, statement: &str) -> Result<(), Strin
     }
 }
 
-/// Initialize the proxy database schema.
-pub fn init_db() -> Result<(), String> {
+// ============ Synchronous inner functions ============
+
+fn init_db_sync() -> Result<(), String> {
     with_connection(|conn| {
         let _rows_affected: usize = conn
             .execute(
@@ -98,8 +99,7 @@ pub fn init_db() -> Result<(), String> {
     })
 }
 
-/// Save a request log entry to the database.
-pub fn save_log(log: &ProxyRequestLog) -> Result<(), String> {
+fn save_log_sync(log: ProxyRequestLog) -> Result<(), String> {
     with_connection(|conn| {
         let _rows_affected: usize = conn
             .execute(
@@ -144,8 +144,7 @@ pub fn save_log(log: &ProxyRequestLog) -> Result<(), String> {
     })
 }
 
-/// Delete logs older than the given number of days.
-pub fn cleanup_old_logs(retention_days: u32) -> Result<usize, String> {
+fn cleanup_old_logs_sync(retention_days: u32) -> Result<usize, String> {
     with_connection(|conn| {
         let cutoff = chrono::Utc::now().timestamp_millis() - i64::from(retention_days) * 86_400_000;
         let deleted: usize = conn
@@ -155,8 +154,7 @@ pub fn cleanup_old_logs(retention_days: u32) -> Result<usize, String> {
     })
 }
 
-/// Get recent request logs from the database.
-pub fn get_logs(limit: usize) -> Result<Vec<ProxyRequestLog>, String> {
+fn get_logs_sync(limit: usize) -> Result<Vec<ProxyRequestLog>, String> {
     with_connection(|conn| {
         let mut stmt = conn
             .prepare(
@@ -198,8 +196,7 @@ pub fn get_logs(limit: usize) -> Result<Vec<ProxyRequestLog>, String> {
     })
 }
 
-/// Get aggregate statistics from the proxy logs.
-pub fn get_stats() -> Result<ProxyStats, String> {
+fn get_stats_sync() -> Result<ProxyStats, String> {
     with_connection(|conn| {
         let total_requests: u64 = conn
             .query_row("SELECT COUNT(*) FROM request_logs", [], |row| row.get(0))
@@ -243,13 +240,56 @@ pub fn get_stats() -> Result<ProxyStats, String> {
     })
 }
 
-/// Clear all proxy logs from the database.
-pub fn clear_proxy_logs() -> Result<(), String> {
+fn clear_proxy_logs_sync() -> Result<(), String> {
     with_connection(|conn| {
         let _rows_affected: usize =
             conn.execute("DELETE FROM request_logs", []).map_err(|err| err.to_string())?;
         Ok(())
     })
+}
+
+// ============ Public async wrappers ============
+
+/// Initialize the proxy database schema.
+pub async fn init_db() -> Result<(), String> {
+    tokio::task::spawn_blocking(init_db_sync)
+        .await
+        .map_err(|e| format!("spawn_blocking panicked: {e}"))?
+}
+
+/// Save a request log entry to the database.
+pub async fn save_log(log: ProxyRequestLog) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || save_log_sync(log))
+        .await
+        .map_err(|e| format!("spawn_blocking panicked: {e}"))?
+}
+
+/// Delete logs older than the given number of days.
+pub async fn cleanup_old_logs(retention_days: u32) -> Result<usize, String> {
+    tokio::task::spawn_blocking(move || cleanup_old_logs_sync(retention_days))
+        .await
+        .map_err(|e| format!("spawn_blocking panicked: {e}"))?
+}
+
+/// Get recent request logs from the database.
+pub async fn get_logs(limit: usize) -> Result<Vec<ProxyRequestLog>, String> {
+    tokio::task::spawn_blocking(move || get_logs_sync(limit))
+        .await
+        .map_err(|e| format!("spawn_blocking panicked: {e}"))?
+}
+
+/// Get aggregate statistics from the proxy logs.
+pub async fn get_stats() -> Result<ProxyStats, String> {
+    tokio::task::spawn_blocking(get_stats_sync)
+        .await
+        .map_err(|e| format!("spawn_blocking panicked: {e}"))?
+}
+
+/// Clear all proxy logs from the database.
+pub async fn clear_proxy_logs() -> Result<(), String> {
+    tokio::task::spawn_blocking(clear_proxy_logs_sync)
+        .await
+        .map_err(|e| format!("spawn_blocking panicked: {e}"))?
 }
 
 pub use super::token_usage_stats::get_token_usage_stats;

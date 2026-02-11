@@ -35,8 +35,11 @@ pub async fn toggle_proxy_status(
         "Toggling proxy status"
     );
 
-    let mut acc =
-        account::load_account(&payload.account_id).map_err(|e| (StatusCode::NOT_FOUND, e))?;
+    let account_id = payload.account_id.clone();
+    let mut acc = tokio::task::spawn_blocking(move || account::load_account(&account_id))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
+        .map_err(|e| (StatusCode::NOT_FOUND, e))?;
 
     acc.proxy_disabled = !payload.enable;
 
@@ -57,17 +60,18 @@ pub async fn toggle_proxy_status(
         }
     }
 
-    account::save_account(&acc).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let proxy_disabled = acc.proxy_disabled;
+
+    tokio::task::spawn_blocking(move || account::save_account(&acc))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     if let Err(e) = state.reload_accounts().await {
         tracing::warn!("Failed to reload accounts after proxy toggle: {}", e);
     }
 
-    Ok(Json(ToggleProxyResponse {
-        success: true,
-        account_id: payload.account_id,
-        proxy_disabled: acc.proxy_disabled,
-    }))
+    Ok(Json(ToggleProxyResponse { success: true, account_id: payload.account_id, proxy_disabled }))
 }
 
 #[derive(Deserialize)]
@@ -85,7 +89,11 @@ pub async fn warmup_account(
     State(state): State<AppState>,
     Json(payload): Json<WarmupAccountRequest>,
 ) -> Result<Json<WarmupResponse>, (StatusCode, String)> {
-    let acc = account::load_account(&payload.account_id).map_err(|e| (StatusCode::NOT_FOUND, e))?;
+    let account_id = payload.account_id.clone();
+    let acc = tokio::task::spawn_blocking(move || account::load_account(&account_id))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
+        .map_err(|e| (StatusCode::NOT_FOUND, e))?;
 
     match account::fetch_quota_with_retry(&acc, state.repository()).await {
         Ok(result) => {
@@ -131,7 +139,10 @@ pub async fn warmup_account(
 pub async fn warmup_all_accounts(
     State(state): State<AppState>,
 ) -> Result<Json<WarmupResponse>, (StatusCode, String)> {
-    let accounts = account::list_accounts().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let accounts = tokio::task::spawn_blocking(account::list_accounts)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     let total = accounts.len();
 

@@ -190,12 +190,15 @@ pub async fn handle_oauth_callback(
         None,
     );
 
-    match account::upsert_account(
-        user_info.email.clone(),
-        user_info.get_display_name(),
-        token_data.clone(),
-    ) {
-        Ok(acc) => {
+    let upsert_email = user_info.email.clone();
+    let upsert_name = user_info.get_display_name();
+    let upsert_token = token_data.clone();
+    match tokio::task::spawn_blocking(move || {
+        account::upsert_account(upsert_email, upsert_name, upsert_token)
+    })
+    .await
+    {
+        Ok(Ok(acc)) => {
             if let Some(repo) = app_state.repository() {
                 if let Err(e) = repo
                     .upsert_account(
@@ -230,10 +233,15 @@ pub async fn handle_oauth_callback(
             ))
             .into_response()
         },
-        Err(e) => {
+        Ok(Err(e)) => {
             Html(error_page("❌ Failed to Save Account", &format!("Error: {}", escape_html(&e))))
                 .into_response()
         },
+        Err(e) => Html(error_page(
+            "❌ Failed to Save Account",
+            &format!("Error: {}", escape_html(&e.to_string())),
+        ))
+        .into_response(),
     }
 }
 
@@ -269,10 +277,15 @@ pub async fn submit_oauth_code(
         None,
     );
 
-    account::upsert_account(user_info.email.clone(), user_info.name.clone(), token_data.clone())
-        .map_err(|e| {
-            (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to add account: {}", e))
-        })?;
+    let upsert_email = user_info.email.clone();
+    let upsert_name = user_info.name.clone();
+    let upsert_token = token_data.clone();
+    tokio::task::spawn_blocking(move || {
+        account::upsert_account(upsert_email, upsert_name, upsert_token)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to add account: {}", e)))?;
 
     if let Some(repo) = app_state.repository() {
         if let Err(e) =

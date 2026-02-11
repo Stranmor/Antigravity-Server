@@ -26,7 +26,9 @@ impl AppState {
         if let Some(repo) = self.repository() {
             repo.list_accounts().await.map_err(|e| e.to_string())
         } else {
-            account::list_accounts()
+            tokio::task::spawn_blocking(account::list_accounts)
+                .await
+                .map_err(|e| format!("spawn_blocking panicked: {e}"))?
         }
     }
 
@@ -40,7 +42,9 @@ impl AppState {
                 None => Ok(None),
             }
         } else {
-            account::get_current_account()
+            tokio::task::spawn_blocking(account::get_current_account)
+                .await
+                .map_err(|e| format!("spawn_blocking panicked: {e}"))?
         }
     }
 
@@ -60,7 +64,9 @@ impl AppState {
         let accounts = if let Some(repo) = self.repository() {
             repo.list_accounts().await.map_err(|e| e.to_string())?
         } else {
-            account::list_accounts()?
+            tokio::task::spawn_blocking(account::list_accounts)
+                .await
+                .map_err(|e| format!("spawn_blocking panicked: {e}"))??
         };
         Ok(accounts.iter().filter(|a| !a.disabled).count())
     }
@@ -73,8 +79,8 @@ impl AppState {
         self.inner.monitor.get_stats().await
     }
 
-    pub fn get_token_usage_stats(&self) -> antigravity_types::models::TokenUsageStats {
-        antigravity_core::modules::proxy_db::get_token_usage_stats().unwrap_or_default()
+    pub async fn get_token_usage_stats(&self) -> antigravity_types::models::TokenUsageStats {
+        antigravity_core::modules::proxy_db::get_token_usage_stats().await.unwrap_or_default()
     }
 
     pub async fn get_proxy_logs(

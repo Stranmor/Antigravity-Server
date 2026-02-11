@@ -115,7 +115,12 @@ pub async fn delete_account_handler(
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     } else {
-        account::delete_account(&payload.account_id)
+        let account_id = payload.account_id.clone();
+        tokio::task::spawn_blocking(move || account::delete_account(&account_id))
+            .await
+            .map_err(|e| {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}"))
+            })?
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     }
     drop(state.reload_accounts().await);
@@ -136,7 +141,12 @@ pub async fn delete_accounts_handler(
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     } else {
-        account::delete_accounts(&payload.account_ids)
+        let account_ids = payload.account_ids.clone();
+        tokio::task::spawn_blocking(move || account::delete_accounts(&account_ids))
+            .await
+            .map_err(|e| {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}"))
+            })?
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     }
     drop(state.reload_accounts().await);
@@ -214,11 +224,17 @@ pub async fn add_account_by_token(
                     .await
                     .map_err(|e| e.to_string())
                 } else {
-                    account::upsert_account(
-                        token_result.email.clone(),
-                        token_result.name,
-                        token_result.token_data,
-                    )
+                    let email = token_result.email.clone();
+                    let name = token_result.name;
+                    let token_data = token_result.token_data;
+                    match tokio::task::spawn_blocking(move || {
+                        account::upsert_account(email, name, token_data)
+                    })
+                    .await
+                    {
+                        Ok(inner) => inner.map_err(|e| e.to_string()),
+                        Err(e) => Err(format!("spawn_blocking panicked: {e}")),
+                    }
                 };
 
                 match upsert_result {

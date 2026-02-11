@@ -24,6 +24,8 @@ use serde_json::Value;
 use std::sync::Arc;
 use std::time::Instant;
 
+const MAX_BODY_LOG_SIZE: usize = 512 * 1024;
+
 pub async fn monitor_middleware(
     State(state): State<AppState>,
     request: Request,
@@ -54,10 +56,9 @@ pub async fn monitor_middleware(
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<usize>().ok());
 
-    let request = if method == "POST" && content_length.is_some_and(|l| l <= 2 * 1024 * 1024) {
+    let request = if method == "POST" && content_length.is_some_and(|l| l <= MAX_BODY_LOG_SIZE) {
         let (parts, body) = request.into_parts();
-        // Limit request body inspection to 2MB to avoid DoS
-        match axum::body::to_bytes(body, 2 * 1024 * 1024).await {
+        match axum::body::to_bytes(body, MAX_BODY_LOG_SIZE).await {
             Ok(bytes) => {
                 if model.is_none() {
                     model = serde_json::from_slice::<Value>(&bytes).ok().and_then(|v| {
@@ -217,7 +218,7 @@ async fn handle_json_response(
         .and_then(|s| s.parse::<usize>().ok());
 
     // If response is too large, don't even try to buffer it in background
-    if content_length.is_some_and(|l| l > 2 * 1024 * 1024) {
+    if content_length.is_some_and(|l| l > MAX_BODY_LOG_SIZE) {
         if log.status >= 400 {
             log.error = Some("Large upstream error response".to_string());
         }
@@ -237,7 +238,7 @@ async fn handle_json_response(
             match chunk_res {
                 Ok(chunk) => {
                     if !failed_to_buffer {
-                        if buffer.len() + chunk.len() <= 2 * 1024 * 1024 {
+                        if buffer.len() + chunk.len() <= MAX_BODY_LOG_SIZE {
                             buffer.extend_from_slice(&chunk);
                         } else {
                             failed_to_buffer = true;

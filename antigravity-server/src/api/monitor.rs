@@ -34,5 +34,5 @@ pub async fn clear_monitor_logs(State(state): State<AppState>) -> Json<bool> {
 pub async fn get_token_usage_stats(
     State(state): State<AppState>,
 ) -> Json<antigravity_types::models::TokenUsageStats> {
-    Json(state.get_token_usage_stats())
+    Json(state.get_token_usage_stats().await)
 }

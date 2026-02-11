@@ -48,9 +48,14 @@ pub async fn generate_api_key(
         .collect();
     let api_key = format!("sk-{}", key);
 
-    core_config::update_config(|config| {
-        config.proxy.api_key.clone_from(&api_key);
+    let api_key_clone = api_key.clone();
+    tokio::task::spawn_blocking(move || {
+        core_config::update_config(|config| {
+            config.proxy.api_key.clone_from(&api_key_clone);
+        })
     })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     state.hot_reload_proxy_config().await;

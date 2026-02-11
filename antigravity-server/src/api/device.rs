@@ -10,13 +10,20 @@ pub struct DeviceProfileResponse {
 }
 
 pub async fn get_device_profile() -> Result<Json<DeviceProfileResponse>, (StatusCode, String)> {
-    let storage_path = device::get_storage_path()
-        .map_err(|e| (StatusCode::NOT_FOUND, format!("storage_not_found: {}", e)))?;
+    tokio::task::spawn_blocking(|| {
+        let storage_path = device::get_storage_path()
+            .map_err(|e| (StatusCode::NOT_FOUND, format!("storage_not_found: {}", e)))?;
 
-    let profile = device::read_profile(&storage_path)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("read_failed: {}", e)))?;
+        let profile = device::read_profile(&storage_path)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("read_failed: {}", e)))?;
 
-    Ok(Json(DeviceProfileResponse { profile, storage_path: storage_path.display().to_string() }))
+        Ok(Json(DeviceProfileResponse {
+            profile,
+            storage_path: storage_path.display().to_string(),
+        }))
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
 }
 
 #[derive(Serialize)]
@@ -26,21 +33,25 @@ pub struct CreateProfileResponse {
 }
 
 pub async fn create_device_profile() -> Result<Json<CreateProfileResponse>, (StatusCode, String)> {
-    let storage_path = device::get_storage_path()
-        .map_err(|e| (StatusCode::NOT_FOUND, format!("storage_not_found: {}", e)))?;
+    tokio::task::spawn_blocking(|| {
+        let storage_path = device::get_storage_path()
+            .map_err(|e| (StatusCode::NOT_FOUND, format!("storage_not_found: {}", e)))?;
 
-    let backup_path = device::backup_storage(&storage_path).ok();
+        let backup_path = device::backup_storage(&storage_path).ok();
 
-    let profile = device::generate_profile();
-    device::write_profile(&storage_path, &profile)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("write_failed: {}", e)))?;
+        let profile = device::generate_profile();
+        device::write_profile(&storage_path, &profile)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("write_failed: {}", e)))?;
 
-    drop(device::save_global_original(&profile));
+        drop(device::save_global_original(&profile));
 
-    Ok(Json(CreateProfileResponse {
-        profile,
-        backup_path: backup_path.map(|p| p.display().to_string()),
-    }))
+        Ok(Json(CreateProfileResponse {
+            profile,
+            backup_path: backup_path.map(|p| p.display().to_string()),
+        }))
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
 }
 
 #[derive(Serialize)]
@@ -49,13 +60,17 @@ pub struct BackupResponse {
 }
 
 pub async fn backup_device_storage() -> Result<Json<BackupResponse>, (StatusCode, String)> {
-    let storage_path = device::get_storage_path()
-        .map_err(|e| (StatusCode::NOT_FOUND, format!("storage_not_found: {}", e)))?;
+    tokio::task::spawn_blocking(|| {
+        let storage_path = device::get_storage_path()
+            .map_err(|e| (StatusCode::NOT_FOUND, format!("storage_not_found: {}", e)))?;
 
-    let backup_path = device::backup_storage(&storage_path)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("backup_failed: {}", e)))?;
+        let backup_path = device::backup_storage(&storage_path)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("backup_failed: {}", e)))?;
 
-    Ok(Json(BackupResponse { backup_path: backup_path.display().to_string() }))
+        Ok(Json(BackupResponse { backup_path: backup_path.display().to_string() }))
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
 }
 
 #[derive(Serialize)]
@@ -64,5 +79,6 @@ pub struct BaselineResponse {
 }
 
 pub async fn get_device_baseline() -> Json<BaselineResponse> {
-    Json(BaselineResponse { baseline: device::load_global_original() })
+    let baseline = tokio::task::spawn_blocking(device::load_global_original).await.ok().flatten();
+    Json(BaselineResponse { baseline })
 }
