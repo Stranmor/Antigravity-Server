@@ -35,14 +35,20 @@ pub fn create_client_with_proxy(
             match Proxy::all(&config.url) {
                 Ok(proxy) => {
                     builder = builder.proxy(proxy);
-                    tracing::info!("HTTP clientalreadyenableupstreamproxy: {}", config.url);
+                    tracing::info!(url = %config.url, "HTTP client: upstream proxy enabled");
                 },
                 Err(e) => {
-                    tracing::error!("invalid proxyaddress: {}, error: {}", config.url, e);
+                    tracing::error!(url = %config.url, error = %e, "HTTP client: invalid proxy address");
                 },
             }
         }
     }
 
-    builder.build().unwrap_or_else(|_| Client::new())
+    match builder.build() {
+        Ok(client) => client,
+        Err(e) => {
+            tracing::error!(error = %e, "HTTP client builder failed, using default");
+            Client::new()
+        },
+    }
 }
