@@ -1,16 +1,16 @@
 use serde::{Deserialize, Serialize};
 
 // Google OAuth configuration
+const CLIENT_ID: &str = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
+const CLIENT_SECRET: &str = "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";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 
 fn oauth_client_id() -> Result<String, String> {
-    std::env::var("OAUTH_CLIENT_ID")
-        .map_err(|_| "OAUTH_CLIENT_ID environment variable not set".to_string())
+    Ok(std::env::var("OAUTH_CLIENT_ID").unwrap_or_else(|_| CLIENT_ID.to_string()))
 }
 
 fn oauth_client_secret() -> Result<String, String> {
-    std::env::var("OAUTH_CLIENT_SECRET")
-        .map_err(|_| "OAUTH_CLIENT_SECRET environment variable not set".to_string())
+    Ok(std::env::var("OAUTH_CLIENT_SECRET").unwrap_or_else(|_| CLIENT_SECRET.to_string()))
 }
 
 const USERINFO_URL: &str = "https://www.googleapis.com/oauth2/v2/userinfo";

@@ -94,25 +94,35 @@ impl TokenManager {
 
     pub(super) async fn ensure_project_id(&self, token: &mut ProxyToken) -> Result<String, String> {
         if let Some(pid) = &token.project_id {
-            return Ok(pid.clone());
+            if !pid.is_empty() {
+                return Ok(pid.clone());
+            }
         }
 
         tracing::debug!("Account {} missing project_id, fetching...", token.email);
-        match crate::proxy::project_resolver::fetch_project_id(&token.access_token).await {
-            Ok(pid) => {
-                if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
-                    entry.project_id = Some(pid.clone());
-                }
-                if let Err(e) = self.save_project_id(&token.account_id, &pid).await {
-                    tracing::warn!("Failed to save project_id for {}: {}", token.email, e);
-                }
-                token.project_id = Some(pid.clone());
-                Ok(pid)
-            },
+        let pid = match crate::proxy::project_resolver::fetch_project_id(&token.access_token).await
+        {
+            Ok(pid) => pid,
             Err(e) => {
-                tracing::error!("Failed to fetch project_id for {}: {}", token.email, e);
-                Err(format!("Failed to fetch project_id for {}: {}", token.email, e))
+                // Fallback to default project when fetch fails (network error, etc.)
+                let default_pid = "bamboo-precept-lgxtn".to_string();
+                tracing::warn!(
+                    "Failed to fetch project_id for {}: {}. Using default: {}",
+                    token.email,
+                    e,
+                    default_pid
+                );
+                default_pid
             },
+        };
+
+        if let Some(mut entry) = self.tokens.get_mut(&token.account_id) {
+            entry.project_id = Some(pid.clone());
         }
+        if let Err(e) = self.save_project_id(&token.account_id, &pid).await {
+            tracing::warn!("Failed to save project_id for {}: {}", token.email, e);
+        }
+        token.project_id = Some(pid.clone());
+        Ok(pid)
     }
 }

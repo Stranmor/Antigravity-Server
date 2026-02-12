@@ -11,12 +11,19 @@ use tokio::time::Duration;
 
 use super::user_agent::DEFAULT_USER_AGENT;
 
+// Cloud Code v1internal endpoints (fallback order: Sandbox → Daily → Prod)
+// Ref upstream Issue #1176: prefer Sandbox/Daily to avoid Prod 429 errors
 const V1_INTERNAL_BASE_URL_PROD: &str = "https://cloudcode-pa.googleapis.com/v1internal";
-const V1_INTERNAL_BASE_URL_DAILY: &str =
+const V1_INTERNAL_BASE_URL_DAILY: &str = "https://daily-cloudcode-pa.googleapis.com/v1internal";
+const V1_INTERNAL_BASE_URL_SANDBOX: &str =
     "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal";
 
 fn default_upstream_urls() -> Vec<String> {
-    vec![V1_INTERNAL_BASE_URL_PROD.to_string(), V1_INTERNAL_BASE_URL_DAILY.to_string()]
+    vec![
+        V1_INTERNAL_BASE_URL_SANDBOX.to_string(), // Priority 1: Sandbox (stable)
+        V1_INTERNAL_BASE_URL_DAILY.to_string(),   // Priority 2: Daily (fallback)
+        V1_INTERNAL_BASE_URL_PROD.to_string(),    // Priority 3: Prod (last resort)
+    ]
 }
 
 fn resolve_upstream_urls(explicit: Option<Vec<String>>) -> Vec<String> {

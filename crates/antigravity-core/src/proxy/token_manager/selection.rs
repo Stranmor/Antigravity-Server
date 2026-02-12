@@ -154,7 +154,10 @@ impl TokenManager {
             {
                 return Ok((
                     token.access_token,
-                    token.project_id.unwrap_or_default(),
+                    token
+                        .project_id
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or_else(|| "bamboo-precept-lgxtn".to_string()),
                     token.email,
                     guard,
                 ));

@@ -33,38 +33,17 @@ pub async fn fetch_project_id(access_token: &str) -> Result<String, String> {
 
     // extract cloudaicompanionProject
     if let Some(project_id) = data.get("cloudaicompanionProject").and_then(|v| v.as_str()) {
-        return Ok(project_id.to_string());
+        if !project_id.is_empty() {
+            return Ok(project_id.to_string());
+        }
     }
 
-    // If no project_id returned, account is ineligible, use built-in random generation as fallback
-    let mock_id = generate_mock_project_id();
-    tracing::warn!(
-        "Account ineligible for official cloudaicompanionProject, using randomly generated Project ID as fallback: {}",
-        mock_id
+    // Google removed cloudaicompanionProject from loadCodeAssist response.
+    // Use the known-good default project ID (same as upstream and quota.rs fallback).
+    let default_pid = "bamboo-precept-lgxtn";
+    tracing::info!(
+        "Account has no cloudaicompanionProject, using default project: {}",
+        default_pid
     );
-    Ok(mock_id)
-}
-
-/// Generate random project_id (used when cannot get from API)
-/// Format: {adjective}-{noun}-{5 random characters}
-pub fn generate_mock_project_id() -> String {
-    use rand::Rng;
-
-    let adjectives = ["useful", "bright", "swift", "calm", "bold"];
-    let nouns = ["fuze", "wave", "spark", "flow", "core"];
-
-    let mut rng = rand::thread_rng();
-    let adj = adjectives[rng.gen_range(0..adjectives.len())];
-    let noun = nouns[rng.gen_range(0..nouns.len())];
-
-    // Generate 5 random characters (base36)
-    let random_num: String = (0..5)
-        .map(|_| {
-            let chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-            let idx = rng.gen_range(0..chars.len());
-            chars.chars().nth(idx).unwrap_or('a')
-        })
-        .collect();
-
-    format!("{}-{}-{}", adj, noun, random_num)
+    Ok(default_pid.to_string())
 }
