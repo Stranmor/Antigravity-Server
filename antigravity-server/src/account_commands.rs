@@ -69,11 +69,17 @@ pub async fn add_account(token: Option<String>, file: Option<std::path::PathBuf>
 }
 
 async fn add_by_token(refresh_token: &str) -> Result<()> {
+    let proxy_url = load_cli_proxy_url();
+
     println!("{}", "Validating refresh token...".cyan());
     let token_response =
-        oauth::refresh_access_token(refresh_token).await.map_err(|e| anyhow::anyhow!(e))?;
+        oauth::refresh_access_token_with_proxy(refresh_token, proxy_url.as_deref())
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
     let user_info =
-        oauth::get_user_info(&token_response.access_token).await.map_err(|e| anyhow::anyhow!(e))?;
+        oauth::get_user_info_with_proxy(&token_response.access_token, proxy_url.as_deref())
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
     let token_data = TokenData::new(
         token_response.access_token,
         refresh_token.to_string(),
@@ -135,7 +141,7 @@ pub async fn refresh_quota(identifier: &str) -> Result<()> {
         .find(|a| a.email == identifier || a.id == identifier)
         .context("Account not found")?;
     println!("{}", format!("Refreshing quota for {}...", acc.email).cyan());
-    let result = account::fetch_quota_with_retry(&acc, None)
+    let result = account::fetch_quota_with_retry(&acc, None, cli_enforce_proxy())
         .await
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
     account::update_account_quota_async(acc.id.clone(), result.quota)
@@ -153,10 +159,12 @@ async fn refresh_all_quotas() -> Result<()> {
     let mut success = 0;
     let mut failed = 0;
 
+    let enforce_proxy = cli_enforce_proxy();
+
     for acc in enabled {
         print!("Refreshing {}... ", acc.email);
         let _ = std::io::stdout().flush();
-        match account::fetch_quota_with_retry(&acc, None).await {
+        match account::fetch_quota_with_retry(&acc, None, enforce_proxy).await {
             Ok(result) => {
                 if let Err(e) =
                     account::update_account_quota_async(acc.id.clone(), result.quota).await
@@ -176,4 +184,29 @@ async fn refresh_all_quotas() -> Result<()> {
     }
     println!("\n{}/{} accounts refreshed ({} failed)", success, total, failed);
     Ok(())
+}
+
+fn load_cli_proxy_url() -> Option<String> {
+    let config = antigravity_core::modules::config::load_config().ok()?;
+    let upstream = &config.proxy.upstream_proxy;
+    if upstream.enforce_proxy && !upstream.enabled {
+        eprintln!(
+            "{}",
+            "Error: enforce_proxy is enabled but no upstream proxy is configured. \
+             Cannot make direct connections."
+                .red()
+        );
+        std::process::exit(1);
+    }
+    if upstream.enabled && !upstream.url.is_empty() {
+        Some(upstream.url.clone())
+    } else {
+        None
+    }
+}
+
+fn cli_enforce_proxy() -> bool {
+    antigravity_core::modules::config::load_config()
+        .map(|c| c.proxy.upstream_proxy.enforce_proxy)
+        .unwrap_or(false)
 }

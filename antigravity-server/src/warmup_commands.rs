@@ -4,6 +4,12 @@ use std::io::Write;
 
 use antigravity_core::modules::account;
 
+fn cli_enforce_proxy() -> bool {
+    antigravity_core::modules::config::load_config()
+        .map(|c| c.proxy.upstream_proxy.enforce_proxy)
+        .unwrap_or(false)
+}
+
 pub async fn warmup_account(email: &str) -> Result<()> {
     let accounts = account::list_accounts().map_err(|e| anyhow::anyhow!(e))?;
     let acc = accounts
@@ -13,7 +19,7 @@ pub async fn warmup_account(email: &str) -> Result<()> {
 
     println!("{}", format!("Warming up {}...", acc.email).cyan());
 
-    let result = account::fetch_quota_with_retry(&acc, None)
+    let result = account::fetch_quota_with_retry(&acc, None, cli_enforce_proxy())
         .await
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
@@ -32,11 +38,12 @@ pub async fn warmup_all() -> Result<()> {
     let total = enabled.len();
     let mut success = 0;
     let mut failed = 0;
+    let enforce_proxy = cli_enforce_proxy();
 
     for acc in enabled {
         print!("Warming up {}... ", acc.email);
         let _ = std::io::stdout().flush();
-        match account::fetch_quota_with_retry(&acc, None).await {
+        match account::fetch_quota_with_retry(&acc, None, enforce_proxy).await {
             Ok(result) => {
                 if let Err(e) =
                     account::update_account_quota_async(acc.id.clone(), result.quota).await

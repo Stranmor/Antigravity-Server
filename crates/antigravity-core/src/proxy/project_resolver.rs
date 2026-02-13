@@ -19,7 +19,7 @@ pub async fn fetch_project_id_with_proxy(
         }
     });
 
-    let client = crate::utils::http::create_client_for_account(30, proxy_url);
+    let client = crate::utils::http::create_client_for_account(30, proxy_url, false)?;
     let response = client
         .post(url)
         .bearer_auth(access_token)

@@ -57,13 +57,26 @@ pub fn create_client_with_proxy(
 ///
 /// This is the **single entry-point** that every service function should use
 /// when it needs to make an HTTP request on behalf of a specific account.
-/// If `proxy_url` is `None`, a regular (direct) client is returned.
-pub fn create_client_for_account(timeout_secs: u64, proxy_url: Option<&str>) -> Client {
+///
+/// When `enforce_proxy` is `true` and `proxy_url` is `None`, returns an error
+/// instead of silently falling back to a direct (no-proxy) connection — this
+/// prevents IP leaks when the caller requires all traffic to be proxied.
+///
+/// When `enforce_proxy` is `false` and `proxy_url` is `None`, a regular
+/// (direct) client is returned (legacy behaviour).
+pub fn create_client_for_account(
+    timeout_secs: u64,
+    proxy_url: Option<&str>,
+    enforce_proxy: bool,
+) -> Result<Client, String> {
     match proxy_url {
-        Some(url) => create_client_with_proxy(
+        Some(url) if !url.is_empty() => Ok(create_client_with_proxy(
             timeout_secs,
             Some(UpstreamProxyConfig { enabled: true, url: url.to_string() }),
-        ),
-        None => create_client(timeout_secs),
+        )),
+        _ if enforce_proxy => {
+            Err("enforce_proxy is enabled but account has no proxy_url configured".to_string())
+        },
+        _ => Ok(create_client(timeout_secs)),
     }
 }

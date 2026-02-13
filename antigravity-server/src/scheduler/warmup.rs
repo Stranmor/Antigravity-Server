@@ -211,7 +211,10 @@ pub fn start(state: AppState) {
 
                     tracing::info!("[Warmup] Refreshing {}", email);
 
-                    match account::fetch_quota_with_retry(&acc, state.repository()).await {
+                    let enforce_proxy = state.enforce_proxy().await;
+                    match account::fetch_quota_with_retry(&acc, state.repository(), enforce_proxy)
+                        .await
+                    {
                         Ok(result) => {
                             let quota = result.quota;
                             persist_quota(&state, &acc.id, &acc.email, quota).await;

@@ -43,8 +43,16 @@ pub struct QuotaFetchResult {
 pub async fn fetch_quota_with_retry(
     account: &Account,
     repo: Option<&Arc<dyn AccountRepository>>,
+    enforce_proxy: bool,
 ) -> AppResult<QuotaFetchResult> {
     use crate::modules::{oauth, quota};
+
+    if enforce_proxy && account.proxy_url.as_ref().is_none_or(|url| url.is_empty()) {
+        return Err(AppError::Config(format!(
+            "enforce_proxy is enabled but account {} has no proxy_url configured",
+            account.email
+        )));
+    }
 
     let token = match oauth::ensure_fresh_token(&account.token, account.proxy_url.as_deref()).await
     {

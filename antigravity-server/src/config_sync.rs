@@ -2,6 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::{interval, MissedTickBehavior};
 
+use antigravity_core::proxy::common::client_builder::build_http_client;
+
 use crate::state::AppState;
 
 const SYNC_INTERVAL_SECS: u64 = 60;
@@ -9,20 +11,22 @@ const SYNC_INTERVAL_SECS: u64 = 60;
 pub fn start_auto_config_sync(state: Arc<AppState>, remote_url: String) {
     let url_for_log = remote_url.clone();
 
-    let client = match reqwest::Client::builder().timeout(Duration::from_secs(30)).build() {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::error!("❌ Failed to create HTTP client for config sync: {}", e);
-            return;
-        },
-    };
-
     tokio::spawn(async move {
         let mut ticker = interval(Duration::from_secs(SYNC_INTERVAL_SECS));
         ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         loop {
             ticker.tick().await;
+
+            // Read current proxy config each iteration to respect hot-reload + enforce_proxy
+            let upstream_proxy = state.inner.upstream_proxy.read().await.clone();
+            let client = match build_http_client(Some(&upstream_proxy), 30) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!("⚠️ Config sync: failed to build HTTP client: {e}");
+                    continue;
+                },
+            };
 
             if let Err(e) = sync_once(&state, &client, &remote_url).await {
                 tracing::warn!("⚠️ Config sync failed: {}", e);

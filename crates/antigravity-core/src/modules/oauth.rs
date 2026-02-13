@@ -106,7 +106,7 @@ pub async fn exchange_code_with_proxy(
     redirect_uri: &str,
     proxy_url: Option<&str>,
 ) -> Result<TokenResponse, String> {
-    let client = crate::utils::http::create_client_for_account(15, proxy_url);
+    let client = crate::utils::http::create_client_for_account(15, proxy_url, false)?;
 
     let client_id = oauth_client_id()?;
     let client_secret = oauth_client_secret()?;
@@ -163,7 +163,7 @@ pub async fn refresh_access_token_with_proxy(
     refresh_token: &str,
     proxy_url: Option<&str>,
 ) -> Result<TokenResponse, String> {
-    let client = crate::utils::http::create_client_for_account(15, proxy_url);
+    let client = crate::utils::http::create_client_for_account(15, proxy_url, false)?;
 
     let client_id = oauth_client_id()?;
     let client_secret = oauth_client_secret()?;
@@ -210,7 +210,7 @@ pub async fn get_user_info_with_proxy(
     access_token: &str,
     proxy_url: Option<&str>,
 ) -> Result<UserInfo, String> {
-    let client = crate::utils::http::create_client_for_account(15, proxy_url);
+    let client = crate::utils::http::create_client_for_account(15, proxy_url, false)?;
 
     let response = client
         .get(USERINFO_URL)

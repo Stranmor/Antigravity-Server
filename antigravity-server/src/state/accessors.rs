@@ -22,6 +22,10 @@ impl AppState {
         self.inner.bound_port.load(Ordering::Relaxed)
     }
 
+    pub async fn enforce_proxy(&self) -> bool {
+        self.inner.upstream_proxy.read().await.enforce_proxy
+    }
+
     pub async fn list_accounts(&self) -> Result<Vec<Account>, String> {
         if let Some(repo) = self.repository() {
             repo.list_accounts().await.map_err(|e| e.to_string())

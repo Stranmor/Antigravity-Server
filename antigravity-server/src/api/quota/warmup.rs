@@ -118,7 +118,8 @@ pub async fn warmup_account(
             .map_err(|e| (StatusCode::NOT_FOUND, e))?
     };
 
-    match account::fetch_quota_with_retry(&acc, state.repository()).await {
+    let enforce_proxy = state.enforce_proxy().await;
+    match account::fetch_quota_with_retry(&acc, state.repository(), enforce_proxy).await {
         Ok(result) => {
             let quota = result.quota;
             let protected_models =
@@ -164,6 +165,7 @@ pub async fn warmup_all_accounts(
     let mut join_set: JoinSet<Result<WarmupResult, String>> = JoinSet::new();
     let semaphore = Arc::new(Semaphore::new(10));
     let repo = state.repository().cloned();
+    let enforce_proxy_all = state.enforce_proxy().await;
 
     for acc in accounts {
         if acc.disabled || acc.proxy_disabled {
@@ -180,9 +182,10 @@ pub async fn warmup_all_accounts(
 
         join_set.spawn(async move {
             let _permit = permit;
-            let result = account::fetch_quota_with_retry(&acc, repo_clone.as_ref())
-                .await
-                .map_err(|e| format!("{}: {}", email, e))?;
+            let result =
+                account::fetch_quota_with_retry(&acc, repo_clone.as_ref(), enforce_proxy_all)
+                    .await
+                    .map_err(|e| format!("{}: {}", email, e))?;
 
             Ok(WarmupResult { account_id, email, quota: Some(result.quota) })
         });

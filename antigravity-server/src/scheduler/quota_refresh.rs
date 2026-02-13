@@ -67,6 +67,8 @@ pub fn start_quota_refresh(state: AppState) {
                 continue;
             }
 
+            let enforce_proxy = state.inner.upstream_proxy.read().await.enforce_proxy;
+
             let now = Utc::now().timestamp();
             let interval_minutes =
                 if app_config.refresh_interval < 5 { 15 } else { app_config.refresh_interval };
@@ -119,7 +121,13 @@ pub fn start_quota_refresh(state: AppState) {
                 );
                 for acc in &needs_immediate {
                     let acc_clone = (*acc).clone();
-                    match account::fetch_quota_with_retry(&acc_clone, state.repository()).await {
+                    match account::fetch_quota_with_retry(
+                        &acc_clone,
+                        state.repository(),
+                        enforce_proxy,
+                    )
+                    .await
+                    {
                         Ok(result) => {
                             persist_quota(&state, &acc_clone.id, &acc_clone.email, result.quota)
                                 .await;
@@ -175,7 +183,13 @@ pub fn start_quota_refresh(state: AppState) {
                     let mut success = 0;
 
                     for acc in accounts_to_refresh {
-                        match account::fetch_quota_with_retry(&acc, state.repository()).await {
+                        match account::fetch_quota_with_retry(
+                            &acc,
+                            state.repository(),
+                            enforce_proxy,
+                        )
+                        .await
+                        {
                             Ok(result) => {
                                 persist_quota(&state, &acc.id, &acc.email, result.quota).await;
                                 success += 1;

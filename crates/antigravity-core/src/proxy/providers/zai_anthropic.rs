@@ -7,6 +7,7 @@ use bytes::Bytes;
 use futures::StreamExt;
 use serde_json::Value;
 
+use crate::proxy::common::client_builder::build_http_client;
 use crate::proxy::server::AppState;
 
 fn map_model_for_zai(original: &str, state: &crate::proxy::ZaiConfig) -> String {
@@ -144,7 +145,15 @@ pub async fn forward_anthropic_json(
 
     tracing::debug!("Forwarding request to z.ai (len: {} bytes)", body_len);
 
-    let req = state.http_client.request(method, &url).headers(headers).body(body_bytes);
+    let upstream_proxy = state.upstream_proxy.read().await.clone();
+    let client = match build_http_client(Some(&upstream_proxy), state.request_timeout) {
+        Ok(c) => c,
+        Err(e) => {
+            return (StatusCode::BAD_GATEWAY, format!("Proxy client error: {}", e)).into_response();
+        },
+    };
+
+    let req = client.request(method, &url).headers(headers).body(body_bytes);
 
     let resp = match req.send().await {
         Ok(r) => r,
