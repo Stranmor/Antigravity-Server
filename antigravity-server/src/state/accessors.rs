@@ -139,6 +139,9 @@ impl AppState {
         *zai = proxy_config.zai.clone();
         *inner_proxy_config = proxy_config;
 
+        // Sync enforce_proxy to TokenManager for side-channel leak prevention
+        self.inner.token_manager.set_enforce_proxy(upstream.enforce_proxy);
+
         // Update proxy pool with new configuration (rotation strategy, proxy URLs, etc.)
         self.inner.upstream_client.update_proxy_config().await;
 

@@ -1,6 +1,7 @@
 use super::proxy_token::ProxyToken;
 use super::TokenManager;
 use crate::modules::oauth;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 impl TokenManager {
@@ -32,6 +33,13 @@ impl TokenManager {
         }
 
         tracing::debug!("Account {} token expiring, refreshing...", token.email);
+
+        if token.proxy_url.is_none() && self.enforce_proxy.load(Ordering::Acquire) {
+            return Err(format!(
+                "enforce_proxy: account {} has no proxy_url — blocking token refresh to prevent IP leak",
+                token.email
+            ));
+        }
 
         // Use per-account proxy for token refresh to prevent IP leak
         match oauth::refresh_access_token_with_proxy(
@@ -106,6 +114,14 @@ impl TokenManager {
         }
 
         tracing::debug!("Account {} missing project_id, fetching...", token.email);
+
+        if token.proxy_url.is_none() && self.enforce_proxy.load(Ordering::Acquire) {
+            return Err(format!(
+                "enforce_proxy: account {} has no proxy_url — blocking project_id fetch to prevent IP leak",
+                token.email
+            ));
+        }
+
         let pid = match crate::proxy::project_resolver::fetch_project_id_with_proxy(
             &token.access_token,
             token.proxy_url.as_deref(),

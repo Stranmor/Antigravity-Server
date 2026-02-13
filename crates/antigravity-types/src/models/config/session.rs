@@ -100,6 +100,12 @@ pub struct UpstreamProxyConfig {
     /// Rotation strategy for proxy pool
     #[serde(default)]
     pub rotation_strategy: ProxyRotationStrategy,
+    /// When true, ALL outbound requests MUST go through a proxy.
+    /// Requests without a proxy (no per-account proxy_url, no pool, Direct/System mode)
+    /// are BLOCKED with an error instead of falling back to direct connection.
+    /// Prevents IP leaks when proxy infrastructure is required.
+    #[serde(default)]
+    pub enforce_proxy: bool,
 }
 
 impl Default for UpstreamProxyConfig {
@@ -110,6 +116,7 @@ impl Default for UpstreamProxyConfig {
             url: String::new(),
             proxy_urls: Vec::new(),
             rotation_strategy: ProxyRotationStrategy::default(),
+            enforce_proxy: false,
         }
     }
 }

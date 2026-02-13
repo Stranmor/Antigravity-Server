@@ -54,6 +54,7 @@ async fn test_per_account_sticky_proxy() {
             "http://127.0.0.1:8083".to_string(),
         ],
         rotation_strategy: antigravity_types::models::ProxyRotationStrategy::PerAccount,
+        ..Default::default()
     };
     let proxy_config = Arc::new(RwLock::new(config));
     let client = super::UpstreamClient::new(reqwest::Client::new(), proxy_config, None);
@@ -76,6 +77,7 @@ async fn test_per_account_no_email_is_error() {
         url: String::new(),
         proxy_urls: vec!["http://127.0.0.1:8081".to_string()],
         rotation_strategy: antigravity_types::models::ProxyRotationStrategy::PerAccount,
+        ..Default::default()
     };
     let proxy_config = Arc::new(RwLock::new(config));
     let client = super::UpstreamClient::new(reqwest::Client::new(), proxy_config, None);
@@ -109,6 +111,7 @@ async fn test_pool_stats() {
         url: String::new(),
         proxy_urls: vec!["http://127.0.0.1:8081".to_string(), "http://127.0.0.1:8082".to_string()],
         rotation_strategy: antigravity_types::models::ProxyRotationStrategy::PerAccount,
+        ..Default::default()
     };
     let proxy_config = Arc::new(RwLock::new(config));
     let client = super::UpstreamClient::new(reqwest::Client::new(), proxy_config, None);
@@ -117,4 +120,85 @@ async fn test_pool_stats() {
     let stats = pool.stats().await;
     assert_eq!(stats.pool_size, 2);
     assert_eq!(stats.mode, antigravity_types::models::UpstreamProxyMode::Pool);
+}
+
+// -- enforce_proxy tests --
+
+#[tokio::test]
+async fn test_enforce_proxy_blocks_direct_mode() {
+    let config = antigravity_types::models::config::UpstreamProxyConfig {
+        mode: antigravity_types::models::UpstreamProxyMode::Direct,
+        enforce_proxy: true,
+        ..Default::default()
+    };
+    let proxy_config = Arc::new(RwLock::new(config));
+    let client = super::UpstreamClient::new(reqwest::Client::new(), proxy_config, None);
+
+    let result = client.get_client_for_account(None, None).await;
+    assert!(result.is_err(), "enforce_proxy=true with Direct mode MUST block");
+    assert!(result.unwrap_err().contains("enforce_proxy"));
+}
+
+#[tokio::test]
+async fn test_enforce_proxy_blocks_system_mode() {
+    let config = antigravity_types::models::config::UpstreamProxyConfig {
+        mode: antigravity_types::models::UpstreamProxyMode::System,
+        enforce_proxy: true,
+        ..Default::default()
+    };
+    let proxy_config = Arc::new(RwLock::new(config));
+    let client = super::UpstreamClient::new(reqwest::Client::new(), proxy_config, None);
+
+    let result = client.get_client_for_account(Some("test@example.com"), None).await;
+    assert!(result.is_err(), "enforce_proxy=true with System mode MUST block");
+    assert!(result.unwrap_err().contains("IP leak"));
+}
+
+#[tokio::test]
+async fn test_enforce_proxy_allows_per_account_proxy() {
+    let config = antigravity_types::models::config::UpstreamProxyConfig {
+        mode: antigravity_types::models::UpstreamProxyMode::Direct,
+        enforce_proxy: true,
+        ..Default::default()
+    };
+    let proxy_config = Arc::new(RwLock::new(config));
+    let client = super::UpstreamClient::new(reqwest::Client::new(), proxy_config, None);
+
+    // Per-account proxy takes priority — should succeed even with enforce_proxy
+    let result = client
+        .get_client_for_account(Some("test@example.com"), Some("socks5://127.0.0.1:1080"))
+        .await;
+    assert!(result.is_ok(), "Per-account proxy should bypass enforce_proxy block");
+}
+
+#[tokio::test]
+async fn test_enforce_proxy_false_allows_direct() {
+    let config = antigravity_types::models::config::UpstreamProxyConfig {
+        mode: antigravity_types::models::UpstreamProxyMode::Direct,
+        enforce_proxy: false,
+        ..Default::default()
+    };
+    let proxy_config = Arc::new(RwLock::new(config));
+    let client = super::UpstreamClient::new(reqwest::Client::new(), proxy_config, None);
+
+    let result = client.get_client_for_account(None, None).await;
+    assert!(result.is_ok(), "enforce_proxy=false should allow direct connections");
+}
+
+#[tokio::test]
+async fn test_enforce_proxy_pool_mode_with_urls_allowed() {
+    let config = antigravity_types::models::config::UpstreamProxyConfig {
+        mode: antigravity_types::models::UpstreamProxyMode::Pool,
+        enforce_proxy: true,
+        enabled: true,
+        proxy_urls: vec!["http://127.0.0.1:8081".to_string()],
+        rotation_strategy: antigravity_types::models::ProxyRotationStrategy::RoundRobin,
+        ..Default::default()
+    };
+    let proxy_config = Arc::new(RwLock::new(config));
+    let client = super::UpstreamClient::new(reqwest::Client::new(), proxy_config, None);
+
+    // Pool mode with actual proxies should work even with enforce_proxy
+    let result = client.get_client_for_account(Some("test@example.com"), None).await;
+    assert!(result.is_ok(), "Pool mode with proxies should work with enforce_proxy=true");
 }

@@ -40,6 +40,9 @@ pub struct TokenManager {
     pub(crate) file_locks: Arc<DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     pub(crate) refresh_locks: Arc<DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     pub(crate) repository: Arc<tokio::sync::RwLock<Option<Arc<dyn AccountRepository>>>>,
+    /// When true, side-channel requests (OAuth refresh, project resolution, quota fetch)
+    /// are blocked if the account has no per-account proxy_url.
+    pub(crate) enforce_proxy: std::sync::atomic::AtomicBool,
 }
 
 impl TokenManager {
@@ -58,6 +61,7 @@ impl TokenManager {
             file_locks: Arc::new(DashMap::new()),
             refresh_locks: Arc::new(DashMap::new()),
             repository: Arc::new(tokio::sync::RwLock::new(None)),
+            enforce_proxy: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -98,6 +102,10 @@ impl TokenManager {
     pub async fn set_repository(&self, repo: Arc<dyn AccountRepository>) {
         let mut guard = self.repository.write().await;
         *guard = Some(repo);
+    }
+
+    pub fn set_enforce_proxy(&self, enforce: bool) {
+        self.enforce_proxy.store(enforce, Ordering::Release);
     }
 
     pub fn start_auto_cleanup(&self) {

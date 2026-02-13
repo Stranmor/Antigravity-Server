@@ -1,6 +1,7 @@
 use super::TokenManager;
 use crate::modules::quota;
 use crate::proxy::rate_limit::RateLimitReason;
+use std::sync::atomic::Ordering;
 
 impl TokenManager {
     pub fn mark_rate_limited(
@@ -130,6 +131,15 @@ impl TokenManager {
         };
 
         tracing::info!("Account {} refreshing quota in realtime...", email);
+
+        if proxy_url.is_none() && self.enforce_proxy.load(Ordering::Acquire) {
+            tracing::warn!(
+                "enforce_proxy: account {} has no proxy_url — skipping realtime quota refresh",
+                email
+            );
+            return false;
+        }
+
         match quota::fetch_quota_proxied(&access_token, email, proxy_url.as_deref()).await {
             Ok((quota_data, _project_id)) => {
                 let earliest_reset = quota_data

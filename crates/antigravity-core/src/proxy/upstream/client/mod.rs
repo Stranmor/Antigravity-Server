@@ -105,6 +105,7 @@ impl UpstreamClient {
 
         let config = self.proxy_config.read().await;
         let mode = config.mode;
+        let enforce_proxy = config.enforce_proxy;
         drop(config);
 
         match mode {
@@ -114,7 +115,13 @@ impl UpstreamClient {
             antigravity_types::models::UpstreamProxyMode::Custom => {
                 self.proxy_pool.get_client(account_email).await
             },
-            _ => Ok(self.http_client.clone()),
+            _ => {
+                if enforce_proxy {
+                    Err("enforce_proxy is enabled but no proxy available (mode is Direct/System, no per-account proxy_url) — blocking request to prevent IP leak".to_string())
+                } else {
+                    Ok(self.http_client.clone())
+                }
+            },
         }
     }
 

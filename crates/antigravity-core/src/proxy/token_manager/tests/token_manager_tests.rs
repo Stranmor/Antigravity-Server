@@ -266,3 +266,84 @@ fn test_tier_weight_scoring() {
     assert!(score(Some("ultra"), 1) < score(Some("free"), 1));
     assert!(score(Some("ultra"), 4) < score(Some("free"), 1));
 }
+
+#[test]
+fn test_enforce_proxy_default_false() {
+    let manager = create_test_manager();
+    assert!(
+        !manager.enforce_proxy.load(std::sync::atomic::Ordering::Acquire),
+        "enforce_proxy must default to false"
+    );
+}
+
+#[test]
+fn test_set_enforce_proxy() {
+    let manager = create_test_manager();
+    manager.set_enforce_proxy(true);
+    assert!(manager.enforce_proxy.load(std::sync::atomic::Ordering::Acquire));
+    manager.set_enforce_proxy(false);
+    assert!(!manager.enforce_proxy.load(std::sync::atomic::Ordering::Acquire));
+}
+
+#[tokio::test]
+async fn test_enforce_proxy_blocks_token_refresh_without_proxy_url() {
+    let manager = create_test_manager();
+    manager.set_enforce_proxy(true);
+
+    let mut token = create_test_token(Some("pro"));
+    token.timestamp = 0; // expired — forces refresh
+    token.proxy_url = None;
+
+    let result = manager.try_refresh_token(&mut token).await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("enforce_proxy"));
+}
+
+#[tokio::test]
+async fn test_enforce_proxy_allows_token_refresh_with_proxy_url() {
+    let manager = create_test_manager();
+    manager.set_enforce_proxy(true);
+
+    let mut token = create_test_token(Some("pro"));
+    token.timestamp = 0; // expired
+    token.proxy_url = Some("socks5://127.0.0.1:1080".to_string());
+
+    // Will fail because the proxy is fake, but should NOT fail due to enforce_proxy
+    let result = manager.try_refresh_token(&mut token).await;
+    if let Err(e) = &result {
+        assert!(
+            !e.contains("enforce_proxy"),
+            "Should not be blocked by enforce_proxy when proxy_url is set"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_enforce_proxy_blocks_project_id_fetch_without_proxy_url() {
+    let manager = create_test_manager();
+    manager.set_enforce_proxy(true);
+
+    let mut token = create_test_token(Some("pro"));
+    token.project_id = None;
+    token.proxy_url = None;
+
+    let result = manager.ensure_project_id(&mut token).await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("enforce_proxy"));
+}
+
+#[tokio::test]
+async fn test_enforce_proxy_false_allows_token_refresh_without_proxy_url() {
+    let manager = create_test_manager();
+    manager.set_enforce_proxy(false);
+
+    let mut token = create_test_token(Some("pro"));
+    token.timestamp = 0; // expired
+    token.proxy_url = None;
+
+    // Will fail because OAuth endpoint will reject, but NOT due to enforce_proxy
+    let result = manager.try_refresh_token(&mut token).await;
+    if let Err(e) = &result {
+        assert!(!e.contains("enforce_proxy"), "enforce_proxy=false should not block");
+    }
+}
