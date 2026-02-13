@@ -24,7 +24,15 @@ pub async fn fetch_project_id_with_proxy(
         .post(url)
         .bearer_auth(access_token)
         .header("Host", "cloudcode-pa.googleapis.com")
-        .header("User-Agent", "antigravity/4.0.8 windows/amd64")
+        .header(
+            "User-Agent",
+            &format!(
+                "antigravity/{} {}/{}",
+                crate::proxy::upstream::version_fetcher::get_current_version(),
+                std::env::consts::OS,
+                std::env::consts::ARCH
+            ),
+        )
         .header("Content-Type", "application/json")
         .json(&request_body)
         .send()

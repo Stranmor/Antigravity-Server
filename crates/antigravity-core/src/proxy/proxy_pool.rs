@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::RwLock;
 use tokio::time::Duration;
 
-use super::upstream::user_agent::DEFAULT_USER_AGENT;
+use super::upstream::user_agent::default_user_agent;
 
 /// Parse a proxy URL string into a normalized URL.
 ///
@@ -209,7 +209,7 @@ impl ProxyPool {
                 .http2_keep_alive_timeout(Duration::from_secs(10))
                 .http2_keep_alive_while_idle(true)
                 .timeout(Duration::from_secs(600))
-                .user_agent(DEFAULT_USER_AGENT)
+                .user_agent(default_user_agent())
                 .proxy(proxy)
                 .build()
                 .map_err(|e| {

@@ -7,14 +7,35 @@
 //! **CRITICAL**: Browser-style UAs (Mozilla/5.0...) are REJECTED by Google
 //! with `CONSUMER_INVALID` errors. Only application-style UAs are accepted.
 //!
-//! The pool now includes:
-//! - Multiple Antigravity client versions (simulating diverse install base)
-//! - `google-api-nodejs-client` UA (used by CLIProxyAPI and Google's own SDKs)
-//! - Per-account deterministic selection for fingerprint consistency
+//! The pool is built dynamically from the fetched Antigravity version:
+//! - Latest version (fetched) × 6 platforms
+//! - Previous version (minor - 2) × 4 platforms
+//! - Older version (minor - 4) × 3 platforms
+//! - `google-api-nodejs-client` entries (SDK/CLIProxyAPI)
+
+use super::version_fetcher;
+use std::sync::LazyLock;
 
 /// FNV-1a hash constant (stable across Rust versions, unlike DefaultHasher).
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0100_0000_01b3;
+
+/// Platforms for latest version (all 6).
+const LATEST_PLATFORMS: &[&str] = &[
+    "darwin/arm64",
+    "darwin/amd64",
+    "linux/amd64",
+    "linux/arm64",
+    "windows/amd64",
+    "windows/arm64",
+];
+
+/// Platforms for previous version (main 4).
+const PREVIOUS_PLATFORMS: &[&str] =
+    &["darwin/arm64", "darwin/amd64", "linux/amd64", "windows/amd64"];
+
+/// Platforms for older version (common 3).
+const OLDER_PLATFORMS: &[&str] = &["darwin/arm64", "linux/amd64", "windows/amd64"];
 
 /// Stable FNV-1a hash implementation.
 fn fnv1a_hash(data: &str) -> u64 {
@@ -26,40 +47,53 @@ fn fnv1a_hash(data: &str) -> u64 {
     hash
 }
 
-/// Application-style User-Agent strings accepted by Google Cloud Code API.
+/// Derive a "previous" version by decrementing the minor component.
 ///
-/// **Format**: `antigravity/VERSION PLATFORM/ARCH`
+/// Given `"1.115.0"` and `decrement=2`, returns `"1.113.0"`.
+/// If minor would go below 0, clamps to 0.
+fn derive_previous_version(version: &str, decrement: u32) -> String {
+    let parts: Vec<&str> = version.splitn(3, '.').collect();
+    if parts.len() < 3 {
+        return version.to_string();
+    }
+    let major = parts[0];
+    let minor: u32 = parts[1].parse().unwrap_or(0);
+    let patch = parts[2];
+    let new_minor = minor.saturating_sub(decrement);
+    format!("{}.{}.{}", major, new_minor, patch)
+}
+
+/// Dynamically built User-Agent pool from fetched Antigravity version.
 ///
-/// Pool covers multiple versions to simulate a diverse install base.
-/// All versions correspond to real Antigravity releases to avoid detection.
-///
-/// **DO NOT use browser-style UAs** (Mozilla/5.0...) - they cause
-/// `CONSUMER_INVALID` errors from Google's API validation.
-const USER_AGENT_POOL: &[&str] = &[
-    // === Latest stable (1.104.x) - majority of users ===
-    "antigravity/1.104.0 darwin/arm64",
-    "antigravity/1.104.0 darwin/amd64",
-    "antigravity/1.104.0 linux/amd64",
-    "antigravity/1.104.0 linux/arm64",
-    "antigravity/1.104.0 windows/amd64",
-    "antigravity/1.104.0 windows/arm64",
-    // === Previous stable (1.102.x) - users on slightly older version ===
-    "antigravity/1.102.1 darwin/arm64",
-    "antigravity/1.102.1 darwin/amd64",
-    "antigravity/1.102.1 linux/amd64",
-    "antigravity/1.102.1 windows/amd64",
-    // === Older stable (1.100.x) - some users still on this ===
-    "antigravity/1.100.0 darwin/arm64",
-    "antigravity/1.100.0 linux/amd64",
-    "antigravity/1.100.0 windows/amd64",
-    // === Google API client UA (used by SDK/CLIProxyAPI) ===
-    "google-api-nodejs-client/9.15.1",
-    "google-api-nodejs-client/9.14.0",
-];
+/// Pool structure: 6 + 4 + 3 + 2 = 15 entries minimum.
+static USER_AGENT_POOL: LazyLock<Vec<String>> = LazyLock::new(|| {
+    let latest = version_fetcher::get_current_version();
+    let previous = derive_previous_version(latest, 2);
+    let older = derive_previous_version(latest, 4);
+
+    let mut pool = Vec::with_capacity(15);
+
+    for platform in LATEST_PLATFORMS {
+        pool.push(format!("antigravity/{} {}", latest, platform));
+    }
+    for platform in PREVIOUS_PLATFORMS {
+        pool.push(format!("antigravity/{} {}", previous, platform));
+    }
+    for platform in OLDER_PLATFORMS {
+        pool.push(format!("antigravity/{} {}", older, platform));
+    }
+
+    pool.push("google-api-nodejs-client/9.15.1".to_string());
+    pool.push("google-api-nodejs-client/9.14.0".to_string());
+
+    pool
+});
 
 /// Default UA when no account context is available.
 /// Uses the most common combination (macOS ARM64, latest version).
-pub const DEFAULT_USER_AGENT: &str = "antigravity/1.104.0 darwin/arm64";
+pub fn default_user_agent() -> &'static str {
+    USER_AGENT_POOL.first().map(|s| s.as_str()).unwrap_or("antigravity/1.104.0 darwin/arm64")
+}
 
 /// Get a deterministic User-Agent for a given account email.
 ///
@@ -67,9 +101,10 @@ pub const DEFAULT_USER_AGENT: &str = "antigravity/1.104.0 darwin/arm64";
 /// ensuring fingerprint consistency within account sessions.
 #[inline]
 pub fn get_user_agent_for_account(email: &str) -> &'static str {
+    let pool = &*USER_AGENT_POOL;
     let hash = fnv1a_hash(email);
-    let index = (hash as usize) % USER_AGENT_POOL.len();
-    USER_AGENT_POOL[index]
+    let index = (hash as usize) % pool.len();
+    pool[index].as_str()
 }
 
 #[cfg(test)]
@@ -103,7 +138,7 @@ mod tests {
 
     #[test]
     fn test_all_uas_are_application_style() {
-        for ua in USER_AGENT_POOL {
+        for ua in USER_AGENT_POOL.iter() {
             assert!(
                 ua.starts_with("antigravity/") || ua.starts_with("google-api-nodejs-client/"),
                 "UA '{}' should be application-style",
@@ -124,14 +159,43 @@ mod tests {
 
     #[test]
     fn test_default_ua() {
-        assert_eq!(DEFAULT_USER_AGENT, "antigravity/1.104.0 darwin/arm64");
+        let ua = default_user_agent();
+        assert!(ua.starts_with("antigravity/"), "Default UA should start with antigravity/");
+        assert!(ua.contains("darwin/arm64"), "Default UA should be darwin/arm64");
     }
 
     #[test]
     fn test_no_old_version() {
-        // Ensure we no longer use the detectable 4.0.8 version
-        for ua in USER_AGENT_POOL {
+        for ua in USER_AGENT_POOL.iter() {
             assert!(!ua.contains("4.0.8"), "UA pool should not contain old 4.0.8 version: {}", ua);
         }
+    }
+
+    #[test]
+    fn test_derive_previous_version() {
+        assert_eq!(derive_previous_version("1.115.0", 2), "1.113.0");
+        assert_eq!(derive_previous_version("1.115.0", 4), "1.111.0");
+        assert_eq!(derive_previous_version("1.1.0", 4), "1.0.0");
+        assert_eq!(derive_previous_version("2.0.0", 2), "2.0.0");
+    }
+
+    #[test]
+    fn test_fetched_version_in_pool() {
+        let version = version_fetcher::get_current_version();
+        let has_version = USER_AGENT_POOL.iter().any(|ua| ua.contains(version));
+        assert!(has_version, "Pool should contain fetched version {}", version);
+    }
+
+    #[test]
+    fn test_pool_has_derived_versions() {
+        let version = version_fetcher::get_current_version();
+        let prev = derive_previous_version(version, 2);
+        let older = derive_previous_version(version, 4);
+
+        let has_prev = USER_AGENT_POOL.iter().any(|ua| ua.contains(&prev));
+        let has_older = USER_AGENT_POOL.iter().any(|ua| ua.contains(&older));
+
+        assert!(has_prev, "Pool should contain previous version {}", prev);
+        assert!(has_older, "Pool should contain older version {}", older);
     }
 }

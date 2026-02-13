@@ -3,6 +3,28 @@
 use reqwest::{Client, Proxy};
 use serde::{Deserialize, Serialize};
 
+fn redact_proxy_url(url: &str) -> String {
+    url::Url::parse(url)
+        .map(|u| {
+            if u.username().is_empty() && u.password().is_none() {
+                format!(
+                    "{}://{}:{}",
+                    u.scheme(),
+                    u.host_str().unwrap_or("?"),
+                    u.port().unwrap_or(0)
+                )
+            } else {
+                format!(
+                    "{}://***@{}:{}",
+                    u.scheme(),
+                    u.host_str().unwrap_or("?"),
+                    u.port().unwrap_or(0)
+                )
+            }
+        })
+        .unwrap_or_else(|_| "<invalid-url>".to_string())
+}
+
 /// Upstream proxy configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpstreamProxyConfig {
@@ -14,8 +36,8 @@ pub struct UpstreamProxyConfig {
 ///
 /// Note: In core library, we don't have access to config files directly.
 /// The caller should provide proxy config if needed.
-pub fn create_client(timeout_secs: u64) -> Client {
-    base_builder(timeout_secs).build().unwrap_or_else(|_| Client::new())
+pub fn create_client(timeout_secs: u64) -> Result<Client, String> {
+    base_builder(timeout_secs).build().map_err(|e| format!("HTTP client builder failed: {e}"))
 }
 
 /// Shared builder with keepalive settings.
@@ -40,11 +62,16 @@ pub fn create_client_with_proxy(
     let mut builder = base_builder(timeout_secs);
 
     if let Some(config) = proxy_config {
-        if config.enabled && !config.url.is_empty() {
-            let proxy = Proxy::all(&config.url)
-                .map_err(|e| format!("invalid proxy URL '{}': {e}", config.url))?;
+        if config.enabled {
+            if config.url.is_empty() {
+                return Err(
+                    "proxy enabled but URL is empty — refusing to fall back to direct connection"
+                        .to_string(),
+                );
+            }
+            let proxy = Proxy::all(&config.url).map_err(|e| format!("invalid proxy URL: {e}"))?;
             builder = builder.proxy(proxy);
-            tracing::info!(url = %config.url, "HTTP client: upstream proxy enabled");
+            tracing::info!(host = %redact_proxy_url(&config.url), "HTTP client: upstream proxy enabled");
         }
     }
 
@@ -75,6 +102,6 @@ pub fn create_client_for_account(
         _ if enforce_proxy => {
             Err("enforce_proxy is enabled but account has no proxy_url configured".to_string())
         },
-        _ => Ok(create_client(timeout_secs)),
+        _ => create_client(timeout_secs),
     }
 }

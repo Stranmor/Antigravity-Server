@@ -7,7 +7,7 @@ use super::super::device_fingerprint;
 use super::super::endpoint_health::{
     ENDPOINT_HEALTH, MAX_TRANSPORT_RETRIES_PER_ENDPOINT, TRANSPORT_RETRY_DELAY_MS,
 };
-use super::super::user_agent::{get_user_agent_for_account, DEFAULT_USER_AGENT};
+use super::super::user_agent::{default_user_agent, get_user_agent_for_account};
 
 pub fn build_url(base_url: &str, method: &str, query_string: Option<&str>) -> String {
     if let Some(qs) = query_string {
@@ -51,7 +51,7 @@ pub fn build_headers(
         extra_headers.contains_key("user-agent") || extra_headers.contains_key("User-Agent");
 
     if !has_custom_ua {
-        headers.insert(header::USER_AGENT, header::HeaderValue::from_static(DEFAULT_USER_AGENT));
+        headers.insert(header::USER_AGENT, header::HeaderValue::from_static(default_user_agent()));
     }
 
     for (k, v) in extra_headers {
