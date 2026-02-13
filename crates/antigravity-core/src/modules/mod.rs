@@ -15,6 +15,7 @@ pub mod migration;
 pub mod oauth;
 pub mod process;
 pub mod proxy_db;
+pub mod proxy_pool;
 pub mod quota;
 pub mod repository;
 pub mod signature_storage;

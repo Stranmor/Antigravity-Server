@@ -39,26 +39,47 @@ pub async fn handle_service_disabled(
     token_manager: Arc<TokenManager>,
     email: &str,
 ) -> bool {
-    if status_code == 403
-        && (error_text.contains("SERVICE_DISABLED")
-            || error_text.contains("CONSUMER_INVALID")
-            || error_text.contains("Permission denied on resource project")
-            || error_text.contains("verify your account"))
-    {
-        warn!("[OpenAI] 🚫 Account {} needs verification or has project issue. 1h lockout.", email);
-        token_manager.rate_limit_tracker().set_lockout_until(
-            email,
-            SystemTime::now() + Duration::from_secs(3600),
-            RateLimitReason::ServerError,
-            None,
-        );
-        let email_clone = email.to_string();
-        tokio::spawn(async move {
-            let _ = crate::modules::account::mark_needs_verification_by_email(&email_clone).await;
-        });
-        return true;
+    if status_code != 403 {
+        return false;
     }
-    false
+
+    use crate::proxy::common::tos_ban::{classify_403, ForbiddenReason, TOS_BAN_LOCKOUT_SECS};
+    match classify_403(error_text) {
+        ForbiddenReason::TosBanned => {
+            tracing::error!("[OpenAI] 🚫 Account {} TOS-BANNED! 24h lockout.", email);
+            token_manager.rate_limit_tracker().set_lockout_until(
+                email,
+                SystemTime::now() + Duration::from_secs(TOS_BAN_LOCKOUT_SECS),
+                RateLimitReason::ServerError,
+                None,
+            );
+            let email_clone = email.to_string();
+            tokio::spawn(async move {
+                let _ =
+                    crate::modules::account::mark_needs_verification_by_email(&email_clone).await;
+            });
+            true
+        },
+        ForbiddenReason::NeedsVerification => {
+            warn!(
+                "[OpenAI] 🚫 Account {} needs verification or has project issue. 1h lockout.",
+                email
+            );
+            token_manager.rate_limit_tracker().set_lockout_until(
+                email,
+                SystemTime::now() + Duration::from_secs(3600),
+                RateLimitReason::ServerError,
+                None,
+            );
+            let email_clone = email.to_string();
+            tokio::spawn(async move {
+                let _ =
+                    crate::modules::account::mark_needs_verification_by_email(&email_clone).await;
+            });
+            true
+        },
+        ForbiddenReason::Other => false,
+    }
 }
 
 pub async fn handle_rate_limit_errors(

@@ -5,7 +5,6 @@
 
 use crate::proxy::server::AppState;
 use crate::proxy::token_manager::TokenManager;
-use std::sync::Arc;
 
 /// Records successful request completion across all tracking systems.
 ///
@@ -14,7 +13,7 @@ use std::sync::Arc;
 /// 2. Session failure counter (clear failures for this session)
 /// 3. Adaptive rate limits (record success for AIMD algorithm)
 pub fn record_request_success(
-    token_manager: &Arc<TokenManager>,
+    token_manager: &TokenManager,
     state: &AppState,
     email: &str,
     session_id: &str,

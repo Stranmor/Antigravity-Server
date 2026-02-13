@@ -139,6 +139,9 @@ impl AppState {
         *zai = proxy_config.zai.clone();
         *inner_proxy_config = proxy_config;
 
+        // Update proxy pool with new configuration (rotation strategy, proxy URLs, etc.)
+        self.inner.upstream_client.update_proxy_config().await;
+
         tracing::info!("Proxy configuration hot reloaded successfully.");
     }
 
@@ -180,7 +183,7 @@ impl AppState {
         &self.inner.circuit_breaker
     }
 
-    pub fn generate_oauth_state(&self) -> String {
+    pub fn generate_oauth_state(&self, proxy_url: Option<String>) -> String {
         use rand::Rng;
 
         const MAX_OAUTH_STATES: usize = 100;
@@ -197,22 +200,25 @@ impl AppState {
             .take(32)
             .map(char::from)
             .collect();
-        self.inner.oauth_states.insert(state.clone(), Instant::now());
+        self.inner.oauth_states.insert(state.clone(), (Instant::now(), proxy_url));
         state
     }
 
-    pub fn validate_oauth_state(&self, state: &str) -> bool {
-        if let Some((_, created_at)) = self.inner.oauth_states.remove(state) {
-            created_at.elapsed().as_secs() < 600
+    /// Validate oauth state and return the associated proxy_url if present.
+    pub fn validate_oauth_state(&self, state: &str) -> Option<Option<String>> {
+        if let Some((_, (created_at, proxy_url))) = self.inner.oauth_states.remove(state) {
+            if created_at.elapsed().as_secs() < 600 {
+                Some(proxy_url)
+            } else {
+                None
+            }
         } else {
-            false
+            None
         }
     }
 
     fn cleanup_expired_oauth_states(&self) {
-        self.inner
-            .oauth_states
-            .retain(|_, created_at: &mut Instant| created_at.elapsed().as_secs() < 600);
+        self.inner.oauth_states.retain(|_, (created_at, _)| created_at.elapsed().as_secs() < 600);
     }
 
     pub fn repository(&self) -> Option<&Arc<dyn AccountRepository>> {

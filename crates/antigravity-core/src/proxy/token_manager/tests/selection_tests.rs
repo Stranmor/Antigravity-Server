@@ -26,6 +26,7 @@ fn make_token(email: &str, tier: Option<&str>, quota: Option<i32>, health: f32) 
         HashSet::new(),
         health,
         HashSet::new(),
+        None, // proxy_url
     )
 }
 
@@ -165,6 +166,7 @@ fn test_is_model_protected_with_protected_models() {
         protected,
         1.0,
         HashSet::new(),
+        None, // proxy_url
     );
     manager.tokens.insert(token.account_id.clone(), token);
 

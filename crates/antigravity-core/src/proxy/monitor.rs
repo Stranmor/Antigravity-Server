@@ -142,10 +142,10 @@ impl ProxyMonitor {
         let request_log = RequestLog {
             account_id,
             model,
-            tokens_in: log.input_tokens.map(|v| v as i32),
-            tokens_out: log.output_tokens.map(|v| v as i32),
-            cached_tokens: log.cached_tokens.map(|v| v as i32),
-            latency_ms: Some(log.duration as i32),
+            tokens_in: log.input_tokens.map(|v| i32::try_from(v).unwrap_or(i32::MAX)),
+            tokens_out: log.output_tokens.map(|v| i32::try_from(v).unwrap_or(i32::MAX)),
+            cached_tokens: log.cached_tokens.map(|v| i32::try_from(v).unwrap_or(i32::MAX)),
+            latency_ms: Some(i32::try_from(log.duration).unwrap_or(i32::MAX)),
             status_code: i32::from(log.status),
             error_type: log.error.clone(),
         };

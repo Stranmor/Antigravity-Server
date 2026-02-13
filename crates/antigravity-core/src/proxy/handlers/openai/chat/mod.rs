@@ -105,7 +105,7 @@ pub async fn handle_chat_completions(
 
         let is_claude_model = mapped_model.starts_with("claude-");
 
-        let gemini_body = if is_claude_model {
+        let mut gemini_body = if is_claude_model {
             let mut claude_req =
                 crate::proxy::mappers::openai::request::claude_bridge::openai_to_claude_request(
                     &openai_req,
@@ -131,6 +131,10 @@ pub async fn handle_chat_completions(
         } else {
             transform_openai_request(&openai_req, &project_id, &mapped_model)
         };
+        crate::proxy::upstream::device_fingerprint::inject_body_fingerprint(
+            &mut gemini_body,
+            &email,
+        );
 
         debug!("[OpenAI-Request] Transformed Gemini Body");
 
@@ -139,6 +143,7 @@ pub async fn handle_chat_completions(
             info!("[OpenAI] 🔄 Auto-converting non-stream request to stream for better quota");
         }
 
+        let account_proxy = token_manager.get_account_proxy_url(&email);
         let response = match call_upstream_with_retry(
             upstream.clone(),
             "streamGenerateContent",
@@ -147,6 +152,7 @@ pub async fn handle_chat_completions(
             Some("alt=sse"),
             None,
             &email,
+            account_proxy.as_deref(),
             attempt,
             max_attempts,
         )

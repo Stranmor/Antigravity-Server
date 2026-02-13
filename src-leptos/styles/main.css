@@ -365,6 +365,41 @@ body {
     background: var(--accent-danger);
 }
 
+.status-dot--banned {
+    background: #dc2626;
+    box-shadow: 0 0 8px #dc2626, 0 0 16px rgba(220, 38, 38, 0.4);
+    animation: pulse 1.5s infinite;
+}
+
+.status-dot--locked {
+    background: var(--accent-warning);
+    box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
+}
+
+.banned-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    background: rgba(220, 38, 38, 0.2);
+    color: #f87171;
+    margin-left: 8px;
+    letter-spacing: 0.5px;
+}
+
+.locked-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+    margin-left: 8px;
+    letter-spacing: 0.5px;
+}
+
 /* Quota bars */
 .quota-bar {
     width: 80px;

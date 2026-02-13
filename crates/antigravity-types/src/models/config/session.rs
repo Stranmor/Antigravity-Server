@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use super::enums::{SchedulingMode, UpstreamProxyMode};
+use super::enums::{ProxyRotationStrategy, SchedulingMode, UpstreamProxyMode};
 
 /// Experimental features configuration.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, Validate)]
@@ -82,7 +82,7 @@ pub struct SmartWarmupConfig {
 /// Upstream proxy configuration for outbound requests.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Validate)]
 pub struct UpstreamProxyConfig {
-    /// Proxy mode: direct, system, or custom
+    /// Proxy mode: direct, system, custom, or pool
     #[serde(default)]
     pub mode: UpstreamProxyMode,
     /// Enable upstream proxy (legacy, kept for compatibility)
@@ -92,11 +92,25 @@ pub struct UpstreamProxyConfig {
     /// Only used when mode is Custom
     #[serde(default)]
     pub url: String,
+    /// List of proxy URLs for pool rotation (used when mode is Pool)
+    /// Supports http://, https://, socks5:// protocols
+    /// Example: ["socks5://proxy1:1080", "http://proxy2:8080", "socks5://proxy3:1080"]
+    #[serde(default)]
+    pub proxy_urls: Vec<String>,
+    /// Rotation strategy for proxy pool
+    #[serde(default)]
+    pub rotation_strategy: ProxyRotationStrategy,
 }
 
 impl Default for UpstreamProxyConfig {
     fn default() -> Self {
-        Self { mode: UpstreamProxyMode::Direct, enabled: false, url: String::new() }
+        Self {
+            mode: UpstreamProxyMode::Direct,
+            enabled: false,
+            url: String::new(),
+            proxy_urls: Vec::new(),
+            rotation_strategy: ProxyRotationStrategy::default(),
+        }
     }
 }
 
@@ -115,4 +129,34 @@ pub const fn default_quota_threshold() -> u8 {
 
 pub const fn default_warmup_interval() -> u32 {
     60
+}
+
+/// Strategy for assigning proxies from the pool to new accounts.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ProxyAssignmentStrategy {
+    /// Assign proxies in round-robin order, balancing across accounts.
+    #[default]
+    RoundRobin,
+    /// Assign the proxy with the fewest accounts currently using it.
+    LeastUsed,
+    /// Assign a random proxy from the pool.
+    Random,
+}
+
+/// Per-account proxy pool configuration.
+/// When enabled, newly added accounts without an explicit proxy_url
+/// are automatically assigned one from this pool.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default, Validate)]
+pub struct AccountProxyPoolConfig {
+    /// Enable automatic proxy assignment for new accounts
+    #[serde(default)]
+    pub enabled: bool,
+    /// List of proxy URLs available for assignment
+    /// Supports socks5://, http://, https://
+    #[serde(default)]
+    pub urls: Vec<String>,
+    /// Strategy for assigning proxies to accounts
+    #[serde(default)]
+    pub strategy: ProxyAssignmentStrategy,
 }

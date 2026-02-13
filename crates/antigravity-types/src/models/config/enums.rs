@@ -112,4 +112,19 @@ pub enum UpstreamProxyMode {
     System,
     /// Use custom proxy URL
     Custom,
+    /// Use proxy pool with rotation
+    Pool,
+}
+
+/// Strategy for rotating proxies in the pool.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProxyRotationStrategy {
+    /// Round-robin: distribute requests evenly across proxies
+    #[default]
+    RoundRobin,
+    /// Random: pick a random proxy for each request
+    Random,
+    /// Per-account: bind each account to a specific proxy (sticky by email hash)
+    PerAccount,
 }

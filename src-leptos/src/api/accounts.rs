@@ -44,6 +44,7 @@ impl ApiAccount {
             proxy_disabled_reason: None,
             proxy_disabled_at: None,
             protected_models: HashSet::new(),
+            proxy_url: None,
             created_at: 0,
             last_used: 0,
         }

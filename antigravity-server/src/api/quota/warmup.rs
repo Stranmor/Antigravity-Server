@@ -35,37 +35,52 @@ pub async fn toggle_proxy_status(
         "Toggling proxy status"
     );
 
-    let account_id = payload.account_id.clone();
-    let mut acc = tokio::task::spawn_blocking(move || account::load_account(&account_id))
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
-        .map_err(|e| (StatusCode::NOT_FOUND, e))?;
-
-    acc.proxy_disabled = !payload.enable;
+    let proxy_disabled = !payload.enable;
 
     if let Some(repo) = state.repository() {
-        match repo.get_account_by_email(&acc.email).await {
-            Ok(Some(mut pg_account)) => {
-                pg_account.proxy_disabled = acc.proxy_disabled;
-                repo.update_account(&pg_account)
-                    .await
-                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-            },
-            Ok(None) => {
-                return Err((StatusCode::NOT_FOUND, format!("Account not found: {}", acc.email)));
-            },
-            Err(e) => {
-                return Err((StatusCode::NOT_FOUND, e.to_string()));
-            },
-        }
-    }
+        // PostgreSQL path: load by ID directly from DB
+        let mut pg_account = repo
+            .get_account(&payload.account_id)
+            .await
+            .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?;
 
-    let proxy_disabled = acc.proxy_disabled;
+        pg_account.proxy_disabled = proxy_disabled;
+        repo.update_account(&pg_account)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    tokio::task::spawn_blocking(move || account::save_account(&acc))
+        // Also update file if it exists (best-effort sync)
+        let file_account_id = pg_account.id.clone();
+        let file_proxy_disabled = proxy_disabled;
+        tokio::task::spawn_blocking(move || {
+            if let Ok(mut acc) = account::load_account(&file_account_id) {
+                acc.proxy_disabled = file_proxy_disabled;
+                let _ = account::save_account(&acc);
+            }
+        })
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(|e| {
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}"))
+        })?;
+    } else {
+        // File-only fallback (no PostgreSQL)
+        let account_id = payload.account_id.clone();
+        let mut acc = tokio::task::spawn_blocking(move || account::load_account(&account_id))
+            .await
+            .map_err(|e| {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}"))
+            })?
+            .map_err(|e| (StatusCode::NOT_FOUND, e))?;
+
+        acc.proxy_disabled = proxy_disabled;
+
+        tokio::task::spawn_blocking(move || account::save_account(&acc))
+            .await
+            .map_err(|e| {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}"))
+            })?
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    }
 
     if let Err(e) = state.reload_accounts().await {
         tracing::warn!("Failed to reload accounts after proxy toggle: {}", e);
@@ -89,11 +104,19 @@ pub async fn warmup_account(
     State(state): State<AppState>,
     Json(payload): Json<WarmupAccountRequest>,
 ) -> Result<Json<WarmupResponse>, (StatusCode, String)> {
-    let account_id = payload.account_id.clone();
-    let acc = tokio::task::spawn_blocking(move || account::load_account(&account_id))
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
-        .map_err(|e| (StatusCode::NOT_FOUND, e))?;
+    let acc = if let Some(repo) = state.repository() {
+        repo.get_account(&payload.account_id)
+            .await
+            .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?
+    } else {
+        let account_id = payload.account_id.clone();
+        tokio::task::spawn_blocking(move || account::load_account(&account_id))
+            .await
+            .map_err(|e| {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}"))
+            })?
+            .map_err(|e| (StatusCode::NOT_FOUND, e))?
+    };
 
     match account::fetch_quota_with_retry(&acc, state.repository()).await {
         Ok(result) => {
@@ -107,20 +130,8 @@ pub async fn warmup_account(
                     },
                 };
             if let Some(repo) = state.repository() {
-                match repo.get_account_by_email(&acc.email).await {
-                    Ok(Some(pg_account)) => {
-                        if let Err(e) =
-                            repo.update_quota(&pg_account.id, quota, protected_models).await
-                        {
-                            tracing::warn!("DB quota update failed for {}: {}", acc.email, e);
-                        }
-                    },
-                    Ok(None) => {
-                        tracing::warn!("PG account lookup failed for {}", acc.email);
-                    },
-                    Err(e) => {
-                        tracing::warn!("PG account lookup error for {}: {}", acc.email, e);
-                    },
+                if let Err(e) = repo.update_quota(&acc.id, quota, protected_models).await {
+                    tracing::warn!("DB quota update failed for {}: {}", acc.email, e);
                 }
             }
             if let Err(e) = state.reload_accounts().await {
@@ -139,10 +150,8 @@ pub async fn warmup_account(
 pub async fn warmup_all_accounts(
     State(state): State<AppState>,
 ) -> Result<Json<WarmupResponse>, (StatusCode, String)> {
-    let accounts = tokio::task::spawn_blocking(account::list_accounts)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let accounts =
+        state.list_accounts().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     let total = accounts.len();
 
@@ -203,31 +212,15 @@ pub async fn warmup_all_accounts(
                         },
                     };
                     if let Some(repo) = state.repository() {
-                        match repo.get_account_by_email(&warmup_result.email).await {
-                            Ok(Some(pg_account)) => {
-                                if let Err(e) =
-                                    repo.update_quota(&pg_account.id, quota, protected_models).await
-                                {
-                                    tracing::warn!(
-                                        "DB quota update failed for {}: {}",
-                                        warmup_result.email,
-                                        e
-                                    );
-                                }
-                            },
-                            Ok(None) => {
-                                tracing::warn!(
-                                    "PG account lookup failed for {}",
-                                    warmup_result.email
-                                );
-                            },
-                            Err(e) => {
-                                tracing::warn!(
-                                    "PG account lookup error for {}: {}",
-                                    warmup_result.email,
-                                    e
-                                );
-                            },
+                        if let Err(e) = repo
+                            .update_quota(&warmup_result.account_id, quota, protected_models)
+                            .await
+                        {
+                            tracing::warn!(
+                                "DB quota update failed for {}: {}",
+                                warmup_result.email,
+                                e
+                            );
                         }
                     }
                 }

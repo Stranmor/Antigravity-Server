@@ -8,11 +8,14 @@ mod thinking;
 mod zai;
 
 pub use app::AppConfig;
-pub use enums::{Protocol, ProxyAuthMode, SchedulingMode, UpstreamProxyMode, ZaiDispatchMode};
+pub use enums::{
+    Protocol, ProxyAuthMode, ProxyRotationStrategy, SchedulingMode, UpstreamProxyMode,
+    ZaiDispatchMode,
+};
 pub use proxy::ProxyConfig;
 pub use session::{
-    ExperimentalConfig, QuotaProtectionConfig, SmartWarmupConfig, StickySessionConfig,
-    UpstreamProxyConfig,
+    AccountProxyPoolConfig, ExperimentalConfig, ProxyAssignmentStrategy, QuotaProtectionConfig,
+    SmartWarmupConfig, StickySessionConfig, UpstreamProxyConfig,
 };
 pub use thinking::{ThinkingBudgetConfig, ThinkingBudgetMode};
 pub use zai::{ZaiConfig, ZaiMcpConfig, ZaiModelDefaults};

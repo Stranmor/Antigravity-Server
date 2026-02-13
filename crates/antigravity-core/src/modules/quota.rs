@@ -47,9 +47,9 @@ struct Tier {
     id: Option<String>,
 }
 
-/// Create configured HTTP Client
-fn create_client() -> reqwest::Client {
-    crate::utils::http::create_client(15)
+/// Create configured HTTP Client that routes through an account's proxy.
+fn create_client_proxied(proxy_url: Option<&str>) -> reqwest::Client {
+    crate::utils::http::create_client_for_account(15, proxy_url)
 }
 
 const CLOUD_CODE_BASE_URL: &str = "https://cloudcode-pa.googleapis.com";
@@ -124,19 +124,29 @@ pub async fn fetch_quota(
     access_token: &str,
     email: &str,
 ) -> crate::error::AppResult<(QuotaData, Option<String>)> {
-    fetch_quota_inner(access_token, email).await
+    fetch_quota_inner(access_token, email, None).await
+}
+
+/// Unified entry point for querying account quota through a proxy.
+pub async fn fetch_quota_proxied(
+    access_token: &str,
+    email: &str,
+    proxy_url: Option<&str>,
+) -> crate::error::AppResult<(QuotaData, Option<String>)> {
+    fetch_quota_inner(access_token, email, proxy_url).await
 }
 
 /// Query account quota logic
 pub async fn fetch_quota_inner(
     access_token: &str,
     email: &str,
+    proxy_url: Option<&str>,
 ) -> crate::error::AppResult<(QuotaData, Option<String>)> {
     use crate::error::AppError;
     // crate::modules::logger::log_info(&format!("[{}] Starting external quota query...", email));
 
     // 1. Get Project ID and subscription type
-    let client = create_client();
+    let client = create_client_proxied(proxy_url);
     let (project_id, subscription_tier) = fetch_project_id(&client, access_token, email).await;
 
     let final_project_id = project_id.as_deref().unwrap_or("bamboo-precept-lgxtn");

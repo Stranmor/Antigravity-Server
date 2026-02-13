@@ -1,6 +1,7 @@
 //! Dashboard sections: current account, best accounts, tiers, quick actions
 
 use crate::api_models::Account;
+use crate::pages::accounts::filter_types::format_tier_display;
 use leptos::prelude::*;
 
 /// Current account section showing active account details.
@@ -25,9 +26,10 @@ pub(crate) fn CurrentAccountSection(current_account: Memo<Option<Account>>) -> i
                             .unwrap_or(0)
                     }).unwrap_or(0);
 
-                    let tier = account.quota.as_ref()
+                    let tier_raw = account.quota.as_ref()
                         .and_then(|q| q.subscription_tier.clone())
                         .unwrap_or_else(|| "Free".to_string());
+                    let tier = format_tier_display(&tier_raw);
                     let tier_class = tier.to_lowercase();
                     let tier_display = tier.clone();
 

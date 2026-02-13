@@ -27,6 +27,7 @@ fn make_token(email: &str, tier: Option<&str>, quota: Option<i32>, health: f32) 
         HashSet::new(),
         health,
         HashSet::new(),
+        None, // proxy_url
     )
 }
 
@@ -47,6 +48,7 @@ fn make_protected_token(email: &str, protected_model: &str) -> ProxyToken {
         protected,
         1.0,
         HashSet::new(),
+        None, // proxy_url
     )
 }
 

@@ -105,15 +105,17 @@ impl TokenManager {
         reason: RateLimitReason,
         model: Option<String>,
     ) -> bool {
-        let access_token = {
+        let (access_token, proxy_url) = {
             let mut found_token: Option<String> = None;
+            let mut found_proxy: Option<String> = None;
             for entry in self.tokens.iter() {
                 if entry.value().email == email {
                     found_token = Some(entry.value().access_token.clone());
+                    found_proxy = entry.value().proxy_url.clone();
                     break;
                 }
             }
-            found_token
+            (found_token, found_proxy)
         };
 
         let access_token = match access_token {
@@ -128,7 +130,7 @@ impl TokenManager {
         };
 
         tracing::info!("Account {} refreshing quota in realtime...", email);
-        match quota::fetch_quota(&access_token, email).await {
+        match quota::fetch_quota_proxied(&access_token, email, proxy_url.as_deref()).await {
             Ok((quota_data, _project_id)) => {
                 let earliest_reset = quota_data
                     .models

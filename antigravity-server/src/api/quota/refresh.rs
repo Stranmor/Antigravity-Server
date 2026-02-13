@@ -25,11 +25,19 @@ pub async fn refresh_account_quota(
     State(state): State<AppState>,
     Json(payload): Json<RefreshQuotaRequest>,
 ) -> Result<Json<QuotaResponse>, (StatusCode, String)> {
-    let account_id = payload.account_id.clone();
-    let acc = tokio::task::spawn_blocking(move || account::load_account(&account_id))
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
-        .map_err(|e| (StatusCode::NOT_FOUND, e))?;
+    let acc = if let Some(repo) = state.repository() {
+        repo.get_account(&payload.account_id)
+            .await
+            .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?
+    } else {
+        let account_id = payload.account_id.clone();
+        tokio::task::spawn_blocking(move || account::load_account(&account_id))
+            .await
+            .map_err(|e| {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}"))
+            })?
+            .map_err(|e| (StatusCode::NOT_FOUND, e))?
+    };
 
     match account::fetch_quota_with_retry(&acc, state.repository()).await {
         Ok(result) => {
@@ -49,20 +57,8 @@ pub async fn refresh_account_quota(
             let protected_models =
                 updated_account.map(|updated| updated.protected_models.iter().cloned().collect());
             if let Some(repo) = state.repository() {
-                match repo.get_account_by_email(&acc.email).await {
-                    Ok(Some(pg_account)) => {
-                        if let Err(e) =
-                            repo.update_quota(&pg_account.id, quota.clone(), protected_models).await
-                        {
-                            tracing::warn!("DB quota update failed for {}: {}", acc.email, e);
-                        }
-                    },
-                    Ok(None) => {
-                        tracing::warn!("PG account lookup failed for {}", acc.email);
-                    },
-                    Err(e) => {
-                        tracing::warn!("PG account lookup error for {}: {}", acc.email, e);
-                    },
+                if let Err(e) = repo.update_quota(&acc.id, quota.clone(), protected_models).await {
+                    tracing::warn!("DB quota update failed for {}: {}", acc.email, e);
                 }
             }
             if let Err(e) = state.reload_accounts().await {
@@ -78,10 +74,8 @@ pub async fn refresh_account_quota(
 pub async fn refresh_all_quotas(
     State(state): State<AppState>,
 ) -> Result<Json<antigravity_types::models::RefreshStats>, (StatusCode, String)> {
-    let accounts = tokio::task::spawn_blocking(account::list_accounts)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let accounts =
+        state.list_accounts().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
     let total = accounts.len();
     let mut join_set: JoinSet<
@@ -134,20 +128,8 @@ pub async fn refresh_all_quotas(
                         },
                     };
                 if let Some(repo) = state.repository() {
-                    match repo.get_account_by_email(&email).await {
-                        Ok(Some(pg_account)) => {
-                            if let Err(e) =
-                                repo.update_quota(&pg_account.id, quota, protected_models).await
-                            {
-                                tracing::warn!("DB quota update failed for {}: {}", email, e);
-                            }
-                        },
-                        Ok(None) => {
-                            tracing::warn!("PG account lookup failed for {}", email);
-                        },
-                        Err(e) => {
-                            tracing::warn!("PG account lookup error for {}: {}", email, e);
-                        },
+                    if let Err(e) = repo.update_quota(&account_id, quota, protected_models).await {
+                        tracing::warn!("DB quota update failed for {}: {}", email, e);
                     }
                 }
                 success += 1;

@@ -195,6 +195,9 @@ pub trait AccountRepository: Send + Sync {
     /// Update only the account display name (atomic, no read-modify-write).
     async fn update_name(&self, account_id: &str, name: &str) -> RepoResult<()>;
 
+    /// Update per-account proxy URL. Pass None to clear.
+    async fn update_proxy_url(&self, account_id: &str, proxy_url: Option<&str>) -> RepoResult<()>;
+
     /// Disable an account (atomic, no read-modify-write).
     async fn set_account_disabled(
         &self,

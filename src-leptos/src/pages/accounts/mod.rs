@@ -14,7 +14,7 @@ use std::collections::HashSet;
 
 use actions::AccountActions;
 use content::AccountsContent;
-use filter_types::{is_pro_tier, is_ultra_tier, needs_phone_verification};
+use filter_types::{is_account_banned, is_pro_tier, is_ultra_tier, needs_phone_verification};
 pub(crate) use filter_types::{FilterType, ViewMode};
 use header::{Header, MessageBanner};
 use modals::Modals;
@@ -82,7 +82,7 @@ pub(crate) fn Accounts() -> impl IntoView {
         let accounts = state.accounts.get();
         let current_filter = filter.get();
 
-        accounts
+        let mut result: Vec<_> = accounts
             .into_iter()
             .filter(|a| {
                 if !query.is_empty() && !a.email.to_lowercase().contains(&query) {
@@ -99,7 +99,20 @@ pub(crate) fn Accounts() -> impl IntoView {
                     },
                 }
             })
-            .collect::<Vec<_>>()
+            .collect();
+
+        // Sort: healthy first, disabled next, banned last
+        result.sort_by_key(|a| {
+            if is_account_banned(a) {
+                2
+            } else if a.disabled {
+                1
+            } else {
+                0
+            }
+        });
+
+        result
     });
 
     let paginated_accounts = Memo::new(move |_| {

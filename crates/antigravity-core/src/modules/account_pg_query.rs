@@ -13,7 +13,7 @@ pub(crate) async fn get_account_impl(pool: &PgPool, id: &str) -> RepoResult<Acco
         r#"
         SELECT a.id, a.email, a.name, a.disabled, a.disabled_reason, a.disabled_at,
                a.proxy_disabled, a.proxy_disabled_reason, a.proxy_disabled_at,
-               a.protected_models, a.created_at, a.last_used_at,
+               a.protected_models, a.proxy_url, a.created_at, a.last_used_at,
                t.access_token, t.refresh_token, t.expiry_timestamp, t.project_id, t.email as token_email,
                t.tier as token_tier,
                q.models as quota_models, q.is_forbidden as quota_is_forbidden, q.fetched_at as quota_fetched_at
@@ -41,7 +41,7 @@ pub(crate) async fn get_account_by_email_impl(
         r#"
         SELECT a.id, a.email, a.name, a.disabled, a.disabled_reason, a.disabled_at,
                a.proxy_disabled, a.proxy_disabled_reason, a.proxy_disabled_at,
-               a.protected_models, a.created_at, a.last_used_at,
+               a.protected_models, a.proxy_url, a.created_at, a.last_used_at,
                t.access_token, t.refresh_token, t.expiry_timestamp, t.project_id, t.email as token_email,
                t.tier as token_tier,
                q.models as quota_models, q.is_forbidden as quota_is_forbidden, q.fetched_at as quota_fetched_at
@@ -68,7 +68,7 @@ pub(crate) async fn list_accounts_impl(pool: &PgPool) -> RepoResult<Vec<Account>
         r#"
         SELECT a.id, a.email, a.name, a.disabled, a.disabled_reason, a.disabled_at,
                a.proxy_disabled, a.proxy_disabled_reason, a.proxy_disabled_at,
-               a.protected_models, a.created_at, a.last_used_at,
+               a.protected_models, a.proxy_url, a.created_at, a.last_used_at,
                t.access_token, t.refresh_token, t.expiry_timestamp, t.project_id, t.email as token_email,
                t.tier as token_tier,
                q.models as quota_models, q.is_forbidden as quota_is_forbidden, q.fetched_at as quota_fetched_at

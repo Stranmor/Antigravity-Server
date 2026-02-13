@@ -156,18 +156,25 @@ pub async fn handle_messages(
         };
         let mapped_model = prepared.mapped_model;
         let request_with_mapped = prepared.request_with_mapped;
-        let gemini_body = prepared.gemini_body;
+        let mut gemini_body = prepared.gemini_body;
+        crate::proxy::upstream::device_fingerprint::inject_body_fingerprint(
+            &mut gemini_body,
+            &email,
+        );
 
         let call_config = prepare_upstream_call(&request, &request_with_mapped, &trace_id);
 
+        let account_proxy = token_manager.get_account_proxy_url(&email);
         let response = match upstream
-            .call_v1_internal_with_warp(
+            .call_v1_internal_fingerprinted_warp(
                 call_config.method,
                 &access_token,
                 gemini_body,
                 call_config.query,
+                &email,
                 call_config.extra_headers.clone(),
                 None,
+                account_proxy.as_deref(),
             )
             .await
         {

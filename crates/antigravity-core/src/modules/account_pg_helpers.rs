@@ -64,6 +64,7 @@ pub(crate) fn row_to_account(row: &sqlx::postgres::PgRow) -> RepoResult<Account>
         proxy_disabled_reason: row.get("proxy_disabled_reason"),
         proxy_disabled_at: proxy_disabled_at.map(|dt| dt.timestamp()),
         protected_models: protected,
+        proxy_url: row.get("proxy_url"),
         created_at: created_at.timestamp(),
         last_used: last_used.timestamp(),
     })

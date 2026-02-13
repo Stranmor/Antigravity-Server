@@ -26,7 +26,9 @@ pub async fn build_router(state: AppState) -> Router {
     let public_routes = Router::<AppState>::new()
         .route("/health", get(health_check))
         .route("/healthz", get(health_check))
-        .route("/version", get(version_info));
+        .route("/version", get(version_info))
+        // OAuth callback must be public — Google redirects the browser here without API key
+        .route("/api/oauth/callback", get(api::oauth::handle_oauth_callback));
 
     let index_path = format!("{}/index.html", static_dir);
     let spa_service = ServeDir::new(&static_dir)

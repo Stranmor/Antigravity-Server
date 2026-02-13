@@ -29,6 +29,7 @@ fn create_test_token(tier: Option<&str>) -> ProxyToken {
         HashSet::new(),
         1.0,
         HashSet::new(),
+        None, // proxy_url
     )
 }
 

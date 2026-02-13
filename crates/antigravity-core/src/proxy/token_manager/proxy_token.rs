@@ -50,6 +50,8 @@ pub struct ProxyToken {
     pub health_score: f32,
     /// Models available for this account (from quota API response).
     pub available_models: HashSet<String>,
+    /// Per-account proxy URL. When set, all requests use this proxy.
+    pub proxy_url: Option<String>,
     /// Pre-computed account tier (cached from subscription_tier string).
     cached_tier: AccountTier,
 }
@@ -85,6 +87,7 @@ impl ProxyToken {
         protected_models: HashSet<String>,
         health_score: f32,
         available_models: HashSet<String>,
+        proxy_url: Option<String>,
     ) -> Self {
         let cached_tier = Self::parse_tier(subscription_tier.as_deref());
         Self {
@@ -101,6 +104,7 @@ impl ProxyToken {
             protected_models,
             health_score,
             available_models,
+            proxy_url,
             cached_tier,
         }
     }

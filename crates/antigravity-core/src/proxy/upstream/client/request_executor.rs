@@ -3,10 +3,11 @@ use serde_json::Value;
 use std::collections::HashMap;
 use tokio::time::Duration;
 
+use super::super::device_fingerprint;
 use super::super::endpoint_health::{
     ENDPOINT_HEALTH, MAX_TRANSPORT_RETRIES_PER_ENDPOINT, TRANSPORT_RETRY_DELAY_MS,
 };
-use super::super::user_agent::DEFAULT_USER_AGENT;
+use super::super::user_agent::{get_user_agent_for_account, DEFAULT_USER_AGENT};
 
 pub fn build_url(base_url: &str, method: &str, query_string: Option<&str>) -> String {
     if let Some(qs) = query_string {
@@ -23,6 +24,15 @@ fn should_try_next_endpoint(status: StatusCode) -> bool {
         || status.is_server_error()
 }
 
+/// Build hardened request headers with per-account fingerprinting.
+///
+/// When `account_email` is provided, headers include:
+/// - Per-account User-Agent from the UA pool
+/// - `x-goog-api-client` header mimicking real Google Cloud SDK
+/// - Google API User-Agent (`google-api-nodejs-client/9.15.1`)
+///
+/// These headers make each account's requests look like they come from
+/// a unique, legitimate Antigravity IDE instance.
 pub fn build_headers(
     access_token: &str,
     extra_headers: HashMap<String, String>,
@@ -34,7 +44,15 @@ pub fn build_headers(
         header::HeaderValue::from_str(&format!("Bearer {}", access_token))
             .map_err(|e| e.to_string())?,
     );
-    headers.insert(header::USER_AGENT, header::HeaderValue::from_static(DEFAULT_USER_AGENT));
+
+    // Determine User-Agent: prefer per-account UA from extra_headers,
+    // otherwise use default
+    let has_custom_ua =
+        extra_headers.contains_key("user-agent") || extra_headers.contains_key("User-Agent");
+
+    if !has_custom_ua {
+        headers.insert(header::USER_AGENT, header::HeaderValue::from_static(DEFAULT_USER_AGENT));
+    }
 
     for (k, v) in extra_headers {
         if let Ok(hk) = header::HeaderName::from_bytes(k.as_bytes()) {
@@ -45,6 +63,36 @@ pub fn build_headers(
     }
 
     Ok(headers)
+}
+
+/// Build headers with per-account fingerprinting.
+///
+/// This is the preferred method when account email is known. It:
+/// 1. Selects a deterministic User-Agent for this account
+/// 2. Adds `x-goog-api-client` header matching Google SDK patterns
+/// 3. Adds Google API client User-Agent
+/// 4. Merges any additional extra_headers
+///
+/// This makes each account appear as a unique Antigravity IDE instance.
+pub fn build_headers_with_fingerprint(
+    access_token: &str,
+    account_email: &str,
+    extra_headers: HashMap<String, String>,
+) -> Result<header::HeaderMap, String> {
+    let fp = device_fingerprint::get_fingerprint(account_email);
+    let ua = get_user_agent_for_account(account_email);
+
+    let mut merged_headers = fp.to_extra_headers();
+
+    // Add per-account User-Agent
+    merged_headers.insert("User-Agent".to_string(), ua.to_string());
+
+    // Merge caller's extra headers (they take precedence)
+    for (k, v) in extra_headers {
+        merged_headers.insert(k, v);
+    }
+
+    build_headers(access_token, merged_headers)
 }
 
 pub async fn execute_with_fallback(

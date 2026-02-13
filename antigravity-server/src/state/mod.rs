@@ -16,7 +16,7 @@ use tokio::sync::RwLock;
 use antigravity_core::modules::repository::AccountRepository;
 use antigravity_core::proxy::{
     build_proxy_router_with_shared_state, AdaptiveLimitManager, CircuitBreakerManager,
-    HealthMonitor, ProxyMonitor, ProxySecurityConfig, TokenManager,
+    HealthMonitor, ProxyMonitor, ProxyRouterConfig, ProxySecurityConfig, TokenManager,
 };
 use antigravity_types::models::ProxyConfig;
 
@@ -41,7 +41,7 @@ pub struct AppStateInner {
     pub adaptive_limits: Arc<AdaptiveLimitManager>,
     pub health_monitor: Arc<HealthMonitor>,
     pub circuit_breaker: Arc<CircuitBreakerManager>,
-    pub oauth_states: Arc<DashMap<String, Instant>>,
+    pub oauth_states: Arc<DashMap<String, (Instant, Option<String>)>>,
     pub bound_port: AtomicU16,
     pub http_client: reqwest::Client,
     pub repository: Option<Arc<dyn AccountRepository>>,
@@ -130,22 +130,22 @@ impl AppState {
     }
 
     pub async fn build_proxy_router(&self) -> Router {
-        build_proxy_router_with_shared_state(
-            self.inner.token_manager.clone(),
-            self.inner.custom_mapping.clone(),
-            Arc::clone(&self.inner.upstream_proxy),
-            self.inner.security_config.clone(),
-            self.inner.zai_config.clone(),
-            self.inner.monitor.clone(),
-            self.inner.experimental_config.clone(),
-            self.inner.adaptive_limits.clone(),
-            self.inner.health_monitor.clone(),
-            self.inner.circuit_breaker.clone(),
-            self.inner.http_client.clone(),
-            self.inner.provider_rr.clone(),
-            self.inner.zai_vision_mcp.clone(),
-            self.inner.upstream_client.clone(),
-        )
+        build_proxy_router_with_shared_state(ProxyRouterConfig {
+            token_manager: self.inner.token_manager.clone(),
+            custom_mapping: self.inner.custom_mapping.clone(),
+            upstream_proxy: Arc::clone(&self.inner.upstream_proxy),
+            security_config: self.inner.security_config.clone(),
+            zai: self.inner.zai_config.clone(),
+            monitor: self.inner.monitor.clone(),
+            experimental: self.inner.experimental_config.clone(),
+            adaptive_limits: self.inner.adaptive_limits.clone(),
+            health_monitor: self.inner.health_monitor.clone(),
+            circuit_breaker: self.inner.circuit_breaker.clone(),
+            http_client: self.inner.http_client.clone(),
+            provider_rr: self.inner.provider_rr.clone(),
+            zai_vision_mcp: self.inner.zai_vision_mcp.clone(),
+            upstream_client: self.inner.upstream_client.clone(),
+        })
     }
 }
 

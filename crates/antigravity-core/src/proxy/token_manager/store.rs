@@ -176,6 +176,8 @@ impl TokenManager {
             );
         }
 
+        let proxy_url = account.get("proxy_url").and_then(|v| v.as_str()).map(|s| s.to_string());
+
         Ok(Some(ProxyToken::new(
             account_id,
             access_token,
@@ -190,6 +192,7 @@ impl TokenManager {
             protected_models,
             health_score,
             available_models,
+            proxy_url,
         )))
     }
 
@@ -243,6 +246,14 @@ impl TokenManager {
 
         let project_id = self.ensure_project_id(&mut token).await?;
         Ok((token.access_token, project_id, token.email))
+    }
+
+    /// Get the per-account proxy URL for the given email, if configured.
+    pub fn get_account_proxy_url(&self, email: &str) -> Option<String> {
+        self.tokens
+            .iter()
+            .find(|entry| entry.value().email == email)
+            .and_then(|entry| entry.value().proxy_url.clone())
     }
 
     pub fn len(&self) -> usize {

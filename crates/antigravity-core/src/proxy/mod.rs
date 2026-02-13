@@ -21,6 +21,7 @@ pub mod adaptive_limit;
 pub mod health;
 pub mod monitor;
 pub mod prometheus;
+pub mod proxy_pool;
 pub mod routing_config;
 pub mod security;
 pub mod server;
@@ -56,9 +57,12 @@ pub use antigravity_types::models::{ProxyAuthMode, ZaiConfig, ZaiDispatchMode};
 
 // Core types
 pub use monitor::{ProxyEventBus, ProxyMonitor};
+pub use proxy_pool::ProxyPool;
 pub use routing_config::SmartRoutingConfig;
 pub use security::ProxySecurityConfig;
-pub use server::{build_proxy_router_with_shared_state, AxumServer, ServerStartConfig};
+pub use server::{
+    build_proxy_router_with_shared_state, AxumServer, ProxyRouterConfig, ServerStartConfig,
+};
 pub use signature_cache::SignatureCache;
 pub use token_manager::TokenManager;
 

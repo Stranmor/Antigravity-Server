@@ -97,7 +97,16 @@ pub fn get_auth_url_with_state(redirect_uri: &str, state: &str) -> Result<String
 
 /// Exchange Authorization Code for Token
 pub async fn exchange_code(code: &str, redirect_uri: &str) -> Result<TokenResponse, String> {
-    let client = crate::utils::http::create_client(15);
+    exchange_code_with_proxy(code, redirect_uri, None).await
+}
+
+/// Exchange Authorization Code for Token, routing through optional proxy.
+pub async fn exchange_code_with_proxy(
+    code: &str,
+    redirect_uri: &str,
+    proxy_url: Option<&str>,
+) -> Result<TokenResponse, String> {
+    let client = crate::utils::http::create_client_for_account(15, proxy_url);
 
     let client_id = oauth_client_id()?;
     let client_secret = oauth_client_secret()?;
@@ -146,7 +155,15 @@ pub async fn exchange_code(code: &str, redirect_uri: &str) -> Result<TokenRespon
 
 /// Refresh access_token using refresh_token
 pub async fn refresh_access_token(refresh_token: &str) -> Result<TokenResponse, String> {
-    let client = crate::utils::http::create_client(15);
+    refresh_access_token_with_proxy(refresh_token, None).await
+}
+
+/// Refresh access_token using refresh_token, routing through optional proxy.
+pub async fn refresh_access_token_with_proxy(
+    refresh_token: &str,
+    proxy_url: Option<&str>,
+) -> Result<TokenResponse, String> {
+    let client = crate::utils::http::create_client_for_account(15, proxy_url);
 
     let client_id = oauth_client_id()?;
     let client_secret = oauth_client_secret()?;
@@ -185,7 +202,15 @@ pub async fn refresh_access_token(refresh_token: &str) -> Result<TokenResponse, 
 
 /// Get user info
 pub async fn get_user_info(access_token: &str) -> Result<UserInfo, String> {
-    let client = crate::utils::http::create_client(15);
+    get_user_info_with_proxy(access_token, None).await
+}
+
+/// Get user info, routing through optional proxy.
+pub async fn get_user_info_with_proxy(
+    access_token: &str,
+    proxy_url: Option<&str>,
+) -> Result<UserInfo, String> {
+    let client = crate::utils::http::create_client_for_account(15, proxy_url);
 
     let response = client
         .get(USERINFO_URL)
@@ -206,6 +231,7 @@ pub async fn get_user_info(access_token: &str) -> Result<UserInfo, String> {
 /// Returns the latest access_token
 pub async fn ensure_fresh_token(
     current_token: &crate::models::TokenData,
+    proxy_url: Option<&str>,
 ) -> Result<crate::models::TokenData, String> {
     let now = chrono::Local::now().timestamp();
 
@@ -216,7 +242,7 @@ pub async fn ensure_fresh_token(
 
     // Need to refresh
     crate::modules::logger::log_info("Token about to expire, refreshing...");
-    let response = refresh_access_token(&current_token.refresh_token).await?;
+    let response = refresh_access_token_with_proxy(&current_token.refresh_token, proxy_url).await?;
 
     // Construct new TokenData
     Ok(crate::models::TokenData::new(

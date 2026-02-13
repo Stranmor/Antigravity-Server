@@ -2,7 +2,7 @@
 
 use crate::api_models::Account;
 use crate::formatters::{format_time_remaining, get_time_remaining_color};
-use crate::pages::accounts::filter_types::quota_class;
+use crate::pages::accounts::filter_types::{format_tier_display, quota_class};
 use leptos::prelude::*;
 
 #[component]
@@ -57,11 +57,13 @@ pub(crate) fn AccountCard(
     let g3_image_reset_color = reset_time_class(get_time_remaining_color(&reset_g3_image));
     let claude_reset_color = reset_time_class(get_time_remaining_color(&reset_claude));
 
-    let tier = account
+    let tier_raw = account
         .quota
         .as_ref()
         .and_then(|q| q.subscription_tier.clone())
         .unwrap_or_else(|| "Free".to_string());
+
+    let tier = format_tier_display(&tier_raw);
 
     let tier_class = if tier.to_lowercase().contains("ultra") {
         "tier-ultra"

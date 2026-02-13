@@ -6,7 +6,7 @@ mod accounts;
 mod config;
 mod device;
 mod monitor;
-mod oauth;
+pub mod oauth;
 mod proxy;
 mod quota;
 mod resilience;
@@ -57,9 +57,8 @@ pub fn router() -> Router<AppState> {
         .route("/accounts/toggle-proxy", post(quota::toggle_proxy_status))
         .route("/accounts/warmup", post(quota::warmup_account))
         .route("/accounts/warmup-all", post(quota::warmup_all_accounts))
-        // OAuth (headless flow)
+        // OAuth (headless flow) — callback is public (in router.rs), initiation is protected
         .route("/oauth/url", get(oauth::get_oauth_url))
-        .route("/oauth/callback", get(oauth::handle_oauth_callback))
         .route("/oauth/login", post(oauth::start_oauth_login))
         .route("/oauth/submit-code", post(oauth::submit_oauth_code))
         // Proxy

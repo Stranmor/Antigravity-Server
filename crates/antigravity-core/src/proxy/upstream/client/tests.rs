@@ -17,104 +17,104 @@ fn test_build_url() {
 }
 
 #[tokio::test]
-async fn test_warp_client_cache_reuses_url() {
-    let proxy_config =
-        Arc::new(RwLock::new(antigravity_types::models::config::UpstreamProxyConfig::default()));
-    let client = super::UpstreamClient::new(reqwest::Client::new(), proxy_config, None);
-
-    // First call — builds and caches client for this URL
-    if let Err(error) = client.get_warp_client("http://127.0.0.1:12345").await {
-        panic!("warp client build failed: {}", error);
-    }
-    {
-        let guard = client.warp_client.read().await;
-        let (cached_url, _) = guard.as_ref().expect("warp cache empty after first build");
-        assert_eq!(cached_url, "http://127.0.0.1:12345");
-    }
-
-    // Second call with same URL — should return cached client (no rebuild)
-    if let Err(error) = client.get_warp_client("http://127.0.0.1:12345").await {
-        panic!("warp client build failed: {}", error);
-    }
-    {
-        let guard = client.warp_client.read().await;
-        let (cached_url, _) = guard.as_ref().expect("warp cache empty after second call");
-        assert_eq!(
-            cached_url, "http://127.0.0.1:12345",
-            "cache URL should not change for same URL"
-        );
-    }
-
-    // Third call with different URL — cache should update
-    if let Err(error) = client.get_warp_client("http://127.0.0.1:23456").await {
-        panic!("warp client build failed: {}", error);
-    }
-    {
-        let guard = client.warp_client.read().await;
-        let (cached_url, _) = guard.as_ref().expect("warp cache empty after URL change");
-        assert_eq!(cached_url, "http://127.0.0.1:23456", "cache should update for new URL");
-    }
-}
-
-#[tokio::test]
-async fn test_get_client_disabled_proxy_returns_direct() {
-    let config = antigravity_types::models::config::UpstreamProxyConfig {
-        enabled: false,
-        url: String::new(),
-        ..Default::default()
-    };
+async fn test_direct_mode_returns_ok() {
+    let config = antigravity_types::models::config::UpstreamProxyConfig::default();
     let proxy_config = Arc::new(RwLock::new(config));
     let client = super::UpstreamClient::new(reqwest::Client::new(), proxy_config, None);
 
-    let result = client.get_client().await;
+    let result = client.get_client_for_account(None, None).await;
     assert!(result.is_ok());
 }
 
 #[tokio::test]
-async fn test_get_client_enabled_empty_url_returns_error() {
+async fn test_pool_mode_empty_is_strict_error() {
     let config = antigravity_types::models::config::UpstreamProxyConfig {
+        mode: antigravity_types::models::UpstreamProxyMode::Pool,
+        enabled: true,
+        proxy_urls: vec![], // Empty pool
+        ..Default::default()
+    };
+    let proxy_config = Arc::new(RwLock::new(config));
+    let client = super::UpstreamClient::new(reqwest::Client::new(), proxy_config, None);
+
+    let result = client.get_client_for_account(Some("test@test.com"), None).await;
+    assert!(result.is_err(), "Empty pool in Pool mode MUST return error, not fallback to direct");
+    assert!(result.unwrap_err().contains("EMPTY"));
+}
+
+#[tokio::test]
+async fn test_per_account_sticky_proxy() {
+    let config = antigravity_types::models::config::UpstreamProxyConfig {
+        mode: antigravity_types::models::UpstreamProxyMode::Pool,
         enabled: true,
         url: String::new(),
-        ..Default::default()
+        proxy_urls: vec![
+            "http://127.0.0.1:8081".to_string(),
+            "http://127.0.0.1:8082".to_string(),
+            "http://127.0.0.1:8083".to_string(),
+        ],
+        rotation_strategy: antigravity_types::models::ProxyRotationStrategy::PerAccount,
     };
     let proxy_config = Arc::new(RwLock::new(config));
     let client = super::UpstreamClient::new(reqwest::Client::new(), proxy_config, None);
+    let pool = client.proxy_pool();
 
-    let result = client.get_client().await;
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("empty"));
+    // Same account should always get same proxy
+    let email = "test@example.com";
+    let url1 = pool.select_proxy_url(Some(email)).await.unwrap();
+    let url2 = pool.select_proxy_url(Some(email)).await.unwrap();
+    let url3 = pool.select_proxy_url(Some(email)).await.unwrap();
+    assert_eq!(url1, url2);
+    assert_eq!(url2, url3);
 }
 
 #[tokio::test]
-async fn test_get_client_enabled_valid_url_returns_ok() {
+async fn test_per_account_no_email_is_error() {
     let config = antigravity_types::models::config::UpstreamProxyConfig {
+        mode: antigravity_types::models::UpstreamProxyMode::Pool,
         enabled: true,
-        url: "http://127.0.0.1:8080".to_string(),
-        ..Default::default()
+        url: String::new(),
+        proxy_urls: vec!["http://127.0.0.1:8081".to_string()],
+        rotation_strategy: antigravity_types::models::ProxyRotationStrategy::PerAccount,
     };
     let proxy_config = Arc::new(RwLock::new(config));
     let client = super::UpstreamClient::new(reqwest::Client::new(), proxy_config, None);
+    let pool = client.proxy_pool();
 
-    let result = client.get_client().await;
+    let result = pool.select_proxy_url(None).await;
+    assert!(result.is_err(), "PerAccount without email MUST error");
+}
+
+#[tokio::test]
+async fn test_webshare_format_parsing() {
+    use crate::proxy::proxy_pool::parse_proxy_url;
+
+    let result = parse_proxy_url("31.59.20.176:6754:gqkywhck:4fhnq5cyq4tk");
     assert!(result.is_ok());
+    assert_eq!(result.unwrap(), "http://gqkywhck:4fhnq5cyq4tk@31.59.20.176:6754");
+
+    let result2 = parse_proxy_url("socks5://127.0.0.1:1080");
+    assert!(result2.is_ok());
+    assert_eq!(result2.unwrap(), "socks5://127.0.0.1:1080");
+
+    let result3 = parse_proxy_url("");
+    assert!(result3.is_err());
 }
 
 #[tokio::test]
-async fn test_get_client_caches_proxied_client() {
+async fn test_pool_stats() {
     let config = antigravity_types::models::config::UpstreamProxyConfig {
+        mode: antigravity_types::models::UpstreamProxyMode::Pool,
         enabled: true,
-        url: "http://127.0.0.1:9999".to_string(),
-        ..Default::default()
+        url: String::new(),
+        proxy_urls: vec!["http://127.0.0.1:8081".to_string(), "http://127.0.0.1:8082".to_string()],
+        rotation_strategy: antigravity_types::models::ProxyRotationStrategy::PerAccount,
     };
     let proxy_config = Arc::new(RwLock::new(config));
     let client = super::UpstreamClient::new(reqwest::Client::new(), proxy_config, None);
+    let pool = client.proxy_pool();
 
-    assert!(client.get_client().await.is_ok());
-    {
-        let guard = client.proxied_client.read().await;
-        let (cached_url, _) = guard.as_ref().expect("proxied cache should be populated");
-        assert_eq!(cached_url, "http://127.0.0.1:9999");
-    }
-
-    assert!(client.get_client().await.is_ok());
+    let stats = pool.stats().await;
+    assert_eq!(stats.pool_size, 2);
+    assert_eq!(stats.mode, antigravity_types::models::UpstreamProxyMode::Pool);
 }

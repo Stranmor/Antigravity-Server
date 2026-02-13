@@ -30,6 +30,7 @@ fn clean_json_schema_recursive_bounded(value: &mut Value, depth: usize) -> bool 
         Value::Object(map) => {
             merge_all_of(map);
 
+            // Process 'properties' sub-schemas (independent, not mutually exclusive with 'items')
             if let Some(Value::Object(props)) = map.get_mut("properties") {
                 let mut nullable_keys = HashSet::new();
                 for (k, v) in props {
@@ -48,15 +49,11 @@ fn clean_json_schema_recursive_bounded(value: &mut Value, depth: usize) -> bool 
                         }
                     }
                 }
-            } else if let Some(items) = map.get_mut("items") {
+            }
+
+            // Process 'items' sub-schema (for array types — can coexist with properties in some schemas)
+            if let Some(items) = map.get_mut("items") {
                 let _ = clean_json_schema_recursive_bounded(items, depth + 1);
-            } else {
-                let union_keys: HashSet<&str> = HashSet::from(["anyOf", "oneOf", "allOf"]);
-                for (k, v) in map.iter_mut() {
-                    if !union_keys.contains(k.as_str()) {
-                        let _ = clean_json_schema_recursive_bounded(v, depth + 1);
-                    }
-                }
             }
 
             if let Some(Value::Array(any_of)) = map.get_mut("anyOf") {

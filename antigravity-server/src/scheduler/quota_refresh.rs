@@ -98,8 +98,10 @@ pub fn start_quota_refresh(state: AppState) {
                     },
                 }
             };
-            let enabled_accounts: Vec<_> =
-                accounts.into_iter().filter(|a| !a.disabled && !a.proxy_disabled).collect();
+            // Include proxy_disabled accounts: tier detection (via loadCodeAssist)
+            // happens during quota refresh. Excluding proxy_disabled accounts leaves
+            // their subscription_tier permanently NULL in the database.
+            let enabled_accounts: Vec<_> = accounts.into_iter().filter(|a| !a.disabled).collect();
 
             let needs_immediate: Vec<_> = enabled_accounts
                 .iter()

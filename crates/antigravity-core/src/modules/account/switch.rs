@@ -23,7 +23,7 @@ pub async fn switch_account(account_id: &str) -> Result<(), String> {
     let mut account = load_account_async(account_id_owned.clone()).await?;
     logger::log_info(&format!("Switching to account: {} (ID: {})", account.email, account.id));
 
-    let fresh_token = oauth::ensure_fresh_token(&account.token)
+    let fresh_token = oauth::ensure_fresh_token(&account.token, account.proxy_url.as_deref())
         .await
         .map_err(|e| format!("Token refresh failed: {}", e))?;
 

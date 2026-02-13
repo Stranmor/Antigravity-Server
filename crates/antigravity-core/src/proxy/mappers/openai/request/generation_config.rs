@@ -69,7 +69,7 @@ pub fn build_generation_config(
 
             // maxOutputTokens calculation (same as original logic but with resolved budget)
             if let Some(max_tokens) = request.max_tokens {
-                if (max_tokens as i64) <= budget as i64 {
+                if u64::from(max_tokens) <= budget {
                     gen_config["maxOutputTokens"] = json!(budget + THINKING_MIN_OVERHEAD);
                 } else {
                     gen_config["maxOutputTokens"] = json!(max_tokens);

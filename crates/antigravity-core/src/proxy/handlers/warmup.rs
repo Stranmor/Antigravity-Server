@@ -92,7 +92,7 @@ pub async fn handle_warmup(
     let is_claude = antigravity_types::ModelFamily::from_model_name(&req.model).is_claude();
     let is_image = req.model.to_lowercase().contains("image");
 
-    let body: Value = if is_claude {
+    let mut body: Value = if is_claude {
         // Claude model：use transform_claude_request_in convert
         let session_id = format!(
             "warmup_{}_{}",
@@ -163,6 +163,7 @@ pub async fn handle_warmup(
 
         wrap_request(&base_request, &project_id, &req.model, Some(&session_id))
     };
+    crate::proxy::upstream::device_fingerprint::inject_body_fingerprint(&mut body, &req.email);
 
     // ===== step 3: call UpstreamClient =====
     let model_lower = req.model.to_lowercase();
@@ -174,15 +175,18 @@ pub async fn handle_warmup(
         (format!("models/{}:streamGenerateContent", req.model), Some("alt=sse"))
     };
 
+    let account_proxy = state.token_manager.get_account_proxy_url(&req.email);
     let mut result = state
         .upstream
-        .call_v1_internal_with_warp(
+        .call_v1_internal_fingerprinted_warp(
             &method,
             &access_token,
             body.clone(),
             query,
+            &req.email,
             std::collections::HashMap::new(),
             None,
+            account_proxy.as_deref(),
         )
         .await;
 
@@ -190,13 +194,15 @@ pub async fn handle_warmup(
     if result.is_err() && !prefer_non_stream {
         result = state
             .upstream
-            .call_v1_internal_with_warp(
+            .call_v1_internal_fingerprinted_warp(
                 &format!("models/{}:generateContent", req.model),
                 &access_token,
                 body,
                 None,
+                &req.email,
                 std::collections::HashMap::new(),
                 None,
+                account_proxy.as_deref(),
             )
             .await;
     }

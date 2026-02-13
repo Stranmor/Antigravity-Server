@@ -33,7 +33,13 @@ impl TokenManager {
 
         tracing::debug!("Account {} token expiring, refreshing...", token.email);
 
-        match oauth::refresh_access_token(&token.refresh_token).await {
+        // Use per-account proxy for token refresh to prevent IP leak
+        match oauth::refresh_access_token_with_proxy(
+            &token.refresh_token,
+            token.proxy_url.as_deref(),
+        )
+        .await
+        {
             Ok(token_response) => {
                 let new_timestamp = now + token_response.expires_in;
 
@@ -100,7 +106,11 @@ impl TokenManager {
         }
 
         tracing::debug!("Account {} missing project_id, fetching...", token.email);
-        let pid = match crate::proxy::project_resolver::fetch_project_id(&token.access_token).await
+        let pid = match crate::proxy::project_resolver::fetch_project_id_with_proxy(
+            &token.access_token,
+            token.proxy_url.as_deref(),
+        )
+        .await
         {
             Ok(pid) => pid,
             Err(e) => {

@@ -3,6 +3,14 @@ use serde_json::Value;
 /// Use Antigravity loadCodeAssist API to get project_id
 /// This is the correct method to get cloudaicompanionProject
 pub async fn fetch_project_id(access_token: &str) -> Result<String, String> {
+    fetch_project_id_with_proxy(access_token, None).await
+}
+
+/// Use Antigravity loadCodeAssist API to get project_id, routing through optional proxy.
+pub async fn fetch_project_id_with_proxy(
+    access_token: &str,
+    proxy_url: Option<&str>,
+) -> Result<String, String> {
     let url = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist";
 
     let request_body = serde_json::json!({
@@ -11,7 +19,7 @@ pub async fn fetch_project_id(access_token: &str) -> Result<String, String> {
         }
     });
 
-    let client = crate::utils::http::create_client(30);
+    let client = crate::utils::http::create_client_for_account(30, proxy_url);
     let response = client
         .post(url)
         .bearer_auth(access_token)

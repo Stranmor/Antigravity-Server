@@ -43,16 +43,13 @@ fn join_base_url(base: &str, path: &str) -> Result<String, String> {
 
 fn copy_passthrough_headers(incoming: &HeaderMap) -> HeaderMap {
     // Only forward a conservative set of headers to avoid leaking the local proxy key or cookies.
+    // Note: `HeaderMap` already stores names as lowercase, so `k.as_str()` is lowercase.
     let mut out = HeaderMap::new();
 
     for (k, v) in incoming.iter() {
-        let key = k.as_str().to_ascii_lowercase();
-        match key.as_str() {
-            "content-type" | "accept" | "anthropic-version" | "user-agent" => {
-                out.insert(k.clone(), v.clone());
-            },
-            // Some clients use these for streaming; safe to pass through.
-            "accept-encoding" | "cache-control" => {
+        match k.as_str() {
+            "content-type" | "accept" | "anthropic-version" | "user-agent" | "accept-encoding"
+            | "cache-control" => {
                 out.insert(k.clone(), v.clone());
             },
             // Intentionally ignored: all other headers stripped to avoid leaking proxy keys/cookies

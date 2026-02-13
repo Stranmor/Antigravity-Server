@@ -16,6 +16,7 @@ pub async fn call_upstream_with_retry(
     query_string: Option<&str>,
     warp_proxy: Option<&str>,
     email: &str,
+    account_proxy_url: Option<&str>,
     attempt: usize,
     max_attempts: usize,
 ) -> UpstreamResult {
@@ -23,13 +24,15 @@ pub async fn call_upstream_with_retry(
     loop {
         let gemini_body_clone = gemini_body.clone();
         match upstream
-            .call_v1_internal_with_warp(
+            .call_v1_internal_fingerprinted_warp(
                 method,
                 access_token,
                 gemini_body_clone,
                 query_string,
+                email,
                 std::collections::HashMap::new(),
                 warp_proxy,
+                account_proxy_url,
             )
             .await
         {

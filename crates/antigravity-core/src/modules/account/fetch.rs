@@ -46,7 +46,8 @@ pub async fn fetch_quota_with_retry(
 ) -> AppResult<QuotaFetchResult> {
     use crate::modules::{oauth, quota};
 
-    let token = match oauth::ensure_fresh_token(&account.token).await {
+    let token = match oauth::ensure_fresh_token(&account.token, account.proxy_url.as_deref()).await
+    {
         Ok(t) => t,
         Err(e) => {
             if e.contains("invalid_grant") {
@@ -74,12 +75,16 @@ pub async fn fetch_quota_with_retry(
     let name =
         if account.name.is_none() || account.name.as_ref().is_some_and(|n| n.trim().is_empty()) {
             logger::log_info(&format!("Account {} missing name, fetching...", account.email));
-            let fetched =
-                if let Ok(user_info) = oauth::get_user_info(&active_token.access_token).await {
-                    user_info.get_display_name()
-                } else {
-                    None
-                };
+            let fetched = if let Ok(user_info) = oauth::get_user_info_with_proxy(
+                &active_token.access_token,
+                account.proxy_url.as_deref(),
+            )
+            .await
+            {
+                user_info.get_display_name()
+            } else {
+                None
+            };
             if fetched.is_some() {
                 persist_name(repo, account, fetched.as_deref(), refreshed_token.as_ref()).await;
             }
@@ -88,7 +93,12 @@ pub async fn fetch_quota_with_retry(
             None
         };
 
-    let result = quota::fetch_quota(&active_token.access_token, &account.email).await;
+    let result = quota::fetch_quota_proxied(
+        &active_token.access_token,
+        &account.email,
+        account.proxy_url.as_deref(),
+    )
+    .await;
 
     if let Ok((ref quota_data, ref project_id)) = result {
         persist_quota_data(
@@ -137,7 +147,12 @@ async fn handle_unauthorized_retry(
 
     logger::log_warn(&format!("401 Unauthorized for {}, forcing refresh...", account.email));
 
-    let token_res = match oauth::refresh_access_token(&account.token.refresh_token).await {
+    let token_res = match oauth::refresh_access_token_with_proxy(
+        &account.token.refresh_token,
+        account.proxy_url.as_deref(),
+    )
+    .await
+    {
         Ok(t) => t,
         Err(e) => {
             if e.contains("invalid_grant") {
@@ -166,7 +181,12 @@ async fn handle_unauthorized_retry(
 
     let name =
         if account.name.is_none() || account.name.as_ref().is_some_and(|n| n.trim().is_empty()) {
-            let fetched = match oauth::get_user_info(&token_res.access_token).await {
+            let fetched = match oauth::get_user_info_with_proxy(
+                &token_res.access_token,
+                account.proxy_url.as_deref(),
+            )
+            .await
+            {
                 Ok(user_info) => user_info.get_display_name(),
                 Err(_) => None,
             };
@@ -178,7 +198,12 @@ async fn handle_unauthorized_retry(
             None
         };
 
-    let retry_result = quota::fetch_quota(&new_token.access_token, &account.email).await;
+    let retry_result = quota::fetch_quota_proxied(
+        &new_token.access_token,
+        &account.email,
+        account.proxy_url.as_deref(),
+    )
+    .await;
 
     if let Ok((ref quota_data, ref project_id)) = retry_result {
         persist_quota_data(

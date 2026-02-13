@@ -38,6 +38,10 @@ pub struct Account {
     /// Models protected by quota protection (disabled for this account due to low quota)
     #[serde(default, skip_serializing_if = "HashSet::is_empty")]
     pub protected_models: HashSet<String>,
+    /// Per-account proxy URL (socks5://, http://).
+    /// When set, ALL requests for this account go through this proxy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_url: Option<String>,
     /// Timestamp when account was created
     pub created_at: i64,
     /// Timestamp when account was last used
@@ -61,6 +65,7 @@ impl Account {
             proxy_disabled_reason: None,
             proxy_disabled_at: None,
             protected_models: HashSet::new(),
+            proxy_url: None,
             created_at: now,
             last_used: now,
         }

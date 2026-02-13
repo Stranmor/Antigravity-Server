@@ -156,6 +156,10 @@ pub async fn delete_accounts_handler(
 #[derive(Deserialize)]
 pub struct AddByTokenRequest {
     pub refresh_tokens: Vec<String>,
+    /// Optional proxy URL to assign to these accounts.
+    /// When set, ALL requests for these accounts (including this initial setup)
+    /// will be routed through this proxy. One proxy = one account.
+    pub proxy_url: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -177,15 +181,33 @@ pub async fn add_account_by_token(
 
     let mut join_set: JoinSet<Result<TokenResult, String>> = JoinSet::new();
 
-    for token in payload.refresh_tokens {
-        join_set.spawn(async move {
-            let token_response = core_oauth::refresh_access_token(&token)
-                .await
-                .map_err(|e| format!("Token refresh failed: {}", e))?;
+    // Resolve proxy_url: explicit from request > auto-assigned from pool > None
+    let proxy_url = if payload.proxy_url.is_some() {
+        payload.proxy_url.clone()
+    } else {
+        let pool = &state.inner.proxy_config.read().await.account_proxy_pool;
+        antigravity_core::modules::proxy_pool::assign_proxy_from_pool(pool, None)
+    };
 
-            let user_info = core_oauth::get_user_info(&token_response.access_token)
-                .await
-                .map_err(|e| format!("User info failed: {}", e))?;
+    if proxy_url.is_some() {
+        tracing::info!("Using per-account proxy for new accounts: {:?}", proxy_url);
+    }
+
+    for token in payload.refresh_tokens {
+        let proxy_url = proxy_url.clone();
+        join_set.spawn(async move {
+            // Use per-account proxy from the very first request
+            let token_response =
+                core_oauth::refresh_access_token_with_proxy(&token, proxy_url.as_deref())
+                    .await
+                    .map_err(|e| format!("Token refresh failed: {}", e))?;
+
+            let user_info = core_oauth::get_user_info_with_proxy(
+                &token_response.access_token,
+                proxy_url.as_deref(),
+            )
+            .await
+            .map_err(|e| format!("User info failed: {}", e))?;
 
             let refresh_token =
                 token_response.refresh_token.clone().unwrap_or_else(|| token.clone());
@@ -238,7 +260,38 @@ pub async fn add_account_by_token(
                 };
 
                 match upsert_result {
-                    Ok(acc) => {
+                    Ok(mut acc) => {
+                        // Immediately set proxy_url if provided — before reload_accounts
+                        // so the first token manager operation uses the proxy
+                        if let Some(ref purl) = proxy_url {
+                            acc.proxy_url = Some(purl.clone());
+                            if let Some(repo) = state.repository() {
+                                if let Err(e) =
+                                    repo.update_proxy_url(&acc.id, Some(purl.as_str())).await
+                                {
+                                    tracing::warn!(
+                                        "Failed to persist proxy_url to DB for {}: {}",
+                                        acc.email,
+                                        e
+                                    );
+                                }
+                            }
+                            // Also persist to JSON file so both paths are covered
+                            let acc_clone = acc.clone();
+                            if let Err(e) = tokio::task::spawn_blocking(move || {
+                                account::save_account(&acc_clone)
+                            })
+                            .await
+                            .unwrap_or_else(|e| Err(format!("spawn_blocking panicked: {e}")))
+                            {
+                                tracing::warn!(
+                                    "Failed to persist proxy_url to JSON for {}: {}",
+                                    acc.email,
+                                    e
+                                );
+                            }
+                        }
+
                         success_count = success_count.saturating_add(1);
                         added_accounts.push(AccountInfo {
                             id: acc.id.clone(),

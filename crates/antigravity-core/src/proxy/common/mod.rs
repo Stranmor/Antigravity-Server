@@ -14,6 +14,7 @@ pub mod thinking_config;
 pub mod thinking_constants;
 pub mod tool_adapter;
 pub mod tool_adapters;
+pub mod tos_ban;
 
 pub use circuit_breaker::{CircuitBreakerManager, CircuitState};
 pub use model_mapping_ext::resolve_model_route;

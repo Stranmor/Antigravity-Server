@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use validator::Validate;
 
 use super::enums::ProxyAuthMode;
-use super::session::{ExperimentalConfig, StickySessionConfig, UpstreamProxyConfig};
+use super::session::{
+    AccountProxyPoolConfig, ExperimentalConfig, StickySessionConfig, UpstreamProxyConfig,
+};
 use super::thinking::ThinkingBudgetConfig;
 use super::zai::ZaiConfig;
 
@@ -65,6 +67,10 @@ pub struct ProxyConfig {
     /// None = round-robin, Some(account_id) = always use this account
     #[serde(default)]
     pub preferred_account_id: Option<String>,
+    /// Per-account proxy pool: automatically assign proxies to new accounts
+    #[serde(default)]
+    #[validate(nested)]
+    pub account_proxy_pool: AccountProxyPoolConfig,
 }
 
 impl Default for ProxyConfig {
@@ -85,6 +91,7 @@ impl Default for ProxyConfig {
             experimental: ExperimentalConfig::default(),
             thinking_budget: ThinkingBudgetConfig::default(),
             preferred_account_id: None,
+            account_proxy_pool: AccountProxyPoolConfig::default(),
         }
     }
 }

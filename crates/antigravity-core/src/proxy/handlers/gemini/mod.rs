@@ -137,13 +137,25 @@ pub async fn handle_generate(
         last_email = Some(email.clone());
         info!("[Gemini] Account: {} (type: {})", email, config.request_type);
 
-        let wrapped_body = wrap_request(&body, &project_id, &mapped_model, Some(&session_id));
+        let mut wrapped_body = wrap_request(&body, &project_id, &mapped_model, Some(&session_id));
+        crate::proxy::upstream::device_fingerprint::inject_body_fingerprint(
+            &mut wrapped_body,
+            &email,
+        );
         let query_string = if is_stream { Some("alt=sse") } else { None };
         let upstream_method = if is_stream { "streamGenerateContent" } else { "generateContent" };
 
+        let account_proxy = token_manager.get_account_proxy_url(&email);
         let response = match state
             .upstream
-            .call_v1_internal(upstream_method, &access_token, wrapped_body, query_string)
+            .call_v1_internal_fingerprinted(
+                upstream_method,
+                &access_token,
+                wrapped_body,
+                query_string,
+                &email,
+                account_proxy.as_deref(),
+            )
             .await
         {
             Ok(r) => r,
@@ -207,30 +219,61 @@ pub async fn handle_generate(
         if crate::proxy::retry::is_rate_limit_code(code) || code == 401 || code == 403 {
             token_manager.mark_rate_limited(&email, code, retry_after.as_deref(), &error_text);
 
-            if code == 403
-                && (error_text.contains("SERVICE_DISABLED")
-                    || error_text.contains("CONSUMER_INVALID")
-                    || error_text.contains("Permission denied on resource project")
-                    || error_text.contains("verify your account"))
-            {
-                warn!(
-                    "[Gemini] Account {} needs verification or has project issue. 1h lockout.",
-                    email
-                );
-                token_manager.rate_limit_tracker().set_lockout_until(
-                    &email,
-                    std::time::SystemTime::now() + std::time::Duration::from_secs(3600),
-                    crate::proxy::rate_limit::RateLimitReason::ServerError,
-                    None,
-                );
-                let email_clone = email.clone();
-                tokio::spawn(async move {
-                    let _ = crate::modules::account::mark_needs_verification_by_email(&email_clone)
-                        .await;
-                });
-                attempted_accounts.insert(email.clone());
-                attempt += 1;
-                continue;
+            if code == 403 {
+                use crate::proxy::common::tos_ban::{
+                    classify_403, ForbiddenReason, TOS_BAN_LOCKOUT_SECS,
+                };
+                match classify_403(&error_text) {
+                    ForbiddenReason::TosBanned => {
+                        tracing::error!(
+                            "[Gemini] 🚫 Account {} TOS-BANNED! 24h lockout. Error: {}",
+                            email,
+                            &error_text[..error_text.len().min(200)]
+                        );
+                        token_manager.rate_limit_tracker().set_lockout_until(
+                            &email,
+                            std::time::SystemTime::now()
+                                + std::time::Duration::from_secs(TOS_BAN_LOCKOUT_SECS),
+                            crate::proxy::rate_limit::RateLimitReason::ServerError,
+                            None,
+                        );
+                        let email_clone = email.clone();
+                        tokio::spawn(async move {
+                            let _ = crate::modules::account::mark_needs_verification_by_email(
+                                &email_clone,
+                            )
+                            .await;
+                        });
+                        attempted_accounts.insert(email.clone());
+                        attempt += 1;
+                        continue;
+                    },
+                    ForbiddenReason::NeedsVerification => {
+                        warn!(
+                            "[Gemini] 🚫 Account {} needs verification or has project issue. 1h lockout.",
+                            email
+                        );
+                        token_manager.rate_limit_tracker().set_lockout_until(
+                            &email,
+                            std::time::SystemTime::now() + std::time::Duration::from_secs(3600),
+                            crate::proxy::rate_limit::RateLimitReason::ServerError,
+                            None,
+                        );
+                        let email_clone = email.clone();
+                        tokio::spawn(async move {
+                            let _ = crate::modules::account::mark_needs_verification_by_email(
+                                &email_clone,
+                            )
+                            .await;
+                        });
+                        attempted_accounts.insert(email.clone());
+                        attempt += 1;
+                        continue;
+                    },
+                    ForbiddenReason::Other => {
+                        // Standard 403 — handled below by generic rate limit logic
+                    },
+                }
             }
 
             if code == 429 && error_text.contains("QUOTA_EXHAUSTED") {

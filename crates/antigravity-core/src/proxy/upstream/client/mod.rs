@@ -7,9 +7,8 @@ use reqwest::Client;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::time::Duration;
 
-use super::user_agent::DEFAULT_USER_AGENT;
+use crate::proxy::proxy_pool::ProxyPool;
 
 // Cloud Code v1internal endpoints (fallback order: Sandbox → Daily → Prod)
 // Ref upstream Issue #1176: prefer Sandbox/Daily to avoid Prod 429 errors
@@ -49,8 +48,7 @@ fn resolve_upstream_urls(explicit: Option<Vec<String>>) -> Vec<String> {
 
 pub struct UpstreamClient {
     http_client: Client,
-    proxied_client: Arc<tokio::sync::RwLock<Option<(String, Client)>>>,
-    warp_client: Arc<tokio::sync::RwLock<Option<(String, Client)>>>,
+    proxy_pool: Arc<ProxyPool>,
     base_urls: Vec<String>,
     proxy_config: Arc<tokio::sync::RwLock<crate::proxy::config::UpstreamProxyConfig>>,
 }
@@ -65,111 +63,73 @@ impl UpstreamClient {
         proxy_config: Arc<tokio::sync::RwLock<crate::proxy::config::UpstreamProxyConfig>>,
         base_urls: Option<Vec<String>>,
     ) -> Self {
+        let pool = {
+            let config = proxy_config.try_read().ok();
+            match config {
+                Some(cfg) => ProxyPool::new(http_client.clone(), &cfg),
+                None => ProxyPool::new(
+                    http_client.clone(),
+                    &crate::proxy::config::UpstreamProxyConfig::default(),
+                ),
+            }
+        };
+
         let base_urls = resolve_upstream_urls(base_urls);
 
-        Self {
-            http_client,
-            proxied_client: Arc::new(tokio::sync::RwLock::new(None)),
-            warp_client: Arc::new(tokio::sync::RwLock::new(None)),
-            base_urls,
-            proxy_config,
-        }
+        Self { http_client, proxy_pool: Arc::new(pool), base_urls, proxy_config }
     }
 
-    async fn get_client(&self) -> Result<Client, String> {
+    /// Get the proxy pool reference for external use.
+    pub fn proxy_pool(&self) -> &Arc<ProxyPool> {
+        &self.proxy_pool
+    }
+
+    /// Update proxy pool configuration (called on hot-reload).
+    pub async fn update_proxy_config(&self) {
         let config = self.proxy_config.read().await;
-        if !config.enabled {
-            return Ok(self.http_client.clone());
-        }
-        if config.url.is_empty() {
-            return Err("Upstream proxy enabled but URL is empty".to_string());
-        }
+        self.proxy_pool.update_config(&config).await;
+    }
 
-        {
-            let client_guard = self.proxied_client.read().await;
-            if let Some((cached_url, client)) = client_guard.as_ref() {
-                if cached_url == &config.url {
-                    return Ok(client.clone());
-                }
-            }
-        }
-
-        let mut client_guard = self.proxied_client.write().await;
-        if let Some((cached_url, client)) = client_guard.as_ref() {
-            if cached_url == &config.url {
-                return Ok(client.clone());
-            }
+    /// Get a client for the given account, respecting per-account proxy and pool rotation.
+    ///
+    /// Priority: per-account proxy_url > pool/custom mode > direct.
+    pub(crate) async fn get_client_for_account(
+        &self,
+        account_email: Option<&str>,
+        account_proxy_url: Option<&str>,
+    ) -> Result<Client, String> {
+        // Per-account proxy takes absolute priority
+        if let Some(proxy_url) = account_proxy_url {
+            return self.proxy_pool.get_or_create_warp_client(proxy_url).await;
         }
 
-        let proxy = reqwest::Proxy::all(&config.url)
-            .map_err(|e| format!("Invalid proxy URL '{}': {}", config.url, e))?;
-
-        let proxy_url = config.url.clone();
+        let config = self.proxy_config.read().await;
+        let mode = config.mode;
         drop(config);
 
-        let new_client = tokio::task::spawn_blocking(move || {
-            Client::builder()
-                .connect_timeout(Duration::from_secs(20))
-                .pool_max_idle_per_host(16)
-                .pool_idle_timeout(Duration::from_secs(90))
-                .tcp_keepalive(Duration::from_secs(60))
-                .http2_keep_alive_interval(Duration::from_secs(25))
-                .http2_keep_alive_timeout(Duration::from_secs(10))
-                .http2_keep_alive_while_idle(true)
-                .timeout(Duration::from_secs(600))
-                .user_agent(DEFAULT_USER_AGENT)
-                .proxy(proxy)
-                .build()
-                .map_err(|e| format!("Failed to build proxied client: {}", e))
-        })
-        .await
-        .map_err(|e| format!("spawn_blocking panicked building proxied client: {}", e))??;
-
-        *client_guard = Some((proxy_url, new_client.clone()));
-        Ok(new_client)
+        match mode {
+            antigravity_types::models::UpstreamProxyMode::Pool => {
+                self.proxy_pool.get_client(account_email).await
+            },
+            antigravity_types::models::UpstreamProxyMode::Custom => {
+                self.proxy_pool.get_client(account_email).await
+            },
+            _ => Ok(self.http_client.clone()),
+        }
     }
 
-    async fn get_warp_client(&self, proxy_url: &str) -> Result<Client, String> {
-        {
-            let client_guard = self.warp_client.read().await;
-            if let Some((cached_url, client)) = client_guard.as_ref() {
-                if cached_url == proxy_url {
-                    return Ok(client.clone());
-                }
-            }
+    /// Get the effective proxy URL for an account (for logging/headers).
+    ///
+    /// Per-account proxy_url takes priority over pool selection.
+    pub(crate) async fn get_effective_proxy_url(
+        &self,
+        account_email: Option<&str>,
+        account_proxy_url: Option<&str>,
+    ) -> Result<Option<String>, String> {
+        if let Some(url) = account_proxy_url {
+            return Ok(Some(url.to_string()));
         }
-
-        let proxy_url_owned = proxy_url.to_string();
-        let mut client_guard = self.warp_client.write().await;
-        if let Some((cached_url, client)) = client_guard.as_ref() {
-            if cached_url == proxy_url {
-                return Ok(client.clone());
-            }
-        }
-
-        let proxy = reqwest::Proxy::all(&proxy_url_owned)
-            .map_err(|e| format!("Invalid WARP proxy URL '{}': {}", proxy_url_owned, e))?;
-
-        let new_client = tokio::task::spawn_blocking(move || {
-            Client::builder()
-                .connect_timeout(Duration::from_secs(20))
-                .pool_max_idle_per_host(4)
-                .pool_idle_timeout(Duration::from_secs(30))
-                .tcp_keepalive(Duration::from_secs(60))
-                .http2_keep_alive_interval(Duration::from_secs(25))
-                .http2_keep_alive_timeout(Duration::from_secs(10))
-                .http2_keep_alive_while_idle(true)
-                .timeout(Duration::from_secs(600))
-                .user_agent(DEFAULT_USER_AGENT)
-                .proxy(proxy)
-                .build()
-                .map_err(|e| format!("Failed to create WARP client: {}", e))
-        })
-        .await
-        .map_err(|e| format!("spawn_blocking panicked building WARP client: {}", e))??;
-
-        *client_guard = Some((proxy_url_owned, new_client.clone()));
-        Ok(new_client)
+        self.proxy_pool.select_proxy_url(account_email).await
     }
 
     pub async fn call_v1_internal(
@@ -183,6 +143,87 @@ impl UpstreamClient {
             .await
     }
 
+    /// Call v1internal with per-account fingerprinting.
+    ///
+    /// This is the preferred method for account-specific requests. It injects:
+    /// - Per-account User-Agent from the UA pool
+    /// - `x-goog-api-client` header mimicking Google Cloud SDK
+    /// - Device fingerprint identifiers
+    ///
+    /// Each account appears as a unique Antigravity IDE instance.
+    /// Uses proxy pool rotation when Pool mode is enabled.
+    pub async fn call_v1_internal_fingerprinted(
+        &self,
+        method: &str,
+        access_token: &str,
+        body: Value,
+        query_string: Option<&str>,
+        account_email: &str,
+        account_proxy_url: Option<&str>,
+    ) -> Result<reqwest::Response, String> {
+        let headers = request_executor::build_headers_with_fingerprint(
+            access_token,
+            account_email,
+            HashMap::new(),
+        )?;
+        let client = self.get_client_for_account(Some(account_email), account_proxy_url).await?;
+        let proxy_url =
+            self.get_effective_proxy_url(Some(account_email), account_proxy_url).await?;
+        request_executor::execute_with_fallback(
+            &client,
+            method,
+            headers,
+            &body,
+            query_string,
+            proxy_url.as_deref(),
+            &self.base_urls,
+        )
+        .await
+    }
+
+    /// Call v1internal with per-account fingerprinting via WARP proxy or proxy pool.
+    ///
+    /// Priority: explicit warp_proxy_url > per-account proxy_url > pool rotation.
+    pub async fn call_v1_internal_fingerprinted_warp(
+        &self,
+        method: &str,
+        access_token: &str,
+        body: Value,
+        query_string: Option<&str>,
+        account_email: &str,
+        extra_headers: HashMap<String, String>,
+        warp_proxy_url: Option<&str>,
+        account_proxy_url: Option<&str>,
+    ) -> Result<reqwest::Response, String> {
+        // Priority: explicit WARP > per-account proxy > pool rotation
+        let (client, effective_proxy) = if let Some(proxy_url) = warp_proxy_url {
+            let client = self.proxy_pool.get_or_create_warp_client(proxy_url).await?;
+            (client, Some(proxy_url.to_string()))
+        } else {
+            let client =
+                self.get_client_for_account(Some(account_email), account_proxy_url).await?;
+            let proxy =
+                self.get_effective_proxy_url(Some(account_email), account_proxy_url).await?;
+            (client, proxy)
+        };
+
+        let headers = request_executor::build_headers_with_fingerprint(
+            access_token,
+            account_email,
+            extra_headers,
+        )?;
+        request_executor::execute_with_fallback(
+            &client,
+            method,
+            headers,
+            &body,
+            query_string,
+            effective_proxy.as_deref(),
+            &self.base_urls,
+        )
+        .await
+    }
+
     pub async fn call_v1_internal_with_warp(
         &self,
         method: &str,
@@ -192,10 +233,13 @@ impl UpstreamClient {
         extra_headers: HashMap<String, String>,
         warp_proxy_url: Option<&str>,
     ) -> Result<reqwest::Response, String> {
-        let client = if let Some(proxy_url) = warp_proxy_url {
-            self.get_warp_client(proxy_url).await?
+        let (client, effective_proxy) = if let Some(proxy_url) = warp_proxy_url {
+            let client = self.proxy_pool.get_or_create_warp_client(proxy_url).await?;
+            (client, Some(proxy_url.to_string()))
         } else {
-            self.get_client().await?
+            let client = self.get_client_for_account(None, None).await?;
+            let proxy = self.proxy_pool.select_proxy_url(None).await?;
+            (client, proxy)
         };
 
         let headers = request_executor::build_headers(access_token, extra_headers)?;
@@ -205,7 +249,7 @@ impl UpstreamClient {
             headers,
             &body,
             query_string,
-            warp_proxy_url,
+            effective_proxy.as_deref(),
             &self.base_urls,
         )
         .await
@@ -220,7 +264,7 @@ impl UpstreamClient {
         extra_headers: HashMap<String, String>,
     ) -> Result<reqwest::Response, String> {
         let headers = request_executor::build_headers(access_token, extra_headers)?;
-        let client = self.get_client().await?;
+        let client = self.get_client_for_account(None, None).await?;
         request_executor::execute_with_fallback(
             &client,
             method,

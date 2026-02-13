@@ -31,27 +31,48 @@ pub struct AppState {
     pub zai_vision_mcp: Arc<crate::proxy::zai_vision_mcp::ZaiVisionMcpState>,
 }
 
+/// Configuration for building the proxy router with shared state references.
+///
+/// All fields are `Arc`-wrapped to allow hot-reload: external code can update
+/// the underlying values at runtime while the router continues to serve.
+pub struct ProxyRouterConfig {
+    pub token_manager: Arc<TokenManager>,
+    pub custom_mapping: Arc<RwLock<std::collections::HashMap<String, String>>>,
+    pub upstream_proxy: Arc<RwLock<antigravity_types::models::UpstreamProxyConfig>>,
+    pub security_config: Arc<RwLock<crate::proxy::ProxySecurityConfig>>,
+    pub zai: Arc<RwLock<antigravity_types::models::ZaiConfig>>,
+    pub monitor: Arc<crate::proxy::monitor::ProxyMonitor>,
+    pub experimental: Arc<RwLock<antigravity_types::models::ExperimentalConfig>>,
+    pub adaptive_limits: Arc<crate::proxy::AdaptiveLimitManager>,
+    pub health_monitor: Arc<crate::proxy::HealthMonitor>,
+    pub circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
+    pub http_client: reqwest::Client,
+    pub provider_rr: Arc<AtomicUsize>,
+    pub zai_vision_mcp: Arc<crate::proxy::zai_vision_mcp::ZaiVisionMcpState>,
+    pub upstream_client: Arc<crate::proxy::upstream::client::UpstreamClient>,
+}
+
 /// Build proxy router with shared state references for hot-reload support.
 ///
-/// Unlike `build_proxy_router`, this version accepts pre-created Arc references
+/// Accepts a [`ProxyRouterConfig`] containing pre-created Arc references
 /// so that external code can update the mapping at runtime.
-#[allow(clippy::too_many_arguments, reason = "server bootstrap requires all subsystem references")]
-pub fn build_proxy_router_with_shared_state(
-    token_manager: Arc<TokenManager>,
-    custom_mapping: Arc<RwLock<std::collections::HashMap<String, String>>>,
-    upstream_proxy: Arc<RwLock<antigravity_types::models::UpstreamProxyConfig>>,
-    security_config: Arc<RwLock<crate::proxy::ProxySecurityConfig>>,
-    zai: Arc<RwLock<antigravity_types::models::ZaiConfig>>,
-    monitor: Arc<crate::proxy::monitor::ProxyMonitor>,
-    experimental: Arc<RwLock<antigravity_types::models::ExperimentalConfig>>,
-    adaptive_limits: Arc<crate::proxy::AdaptiveLimitManager>,
-    health_monitor: Arc<crate::proxy::HealthMonitor>,
-    circuit_breaker: Arc<crate::proxy::CircuitBreakerManager>,
-    http_client: reqwest::Client,
-    provider_rr: Arc<AtomicUsize>,
-    zai_vision_mcp: Arc<crate::proxy::zai_vision_mcp::ZaiVisionMcpState>,
-    upstream_client: Arc<crate::proxy::upstream::client::UpstreamClient>,
-) -> Router<()> {
+pub fn build_proxy_router_with_shared_state(config: ProxyRouterConfig) -> Router<()> {
+    let ProxyRouterConfig {
+        token_manager,
+        custom_mapping,
+        upstream_proxy,
+        security_config,
+        zai,
+        monitor,
+        experimental,
+        adaptive_limits,
+        health_monitor,
+        circuit_breaker,
+        http_client,
+        provider_rr,
+        zai_vision_mcp,
+        upstream_client,
+    } = config;
     let state = AppState {
         token_manager,
         custom_mapping: Arc::clone(&custom_mapping),
@@ -197,22 +218,22 @@ impl AxumServer {
             None,
         ));
 
-        let app = build_proxy_router_with_shared_state(
-            self.config.token_manager,
+        let app = build_proxy_router_with_shared_state(ProxyRouterConfig {
+            token_manager: self.config.token_manager,
             custom_mapping,
             upstream_proxy,
             security_config,
             zai,
-            self.config.monitor,
+            monitor: self.config.monitor,
             experimental,
-            self.config.adaptive_limits,
-            self.config.health_monitor,
-            self.config.circuit_breaker,
+            adaptive_limits: self.config.adaptive_limits,
+            health_monitor: self.config.health_monitor,
+            circuit_breaker: self.config.circuit_breaker,
             http_client,
             provider_rr,
             zai_vision_mcp,
             upstream_client,
-        );
+        });
 
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         axum::serve(listener, app).await?;

@@ -52,3 +52,18 @@ pub fn create_client_with_proxy(
         },
     }
 }
+
+/// Create an HTTP client that routes through the given account proxy URL.
+///
+/// This is the **single entry-point** that every service function should use
+/// when it needs to make an HTTP request on behalf of a specific account.
+/// If `proxy_url` is `None`, a regular (direct) client is returned.
+pub fn create_client_for_account(timeout_secs: u64, proxy_url: Option<&str>) -> Client {
+    match proxy_url {
+        Some(url) => create_client_with_proxy(
+            timeout_secs,
+            Some(UpstreamProxyConfig { enabled: true, url: url.to_string() }),
+        ),
+        None => create_client(timeout_secs),
+    }
+}

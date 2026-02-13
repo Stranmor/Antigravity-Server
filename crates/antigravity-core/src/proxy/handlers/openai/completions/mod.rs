@@ -79,7 +79,11 @@ pub async fn handle_completions(
             SignatureCache::global().preload_signatures_from_db(&content_hashes).await;
         }
 
-        let gemini_body = transform_openai_request(&openai_req, &project_id, &mapped_model);
+        let mut gemini_body = transform_openai_request(&openai_req, &project_id, &mapped_model);
+        crate::proxy::upstream::device_fingerprint::inject_body_fingerprint(
+            &mut gemini_body,
+            &email,
+        );
         debug!(
             "[Codex-Request] Transformed Gemini Body ({} parts)",
             gemini_body.get("contents").and_then(|c| c.as_array()).map(|a| a.len()).unwrap_or(0)
@@ -89,14 +93,17 @@ pub async fn handle_completions(
         let method = if list_response { "streamGenerateContent" } else { "generateContent" };
         let query_string = if list_response { Some("alt=sse") } else { None };
 
+        let account_proxy = token_manager.get_account_proxy_url(&email);
         let response = match upstream
-            .call_v1_internal_with_warp(
+            .call_v1_internal_fingerprinted_warp(
                 method,
                 &access_token,
                 gemini_body,
                 query_string,
+                &email,
                 std::collections::HashMap::new(),
                 None,
+                account_proxy.as_deref(),
             )
             .await
         {

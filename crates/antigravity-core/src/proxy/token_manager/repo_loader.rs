@@ -87,6 +87,7 @@ impl TokenManager {
             protected_models,
             health_score,
             available_models,
+            account.proxy_url.clone(),
         ))
     }
 

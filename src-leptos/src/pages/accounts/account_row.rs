@@ -6,7 +6,7 @@ use crate::formatters::{format_time_remaining, get_time_remaining_color};
 use leptos::prelude::*;
 use std::collections::HashSet;
 
-use super::filter_types::quota_class;
+use super::filter_types::{format_tier_display, quota_class};
 
 /// Account table row component for list view.
 #[component]
@@ -38,14 +38,22 @@ pub(crate) fn AccountRow(
     let email = account.email.clone();
     let is_disabled = account.disabled;
     let proxy_disabled = account.proxy_disabled;
+    let disabled_reason = account.proxy_disabled_reason.clone();
     let needs_verification =
-        account.proxy_disabled_reason.as_ref().is_some_and(|r| r == "phone_verification_required");
+        disabled_reason.as_ref().is_some_and(|r| r == "phone_verification_required");
+    let is_tos_banned = disabled_reason.as_ref().is_some_and(|r| {
+        r.contains("tos_ban") || r.contains("banned") || r.contains("USER_DISABLED")
+    });
+    let is_locked =
+        !is_tos_banned && !needs_verification && disabled_reason.is_some() && proxy_disabled;
 
-    let tier = account
+    let tier_raw = account
         .quota
         .as_ref()
         .and_then(|q| q.subscription_tier.clone())
         .unwrap_or_else(|| "Free".to_string());
+
+    let tier = format_tier_display(&tier_raw);
 
     let tier_class = if tier.to_lowercase().contains("ultra") {
         "tier-ultra"
@@ -80,6 +88,17 @@ pub(crate) fn AccountRow(
     let reset_g3_image = g3_image.map(|m| m.reset_time.clone()).unwrap_or_default();
     let quota_claude = claude.map(|m| m.percentage).unwrap_or(0);
     let reset_claude = claude.map(|m| m.reset_time.clone()).unwrap_or_default();
+    let all_quota_zero =
+        quota_g3_pro == 0 && quota_g3_flash == 0 && quota_g3_image == 0 && quota_claude == 0;
+    // Banned = all quotas 0% AND no reset times (won't recover)
+    // Exhausted = all quotas 0% but has reset times (will recover)
+    let has_any_reset = !reset_g3_pro.is_empty()
+        || !reset_g3_flash.is_empty()
+        || !reset_g3_image.is_empty()
+        || !reset_claude.is_empty();
+    let is_quota_banned =
+        all_quota_zero && !has_any_reset && !is_disabled && account.quota.is_some();
+    let show_banned = is_tos_banned || is_quota_banned;
 
     let account_id_class = account_id.clone();
     let account_id_class2 = account_id2.clone();
@@ -105,10 +124,14 @@ pub(crate) fn AccountRow(
             </td>
             <td class="col-status">
                 <span class=move || {
-                    let cls = if state.current_account_id.get() == Some(account_id_status.clone()) {
+                    let cls = if show_banned {
+                        "status-dot--banned"
+                    } else if state.current_account_id.get() == Some(account_id_status.clone()) {
                         "status-dot--active"
                     } else if is_disabled {
                         "status-dot--disabled"
+                    } else if is_locked {
+                        "status-dot--locked"
                     } else {
                         "status-dot--idle"
                     };
@@ -120,6 +143,12 @@ pub(crate) fn AccountRow(
                 <Show when=move || state.current_account_id.get() == Some(account_id_show.clone())>
                     <span class="current-badge">"ACTIVE"</span>
                 </Show>
+                {show_banned.then(|| view! {
+                    <span class="banned-badge" title="Account banned (TOS violation or all quotas exhausted)">"🚫 BANNED"</span>
+                })}
+                {is_locked.then(|| view! {
+                    <span class="locked-badge" title=format!("Locked: {}", disabled_reason.clone().unwrap_or_default())>"⚠️ LOCKED"</span>
+                })}
                 {needs_verification.then(|| view! {
                     <span class="verify-badge" title="Phone verification required">"📱"</span>
                 })}

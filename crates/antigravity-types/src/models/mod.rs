@@ -14,10 +14,10 @@ pub mod token;
 // Re-export all models
 pub use account::{Account, AccountIndex, AccountSummary};
 pub use config::{
-    AppConfig, ExperimentalConfig, Protocol, ProxyAuthMode, ProxyConfig, QuotaProtectionConfig,
-    SchedulingMode, SmartWarmupConfig, StickySessionConfig, ThinkingBudgetConfig,
-    ThinkingBudgetMode, UpstreamProxyConfig, UpstreamProxyMode, ZaiConfig, ZaiDispatchMode,
-    ZaiMcpConfig, ZaiModelDefaults,
+    AppConfig, ExperimentalConfig, Protocol, ProxyAuthMode, ProxyConfig, ProxyRotationStrategy,
+    QuotaProtectionConfig, SchedulingMode, SmartWarmupConfig, StickySessionConfig,
+    ThinkingBudgetConfig, ThinkingBudgetMode, UpstreamProxyConfig, UpstreamProxyMode, ZaiConfig,
+    ZaiDispatchMode, ZaiMcpConfig, ZaiModelDefaults,
 };
 pub use device::{DeviceProfile, DeviceProfileVersion, DeviceProfiles};
 pub use model_family::ModelFamily;

@@ -115,7 +115,7 @@ pub async fn handle_audio_transcription(
     // 7. wraprequestas v1internal format
     // Use model as-is — Antigravity API expects "gemini-3-pro" directly
     let mapped_model = model.clone();
-    let wrapped_body = json!({
+    let mut wrapped_body = json!({
         "project": project_id,
         "requestId": format!("audio-{}", Uuid::new_v4()),
         "request": gemini_request,
@@ -123,18 +123,22 @@ pub async fn handle_audio_transcription(
         "userAgent": "antigravity",
         "requestType": "text"
     });
+    crate::proxy::upstream::device_fingerprint::inject_body_fingerprint(&mut wrapped_body, &email);
 
     // 8. sendrequestto Gemini
     let upstream = state.upstream.clone();
 
+    let account_proxy = token_manager.get_account_proxy_url(&email);
     let response = upstream
-        .call_v1_internal_with_warp(
+        .call_v1_internal_fingerprinted_warp(
             "generateContent",
             &access_token,
             wrapped_body,
             None,
+            &email,
             std::collections::HashMap::new(),
             None,
+            account_proxy.as_deref(),
         )
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, format!("upstreamRequest failed: {}", e)))?;

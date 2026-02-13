@@ -3,6 +3,7 @@
 use crate::api_models::Account;
 use crate::app::AppState;
 use crate::formatters::{format_time_remaining, get_time_remaining_color};
+use crate::pages::accounts::filter_types::format_tier_display;
 use leptos::prelude::*;
 
 /// Best accounts list showing top quota accounts.
@@ -34,9 +35,10 @@ pub(crate) fn BestAccountsSection(
                         let max_quota = best_model.map(|m| m.percentage).unwrap_or(0);
                         let reset_time = best_model.map(|m| m.reset_time.clone()).unwrap_or_default();
 
-                        let tier = account.quota.as_ref()
+                        let tier_raw = account.quota.as_ref()
                             .and_then(|q| q.subscription_tier.clone())
                             .unwrap_or_else(|| "Free".to_string());
+                        let tier = format_tier_display(&tier_raw);
                         let tier_class = tier.to_lowercase();
                         let tier_display = tier.clone();
 

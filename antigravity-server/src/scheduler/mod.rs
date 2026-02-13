@@ -39,7 +39,10 @@ pub fn start_oauth_cleanup(state: AppState) {
         loop {
             cleanup_interval.tick().await;
             let before = state.inner.oauth_states.len();
-            state.inner.oauth_states.retain(|_, created_at| created_at.elapsed().as_secs() < 600);
+            state
+                .inner
+                .oauth_states
+                .retain(|_, (created_at, _)| created_at.elapsed().as_secs() < 600);
             let after = state.inner.oauth_states.len();
             let removed = before.saturating_sub(after);
             if removed > 0 {
