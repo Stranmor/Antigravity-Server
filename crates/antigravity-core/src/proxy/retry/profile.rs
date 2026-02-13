@@ -38,7 +38,7 @@ const CLAUDE_SIGNATURE_PATTERNS: &[&str] = &[
 impl RetryProfile {
     pub const fn openai() -> Self {
         Self {
-            backoff_429_base_ms: 5000,
+            backoff_429_base_ms: 1000,
             backoff_429_max_ms: 30_000,
             backoff_503_base_ms: 10_000,
             backoff_503_max_ms: 60_000,

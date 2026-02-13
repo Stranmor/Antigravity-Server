@@ -52,7 +52,7 @@ fn strategy_429_with_retry_delay_returns_fixed() {
 fn strategy_429_without_parseable_delay_returns_linear() {
     let p = openai_profile();
     let strategy = determine_retry_strategy(429, "Rate limit exceeded", false, &p);
-    assert!(matches!(strategy, RetryStrategy::LinearBackoff { base_ms: 5000 }));
+    assert!(matches!(strategy, RetryStrategy::LinearBackoff { base_ms: 1000 }));
 }
 
 #[test]

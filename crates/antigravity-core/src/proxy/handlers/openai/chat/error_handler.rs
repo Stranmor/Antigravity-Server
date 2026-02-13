@@ -107,7 +107,7 @@ pub async fn handle_rate_limit_errors(
         }
 
         if let Some(delay_ms) = crate::proxy::upstream::retry::parse_retry_delay(error_text) {
-            let actual_delay = delay_ms.saturating_add(200).min(10_000);
+            let actual_delay = delay_ms.saturating_add(200).min(2_000);
             warn!(
                 "OpenAI Upstream {} on {} attempt {}/{}, waiting {}ms then rotating",
                 status_code,

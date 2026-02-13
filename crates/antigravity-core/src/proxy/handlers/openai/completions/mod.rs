@@ -226,6 +226,9 @@ pub async fn handle_completions(
             } else {
                 state.adaptive_limits.record_error(&email, status_code);
             }
+
+            grace_retry_used = false;
+            continue;
         }
 
         if status_code == 404 {
