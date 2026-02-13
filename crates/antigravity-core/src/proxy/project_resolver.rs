@@ -24,15 +24,7 @@ pub async fn fetch_project_id_with_proxy(
         .post(url)
         .bearer_auth(access_token)
         .header("Host", "cloudcode-pa.googleapis.com")
-        .header(
-            "User-Agent",
-            &format!(
-                "antigravity/{} {}/{}",
-                crate::proxy::upstream::version_fetcher::get_current_version(),
-                std::env::consts::OS,
-                std::env::consts::ARCH
-            ),
-        )
+        .header("User-Agent", crate::proxy::upstream::user_agent::default_user_agent())
         .header("Content-Type", "application/json")
         .json(&request_body)
         .send()

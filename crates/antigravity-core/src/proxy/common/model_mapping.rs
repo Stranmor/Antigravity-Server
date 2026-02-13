@@ -50,6 +50,17 @@ static CLAUDE_TO_GEMINI: LazyLock<HashMap<&'static str, &'static str>> = LazyLoc
         ("gemini-3-flash-preview", "gemini-3-flash"),
         ("gemini-3-pro-image", "gemini-3-pro-image"),
         ("internal-background-task", "gemini-2.5-flash"),
+        // Deprecated Gemini 2.0 models (removed from Cloud Code API, return 404)
+        ("gemini-2.0-flash", "gemini-2.5-flash"),
+        ("gemini-2.0-flash-exp", "gemini-2.5-flash"),
+        ("gemini-2.0-flash-lite", "gemini-2.5-flash-lite"),
+        ("gemini-2.0-pro", "gemini-2.5-flash"),
+        ("gemini-2.0-pro-exp", "gemini-2.5-flash"),
+        // Deprecated Gemini 1.5 models
+        ("gemini-1.5-pro", "gemini-2.5-flash"),
+        ("gemini-1.5-pro-latest", "gemini-2.5-flash"),
+        ("gemini-1.5-flash", "gemini-2.5-flash"),
+        ("gemini-1.5-flash-latest", "gemini-2.5-flash"),
     ])
 });
 

@@ -14,7 +14,12 @@ use std::time::Duration;
 
 /// Hardcoded fallback version when all fetch attempts fail.
 /// This is the Antigravity IDE version, NOT our fork's Cargo version.
-const FALLBACK_VERSION: &str = "1.104.0";
+const FALLBACK_VERSION: &str = "1.115.0";
+
+/// Minimum minor version for a valid Antigravity IDE version.
+/// IDE versions are 1.10x+; anything below is a different product
+/// (e.g. the auto-updater service itself reports 1.16.x).
+const MIN_VALID_MINOR: u32 = 100;
 
 /// Auto-updater API endpoint (primary source).
 const UPDATER_API_URL: &str = "https://antigravity-auto-updater-974169037036.us-central1.run.app";
@@ -70,6 +75,17 @@ pub fn get_current_version() -> &'static str {
 /// Rejects IP-address-like matches (e.g. `192.168.1.1`) by checking
 /// that the match is not followed by another dot-digit segment.
 pub fn parse_version(text: &str) -> Option<String> {
+    parse_version_inner(text, false)
+}
+
+/// Parse a version and additionally validate it looks like an Antigravity IDE
+/// version (minor >= [`MIN_VALID_MINOR`]). Used by fetch sources to reject
+/// versions from unrelated products (e.g. the auto-updater service).
+fn parse_ide_version(text: &str) -> Option<String> {
+    parse_version_inner(text, true)
+}
+
+fn parse_version_inner(text: &str, validate_ide: bool) -> Option<String> {
     let re = Regex::new(r"\d+\.\d+\.\d+").ok()?;
     for m in re.find_iter(text) {
         let after = &text[m.end()..];
@@ -81,7 +97,20 @@ pub fn parse_version(text: &str) -> Option<String> {
         {
             continue;
         }
-        return Some(m.as_str().to_string());
+        let version = m.as_str().to_string();
+        if validate_ide {
+            // Reject versions that don't look like Antigravity IDE (minor < 100)
+            let minor: u32 = version.split('.').nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+            if minor < MIN_VALID_MINOR {
+                tracing::debug!(
+                    version = %version,
+                    min_minor = MIN_VALID_MINOR,
+                    "Rejecting version: minor too low for Antigravity IDE"
+                );
+                continue;
+            }
+        }
+        return Some(version);
     }
     None
 }
@@ -161,7 +190,7 @@ async fn fetch_from_updater_api() -> Option<String> {
 
     let bytes = read_response_capped(resp).await?;
     let body = String::from_utf8_lossy(&bytes);
-    parse_version(&body)
+    parse_ide_version(&body)
 }
 
 /// Fetch version from the changelog page (scan first N chars).
@@ -182,7 +211,7 @@ async fn fetch_from_changelog() -> Option<String> {
     let body = String::from_utf8_lossy(&bytes);
     // Use .get() to avoid panic on multi-byte UTF-8 boundary
     let scan_window = body.get(..CHANGELOG_SCAN_LIMIT).unwrap_or(&body);
-    parse_version(scan_window)
+    parse_ide_version(scan_window)
 }
 
 #[cfg(test)]
@@ -234,6 +263,8 @@ mod tests {
     #[test]
     fn test_fallback_version_is_valid() {
         assert!(parse_version(FALLBACK_VERSION).is_some());
+        // Fallback must also pass IDE validation
+        assert!(parse_ide_version(FALLBACK_VERSION).is_some());
     }
 
     #[test]
@@ -246,5 +277,32 @@ mod tests {
             "get_current_version() returned unparseable: {}",
             version
         );
+    }
+
+    #[test]
+    fn test_parse_ide_version_rejects_low_minor() {
+        // Auto-updater returns its own version (1.16.5) — must be rejected
+        assert_eq!(
+            parse_ide_version(
+                "Auto updater is running. Stable Version: 1.16.5. Rolled out to 100%"
+            ),
+            None,
+        );
+        assert_eq!(parse_ide_version("1.16.5"), None);
+        assert_eq!(parse_ide_version("2.0.1"), None);
+        assert_eq!(parse_ide_version("0.1.0"), None);
+    }
+
+    #[test]
+    fn test_parse_ide_version_accepts_valid_ide_versions() {
+        assert_eq!(parse_ide_version("1.115.0"), Some("1.115.0".to_string()));
+        assert_eq!(parse_ide_version("1.104.0"), Some("1.104.0".to_string()));
+        assert_eq!(parse_ide_version("1.200.3"), Some("1.200.3".to_string()));
+    }
+
+    #[test]
+    fn test_parse_ide_version_skips_low_and_finds_valid() {
+        // If text contains both low and valid versions, pick the valid one
+        assert_eq!(parse_ide_version("updater 1.16.5 ide 1.115.0"), Some("1.115.0".to_string()),);
     }
 }
