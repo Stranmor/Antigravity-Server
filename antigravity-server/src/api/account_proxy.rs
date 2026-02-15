@@ -89,11 +89,22 @@ pub struct SetProxyBulkResponse {
     pub results: Vec<BulkProxyResult>,
 }
 
+const MAX_BULK_ASSIGNMENTS: usize = 100;
+
 pub async fn set_proxy_bulk_handler(
     State(state): State<AppState>,
     Json(payload): Json<SetProxyBulkRequest>,
 ) -> Result<Json<SetProxyBulkResponse>, (StatusCode, String)> {
-    // Collect unique proxy URLs and health-check each once
+    if payload.assignments.len() > MAX_BULK_ASSIGNMENTS {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!(
+                "Too many assignments: {} (max {MAX_BULK_ASSIGNMENTS})",
+                payload.assignments.len()
+            ),
+        ));
+    }
+
     let unique_urls: std::collections::HashSet<&str> =
         payload.assignments.iter().map(|a| a.proxy_url.as_str()).collect();
 
@@ -219,17 +230,24 @@ async fn persist_proxy_url(
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
 
-    // JSON file dual-write
+    // JSON file dual-write (best-effort — VPS may not have JSON files)
     let aid = account_id.to_string();
     let purl = proxy_url.map(String::from);
-    tokio::task::spawn_blocking(move || {
-        let mut acc = account::load_account(&aid)?;
-        acc.proxy_url = purl;
-        account::save_account(&acc)
+    let json_result = tokio::task::spawn_blocking(move || {
+        match account::load_account(&aid) {
+            Ok(mut acc) => {
+                acc.proxy_url = purl;
+                account::save_account(&acc)
+            },
+            Err(_) => Ok(()), // JSON file doesn't exist — DB-only mode
+        }
     })
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("spawn_blocking panicked: {e}")))?
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    .await;
+    if let Err(e) = json_result {
+        tracing::warn!("JSON dual-write spawn_blocking panicked: {e}");
+    } else if let Ok(Err(e)) = json_result {
+        tracing::warn!("JSON dual-write failed: {e}");
+    }
 
     Ok(())
 }

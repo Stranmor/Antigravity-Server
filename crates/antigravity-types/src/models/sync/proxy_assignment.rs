@@ -86,7 +86,7 @@ impl SyncableProxyAssignments {
         for (key, remote_entry) in &remote.entries {
             let is_update = self.entries.contains_key(key);
             if !is_update && self.entries.len() >= MAX_PROXY_ENTRIES {
-                continue;
+                self.evict_oldest();
             }
 
             let should_update =
@@ -99,6 +99,14 @@ impl SyncableProxyAssignments {
         }
 
         updated
+    }
+
+    fn evict_oldest(&mut self) {
+        if let Some(oldest_key) =
+            self.entries.iter().min_by_key(|(_, v)| v.updated_at).map(|(k, _)| k.clone())
+        {
+            drop(self.entries.remove(&oldest_key));
+        }
     }
 
     /// Returns entries that are newer than the remote's version.

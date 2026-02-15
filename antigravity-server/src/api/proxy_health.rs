@@ -5,7 +5,7 @@ use std::time::Duration;
 
 const PROXY_HEALTH_TIMEOUT_SECS: u64 = 15;
 const HEALTH_CHECK_URL: &str = "https://ifconfig.co";
-const MAX_HEALTH_RESPONSE_BYTES: usize = 1024;
+const MAX_HEALTH_RESPONSE_BYTES: usize = 8192;
 
 pub fn validate_proxy_url(raw: &str) -> Result<(), String> {
     const VALID_SCHEMES: &[&str] = &["socks5", "socks5h", "http", "https"];
@@ -50,7 +50,17 @@ fn is_private_ip(ip: IpAddr) -> bool {
                 || (v4.octets()[0] == 100 && v4.octets()[1] >= 64 && v4.octets()[1] <= 127)
                 || (v4.octets()[0] == 198 && (v4.octets()[1] == 18 || v4.octets()[1] == 19))
         },
-        IpAddr::V6(v6) => v6.is_loopback() || v6.is_unspecified(),
+        IpAddr::V6(v6) => {
+            if let Some(mapped_v4) = v6.to_ipv4_mapped() {
+                return is_private_ip(IpAddr::V4(mapped_v4));
+            }
+            let seg0 = v6.segments()[0];
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || (seg0 & 0xFE00) == 0xFC00  // fc00::/7 unique local
+                || (seg0 & 0xFFC0) == 0xFE80  // fe80::/10 link-local
+                || (seg0 & 0xFFC0) == 0xFEC0 // fec0::/10 site-local (deprecated)
+        },
     }
 }
 
@@ -68,6 +78,7 @@ pub async fn check_proxy_health(proxy_url: &str) -> Result<String, String> {
 
     let response = client
         .get(HEALTH_CHECK_URL)
+        .header("Accept", "text/plain")
         .send()
         .await
         .map_err(|e| format!("Health check request failed: {e}"))?;
@@ -87,6 +98,10 @@ pub async fn check_proxy_health(proxy_url: &str) -> Result<String, String> {
 
     if exit_ip.is_empty() {
         return Err("Health check returned empty response".to_string());
+    }
+
+    if exit_ip.parse::<IpAddr>().is_err() {
+        return Err("Health check returned non-IP response".to_string());
     }
 
     Ok(exit_ip)
@@ -156,5 +171,28 @@ mod tests {
     #[test]
     fn test_reject_ipv6_loopback() {
         assert!(validate_proxy_url("socks5://[::1]:1080").is_err());
+    }
+
+    #[test]
+    fn test_reject_ipv6_mapped_ipv4_loopback() {
+        assert!(validate_proxy_url("socks5://[::ffff:127.0.0.1]:1080").is_err());
+    }
+
+    #[test]
+    fn test_reject_ipv6_mapped_ipv4_private() {
+        assert!(validate_proxy_url("socks5://[::ffff:10.0.0.1]:1080").is_err());
+        assert!(validate_proxy_url("socks5://[::ffff:192.168.1.1]:1080").is_err());
+        assert!(validate_proxy_url("socks5://[::ffff:169.254.169.254]:1080").is_err());
+    }
+
+    #[test]
+    fn test_reject_ipv6_unique_local() {
+        assert!(validate_proxy_url("socks5://[fd00::1]:1080").is_err());
+        assert!(validate_proxy_url("socks5://[fc00::1]:1080").is_err());
+    }
+
+    #[test]
+    fn test_reject_ipv6_link_local() {
+        assert!(validate_proxy_url("socks5://[fe80::1]:1080").is_err());
     }
 }

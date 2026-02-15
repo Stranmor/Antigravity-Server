@@ -52,16 +52,15 @@ impl AppState {
     ) -> (usize, SyncableProxyAssignments) {
         let filtered = filter_valid_assignments(remote);
 
-        let (inbound, diff, snapshot) = {
+        let (inbound, diff) = {
             let mut assignments = self.inner.proxy_assignments.write().await;
             let diff = assignments.diff_newer_than(&filtered);
             let inbound = assignments.merge_lww(&filtered);
-            let snapshot = assignments.clone();
-            (inbound, diff, snapshot)
-        }; // Lock dropped here — I/O below runs without holding write lock
+            (inbound, diff)
+        };
 
         if inbound > 0 {
-            self.apply_proxy_assignments_to_accounts(&snapshot).await;
+            self.apply_proxy_assignments_from_state().await;
         }
 
         (inbound, diff)
@@ -70,12 +69,10 @@ impl AppState {
     pub async fn merge_remote_proxy_assignments(&self, remote: &SyncableProxyAssignments) -> usize {
         let filtered = filter_valid_assignments(remote);
 
-        let (updated, snapshot) = {
+        let updated = {
             let mut assignments = self.inner.proxy_assignments.write().await;
-            let updated = assignments.merge_lww(&filtered);
-            let snapshot = assignments.clone();
-            (updated, snapshot)
-        }; // Lock dropped here
+            assignments.merge_lww(&filtered)
+        };
 
         if updated > 0 {
             tracing::info!(
@@ -83,7 +80,7 @@ impl AppState {
                 updated,
                 remote.instance_id
             );
-            self.apply_proxy_assignments_to_accounts(&snapshot).await;
+            self.apply_proxy_assignments_from_state().await;
         }
 
         updated
@@ -111,6 +108,11 @@ impl AppState {
         }
 
         tracing::info!("Hydrated {} proxy assignments from accounts", assignments.entries.len());
+    }
+
+    async fn apply_proxy_assignments_from_state(&self) {
+        let assignments = self.inner.proxy_assignments.read().await.clone();
+        self.apply_proxy_assignments_to_accounts(&assignments).await;
     }
 
     async fn apply_proxy_assignments_to_accounts(&self, assignments: &SyncableProxyAssignments) {
