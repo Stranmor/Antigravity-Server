@@ -2,12 +2,14 @@
 //!
 //! REST API endpoints that mirror the Tauri IPC commands.
 
+mod account_proxy;
 mod accounts;
 mod config;
 mod device;
 mod monitor;
 pub mod oauth;
 mod proxy;
+mod proxy_health;
 mod quota;
 mod resilience;
 
@@ -57,6 +59,20 @@ pub fn router() -> Router<AppState> {
         .route("/accounts/toggle-proxy", post(quota::toggle_proxy_status))
         .route("/accounts/warmup", post(quota::warmup_account))
         .route("/accounts/warmup-all", post(quota::warmup_all_accounts))
+        // Per-account proxy management
+        .route("/accounts/set-proxy", post(account_proxy::set_proxy_handler))
+        .route(
+            "/accounts/remove-proxy",
+            post(account_proxy::remove_proxy_handler),
+        )
+        .route(
+            "/accounts/set-proxy-bulk",
+            post(account_proxy::set_proxy_bulk_handler),
+        )
+        .route(
+            "/accounts/proxy-status",
+            get(account_proxy::proxy_status_handler),
+        )
         // OAuth (headless flow) — callback is public (in router.rs), initiation is protected
         .route("/oauth/url", get(oauth::get_oauth_url))
         .route("/oauth/login", post(oauth::start_oauth_login))
@@ -82,6 +98,15 @@ pub fn router() -> Router<AppState> {
         // Config Sync (LWW Bidirectional)
         .route("/config/mapping", get(config::get_syncable_mapping))
         .route("/config/mapping", post(config::merge_remote_mapping))
+        // Proxy Assignment Sync (LWW Bidirectional)
+        .route(
+            "/config/proxy-assignments",
+            get(config::get_proxy_assignments),
+        )
+        .route(
+            "/config/proxy-assignments",
+            post(config::merge_proxy_assignments),
+        )
         // Device Fingerprint
         .route("/device/profile", get(device::get_device_profile))
         .route("/device/profile", post(device::create_device_profile))

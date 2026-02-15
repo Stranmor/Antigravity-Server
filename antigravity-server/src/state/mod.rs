@@ -4,6 +4,7 @@
 
 mod accessors;
 mod config_sync;
+mod proxy_sync;
 
 use anyhow::Result;
 use axum::Router;
@@ -43,11 +44,12 @@ pub struct AppStateInner {
     pub circuit_breaker: Arc<CircuitBreakerManager>,
     pub oauth_states: Arc<DashMap<String, (Instant, Option<String>)>>,
     pub bound_port: AtomicU16,
-    pub http_client: reqwest::Client,
+    pub http_client: wreq::Client,
     pub repository: Option<Arc<dyn AccountRepository>>,
     pub provider_rr: Arc<AtomicUsize>,
     pub zai_vision_mcp: Arc<antigravity_core::proxy::zai_vision_mcp::ZaiVisionMcpState>,
     pub upstream_client: Arc<antigravity_core::proxy::upstream::client::UpstreamClient>,
+    pub proxy_assignments: Arc<RwLock<antigravity_types::SyncableProxyAssignments>>,
 }
 
 impl AppState {
@@ -77,14 +79,12 @@ impl AppState {
             300,
         )
         .unwrap_or_else(|_| {
-            reqwest::Client::builder()
+            wreq::Client::builder()
+                .emulation(antigravity_core::proxy::upstream::emulation::default_emulation())
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .timeout(std::time::Duration::from_secs(300))
-                .http2_keep_alive_interval(std::time::Duration::from_secs(25))
-                .http2_keep_alive_timeout(std::time::Duration::from_secs(10))
-                .http2_keep_alive_while_idle(true)
                 .build()
-                .unwrap_or_else(|_| reqwest::Client::new())
+                .expect("Failed to build fallback HTTP client")
         });
 
         health_monitor.start_recovery_task();
@@ -126,6 +126,9 @@ impl AppState {
                 provider_rr,
                 zai_vision_mcp,
                 upstream_client,
+                proxy_assignments: Arc::new(RwLock::new(
+                    antigravity_types::SyncableProxyAssignments::new(),
+                )),
             }),
         })
     }

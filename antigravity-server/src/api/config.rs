@@ -58,3 +58,30 @@ pub async fn merge_remote_mapping(
 
     Json(MergeMappingResponse { updated_count: updated, total_count: total })
 }
+
+pub async fn get_proxy_assignments(
+    State(state): State<AppState>,
+) -> Json<antigravity_types::SyncableProxyAssignments> {
+    Json(state.get_syncable_proxy_assignments().await)
+}
+
+#[derive(Deserialize)]
+pub struct MergeProxyAssignmentsRequest {
+    pub assignments: antigravity_types::SyncableProxyAssignments,
+}
+
+#[derive(Serialize)]
+pub struct MergeProxyAssignmentsResponse {
+    pub updated_count: usize,
+    pub total_count: usize,
+}
+
+pub async fn merge_proxy_assignments(
+    State(state): State<AppState>,
+    Json(payload): Json<MergeProxyAssignmentsRequest>,
+) -> Json<MergeProxyAssignmentsResponse> {
+    let updated = state.merge_remote_proxy_assignments(&payload.assignments).await;
+    let total = state.get_syncable_proxy_assignments().await.len();
+
+    Json(MergeProxyAssignmentsResponse { updated_count: updated, total_count: total })
+}

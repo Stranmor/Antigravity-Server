@@ -26,5 +26,5 @@ pub use stats::{
     DashboardStats, ProxyRequestLog, ProxyStats, ProxyStatus, RefreshStats, TokenUsageStats,
     UpdateInfo,
 };
-pub use sync::{MappingEntry, SyncableMapping};
+pub use sync::{MappingEntry, ProxyAssignment, SyncableMapping, SyncableProxyAssignments};
 pub use token::TokenData;

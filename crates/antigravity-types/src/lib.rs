@@ -39,5 +39,6 @@ pub use error::{AccountError, ConfigError, ProxyError, Result, TypedError};
 // Re-export core model types
 pub use models::{
     Account, AccountIndex, AccountSummary, AppConfig, MappingEntry, ModelFamily, ModelQuota,
-    ProxyConfig, ProxyRequestLog, ProxyStats, QuotaData, SyncableMapping, TokenData,
+    ProxyAssignment, ProxyConfig, ProxyRequestLog, ProxyStats, QuotaData, SyncableMapping,
+    SyncableProxyAssignments, TokenData,
 };

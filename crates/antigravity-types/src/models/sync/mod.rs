@@ -11,6 +11,7 @@
 //! - No conflicts, eventual consistency guaranteed
 
 mod mapping;
+mod proxy_assignment;
 
 #[cfg(test)]
 #[allow(
@@ -27,6 +28,15 @@ mod tests;
     clippy::get_unwrap,
     reason = "test assertions"
 )]
+mod tests_proxy_assignment;
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::get_unwrap,
+    reason = "test assertions"
+)]
 mod tests_tiebreaker;
 
 pub use mapping::{MappingEntry, SyncableMapping};
+pub use proxy_assignment::{ProxyAssignment, SyncableProxyAssignments};
