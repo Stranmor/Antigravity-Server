@@ -1,5 +1,6 @@
 //! Proxy URL validation and health checking for per-account proxies.
 
+use futures::StreamExt as _;
 use std::net::IpAddr;
 use std::time::Duration;
 
@@ -45,19 +46,22 @@ fn is_private_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
             v4.is_loopback()
+                || v4.is_unspecified() // 0.0.0.0 → routes to localhost on Linux
                 || v4.is_private()
                 || v4.is_link_local()
                 || (v4.octets()[0] == 100 && v4.octets()[1] >= 64 && v4.octets()[1] <= 127)
                 || (v4.octets()[0] == 198 && (v4.octets()[1] == 18 || v4.octets()[1] == 19))
         },
         IpAddr::V6(v6) => {
-            if let Some(mapped_v4) = v6.to_ipv4_mapped() {
-                return is_private_ip(IpAddr::V4(mapped_v4));
+            if v6.is_loopback() || v6.is_unspecified() {
+                return true;
+            }
+            // to_ipv4() covers BOTH ::ffff:x.x.x.x (mapped) AND ::x.x.x.x (compatible)
+            if let Some(v4) = v6.to_ipv4_mapped().or_else(|| v6.to_ipv4()) {
+                return is_private_ip(IpAddr::V4(v4));
             }
             let seg0 = v6.segments()[0];
-            v6.is_loopback()
-                || v6.is_unspecified()
-                || (seg0 & 0xFE00) == 0xFC00  // fc00::/7 unique local
+            (seg0 & 0xFE00) == 0xFC00  // fc00::/7 unique local
                 || (seg0 & 0xFFC0) == 0xFE80  // fe80::/10 link-local
                 || (seg0 & 0xFFC0) == 0xFEC0 // fec0::/10 site-local (deprecated)
         },
@@ -87,14 +91,18 @@ pub async fn check_proxy_health(proxy_url: &str) -> Result<String, String> {
         return Err(format!("Health check returned HTTP {}", response.status()));
     }
 
-    let body_bytes =
-        response.bytes().await.map_err(|e| format!("Failed to read health check response: {e}"))?;
-
-    if body_bytes.len() > MAX_HEALTH_RESPONSE_BYTES {
-        return Err("Health check response too large".to_string());
+    let mut body = Vec::with_capacity(1024);
+    let mut stream = response.bytes_stream();
+    while let Some(chunk_result) = stream.next().await {
+        let chunk =
+            chunk_result.map_err(|e| format!("Failed to read health check response: {e}"))?;
+        if body.len().saturating_add(chunk.len()) > MAX_HEALTH_RESPONSE_BYTES {
+            return Err("Health check response too large".to_string());
+        }
+        body.extend_from_slice(&chunk);
     }
 
-    let exit_ip = String::from_utf8_lossy(&body_bytes).trim().to_string();
+    let exit_ip = String::from_utf8_lossy(&body).trim().to_string();
 
     if exit_ip.is_empty() {
         return Err("Health check returned empty response".to_string());
@@ -194,5 +202,22 @@ mod tests {
     #[test]
     fn test_reject_ipv6_link_local() {
         assert!(validate_proxy_url("socks5://[fe80::1]:1080").is_err());
+    }
+
+    #[test]
+    fn test_reject_unspecified_ipv4() {
+        assert!(validate_proxy_url("socks5://0.0.0.0:1080").is_err());
+    }
+
+    #[test]
+    fn test_reject_ipv4_compatible_ipv6_loopback() {
+        // ::127.0.0.1 parses as ::7f00:1 — IPv4-compatible address
+        assert!(validate_proxy_url("socks5://[::7f00:1]:1080").is_err());
+    }
+
+    #[test]
+    fn test_reject_ipv4_compatible_ipv6_private() {
+        // ::10.0.0.1 parses as ::a00:1 — IPv4-compatible address
+        assert!(validate_proxy_url("socks5://[::a00:1]:1080").is_err());
     }
 }

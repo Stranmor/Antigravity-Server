@@ -175,6 +175,7 @@ dependencies = [
  "colored",
  "comfy-table",
  "dashmap",
+ "futures",
  "hostname",
  "listenfd",
  "rand 0.8.5",
