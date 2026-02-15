@@ -3,6 +3,27 @@
 use antigravity_types::{ProxyAssignment, SyncableProxyAssignments};
 
 use super::{current_timestamp_ms, get_instance_id, AppState};
+use crate::api::proxy_health::validate_proxy_url;
+
+fn filter_valid_assignments(source: &SyncableProxyAssignments) -> SyncableProxyAssignments {
+    let entries = source
+        .entries
+        .iter()
+        .filter(|(_, entry)| match &entry.proxy_url {
+            None => true,
+            Some(url) => {
+                if validate_proxy_url(url).is_err() {
+                    tracing::warn!("Rejected invalid proxy URL from remote sync: {url}");
+                    false
+                } else {
+                    true
+                }
+            },
+        })
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    SyncableProxyAssignments { entries, instance_id: source.instance_id.clone() }
+}
 
 impl AppState {
     pub async fn update_proxy_assignment(&self, email: &str, proxy_url: Option<String>) {
@@ -29,21 +50,32 @@ impl AppState {
         &self,
         remote: &SyncableProxyAssignments,
     ) -> (usize, SyncableProxyAssignments) {
-        let mut assignments = self.inner.proxy_assignments.write().await;
+        let filtered = filter_valid_assignments(remote);
 
-        let diff = assignments.diff_newer_than(remote);
-        let inbound = assignments.merge_lww(remote);
+        let (inbound, diff, snapshot) = {
+            let mut assignments = self.inner.proxy_assignments.write().await;
+            let diff = assignments.diff_newer_than(&filtered);
+            let inbound = assignments.merge_lww(&filtered);
+            let snapshot = assignments.clone();
+            (inbound, diff, snapshot)
+        }; // Lock dropped here — I/O below runs without holding write lock
 
         if inbound > 0 {
-            self.apply_proxy_assignments_to_accounts(&assignments).await;
+            self.apply_proxy_assignments_to_accounts(&snapshot).await;
         }
 
         (inbound, diff)
     }
 
     pub async fn merge_remote_proxy_assignments(&self, remote: &SyncableProxyAssignments) -> usize {
-        let mut assignments = self.inner.proxy_assignments.write().await;
-        let updated = assignments.merge_lww(remote);
+        let filtered = filter_valid_assignments(remote);
+
+        let (updated, snapshot) = {
+            let mut assignments = self.inner.proxy_assignments.write().await;
+            let updated = assignments.merge_lww(&filtered);
+            let snapshot = assignments.clone();
+            (updated, snapshot)
+        }; // Lock dropped here
 
         if updated > 0 {
             tracing::info!(
@@ -51,10 +83,34 @@ impl AppState {
                 updated,
                 remote.instance_id
             );
-            self.apply_proxy_assignments_to_accounts(&assignments).await;
+            self.apply_proxy_assignments_to_accounts(&snapshot).await;
         }
 
         updated
+    }
+
+    pub async fn hydrate_proxy_assignments(&self) {
+        let accounts = match self.list_accounts().await {
+            Ok(a) => a,
+            Err(e) => {
+                tracing::warn!("Failed to hydrate proxy assignments: {e}");
+                return;
+            },
+        };
+
+        let mut assignments = self.inner.proxy_assignments.write().await;
+        let now = current_timestamp_ms();
+
+        for account in &accounts {
+            if account.proxy_url.is_some() {
+                assignments.entries.entry(account.email.clone()).or_insert(ProxyAssignment {
+                    proxy_url: account.proxy_url.clone(),
+                    updated_at: now,
+                });
+            }
+        }
+
+        tracing::info!("Hydrated {} proxy assignments from accounts", assignments.entries.len());
     }
 
     async fn apply_proxy_assignments_to_accounts(&self, assignments: &SyncableProxyAssignments) {

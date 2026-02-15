@@ -42,7 +42,7 @@ pub fn start_auto_config_sync(state: Arc<AppState>, remote_url: String) {
 
 async fn sync_once(
     state: &AppState,
-    client: &wreq::Client,
+    client: &reqwest::Client,
     remote_url: &str,
 ) -> Result<(), String> {
     let base_url = remote_url.trim_end_matches('/');
@@ -98,7 +98,7 @@ async fn sync_once(
 
 async fn sync_proxy_assignments(
     state: &AppState,
-    client: &wreq::Client,
+    client: &reqwest::Client,
     base_url: &str,
     api_key: &str,
 ) -> Result<(), String> {

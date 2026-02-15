@@ -9,7 +9,7 @@ mod device;
 mod monitor;
 pub mod oauth;
 mod proxy;
-mod proxy_health;
+pub(crate) mod proxy_health;
 mod quota;
 mod resilience;
 

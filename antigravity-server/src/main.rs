@@ -181,6 +181,8 @@ async fn run_server(port: u16) -> Result<()> {
     info!("✅ Application state initialized");
     info!("📊 {} accounts loaded", state.get_account_count().await.unwrap_or(0));
 
+    state.hydrate_proxy_assignments().await;
+
     scheduler::start(state.clone());
     scheduler::start_quota_refresh(state.clone());
     scheduler::start_oauth_cleanup(state.clone());

@@ -28,7 +28,7 @@ pub async fn set_proxy_handler(
 
     let exit_ip = check_proxy_health(&payload.proxy_url)
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Proxy health check failed: {e}")))?;
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Proxy health check failed: {e}")))?;
 
     persist_proxy_url(&state, &payload.account_id, Some(&payload.proxy_url)).await?;
 
@@ -122,10 +122,22 @@ pub async fn set_proxy_bulk_handler(
                     .await
                 {
                     Ok(()) => {
-                        if let Ok(email) = get_account_email(&state, &assignment.account_id).await {
-                            state
-                                .update_proxy_assignment(&email, Some(assignment.proxy_url.clone()))
-                                .await;
+                        match get_account_email(&state, &assignment.account_id).await {
+                            Ok(email) => {
+                                state
+                                    .update_proxy_assignment(
+                                        &email,
+                                        Some(assignment.proxy_url.clone()),
+                                    )
+                                    .await;
+                            },
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to resolve email for account {} during bulk proxy set: {}",
+                                    assignment.account_id,
+                                    e.1
+                                );
+                            },
                         }
                         results.push(BulkProxyResult {
                             account_id: assignment.account_id.clone(),

@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 
 use super::mapping::current_timestamp_ms;
 
+const MAX_PROXY_ENTRIES: usize = 10_000;
+
 /// Single proxy assignment entry with timestamp for LWW merge.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProxyAssignment {
@@ -82,6 +84,11 @@ impl SyncableProxyAssignments {
         let mut updated = 0_usize;
 
         for (key, remote_entry) in &remote.entries {
+            let is_update = self.entries.contains_key(key);
+            if !is_update && self.entries.len() >= MAX_PROXY_ENTRIES {
+                continue;
+            }
+
             let should_update =
                 self.entries.get(key).is_none_or(|local_entry| remote_entry.wins_over(local_entry));
 

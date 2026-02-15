@@ -44,7 +44,7 @@ pub struct AppStateInner {
     pub circuit_breaker: Arc<CircuitBreakerManager>,
     pub oauth_states: Arc<DashMap<String, (Instant, Option<String>)>>,
     pub bound_port: AtomicU16,
-    pub http_client: wreq::Client,
+    pub http_client: reqwest::Client,
     pub repository: Option<Arc<dyn AccountRepository>>,
     pub provider_rr: Arc<AtomicUsize>,
     pub zai_vision_mcp: Arc<antigravity_core::proxy::zai_vision_mcp::ZaiVisionMcpState>,
@@ -79,8 +79,7 @@ impl AppState {
             300,
         )
         .unwrap_or_else(|_| {
-            wreq::Client::builder()
-                .emulation(antigravity_core::proxy::upstream::emulation::default_emulation())
+            reqwest::Client::builder()
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .timeout(std::time::Duration::from_secs(300))
                 .build()
