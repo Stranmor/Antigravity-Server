@@ -178,3 +178,26 @@ fn test_identical_entries_no_update() {
 
     assert_eq!(updated, 0);
 }
+
+#[test]
+fn test_merge_rejects_far_future_timestamps() {
+    let mut local = SyncableProxyAssignments::new();
+    local.entries.insert(
+        "a@test.com".to_string(),
+        ProxyAssignment::with_timestamp(Some("socks5://old:1080".to_string()), 1000),
+    );
+
+    let mut remote = SyncableProxyAssignments::new();
+    remote.entries.insert(
+        "a@test.com".to_string(),
+        ProxyAssignment::with_timestamp(Some("socks5://evil:1080".to_string()), i64::MAX),
+    );
+
+    let updated = local.merge_lww(&remote);
+
+    assert_eq!(updated, 0);
+    assert_eq!(
+        local.entries.get("a@test.com").unwrap().proxy_url.as_deref(),
+        Some("socks5://old:1080")
+    );
+}

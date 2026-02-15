@@ -80,10 +80,16 @@ impl SyncableProxyAssignments {
     }
 
     /// Merges remote entries using LWW. Returns count of updated entries.
+    /// Rejects entries with far-future timestamps (>24h ahead) to prevent pinning attacks.
     pub fn merge_lww(&mut self, remote: &Self) -> usize {
         let mut updated = 0_usize;
+        let max_allowed = current_timestamp_ms().saturating_add(86_400_000); // 24h clock skew
 
         for (key, remote_entry) in &remote.entries {
+            if remote_entry.updated_at > max_allowed {
+                continue;
+            }
+
             let is_update = self.entries.contains_key(key);
             if !is_update && self.entries.len() >= MAX_PROXY_ENTRIES {
                 self.evict_oldest();
