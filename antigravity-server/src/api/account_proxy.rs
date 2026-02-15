@@ -118,22 +118,32 @@ pub async fn set_proxy_bulk_handler(
         }
     }
 
-    // Phase 2: Health check only for URLs of valid accounts
-    let valid_urls: std::collections::HashSet<&str> = payload
+    // Phase 2: Health check URLs concurrently for valid accounts
+    let valid_urls: Vec<String> = payload
         .assignments
         .iter()
         .filter(|a| account_emails.get(&a.account_id).is_some_and(|r| r.is_ok()))
-        .map(|a| a.proxy_url.as_str())
+        .map(|a| a.proxy_url.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
         .collect();
 
-    let mut health_results: std::collections::HashMap<String, Result<String, String>> =
-        std::collections::HashMap::new();
+    let health_futures: Vec<_> = valid_urls
+        .iter()
+        .map(|url| {
+            let url = url.clone();
+            async move {
+                let result = check_proxy_health(&url).await;
+                (url, result)
+            }
+        })
+        .collect();
 
-    for url in valid_urls {
-        health_results.insert(url.to_string(), check_proxy_health(url).await);
-    }
+    let health_results: std::collections::HashMap<String, Result<String, String>> =
+        futures::future::join_all(health_futures).await.into_iter().collect();
 
     let mut results = Vec::with_capacity(payload.assignments.len());
+    let mut successful_assignments: Vec<(String, String)> = Vec::new();
 
     for assignment in &payload.assignments {
         let email = match account_emails.get(&assignment.account_id) {
@@ -169,15 +179,13 @@ pub async fn set_proxy_bulk_handler(
                     .await
                 {
                     Ok(()) => {
-                        state
-                            .update_proxy_assignment(&email, Some(assignment.proxy_url.clone()))
-                            .await;
                         results.push(BulkProxyResult {
                             account_id: assignment.account_id.clone(),
                             success: true,
                             exit_ip: Some(exit_ip),
                             error: None,
                         });
+                        successful_assignments.push((email, assignment.proxy_url.clone()));
                     },
                     Err((_, e)) => {
                         results.push(BulkProxyResult {
@@ -201,6 +209,10 @@ pub async fn set_proxy_bulk_handler(
     }
 
     drop(state.reload_accounts().await);
+
+    for (email, proxy_url) in &successful_assignments {
+        state.update_proxy_assignment(email, Some(proxy_url.clone())).await;
+    }
 
     Ok(Json(SetProxyBulkResponse { results }))
 }

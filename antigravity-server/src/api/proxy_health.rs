@@ -57,9 +57,8 @@ pub fn validate_proxy_url(raw: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Async DNS resolution check: defense-in-depth against hostnames that resolve to private IPs.
-/// Point-in-time check (DNS can change between validation and connection), but catches
-/// the common case of misconfigured proxy URLs pointing to internal hosts.
+/// Async DNS defense-in-depth: resolves hostname, rejects if any resolved IP is private.
+/// Point-in-time check — DNS can change between validation and connection.
 async fn resolve_and_check_dns(raw: &str) -> Result<(), String> {
     let parsed = reqwest::Url::parse(raw).map_err(|e| format!("Malformed proxy URL: {e}"))?;
     if let Some(host_str) = parsed.host_str() {
