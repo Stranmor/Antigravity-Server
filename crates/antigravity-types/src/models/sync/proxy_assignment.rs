@@ -71,6 +71,9 @@ impl SyncableProxyAssignments {
         let email = email.into();
         let now = current_timestamp_ms();
         let ts = self.entries.get(&email).map_or(now, |e| now.max(e.updated_at.saturating_add(1)));
+        if !self.entries.contains_key(&email) && self.entries.len() >= MAX_PROXY_ENTRIES {
+            self.evict_oldest();
+        }
         drop(self.entries.insert(email, ProxyAssignment { proxy_url, updated_at: ts }));
     }
 
@@ -81,6 +84,9 @@ impl SyncableProxyAssignments {
 
     /// Merges remote entries using LWW. Returns count of updated entries.
     /// Rejects entries with far-future timestamps (>24h ahead) to prevent pinning attacks.
+    ///
+    /// Eviction is O(N) per call via linear scan. In the merge loop this gives O(N*M) worst case,
+    /// but MAX_PROXY_ENTRIES=10,000 vs ~50 real accounts makes this unreachable in practice.
     pub fn merge_lww(&mut self, remote: &Self) -> usize {
         let mut updated = 0_usize;
         let max_allowed = current_timestamp_ms().saturating_add(86_400_000); // 24h clock skew

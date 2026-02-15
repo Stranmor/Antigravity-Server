@@ -30,12 +30,14 @@ pub async fn set_proxy_handler(
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, format!("Proxy health check failed: {e}")))?;
 
+    // Validate account exists BEFORE persisting (avoids inconsistent state if email lookup fails)
+    let email = get_account_email(&state, &payload.account_id).await?;
+
     persist_proxy_url(&state, &payload.account_id, Some(&payload.proxy_url)).await?;
 
     drop(state.reload_accounts().await);
 
     // Record timestamp for LWW sync
-    let email = get_account_email(&state, &payload.account_id).await?;
     state.update_proxy_assignment(&email, Some(payload.proxy_url)).await;
 
     Ok(Json(SetProxyResponse { success: true, exit_ip }))
@@ -55,11 +57,12 @@ pub async fn remove_proxy_handler(
     State(state): State<AppState>,
     Json(payload): Json<RemoveProxyRequest>,
 ) -> Result<Json<RemoveProxyResponse>, (StatusCode, String)> {
+    let email = get_account_email(&state, &payload.account_id).await?;
+
     persist_proxy_url(&state, &payload.account_id, None).await?;
 
     drop(state.reload_accounts().await);
 
-    let email = get_account_email(&state, &payload.account_id).await?;
     state.update_proxy_assignment(&email, None).await;
 
     Ok(Json(RemoveProxyResponse { success: true }))

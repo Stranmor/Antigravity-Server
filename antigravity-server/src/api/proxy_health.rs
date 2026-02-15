@@ -1,12 +1,25 @@
 //! Proxy URL validation and health checking for per-account proxies.
 
 use futures::StreamExt as _;
-use std::net::IpAddr;
+use std::net::{IpAddr, ToSocketAddrs as _};
 use std::time::Duration;
 
 const PROXY_HEALTH_TIMEOUT_SECS: u64 = 15;
-const HEALTH_CHECK_URL: &str = "https://ifconfig.co";
 const MAX_HEALTH_RESPONSE_BYTES: usize = 8192;
+const DEFAULT_HEALTH_CHECK_URL: &str = "https://ifconfig.co";
+const FALLBACK_HEALTH_CHECK_URL: &str = "https://api.ipify.org";
+
+fn health_check_urls() -> Vec<&'static str> {
+    static URLS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    let urls = URLS.get_or_init(|| {
+        if let Ok(custom) = std::env::var("ANTIGRAVITY_HEALTH_CHECK_URL") {
+            vec![custom]
+        } else {
+            vec![DEFAULT_HEALTH_CHECK_URL.to_owned(), FALLBACK_HEALTH_CHECK_URL.to_owned()]
+        }
+    });
+    urls.iter().map(String::as_str).collect()
+}
 
 pub fn validate_proxy_url(raw: &str) -> Result<(), String> {
     const VALID_SCHEMES: &[&str] = &["socks5", "socks5h", "http", "https"];
@@ -36,6 +49,25 @@ pub fn validate_proxy_url(raw: &str) -> Result<(), String> {
             || lower == "metadata.google.internal"
         {
             return Err(format!("Proxy URL points to reserved hostname: {host_str}"));
+        }
+        // Static DNS resolution check: defense-in-depth against hostnames pointing to private IPs.
+        // DNS rebinding (hostname resolving to different IPs over time) is NOT a concern here because
+        // the proxy URL hostname IS the proxy server itself (user-controlled, not attacker-controlled),
+        // and socks5h:// resolves targets on the proxy side. Health check target is hardcoded.
+        if bare_host.parse::<IpAddr>().is_err() {
+            let port = parsed.port().unwrap_or(1080);
+            let addr_str = format!("{bare_host}:{port}");
+            if let Ok(resolved) = addr_str.to_socket_addrs() {
+                for sock_addr in resolved {
+                    if is_private_ip(sock_addr.ip()) {
+                        return Err(format!(
+                            "Proxy hostname resolves to private IP: {} -> {}",
+                            host_str,
+                            sock_addr.ip()
+                        ));
+                    }
+                }
+            }
         }
     }
 
@@ -80,8 +112,23 @@ pub async fn check_proxy_health(proxy_url: &str) -> Result<String, String> {
         .build()
         .map_err(|e| format!("Failed to build health check client: {e}"))?;
 
+    let mut last_err = String::new();
+    for url in health_check_urls() {
+        match try_health_check(&client, url).await {
+            Ok(ip) => return Ok(ip),
+            Err(e) => {
+                tracing::debug!("Health check via {url} failed: {e}");
+                last_err = e;
+            },
+        }
+    }
+
+    Err(format!("All health check endpoints failed. Last error: {last_err}"))
+}
+
+async fn try_health_check(client: &reqwest::Client, url: &str) -> Result<String, String> {
     let response = client
-        .get(HEALTH_CHECK_URL)
+        .get(url)
         .header("Accept", "text/plain")
         .send()
         .await
@@ -219,5 +266,15 @@ mod tests {
     fn test_reject_ipv4_compatible_ipv6_private() {
         // ::10.0.0.1 parses as ::a00:1 — IPv4-compatible address
         assert!(validate_proxy_url("socks5://[::a00:1]:1080").is_err());
+    }
+
+    #[test]
+    fn test_accept_domain_proxy_url() {
+        // Domain-based proxy URLs are accepted — the hostname IS the proxy server (user-controlled).
+        // DNS rebinding is not a concern: socks5h resolves targets on the proxy side, and the
+        // health check target is controlled by us (configurable via ANTIGRAVITY_HEALTH_CHECK_URL).
+        assert!(validate_proxy_url("socks5h://proxy.example.com:1080").is_ok());
+        assert!(validate_proxy_url("socks5h://user:pass@proxy.example.com:1080").is_ok());
+        assert!(validate_proxy_url("http://proxy.example.com:8080").is_ok());
     }
 }
