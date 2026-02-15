@@ -1,6 +1,7 @@
 //! Per-account proxy management API handlers.
 
 use axum::{extract::State, http::StatusCode, response::Json};
+use futures::StreamExt as _;
 use serde::{Deserialize, Serialize};
 
 use antigravity_core::modules::account;
@@ -128,19 +129,17 @@ pub async fn set_proxy_bulk_handler(
         .into_iter()
         .collect();
 
-    let health_futures: Vec<_> = valid_urls
-        .iter()
-        .map(|url| {
-            let url = url.clone();
-            async move {
-                let result = check_proxy_health(&url).await;
-                (url, result)
-            }
-        })
-        .collect();
+    const MAX_CONCURRENT_HEALTH_CHECKS: usize = 10;
 
     let health_results: std::collections::HashMap<String, Result<String, String>> =
-        futures::future::join_all(health_futures).await.into_iter().collect();
+        futures::stream::iter(valid_urls)
+            .map(|url| async move {
+                let result = check_proxy_health(&url).await;
+                (url, result)
+            })
+            .buffer_unordered(MAX_CONCURRENT_HEALTH_CHECKS)
+            .collect()
+            .await;
 
     let mut results = Vec::with_capacity(payload.assignments.len());
     let mut successful_assignments: Vec<(String, String)> = Vec::new();

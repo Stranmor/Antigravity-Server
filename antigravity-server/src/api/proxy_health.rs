@@ -34,25 +34,31 @@ pub fn validate_proxy_url(raw: &str) -> Result<(), String> {
         ));
     }
 
-    if let Some(host_str) = parsed.host_str() {
-        let bare_host =
-            host_str.strip_prefix('[').and_then(|s| s.strip_suffix(']')).unwrap_or(host_str);
-        if let Ok(ip) = bare_host.parse::<IpAddr>() {
-            if is_private_ip(ip) {
-                return Err(format!("Proxy URL points to private/reserved IP: {ip}"));
-            }
-        }
-        let lower = host_str.to_ascii_lowercase();
-        if lower == "localhost"
-            || lower.ends_with(".local")
-            || lower.ends_with(".internal")
-            || lower == "metadata.google.internal"
-        {
-            return Err(format!("Proxy URL points to reserved hostname: {host_str}"));
-        }
-        // IP-based hostnames already checked above; domain hostnames checked via async DNS in
-        // resolve_and_check_dns() called by check_proxy_health() and validate_proxy_url_async().
+    let Some(host_str) = parsed.host_str() else {
+        return Err("Proxy URL has no host".to_string());
+    };
+
+    if host_str.is_empty() {
+        return Err("Proxy URL has empty host".to_string());
     }
+
+    let bare_host =
+        host_str.strip_prefix('[').and_then(|s| s.strip_suffix(']')).unwrap_or(host_str);
+    if let Ok(ip) = bare_host.parse::<IpAddr>() {
+        if is_private_ip(ip) {
+            return Err(format!("Proxy URL points to private/reserved IP: {ip}"));
+        }
+    }
+    let lower = host_str.to_ascii_lowercase();
+    if lower == "localhost"
+        || lower.ends_with(".local")
+        || lower.ends_with(".internal")
+        || lower == "metadata.google.internal"
+    {
+        return Err(format!("Proxy URL points to reserved hostname: {host_str}"));
+    }
+    // IP-based hostnames already checked above; domain hostnames checked via async DNS in
+    // resolve_and_check_dns() called by check_proxy_health() and validate_proxy_url_async().
 
     Ok(())
 }
@@ -68,18 +74,17 @@ async fn resolve_and_check_dns(raw: &str) -> Result<(), String> {
             let port = parsed.port().unwrap_or(1080);
             let addr_str = format!("{bare_host}:{port}");
             let host_display = host_str.to_string();
-            let resolved = tokio::task::spawn_blocking(move || addr_str.to_socket_addrs())
+            let addrs = tokio::task::spawn_blocking(move || addr_str.to_socket_addrs())
                 .await
-                .map_err(|e| format!("DNS resolution task failed: {e}"))?;
-            if let Ok(addrs) = resolved {
-                for sock_addr in addrs {
-                    if is_private_ip(sock_addr.ip()) {
-                        return Err(format!(
-                            "Proxy hostname resolves to private IP: {} -> {}",
-                            host_display,
-                            sock_addr.ip()
-                        ));
-                    }
+                .map_err(|e| format!("DNS resolution task failed: {e}"))?
+                .map_err(|e| format!("DNS resolution failed for {host_display}: {e}"))?;
+            for sock_addr in addrs {
+                if is_private_ip(sock_addr.ip()) {
+                    return Err(format!(
+                        "Proxy hostname resolves to private IP: {} -> {}",
+                        host_display,
+                        sock_addr.ip()
+                    ));
                 }
             }
         }
@@ -101,8 +106,11 @@ fn is_private_ip(ip: IpAddr) -> bool {
                 || v4.is_unspecified() // 0.0.0.0 → routes to localhost on Linux
                 || v4.is_private()
                 || v4.is_link_local()
+                || v4.is_multicast()            // 224.0.0.0/4
+                || v4.is_broadcast()            // 255.255.255.255
                 || (v4.octets()[0] == 100 && v4.octets()[1] >= 64 && v4.octets()[1] <= 127)
                 || (v4.octets()[0] == 198 && (v4.octets()[1] == 18 || v4.octets()[1] == 19))
+                || v4.octets()[0] >= 240 // 240.0.0.0/4 reserved (Class E)
         },
         IpAddr::V6(v6) => {
             if v6.is_loopback() || v6.is_unspecified() {
@@ -113,8 +121,9 @@ fn is_private_ip(ip: IpAddr) -> bool {
                 return is_private_ip(IpAddr::V4(v4));
             }
             let seg0 = v6.segments()[0];
-            (seg0 & 0xFE00) == 0xFC00  // fc00::/7 unique local
-                || (seg0 & 0xFFC0) == 0xFE80  // fe80::/10 link-local
+            v6.is_multicast()                   // ff00::/8
+                || (seg0 & 0xFE00) == 0xFC00    // fc00::/7 unique local
+                || (seg0 & 0xFFC0) == 0xFE80    // fe80::/10 link-local
                 || (seg0 & 0xFFC0) == 0xFEC0 // fec0::/10 site-local (deprecated)
         },
     }
@@ -183,118 +192,5 @@ async fn try_health_check(client: &reqwest::Client, url: &str) -> Result<String,
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing, reason = "test assertions")]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_validate_proxy_url_socks5() {
-        assert!(validate_proxy_url("socks5://1.2.3.4:1080").is_ok());
-    }
-
-    #[test]
-    fn test_validate_proxy_url_socks5h() {
-        assert!(validate_proxy_url("socks5h://user:pass@host:1080").is_ok());
-    }
-
-    #[test]
-    fn test_validate_proxy_url_http() {
-        assert!(validate_proxy_url("http://proxy:8080").is_ok());
-    }
-
-    #[test]
-    fn test_validate_proxy_url_https() {
-        assert!(validate_proxy_url("https://proxy:8443").is_ok());
-    }
-
-    #[test]
-    fn test_validate_proxy_url_invalid_scheme() {
-        let result = validate_proxy_url("ftp://proxy:21");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Invalid proxy URL scheme"));
-    }
-
-    #[test]
-    fn test_validate_proxy_url_no_scheme() {
-        assert!(validate_proxy_url("127.0.0.1:1080").is_err());
-    }
-
-    #[test]
-    fn test_validate_proxy_url_empty() {
-        assert!(validate_proxy_url("").is_err());
-    }
-
-    #[test]
-    fn test_reject_private_ips() {
-        assert!(validate_proxy_url("socks5://127.0.0.1:1080").is_err());
-        assert!(validate_proxy_url("socks5://10.0.0.1:1080").is_err());
-        assert!(validate_proxy_url("socks5://192.168.1.1:1080").is_err());
-        assert!(validate_proxy_url("socks5://172.16.0.1:1080").is_err());
-    }
-
-    #[test]
-    fn test_reject_localhost() {
-        assert!(validate_proxy_url("http://localhost:8080").is_err());
-        assert!(validate_proxy_url("http://something.local:8080").is_err());
-    }
-
-    #[test]
-    fn test_reject_metadata_ip() {
-        assert!(validate_proxy_url("http://169.254.169.254:80").is_err());
-    }
-
-    #[test]
-    fn test_reject_ipv6_loopback() {
-        assert!(validate_proxy_url("socks5://[::1]:1080").is_err());
-    }
-
-    #[test]
-    fn test_reject_ipv6_mapped_ipv4_loopback() {
-        assert!(validate_proxy_url("socks5://[::ffff:127.0.0.1]:1080").is_err());
-    }
-
-    #[test]
-    fn test_reject_ipv6_mapped_ipv4_private() {
-        assert!(validate_proxy_url("socks5://[::ffff:10.0.0.1]:1080").is_err());
-        assert!(validate_proxy_url("socks5://[::ffff:192.168.1.1]:1080").is_err());
-        assert!(validate_proxy_url("socks5://[::ffff:169.254.169.254]:1080").is_err());
-    }
-
-    #[test]
-    fn test_reject_ipv6_unique_local() {
-        assert!(validate_proxy_url("socks5://[fd00::1]:1080").is_err());
-        assert!(validate_proxy_url("socks5://[fc00::1]:1080").is_err());
-    }
-
-    #[test]
-    fn test_reject_ipv6_link_local() {
-        assert!(validate_proxy_url("socks5://[fe80::1]:1080").is_err());
-    }
-
-    #[test]
-    fn test_reject_unspecified_ipv4() {
-        assert!(validate_proxy_url("socks5://0.0.0.0:1080").is_err());
-    }
-
-    #[test]
-    fn test_reject_ipv4_compatible_ipv6_loopback() {
-        // ::127.0.0.1 parses as ::7f00:1 — IPv4-compatible address
-        assert!(validate_proxy_url("socks5://[::7f00:1]:1080").is_err());
-    }
-
-    #[test]
-    fn test_reject_ipv4_compatible_ipv6_private() {
-        // ::10.0.0.1 parses as ::a00:1 — IPv4-compatible address
-        assert!(validate_proxy_url("socks5://[::a00:1]:1080").is_err());
-    }
-
-    #[test]
-    fn test_accept_domain_proxy_url() {
-        // Domain-based proxy URLs are accepted — the hostname IS the proxy server (user-controlled).
-        // DNS rebinding is not a concern: socks5h resolves targets on the proxy side, and the
-        // health check target is controlled by us (configurable via ANTIGRAVITY_HEALTH_CHECK_URL).
-        assert!(validate_proxy_url("socks5h://proxy.example.com:1080").is_ok());
-        assert!(validate_proxy_url("socks5h://user:pass@proxy.example.com:1080").is_ok());
-        assert!(validate_proxy_url("http://proxy.example.com:8080").is_ok());
-    }
-}
+#[path = "proxy_health_tests.rs"]
+mod tests;
