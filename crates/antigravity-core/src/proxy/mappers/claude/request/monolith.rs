@@ -187,8 +187,12 @@ pub fn transform_claude_request_in(
     }
 
     // 4. Generation Config & Thinking (Pass final is_thinking_enabled)
-    let generation_config =
-        build_generation_config(claude_req, has_web_search_tool, is_thinking_enabled);
+    let generation_config = build_generation_config(
+        claude_req,
+        has_web_search_tool,
+        is_thinking_enabled,
+        &mapped_model,
+    );
 
     // 2. Contents (Messages)
     let mut contents = build_google_contents(

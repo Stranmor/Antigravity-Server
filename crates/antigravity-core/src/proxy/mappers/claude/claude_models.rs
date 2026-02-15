@@ -46,7 +46,8 @@ pub struct ClaudeRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Metadata>,
     /// Output configuration options.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Claude API sends this as "output", not "output_config".
+    #[serde(alias = "output", skip_serializing_if = "Option::is_none")]
     pub output_config: Option<OutputConfig>,
 }
 

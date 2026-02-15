@@ -22,6 +22,7 @@ pub fn build_generation_config(
     claude_req: &ClaudeRequest,
     has_web_search: bool,
     is_thinking_enabled: bool,
+    mapped_model: &str,
 ) -> Value {
     let mut config = json!({});
     let tb_config = get_thinking_budget_config();
@@ -96,22 +97,6 @@ pub fn build_generation_config(
         config["topK"] = json!(top_k);
     }
 
-    if let Some(output_config) = &claude_req.output_config {
-        if let Some(effort) = &output_config.effort {
-            config["effortLevel"] = json!(match effort.to_lowercase().as_str() {
-                "high" => "HIGH",
-                "medium" => "MEDIUM",
-                "low" => "LOW",
-                _ => "HIGH",
-            });
-            tracing::debug!(
-                "[Generation-Config] Effort level set: {} -> {}",
-                effort,
-                config["effortLevel"]
-            );
-        }
-    }
-
     let mut final_max_tokens: Option<i64> = claude_req.max_tokens.map(|t| t as i64);
 
     if let Some(thinking_config) = config.get("thinkingConfig") {
@@ -130,6 +115,82 @@ pub fn build_generation_config(
 
     if let Some(max_tokens) = final_max_tokens {
         config["maxOutputTokens"] = json!(max_tokens);
+    }
+
+    // Map Claude's output.effort to Gemini's thinkingConfig fields.
+    // thinkingLevel (Gemini 3.x) and thinkingBudget (Gemini 2.5) are mutually exclusive.
+    if let Some(effort) = claude_req.output_config.as_ref().and_then(|oc| oc.effort.as_deref()) {
+        let effort_lower = effort.to_ascii_lowercase();
+        if mapped_model.starts_with("claude-") {
+            // Claude via Vertex handles effort natively — no thinkingConfig mapping needed.
+            tracing::info!(
+                "[Generation-Config] effort='{}' on Claude model '{}', passing through natively",
+                effort_lower,
+                mapped_model
+            );
+        } else if mapped_model.starts_with("gemini-3") {
+            // Gemini 3.x: use thinkingLevel string enum, remove thinkingBudget (mutually exclusive).
+            let is_pro = mapped_model.contains("pro");
+            let thinking_level = match effort_lower.as_str() {
+                "high" => "high",
+                "medium" if is_pro => "low", // Pro doesn't support medium; downgrade to low
+                "medium" => "medium",        // Flash supports medium
+                "low" => "low",
+                _ => {
+                    tracing::warn!(
+                        "[Generation-Config] Unknown effort='{}', defaulting to '{}'",
+                        effort_lower,
+                        if is_pro { "low" } else { "medium" }
+                    );
+                    if is_pro {
+                        "low"
+                    } else {
+                        "medium"
+                    }
+                },
+            };
+            if let Some(tc) = config.get_mut("thinkingConfig") {
+                if let Some(obj) = tc.as_object_mut() {
+                    obj.remove("thinkingBudget");
+                    obj.insert("thinkingLevel".to_string(), json!(thinking_level));
+                }
+            }
+            tracing::info!(
+                "[Generation-Config] effort='{}' → thinkingLevel='{}' for model '{}'",
+                effort_lower,
+                thinking_level,
+                mapped_model
+            );
+        } else if mapped_model.starts_with("gemini-2") {
+            // Gemini 2.5/2.x: override thinkingBudget with effort-based value.
+            let effort_budget: i64 = match effort_lower.as_str() {
+                "high" => -1, // dynamic/auto — maximum thinking
+                "medium" => 2048,
+                "low" => 512,
+                _ => {
+                    tracing::warn!(
+                        "[Generation-Config] Unknown effort='{}', defaulting budget to 2048",
+                        effort_lower
+                    );
+                    2048
+                },
+            };
+            if let Some(tc) = config.get_mut("thinkingConfig") {
+                tc["thinkingBudget"] = json!(effort_budget);
+            }
+            tracing::info!(
+                "[Generation-Config] effort='{}' → thinkingBudget={} for model '{}'",
+                effort_lower,
+                effort_budget,
+                mapped_model
+            );
+        } else {
+            tracing::debug!(
+                "[Generation-Config] effort='{}' on unrecognized model '{}', ignoring",
+                effort_lower,
+                mapped_model
+            );
+        }
     }
 
     // Merge hardcoded stop sequences with client-provided ones, dedup, cap at 5 (Gemini limit).
@@ -161,6 +222,7 @@ mod tests {
         update_thinking_budget_config, THINKING_CONFIG_TEST_LOCK,
     };
     use crate::proxy::mappers::claude::claude_models::{ClaudeRequest, ThinkingConfig};
+    use crate::proxy::mappers::claude::claude_response::OutputConfig;
     use antigravity_types::models::ThinkingBudgetConfig;
 
     fn make_claude_req(thinking: Option<ThinkingConfig>, max_tokens: Option<u32>) -> ClaudeRequest {
@@ -189,7 +251,7 @@ mod tests {
             ..Default::default()
         });
         let req = make_claude_req(None, None);
-        let config = build_generation_config(&req, false, true);
+        let config = build_generation_config(&req, false, true, "gemini-3-pro-preview");
         assert_eq!(config["thinkingConfig"]["thinkingBudget"], 16000);
         assert_eq!(config["maxOutputTokens"], 48768);
     }
@@ -205,7 +267,7 @@ mod tests {
             Some(ThinkingConfig { type_: "enabled".to_string(), budget_tokens: Some(5000) }),
             None,
         );
-        let config = build_generation_config(&req, false, true);
+        let config = build_generation_config(&req, false, true, "gemini-3-pro-preview");
         assert_eq!(config["thinkingConfig"]["thinkingBudget"], 5000);
         assert_eq!(config["maxOutputTokens"], 37768);
     }
@@ -222,7 +284,7 @@ mod tests {
             None,
         );
         req.model = "claude-3-5-flash".to_string();
-        let config = build_generation_config(&req, false, true);
+        let config = build_generation_config(&req, false, true, "gemini-3-pro-preview");
         assert_eq!(config["thinkingConfig"]["thinkingBudget"], 24576);
     }
 
@@ -237,7 +299,7 @@ mod tests {
             Some(ThinkingConfig { type_: "enabled".to_string(), budget_tokens: Some(30000) }),
             None,
         );
-        let config = build_generation_config(&req, true, true);
+        let config = build_generation_config(&req, true, true, "gemini-3-pro-preview");
         assert_eq!(config["thinkingConfig"]["thinkingBudget"], 24576);
     }
 
@@ -249,7 +311,7 @@ mod tests {
             ..Default::default()
         });
         let req = make_claude_req(None, None);
-        let config = build_generation_config(&req, false, false);
+        let config = build_generation_config(&req, false, false, "gemini-3-pro-preview");
         assert!(config.get("thinkingConfig").is_none());
         assert!(config.get("maxOutputTokens").is_none());
     }
@@ -257,7 +319,7 @@ mod tests {
     #[test]
     fn test_stop_sequences_default_only() {
         let req = make_claude_req(None, None);
-        let config = build_generation_config(&req, false, false);
+        let config = build_generation_config(&req, false, false, "gemini-3-pro-preview");
         let stops = config["stopSequences"].as_array().unwrap();
         assert_eq!(stops.len(), 3);
     }
@@ -266,7 +328,7 @@ mod tests {
     fn test_stop_sequences_client_merged() {
         let mut req = make_claude_req(None, None);
         req.stop_sequences = Some(vec!["STOP".to_string(), "END".to_string()]);
-        let config = build_generation_config(&req, false, false);
+        let config = build_generation_config(&req, false, false, "gemini-3-pro-preview");
         let stops = config["stopSequences"].as_array().unwrap();
         assert_eq!(stops.len(), 5);
         assert!(stops.iter().any(|v| v.as_str() == Some("STOP")));
@@ -277,7 +339,7 @@ mod tests {
     fn test_stop_sequences_dedup() {
         let mut req = make_claude_req(None, None);
         req.stop_sequences = Some(vec!["\n\nHuman:".to_string()]);
-        let config = build_generation_config(&req, false, false);
+        let config = build_generation_config(&req, false, false, "gemini-3-pro-preview");
         let stops = config["stopSequences"].as_array().unwrap();
         assert_eq!(stops.len(), 3);
     }
@@ -287,8 +349,123 @@ mod tests {
         let mut req = make_claude_req(None, None);
         req.stop_sequences =
             Some(vec!["A".to_string(), "B".to_string(), "C".to_string(), "D".to_string()]);
-        let config = build_generation_config(&req, false, false);
+        let config = build_generation_config(&req, false, false, "gemini-3-pro-preview");
         let stops = config["stopSequences"].as_array().unwrap();
         assert_eq!(stops.len(), 5);
+    }
+
+    fn make_effort_req(effort: &str) -> ClaudeRequest {
+        let mut req = make_claude_req(
+            Some(ThinkingConfig { type_: "enabled".to_string(), budget_tokens: Some(8000) }),
+            None,
+        );
+        req.output_config = Some(OutputConfig { effort: Some(effort.to_string()) });
+        req
+    }
+
+    #[test]
+    fn test_effort_high_gemini3_sets_thinking_level() {
+        let _guard = THINKING_CONFIG_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        update_thinking_budget_config(ThinkingBudgetConfig {
+            mode: ThinkingBudgetMode::Auto,
+            ..Default::default()
+        });
+        let req = make_effort_req("high");
+        let config = build_generation_config(&req, false, true, "gemini-3-pro-preview");
+        let tc = &config["thinkingConfig"];
+        assert_eq!(tc["thinkingLevel"], "high");
+        assert!(tc.get("thinkingBudget").is_none() || tc["thinkingBudget"].is_null());
+        assert_eq!(tc["includeThoughts"], true);
+    }
+
+    #[test]
+    fn test_effort_low_gemini3_sets_thinking_level() {
+        let _guard = THINKING_CONFIG_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        update_thinking_budget_config(ThinkingBudgetConfig {
+            mode: ThinkingBudgetMode::Auto,
+            ..Default::default()
+        });
+        let req = make_effort_req("low");
+        let config = build_generation_config(&req, false, true, "gemini-3-pro-preview");
+        let tc = &config["thinkingConfig"];
+        assert_eq!(tc["thinkingLevel"], "low");
+        assert!(tc.get("thinkingBudget").is_none() || tc["thinkingBudget"].is_null());
+        assert_eq!(tc["includeThoughts"], true);
+    }
+
+    #[test]
+    fn test_effort_medium_gemini3_flash_sets_medium() {
+        let _guard = THINKING_CONFIG_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        update_thinking_budget_config(ThinkingBudgetConfig {
+            mode: ThinkingBudgetMode::Auto,
+            ..Default::default()
+        });
+        let req = make_effort_req("medium");
+        let config = build_generation_config(&req, false, true, "gemini-3-flash-preview");
+        let tc = &config["thinkingConfig"];
+        assert_eq!(tc["thinkingLevel"], "medium");
+        assert!(tc.get("thinkingBudget").is_none() || tc["thinkingBudget"].is_null());
+    }
+
+    #[test]
+    fn test_effort_medium_gemini3_pro_sets_low() {
+        let _guard = THINKING_CONFIG_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        update_thinking_budget_config(ThinkingBudgetConfig {
+            mode: ThinkingBudgetMode::Auto,
+            ..Default::default()
+        });
+        let req = make_effort_req("medium");
+        let config = build_generation_config(&req, false, true, "gemini-3-pro-preview");
+        let tc = &config["thinkingConfig"];
+        assert_eq!(tc["thinkingLevel"], "low");
+        assert!(tc.get("thinkingBudget").is_none() || tc["thinkingBudget"].is_null());
+    }
+
+    #[test]
+    fn test_effort_gemini25_overrides_budget() {
+        let _guard = THINKING_CONFIG_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        update_thinking_budget_config(ThinkingBudgetConfig {
+            mode: ThinkingBudgetMode::Auto,
+            ..Default::default()
+        });
+        let req = make_effort_req("high");
+        let config = build_generation_config(&req, false, true, "gemini-2.5-pro");
+        assert_eq!(config["thinkingConfig"]["thinkingBudget"], -1);
+        assert_eq!(config["thinkingConfig"]["includeThoughts"], true);
+
+        let req_low = make_effort_req("low");
+        let config_low = build_generation_config(&req_low, false, true, "gemini-2.5-flash");
+        assert_eq!(config_low["thinkingConfig"]["thinkingBudget"], 512);
+    }
+
+    #[test]
+    fn test_effort_claude_model_no_mapping() {
+        let _guard = THINKING_CONFIG_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        update_thinking_budget_config(ThinkingBudgetConfig {
+            mode: ThinkingBudgetMode::Auto,
+            ..Default::default()
+        });
+        let req = make_effort_req("high");
+        let config = build_generation_config(&req, false, true, "claude-opus-4-6");
+        let tc = &config["thinkingConfig"];
+        assert!(tc.get("thinkingLevel").is_none() || tc["thinkingLevel"].is_null());
+        assert_eq!(tc["thinkingBudget"], 8000);
+    }
+
+    #[test]
+    fn test_no_effort_no_change() {
+        let _guard = THINKING_CONFIG_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        update_thinking_budget_config(ThinkingBudgetConfig {
+            mode: ThinkingBudgetMode::Auto,
+            ..Default::default()
+        });
+        let req = make_claude_req(
+            Some(ThinkingConfig { type_: "enabled".to_string(), budget_tokens: Some(8000) }),
+            None,
+        );
+        let config = build_generation_config(&req, false, true, "gemini-3-pro-preview");
+        let tc = &config["thinkingConfig"];
+        assert_eq!(tc["thinkingBudget"], 8000);
+        assert!(tc.get("thinkingLevel").is_none() || tc["thinkingLevel"].is_null());
     }
 }
