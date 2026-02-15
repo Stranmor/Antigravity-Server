@@ -296,7 +296,7 @@ async fn test_enforce_proxy_blocks_token_refresh_without_proxy_url() {
 
     let result = manager.try_refresh_token(&mut token).await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("enforce_proxy"));
+    assert!(result.expect_err("expected error").contains("enforce_proxy"));
 }
 
 #[tokio::test]
@@ -329,7 +329,7 @@ async fn test_enforce_proxy_blocks_project_id_fetch_without_proxy_url() {
 
     let result = manager.ensure_project_id(&mut token).await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("enforce_proxy"));
+    assert!(result.expect_err("expected error").contains("enforce_proxy"));
 }
 
 #[tokio::test]

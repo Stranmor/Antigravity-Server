@@ -29,36 +29,37 @@ pub fn build_generation_config(
 
     if is_thinking_enabled {
         if let Some(thinking) = &claude_req.thinking {
-            if thinking.type_ == "enabled" {
-                let mut thinking_config = json!({"includeThoughts": true});
+            // [FIX] When is_thinking_enabled is true (possibly force-enabled for -thinking models),
+            // always inject thinkingConfig. Don't gate on thinking.type_ == "enabled" because
+            // the caller may have force-enabled thinking despite client sending type:"disabled".
+            let mut thinking_config = json!({"includeThoughts": true});
 
-                let budget: u64 = if let Some(client_budget) = thinking.budget_tokens {
-                    match tb_config.mode {
-                        ThinkingBudgetMode::Auto | ThinkingBudgetMode::Adaptive => {
-                            let mut b = client_budget;
-                            let is_flash_model =
-                                has_web_search || claude_req.model.to_lowercase().contains("flash");
-                            if is_flash_model {
-                                b = b.min(24576);
-                            }
-                            u64::from(b)
-                        },
-                        ThinkingBudgetMode::Passthrough => u64::from(client_budget),
-                        ThinkingBudgetMode::Custom => u64::from(tb_config.custom_value),
-                    }
-                } else {
-                    match tb_config.mode {
-                        ThinkingBudgetMode::Custom => u64::from(tb_config.custom_value),
-                        _ => THINKING_BUDGET,
-                    }
-                };
-
-                if budget > 0 {
-                    thinking_config["thinkingBudget"] = json!(budget);
+            let budget: u64 = if let Some(client_budget) = thinking.budget_tokens {
+                match tb_config.mode {
+                    ThinkingBudgetMode::Auto | ThinkingBudgetMode::Adaptive => {
+                        let mut b = client_budget;
+                        let is_flash_model =
+                            has_web_search || claude_req.model.to_lowercase().contains("flash");
+                        if is_flash_model {
+                            b = b.min(24576);
+                        }
+                        u64::from(b)
+                    },
+                    ThinkingBudgetMode::Passthrough => u64::from(client_budget),
+                    ThinkingBudgetMode::Custom => u64::from(tb_config.custom_value),
                 }
+            } else {
+                match tb_config.mode {
+                    ThinkingBudgetMode::Custom => u64::from(tb_config.custom_value),
+                    _ => THINKING_BUDGET,
+                }
+            };
 
-                config["thinkingConfig"] = thinking_config;
+            if budget > 0 {
+                thinking_config["thinkingBudget"] = json!(budget);
             }
+
+            config["thinkingConfig"] = thinking_config;
         } else if matches!(tb_config.mode, ThinkingBudgetMode::Adaptive) {
             let default_budget = THINKING_BUDGET;
             tracing::info!(
@@ -114,6 +115,18 @@ pub fn build_generation_config(
     }
 
     if let Some(max_tokens) = final_max_tokens {
+        // [FIX] Claude Vertex AI models have a maxOutputTokens ceiling of 64000.
+        // Clients (e.g. opencode) may send up to 65536 which triggers 400 INVALID_ARGUMENT.
+        let model_lower = mapped_model.to_lowercase();
+        let max_tokens = if model_lower.starts_with("claude-") && max_tokens > 64000 {
+            tracing::info!(
+                "[Generation-Config] Capping maxOutputTokens from {} to 64000 for Claude Vertex model '{}'",
+                max_tokens, mapped_model
+            );
+            64000
+        } else {
+            max_tokens
+        };
         config["maxOutputTokens"] = json!(max_tokens);
     }
 

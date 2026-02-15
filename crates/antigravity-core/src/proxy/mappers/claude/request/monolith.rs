@@ -93,12 +93,28 @@ pub fn transform_claude_request_in(
     let allow_dummy_thought = false;
 
     // Check if thinking is enabled in the request
-    let mut is_thinking_enabled =
-        claude_req.thinking.as_ref().map(|t| t.type_ == "enabled").unwrap_or_else(|| {
+    let mut is_thinking_enabled = claude_req
+        .thinking
+        .as_ref()
+        .map(|t| t.type_ == "enabled" || t.type_ == "adaptive")
+        .unwrap_or_else(|| {
             // [Claude Code v2.0.67+] Default thinking enabled for Opus 4.5
             // If no thinking config is provided, enable by default for Opus models
             should_enable_thinking_by_default(&claude_req.model)
         });
+
+    // [FIX] Force-enable thinking for models mapped to "-thinking" variants.
+    // When the mapped model is e.g. "claude-opus-4-6-thinking", the upstream API
+    // REQUIRES thinkingConfig. If the client sends thinking:{type:"disabled"} or
+    // omits thinking entirely, we must override to prevent 400 INVALID_ARGUMENT.
+    if !is_thinking_enabled && mapped_model.contains("-thinking") {
+        tracing::warn!(
+            "[Thinking-Mode] Force-enabling thinking for model '{}' (client thinking config: {:?})",
+            mapped_model,
+            claude_req.thinking.as_ref().map(|t| t.type_.as_str())
+        );
+        is_thinking_enabled = true;
+    }
 
     // [FIX] Check if target model supports thinking.
     // Gemini 2.5+, Gemini 3.x, and Claude models all support thinking natively via thinkingConfig.
