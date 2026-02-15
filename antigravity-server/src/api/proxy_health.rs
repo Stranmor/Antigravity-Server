@@ -50,19 +50,34 @@ pub fn validate_proxy_url(raw: &str) -> Result<(), String> {
         {
             return Err(format!("Proxy URL points to reserved hostname: {host_str}"));
         }
-        // Static DNS resolution check: defense-in-depth against hostnames pointing to private IPs.
-        // DNS rebinding (hostname resolving to different IPs over time) is NOT a concern here because
-        // the proxy URL hostname IS the proxy server itself (user-controlled, not attacker-controlled),
-        // and socks5h:// resolves targets on the proxy side. Health check target is hardcoded.
+        // IP-based hostnames already checked above; domain hostnames checked via async DNS in
+        // resolve_and_check_dns() called by check_proxy_health() and validate_proxy_url_async().
+    }
+
+    Ok(())
+}
+
+/// Async DNS resolution check: defense-in-depth against hostnames that resolve to private IPs.
+/// Point-in-time check (DNS can change between validation and connection), but catches
+/// the common case of misconfigured proxy URLs pointing to internal hosts.
+async fn resolve_and_check_dns(raw: &str) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(raw).map_err(|e| format!("Malformed proxy URL: {e}"))?;
+    if let Some(host_str) = parsed.host_str() {
+        let bare_host =
+            host_str.strip_prefix('[').and_then(|s| s.strip_suffix(']')).unwrap_or(host_str);
         if bare_host.parse::<IpAddr>().is_err() {
             let port = parsed.port().unwrap_or(1080);
             let addr_str = format!("{bare_host}:{port}");
-            if let Ok(resolved) = addr_str.to_socket_addrs() {
-                for sock_addr in resolved {
+            let host_display = host_str.to_string();
+            let resolved = tokio::task::spawn_blocking(move || addr_str.to_socket_addrs())
+                .await
+                .map_err(|e| format!("DNS resolution task failed: {e}"))?;
+            if let Ok(addrs) = resolved {
+                for sock_addr in addrs {
                     if is_private_ip(sock_addr.ip()) {
                         return Err(format!(
                             "Proxy hostname resolves to private IP: {} -> {}",
-                            host_str,
+                            host_display,
                             sock_addr.ip()
                         ));
                     }
@@ -70,8 +85,14 @@ pub fn validate_proxy_url(raw: &str) -> Result<(), String> {
             }
         }
     }
-
     Ok(())
+}
+
+/// Async validation: sync URL checks + async DNS resolution.
+/// Use in API handlers. For sync-only contexts, use `validate_proxy_url`.
+pub async fn validate_proxy_url_async(raw: &str) -> Result<(), String> {
+    validate_proxy_url(raw)?;
+    resolve_and_check_dns(raw).await
 }
 
 fn is_private_ip(ip: IpAddr) -> bool {
@@ -101,7 +122,7 @@ fn is_private_ip(ip: IpAddr) -> bool {
 }
 
 pub async fn check_proxy_health(proxy_url: &str) -> Result<String, String> {
-    validate_proxy_url(proxy_url)?;
+    validate_proxy_url_async(proxy_url).await?;
 
     let proxy = reqwest::Proxy::all(proxy_url).map_err(|e| format!("Invalid proxy URL: {e}"))?;
 

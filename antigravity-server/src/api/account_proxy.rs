@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use antigravity_core::modules::account;
 
-use super::proxy_health::{check_proxy_health, validate_proxy_url};
+use super::proxy_health::check_proxy_health;
 use crate::state::AppState;
 
 #[derive(Deserialize)]
@@ -24,14 +24,12 @@ pub async fn set_proxy_handler(
     State(state): State<AppState>,
     Json(payload): Json<SetProxyRequest>,
 ) -> Result<Json<SetProxyResponse>, (StatusCode, String)> {
-    validate_proxy_url(&payload.proxy_url).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    // Validate account exists BEFORE any network I/O (prevents SSRF port scanning via non-existent accounts)
+    let email = get_account_email(&state, &payload.account_id).await?;
 
     let exit_ip = check_proxy_health(&payload.proxy_url)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, format!("Proxy health check failed: {e}")))?;
-
-    // Validate account exists BEFORE persisting (avoids inconsistent state if email lookup fails)
-    let email = get_account_email(&state, &payload.account_id).await?;
 
     persist_proxy_url(&state, &payload.account_id, Some(&payload.proxy_url)).await?;
 
@@ -108,23 +106,58 @@ pub async fn set_proxy_bulk_handler(
         ));
     }
 
-    let unique_urls: std::collections::HashSet<&str> =
-        payload.assignments.iter().map(|a| a.proxy_url.as_str()).collect();
+    // Phase 1: Validate all accounts exist BEFORE any network I/O (prevents SSRF port scanning)
+    let mut account_emails: std::collections::HashMap<String, Result<String, String>> =
+        std::collections::HashMap::new();
+    for assignment in &payload.assignments {
+        if !account_emails.contains_key(&assignment.account_id) {
+            let result = get_account_email(&state, &assignment.account_id)
+                .await
+                .map_err(|(_status, msg)| msg);
+            account_emails.insert(assignment.account_id.clone(), result);
+        }
+    }
+
+    // Phase 2: Health check only for URLs of valid accounts
+    let valid_urls: std::collections::HashSet<&str> = payload
+        .assignments
+        .iter()
+        .filter(|a| account_emails.get(&a.account_id).is_some_and(|r| r.is_ok()))
+        .map(|a| a.proxy_url.as_str())
+        .collect();
 
     let mut health_results: std::collections::HashMap<String, Result<String, String>> =
         std::collections::HashMap::new();
 
-    for url in unique_urls {
-        let result = match validate_proxy_url(url) {
-            Ok(()) => check_proxy_health(url).await,
-            Err(e) => Err(e),
-        };
-        health_results.insert(url.to_string(), result);
+    for url in valid_urls {
+        health_results.insert(url.to_string(), check_proxy_health(url).await);
     }
 
     let mut results = Vec::with_capacity(payload.assignments.len());
 
     for assignment in &payload.assignments {
+        let email = match account_emails.get(&assignment.account_id) {
+            Some(Ok(email)) => email.clone(),
+            Some(Err(e)) => {
+                results.push(BulkProxyResult {
+                    account_id: assignment.account_id.clone(),
+                    success: false,
+                    exit_ip: None,
+                    error: Some(format!("Account not found: {e}")),
+                });
+                continue;
+            },
+            None => {
+                results.push(BulkProxyResult {
+                    account_id: assignment.account_id.clone(),
+                    success: false,
+                    exit_ip: None,
+                    error: Some("Account validation missing".to_string()),
+                });
+                continue;
+            },
+        };
+
         let health = health_results
             .get(&assignment.proxy_url)
             .cloned()
@@ -136,23 +169,9 @@ pub async fn set_proxy_bulk_handler(
                     .await
                 {
                     Ok(()) => {
-                        match get_account_email(&state, &assignment.account_id).await {
-                            Ok(email) => {
-                                state
-                                    .update_proxy_assignment(
-                                        &email,
-                                        Some(assignment.proxy_url.clone()),
-                                    )
-                                    .await;
-                            },
-                            Err(e) => {
-                                tracing::warn!(
-                                    "Failed to resolve email for account {} during bulk proxy set: {}",
-                                    assignment.account_id,
-                                    e.1
-                                );
-                            },
-                        }
+                        state
+                            .update_proxy_assignment(&email, Some(assignment.proxy_url.clone()))
+                            .await;
                         results.push(BulkProxyResult {
                             account_id: assignment.account_id.clone(),
                             success: true,
